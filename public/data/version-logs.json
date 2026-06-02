@@ -1,0 +1,79 @@
+{
+  "versions": [
+    {
+      "version": "v0.0.7",
+      "date": "2026-02-24",
+      "title": "changelogs update & conversation bug fix",
+      "changes": [
+        "feat: add changelog feature for item updates",
+        "fix: resolve conversation view bugs",
+        "fix: resolve admin chat dialog bugs"
+      ]
+    },
+      {
+      "version": "v0.0.6",
+      "date": "2026-02-20",
+      "title": "UI Improvements & Bug Fixes",
+      "changes": [
+        "feature: enhance DashboardItemCards with title editing functionality and dialog",
+        "fix: claimant name bug on conversation view"
+      ]
+    },
+      {
+      "version": "v0.0.5",
+      "date": "2026-02-18",
+      "title": "UI Improvements & Bug Fixes",
+      "changes": [
+        "Added forgot password shell, for future development ",
+        "Added claimant notifications for their claims.",
+        "Added v-badge component for displaying conversation count in each item on admin dashboard.",
+        "Added edit description functionality for items on admin dashboard",
+        "Added soft delete and ban functionality on user accounts",
+        "feat: enhance DashboardItemCards with title editing functionality and dialog"
+      ]
+    },
+    {
+      "version": "v0.0.4",
+      "date": "2026-02-17",
+      "title": "UI Improvements & Bug Fixes",
+      "changes": [
+        "Updated UserManagement Sorting and Search functionality",
+        "Removed Guest User access",
+        "Adding confirmation dialog to admin/dashboard (mark as claimed) feature"
+      ]
+    },
+    {
+      "version": "v0.0.3",
+      "date": "2026-02-16",
+      "title": "UI Improvements & Bug Fixes",
+      "changes": [
+        "Updated buttons with new styling and hover effects",
+        "Changed navbar colors to match brand theme",
+        "Fixed responsive layout issues on mobile devices",
+        "Improved notification system with better animations"
+      ]
+    },
+    {
+      "version": "v0.0.2",
+      "date": "2026-02-10",
+      "title": "Core Functionality Updates",
+      "changes": [
+        "Added admin chat dialog functionality",
+        "Implemented real-time notifications",
+        "Enhanced item filtering and search capabilities",
+        "Fixed authentication flow issues"
+      ]
+    },
+    {
+      "version": "v0.0.1",
+      "date": "2026-02-01",
+      "title": "Initial Release",
+      "changes": [
+        "Basic lost and found system functionality",
+        "User authentication and role management",
+        "Item posting and browsing features",
+        "Admin dashboard implementation"
+      ]
+    }
+  ]
+}

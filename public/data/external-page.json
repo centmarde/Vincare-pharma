@@ -1,0 +1,178 @@
+{
+  "title": "Vincare-Pharma Supply Chain Platform",
+  "description": "Vincare-Pharma is a pharmaceutical supply chain platform that connects manufacturers, distributors, pharmacies, and healthcare providers. The system streamlines product sourcing, inventory coordination, and distribution management, ensuring efficient, reliable, and compliant delivery of healthcare products.",
+  "subtitle": "Connect. Coordinate. Deliver healthcare products compliantly.",
+  "backgroundImage": {
+    "src": "/images/markup.png",
+    "alt": "Abstract healthcare supply chain background with geometric patterns",
+    "overlay": {
+      "enabled": true,
+      "color": "rgba(63, 81, 181, 0.15)",
+      "opacity": 0.8
+    }
+  },
+  "features": [
+    {
+      "title": "Multi-Partner Access",
+      "description": "Role-based access for manufacturers, distributors, pharmacies, and healthcare providers to collaborate with clear permissions and secure authentication.",
+      "icon": "mdi-shield-account"
+    },
+    {
+      "title": "Compliance & Auditability",
+      "description": "Designed for regulated workflows with traceable actions, controlled access, and process visibility to support compliance expectations.",
+      "icon": "mdi-security"
+    },
+    {
+      "title": "Smart Sourcing & Coordination",
+      "description": "Streamline product sourcing and procurement coordination across partners to reduce delays and prevent stockouts.",
+      "icon": "mdi-router-wireless"
+    },
+    {
+      "title": "Inventory & Distribution Management",
+      "description": "Coordinate inventory availability, allocation, and distribution workflows for efficient, reliable delivery of healthcare products.",
+      "icon": "mdi-auto-fix"
+    }
+  ],
+  "author": "Vincare-Pharma",
+  "lastUpdated": "2026-06-02",
+  "theme": {
+    "primaryColor": "#3F51B5",
+    "secondaryColor": "#7688e0"
+  },
+  "ui": {
+    "showNavbar": true,
+    "showFooter": true,
+    "_comment": "Select the navbar component to use: 1, 2, 3, or 4",
+    "navbarComponent": "3",
+    "_footerComment": "Select the footer component to use: 1 or 2",
+    "footerComponent": "1",
+    "navbar": {
+      "title": "Vincare-Pharma",
+      "icon": "mdi-hospital-box-outline",
+      "logo": {
+        "src": "/assets/logo.svg",
+        "alt": "Vincare-Pharma Logo",
+        "width": 32,
+        "height": 32
+      },
+      "color": "primary",
+      "elevation": 2,
+      "density": "comfortable",
+      "navigationItems": [
+        {
+          "_comment": "dont change this",
+          "label": "Features",
+          "action": "scroll",
+          "target": "features"
+        },
+        {
+          "_comment": "dont change this",
+          "label": "About",
+          "action": "scroll",
+          "target": "about"
+        }
+      ],
+      "ctaButton": {
+        "label": "Get Started",
+        "variant": "outlined",
+        "color": "on-primary",
+        "action": "navigate",
+        "_comment": "dont change this /auth cause it is linked to the auth page",
+        "target": "/auth"
+      }
+    },
+    "footer": {
+      "companyName": "Vincare-Pharma",
+      "tagline": "Connecting partners for compliant pharmaceutical delivery",
+      "icon": "mdi-truck-delivery-outline",
+      "color": "grey-darken-3",
+      "copyright": "Vincare-Pharma. All rights reserved.",
+      "socialLinks": [
+        {
+          "platform": "github",
+          "icon": "mdi-github",
+          "url": "https://github.com",
+          "label": "GitHub"
+        },
+        {
+          "platform": "twitter",
+          "icon": "mdi-twitter",
+          "url": "https://twitter.com",
+          "label": "Twitter"
+        },
+        {
+          "platform": "linkedin",
+          "icon": "mdi-linkedin",
+          "url": "https://linkedin.com",
+          "label": "LinkedIn"
+        }
+      ],
+      "technologies": [
+        {
+          "name": "Vue 3",
+          "icon": "mdi-vuejs",
+          "color": "green"
+        },
+        {
+          "name": "Vuetify 3",
+          "icon": "mdi-material-design",
+          "color": "blue"
+        },
+        {
+          "name": "TypeScript",
+          "icon": "mdi-language-typescript",
+          "color": "indigo"
+        },
+        {
+          "name": "Secure Auth",
+          "icon": "mdi-database-lock",
+          "color": "teal"
+        }
+      ],
+      "thesisTeam": {
+        "enabled": true,
+        "title": "Platform Team",
+        "subtitle": "Meet the team building reliable pharmaceutical supply-chain workflows",
+        "members": [
+          {
+            "name": "Operations Lead",
+            "role": "Supply Chain Operations & Partnerships",
+            "avatar": "/images/team/architect.jpg"
+          },
+          {
+            "name": "Compliance Specialist",
+            "role": "Quality, Compliance & Auditing",
+            "avatar": "/images/team/auth-specialist.jpg"
+          },
+          {
+            "name": "Product Engineer",
+            "role": "Workflow Automation & UX",
+            "avatar": "/images/team/ui-developer.jpg"
+          }
+        ]
+      }
+    }
+  },
+  "authPage": {
+    "title": "Welcome to Vincare-Pharma",
+    "subtitle": "Access your supply chain workspace with secure authentication",
+    "layout": {
+      "quotePosition": "right"
+    },
+    "quote": {
+      "text": "Quality means doing it right when no one is looking.",
+      "author": "Henry Ford",
+      "source": "Industrialist",
+      "motivationalText": "Coordinate sourcing, inventory, and distribution with confidence—built for reliability and compliance."
+    },
+    "backgroundImage": {
+      "src": "/images/auth-background.jpg",
+      "alt": "Modern healthcare operations workspace",
+      "overlay": {
+        "enabled": true,
+        "color": "rgba(63, 81, 181, 0.1)",
+        "opacity": 0.9
+      }
+    }
+  }
+}
