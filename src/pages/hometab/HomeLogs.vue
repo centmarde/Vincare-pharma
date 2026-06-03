@@ -323,7 +323,7 @@ watch(
 
                       <!-- Card Content -->
                       <v-card-text class="pa-3 pa-sm-4 pt-0">
-                        <div class="text-body-2 text-sm-body-1 text-high-emphasis">
+                        <div class="text-body-2 text-sm-body-1 text-high-emphasis log-description">
                           {{ log.description }}
                         </div>
                       </v-card-text>
@@ -418,6 +418,10 @@ watch(
 </template>
 
 <style scoped>
+.log-description {
+  white-space: pre-line;
+}
+
 .timeline-container {
   position: relative;
 }
