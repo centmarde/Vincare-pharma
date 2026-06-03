@@ -35,6 +35,11 @@ export const authGuard = async (to: RouteLocationNormalized, from: RouteLocation
       if (currentUserResult.user) {
         const userRoleId = currentUserResult.user.user_metadata?.role;
 
+        if (!userRoleId) {
+          console.log('No role ID found in user metadata; redirecting to forbidden');
+          return next("/forbidden");
+        }
+
         if (userRoleId) {
           console.log('Checking page access for role ID:', userRoleId);
           console.log('Requested path:', to.path);
@@ -59,9 +64,6 @@ export const authGuard = async (to: RouteLocationNormalized, from: RouteLocation
             console.log('No pages configured for role ID:', userRoleId);
             return next("/forbidden");
           }
-        } else {
-          console.log('No role ID found in user metadata');
-          // If no role ID, allow access but log the issue
         }
       }
     } catch (error) {
