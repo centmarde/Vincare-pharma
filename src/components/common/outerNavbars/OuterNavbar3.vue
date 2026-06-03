@@ -200,9 +200,7 @@
             <span class="text-subtitle-1 font-weight-bold text-primary">
               {{ navbarConfig.title }}
             </span>
-            <span class="text-caption text-medium-emphasis">
-              Academic Excellence
-            </span>
+
           </div>
         </div>
       </template>
@@ -377,9 +375,7 @@
               <span class="text-h6 font-weight-bold text-primary">
                 {{ navbarConfig.title }}
               </span>
-              <span class="text-caption text-medium-emphasis">
-                Academic Excellence
-              </span>
+
             </div>
           </div>
 
