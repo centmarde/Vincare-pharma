@@ -148,37 +148,37 @@
       <!-- Logo Section with Badge -->
       <template #prepend>
         <div class="d-flex align-center">
-          <v-badge
-            content="V3"
-            color="success"
-            dot
-            offset-x="8"
-            offset-y="8"
-            class="me-2"
-          >
+
             <!-- Logo Image with Icon Fallback -->
             <template v-if="navbarConfig.logo?.src">
-              <v-img
-                :src="navbarConfig.logo.src"
-                :alt="navbarConfig.logo.alt"
-                :width="navbarConfig.logo.width || 42"
-                :height="navbarConfig.logo.height || 42"
-                contain
+              <v-card
+                color="white"
+                class="pa-1"
+                rounded="lg"
+                elevation="0"
               >
-                <template #error>
-                  <!-- Fallback to avatar with icon if image fails to load -->
-                  <v-avatar
-                    :color="navbarConfig.color"
-                    size="42"
-                  >
-                    <v-icon
-                      :icon="navbarConfig.icon"
-                      size="22"
-                      color="white"
-                    />
-                  </v-avatar>
-                </template>
-              </v-img>
+                <v-img
+                  :src="navbarConfig.logo.src"
+                  :alt="navbarConfig.logo.alt"
+                  :width="navbarConfig.logo.width || 42"
+                  :height="navbarConfig.logo.height || 42"
+                  contain
+                >
+                  <template #error>
+                    <!-- Fallback to avatar with icon if image fails to load -->
+                    <v-avatar
+                      :color="navbarConfig.color"
+                      size="42"
+                    >
+                      <v-icon
+                        :icon="navbarConfig.icon"
+                        size="22"
+                        color="white"
+                      />
+                    </v-avatar>
+                  </template>
+                </v-img>
+              </v-card>
             </template>
             <template v-else>
               <!-- Default avatar with icon when no logo is configured -->
@@ -193,7 +193,7 @@
                 />
               </v-avatar>
             </template>
-          </v-badge>
+
 
           <!-- Hide title on mobile to minimize navbar -->
           <div class="d-flex flex-column ms-2 d-none d-md-flex">
@@ -329,27 +329,34 @@
             >
               <!-- Logo Image with Icon Fallback -->
               <template v-if="navbarConfig.logo?.src">
-                <v-img
-                  :src="navbarConfig.logo.src"
-                  :alt="navbarConfig.logo.alt"
-                  :width="navbarConfig.logo.width || 48"
-                  :height="navbarConfig.logo.height || 48"
-                  contain
+                <v-card
+                  color="white"
+                  class="pa-1"
+                  rounded="lg"
+                  elevation="0"
                 >
-                  <template #error>
-                    <!-- Fallback to avatar with icon if image fails to load -->
-                    <v-avatar
-                      :color="navbarConfig.color"
-                      size="48"
-                    >
-                      <v-icon
-                        :icon="navbarConfig.icon"
-                        size="24"
-                        color="white"
-                      />
-                    </v-avatar>
-                  </template>
-                </v-img>
+                  <v-img
+                    :src="navbarConfig.logo.src"
+                    :alt="navbarConfig.logo.alt"
+                    :width="navbarConfig.logo.width || 48"
+                    :height="navbarConfig.logo.height || 48"
+                    contain
+                  >
+                    <template #error>
+                      <!-- Fallback to avatar with icon if image fails to load -->
+                      <v-avatar
+                        :color="navbarConfig.color"
+                        size="48"
+                      >
+                        <v-icon
+                          :icon="navbarConfig.icon"
+                          size="24"
+                          color="white"
+                        />
+                      </v-avatar>
+                    </template>
+                  </v-img>
+                </v-card>
               </template>
               <template v-else>
                 <!-- Default avatar with icon when no logo is configured -->

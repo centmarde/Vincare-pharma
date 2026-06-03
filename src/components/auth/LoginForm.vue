@@ -1,4 +1,21 @@
 <template>
+  <div class="d-flex justify-center pt-6">
+    <v-card
+      color="white"
+      class="pa-4"
+      rounded="lg"
+      elevation="2"
+    >
+      <v-img
+        src="/vincare.png"
+        alt="Vincare"
+        width="140"
+        height="140"
+        contain
+      />
+    </v-card>
+  </div>
+
   <v-card-title class="text-h5 text-center py-6"> Sign In </v-card-title>
 
   <v-card-text class="px-6 pb-6">
@@ -76,7 +93,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from "vue";
+import { ref, reactive, computed } from "vue";
 import {
   requiredValidator,
   emailValidator,
@@ -130,12 +147,15 @@ const handleLogin = async () => {
     return;
   }
 
+  // Normalize email to avoid case-sensitive login issues
+  const normalizedEmail = loginForm.email.trim().toLowerCase();
+
   loading.value = true;
   clearErrors();
 
   try {
     const result = await authStore.signIn(
-      loginForm.email,
+      normalizedEmail,
       loginForm.password
     );
 
