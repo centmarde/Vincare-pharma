@@ -3,9 +3,11 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { useAuthUserStore } from '@/stores/authUser'
+import { useUserRolesStore } from '@/stores/roles'
 import { createDisplaySlugName, getEmailInitials, getRoleText, getRoleColor } from '@/utils/helpers'
 
 const authStore = useAuthUserStore()
+const rolesStore = useUserRolesStore()
 const router = useRouter()
 const { mobile } = useDisplay()
 
@@ -26,7 +28,7 @@ const userEmail = computed(() => authStore.userEmail)
 const displayName = computed(() => createDisplaySlugName(userEmail.value))
 const userInitials = computed(() => getEmailInitials(userEmail.value))
 const userRole = computed(() => authStore.userRole)
-const userRoleText = computed(() => getRoleText(userRole.value))
+const userRoleText = computed(() => getRoleText(userRole.value, rolesStore.roles))
 const userRoleColor = computed(() => getRoleColor(userRole.value))
 
 // Handle logout

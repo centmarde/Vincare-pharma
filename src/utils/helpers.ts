@@ -105,17 +105,14 @@ export function getRoleTitle(roleId: number | null | undefined, roles: Array<{ i
 }
 
 /**
- * Gets the text representation of a role ID
+ * Gets the text representation of a role ID using the provided roles array.
+ * (Previously this was hard-coded to Admin/Student/etc.)
  * @param roleId - The role ID to get text for
- * @returns A human-readable role name
+ * @param roles - The roles array to search in
+ * @returns A human-readable role title
  */
-export function getRoleText(roleId: number | null | undefined): string {
-  switch (roleId) {
-    case 1: return 'Admin'
-    case 2: return 'Student'
-    case 3: return 'Organization Leader'
-    default: return 'Unknown'
-  }
+export function getRoleText(roleId: number | null | undefined, roles: Array<{ id: number; title: string | null }>): string {
+  return getRoleTitle(roleId, roles)
 }
 
 

@@ -6,7 +6,7 @@
   import { useTheme } from '@/composables/useTheme'
   import { useAuthUserStore } from '@/stores/authUser'
   import SlugName from './SlugName.vue'
-  import { navigationConfig, type NavigationGroup, type NavigationItem } from '@/utils/navigation'
+  import { useUserPermissions } from '@/composables/useUserPermissions'
 
   interface Props {
     config?: UIConfig | null
@@ -15,6 +15,9 @@
   const props = defineProps<Props>()
   const router = useRouter()
   const authStore = useAuthUserStore()
+
+  // User permissions composable (permission-based navigation)
+  const { getFilteredNavigationGroups, isLoading } = useUserPermissions()
 
   // Vuetify display composable for responsiveness
   const { mobile, mdAndUp, lgAndUp, xs, sm, md } = useDisplay()
@@ -28,6 +31,9 @@
   const { toggleTheme: handleToggleTheme, getCurrentTheme, isLoadingTheme } = useTheme()
 
   const navbarConfig = computed(() => props.config?.navbar)
+
+  // Get filtered navigation groups based on user permissions
+  const navigationGroups = computed(() => getFilteredNavigationGroups())
 
   // Positioning logic that accounts for sidebar
   const navbarPositioning = computed(() => {
@@ -341,31 +347,45 @@
 
       <!-- Navigation List -->
       <v-list nav class="py-0">
-        <template v-for="group in navigationConfig" :key="group.title">
-          <!-- Navigation Group -->
-          <v-list-group :value="group.title">
-            <template #activator="{ props: activatorProps }">
-              <v-list-item
-                v-bind="activatorProps"
-                :prepend-icon="group.icon"
-                :title="group.title"
-                rounded="xl"
-                class="ma-2"
-              />
-            </template>
+        <!-- Loading State -->
+        <div v-if="isLoading" class="text-center py-4">
+          <v-progress-circular indeterminate color="primary" size="32" />
+          <p class="text-body-2 mt-2">Loading navigation...</p>
+        </div>
 
-            <!-- Navigation Items -->
-            <v-list-item
-              v-for="item in group.children"
-              :key="item.route"
-              :prepend-icon="item.icon"
-              :title="item.title"
-              :to="item.route"
-              rounded="xl"
-              class="ma-2 ms-4"
-              @click="drawer = false"
-            />
-          </v-list-group>
+        <!-- No Access Message -->
+        <div v-else-if="navigationGroups.length === 0" class="text-center py-6">
+          <v-icon color="grey" size="48" class="mb-2">mdi-lock-outline</v-icon>
+          <p class="text-body-2 text-grey">No accessible pages</p>
+          <p class="text-caption text-grey">Contact your administrator</p>
+        </div>
+
+        <!-- Dynamic Navigation Groups (permission filtered) -->
+        <template v-else>
+          <template v-for="group in navigationGroups" :key="group.title">
+            <v-list-group :value="group.title">
+              <template #activator="{ props: activatorProps }">
+                <v-list-item
+                  v-bind="activatorProps"
+                  :prepend-icon="group.icon"
+                  :title="group.title"
+                  rounded="xl"
+                  class="ma-2"
+                />
+              </template>
+
+              <v-list-item
+                v-for="item in group.children"
+                :key="item.route"
+                :prepend-icon="item.icon"
+                :title="item.title"
+                :to="item.route"
+                rounded="xl"
+                class="ma-2 ms-4"
+                @click="drawer = false"
+              />
+            </v-list-group>
+          </template>
         </template>
 
         <v-divider class="my-2 mx-4" />

@@ -3,10 +3,18 @@ import { onMounted, computed, ref, nextTick, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useLogsDataStore } from '@/stores/logsData'
 import type { LogType } from '@/stores/logsData'
+import { useTheme } from '@/composables/useTheme'
 
 // Initialize logs store
 const logsStore = useLogsDataStore()
 const { logs, loading, error, logsCount, hasLogs, isLoading, hasError } = storeToRefs(logsStore)
+
+// Theme-aware UI tweaks
+const { getCurrentTheme } = useTheme()
+const isDark = computed(() => getCurrentTheme() === 'dark')
+
+// Collapsed state (default collapsed)
+const isCollapsed = ref(true)
 
 // Lazy loading state
 const displayedLogs = ref<LogType[]>([])
@@ -74,6 +82,17 @@ const getTypeIcon = (type: string) => {
   return icons[type.toLowerCase()] || 'mdi-circle'
 }
 
+const connectorStyle = computed(() => {
+  return isDark.value
+    ? {
+      background:
+          'linear-gradient(to bottom, rgb(var(--v-theme-primary)) 0%, rgba(var(--v-theme-primary), 0.4) 50%, rgba(var(--v-theme-primary), 0.2) 100%)'
+    }
+    : {
+      background: 'rgba(var(--v-theme-on-surface), 0.12)'
+    }
+})
+
 // Refresh logs data
 const refreshLogs = async () => {
   await logsStore.fetchLogs()
@@ -119,7 +138,7 @@ watch(logs, () => {
 </script>
 
 <template>
-  <v-card
+  <div
     elevation="2"
     rounded="lg"
     class="logs-card"
@@ -137,6 +156,14 @@ watch(logs, () => {
       </div>
 
       <div class="d-flex align-center ga-1 ga-sm-2">
+        <v-btn
+          :icon="isCollapsed ? 'mdi-chevron-down' : 'mdi-chevron-up'"
+          variant="text"
+          :size="$vuetify.display.mobile ? 'small' : 'default'"
+          :aria-label="isCollapsed ? 'Expand logs' : 'Collapse logs'"
+          @click="isCollapsed = !isCollapsed"
+        />
+
         <v-chip
           :color="hasLogs ? 'primary' : 'secondary'"
           variant="tonal"
@@ -168,8 +195,10 @@ watch(logs, () => {
 
     <v-divider></v-divider>
 
-    <!-- Content Section -->
-    <v-card-text class="pa-0">
+    <v-expand-transition>
+      <div v-show="!isCollapsed">
+        <!-- Content Section -->
+        <v-card-text class="pa-0">
       <!-- Error State -->
       <v-alert
         v-if="hasError"
@@ -245,6 +274,7 @@ watch(logs, () => {
                 <div
                   v-if="index < displayedLogs.length - 1"
                   class="timeline-connector"
+                  :style="connectorStyle"
                 ></div>
               </div>
 
@@ -423,15 +453,13 @@ watch(logs, () => {
         </div>
       </div>
     </v-card-text>
-  </v-card>
+      </div>
+    </v-expand-transition>
+  </div>
 </template>
 
 <style scoped>
-.logs-card {
-  width: 100%;
-  max-width: 100%;
-  overflow: hidden;
-}
+
 
 .timeline-container {
   position: relative;
@@ -470,12 +498,7 @@ watch(logs, () => {
 .timeline-connector {
   width: 2px;
   flex: 1;
-  background: linear-gradient(
-    to bottom,
-    rgb(var(--v-theme-primary)) 0%,
-    rgba(var(--v-theme-primary), 0.3) 50%,
-    rgba(var(--v-theme-primary), 0.1) 100%
-  );
+  background: rgba(var(--v-theme-on-surface), 0.12);
   margin-top: 0.5rem;
   min-height: 2rem;
   border-radius: 1px;
@@ -619,14 +642,6 @@ watch(logs, () => {
     top: 14px;
   }
 }/* Dark theme adjustments */
-.v-theme--dark .timeline-connector {
-  background: linear-gradient(
-    to bottom,
-    rgb(var(--v-theme-primary)) 0%,
-    rgba(var(--v-theme-primary), 0.4) 50%,
-    rgba(var(--v-theme-primary), 0.2) 100%
-  );
-}
 
 .v-theme--dark .timeline-card::before {
   border-right-color: rgb(var(--v-theme-surface));

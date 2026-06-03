@@ -196,7 +196,7 @@ const handleRegister = async () => {
       registerForm.email,
       registerForm.password,
       registerForm.username,
-  undefined as unknown as number,
+  3,
 
     );
 

@@ -10,7 +10,7 @@
       <template v-if="compact">
         <v-row align="center" justify="space-between" class="py-2">
           <v-col cols="12" md="6" class="py-1">
-            <div class="d-flex align-center">
+            <div class="d-flex align-center justify-center justify-md-start text-center text-md-start">
               <v-icon class="me-2" :icon="footerConfig.icon" size="small" />
               <div class="text-body-2 font-weight-medium">
                 {{ footerConfig.companyName }}

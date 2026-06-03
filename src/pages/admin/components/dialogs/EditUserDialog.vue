@@ -66,7 +66,7 @@ const roleOptions = computed(() => {
 })
 
 const isCurrentUserAdmin = computed(() => {
-  return authStore.userRole === 1
+  return authStore.userRole === 1 || authStore.userRole === 2;
 })
 
 // Watch for user changes to populate form
