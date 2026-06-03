@@ -197,7 +197,7 @@
 
           <!-- Hide title on mobile to minimize navbar -->
           <div class="d-flex flex-column ms-2 d-none d-md-flex">
-            <span class="text-subtitle-1 font-weight-bold text-primary">
+            <span class="text-subtitle-1 font-weight-bold">
               {{ navbarConfig.title }}
             </span>
 
