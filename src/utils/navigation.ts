@@ -82,6 +82,45 @@ export const navigationConfig: NavigationGroup[] = [
         permission: 'purchasing.dashboard.view'
       }
     ]
+  },
+  {
+    title: 'Warehouse Controls',
+    icon: 'mdi-warehouse',
+    permission: 'warehouse.access',
+    children: [
+      {
+        title: 'Warehouse Dashboard',
+        icon: 'mdi-view-dashboard',
+        route: '/warehouse/dashboard',
+        permission: 'warehouse.dashboard.view'
+      }
+    ]
+  },
+  {
+    title: 'Sales Controls',
+    icon: 'mdi-cart',
+    permission: 'sales.access',
+    children: [
+      {
+        title: 'Sales Dashboard',
+        icon: 'mdi-view-dashboard',
+        route: '/sales/dashboard',
+        permission: 'sales.dashboard.view'
+      }
+    ]
+  },
+  {
+    title: 'Finance Controls',
+    icon: 'mdi-currency-usd',
+    permission: 'finance.access',
+    children: [
+      {
+        title: 'Finance Dashboard',
+        icon: 'mdi-view-dashboard',
+        route: '/finance/dashboard',
+        permission: 'finance.dashboard.view'
+      }
+    ]
   }
 
 ]

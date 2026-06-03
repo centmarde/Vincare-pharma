@@ -34,6 +34,7 @@ declare module 'vue-router/auto-routes' {
     '/admin/UserManagementView': RouteRecordInfo<'/admin/UserManagementView', '/admin/UserManagementView', Record<never, never>, Record<never, never>>,
     '/Auth': RouteRecordInfo<'/Auth', '/Auth', Record<never, never>, Record<never, never>>,
     '/executive/ExecutiveView': RouteRecordInfo<'/executive/ExecutiveView', '/executive/ExecutiveView', Record<never, never>, Record<never, never>>,
+    '/finance/FinanceView': RouteRecordInfo<'/finance/FinanceView', '/finance/FinanceView', Record<never, never>, Record<never, never>>,
     '/ForbiddenView': RouteRecordInfo<'/ForbiddenView', '/ForbiddenView', Record<never, never>, Record<never, never>>,
     '/hometab/HomeAnnouncements': RouteRecordInfo<'/hometab/HomeAnnouncements', '/hometab/HomeAnnouncements', Record<never, never>, Record<never, never>>,
     '/hometab/HomeLogs': RouteRecordInfo<'/hometab/HomeLogs', '/hometab/HomeLogs', Record<never, never>, Record<never, never>>,
@@ -41,6 +42,7 @@ declare module 'vue-router/auto-routes' {
     '/NotFound': RouteRecordInfo<'/NotFound', '/NotFound', Record<never, never>, Record<never, never>>,
     '/otherTab/Page1View': RouteRecordInfo<'/otherTab/Page1View', '/otherTab/Page1View', Record<never, never>, Record<never, never>>,
     '/purchasing/PurchasingView': RouteRecordInfo<'/purchasing/PurchasingView', '/purchasing/PurchasingView', Record<never, never>, Record<never, never>>,
-    '/warehouse/WareHouse': RouteRecordInfo<'/warehouse/WareHouse', '/warehouse/WareHouse', Record<never, never>, Record<never, never>>,
+    '/sales/SalesView': RouteRecordInfo<'/sales/SalesView', '/sales/SalesView', Record<never, never>, Record<never, never>>,
+    '/warehouse/WareHouseView': RouteRecordInfo<'/warehouse/WareHouseView', '/warehouse/WareHouseView', Record<never, never>, Record<never, never>>,
   }
 }

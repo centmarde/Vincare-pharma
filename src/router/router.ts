@@ -12,6 +12,9 @@ import AnnouncementsView from "@/pages/admin/AnnouncementsView.vue";
 import SettingsView from "@/pages/account/SettingsView.vue";
 import ExecutiveView from "@/pages/executive/ExecutiveView.vue";
 import PurchasingView from "@/pages/purchasing/PurchasingView.vue";
+import WareHouseView from "@/pages/warehouse/WareHouseView.vue";
+import SalesView from "@/pages/sales/SalesView.vue";
+import FinanceView from "@/pages/finance/FinanceView.vue";
 
 /**
  * Route definitions for the application
@@ -59,6 +62,21 @@ const routes = setupLayouts([
   {
     path: "/purchasing/dashboard",
     component: PurchasingView,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: "/warehouse/dashboard",
+    component: WareHouseView,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: "/sales/dashboard",
+    component: SalesView,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: "/finance/dashboard",
+    component: FinanceView,
     meta: { requiresAuth: true }
   },
   {
