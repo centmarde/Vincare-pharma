@@ -1,10 +1,10 @@
 <script lang="ts" setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useUserRolesStore } from '@/stores/roles'
-import { createDisplaySlugName, getEmailInitials, getRoleText, getRoleColor } from '@/utils/helpers'
+import { getEmailInitials, getRoleText, getRoleColor } from '@/utils/helpers'
 
 const authStore = useAuthUserStore()
 const rolesStore = useUserRolesStore()
@@ -17,7 +17,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  showInlineLogout: false
+  showInlineLogout: false,
 })
 
 // Dropdown menu state
@@ -25,11 +25,27 @@ const menu = ref(false)
 
 // Computed properties for user data
 const userEmail = computed(() => authStore.userEmail)
-const displayName = computed(() => createDisplaySlugName(userEmail.value))
+const displayName = computed(
+  () => authStore.userData?.user_metadata?.full_name || authStore.userName,
+)
 const userInitials = computed(() => getEmailInitials(userEmail.value))
-const userRole = computed(() => authStore.userRole)
-const userRoleText = computed(() => getRoleText(userRole.value, rolesStore.roles))
-const userRoleColor = computed(() => getRoleColor(userRole.value))
+// Normalize role id because Supabase metadata can be a string (e.g. "2")
+const userRoleId = computed<number | null>(() => {
+  const raw = authStore.userRole as unknown
+  if (raw === null || raw === undefined || raw === '') return null
+  const n = typeof raw === 'number' ? raw : Number(raw)
+  return Number.isFinite(n) ? n : null
+})
+
+const userRoleText = computed(() => getRoleText(userRoleId.value, rolesStore.roles))
+const userRoleColor = computed(() => getRoleColor(userRoleId.value))
+
+onMounted(async () => {
+  // Prevent intermittent "Unknown" when roles haven't been fetched yet.
+  if (!rolesStore.roles.length && !rolesStore.loading) {
+    await rolesStore.fetchRoles()
+  }
+})
 
 // Handle logout
 async function handleLogout() {
@@ -61,7 +77,7 @@ async function goToSettings() {
       :offset="8"
       transition="slide-y-transition"
       attach="body"
-  :z-index="20000"
+      :z-index="20000"
     >
       <template #activator="{ props: menuActivatorProps }">
         <v-btn
@@ -70,11 +86,7 @@ async function goToSettings() {
           variant="text"
           :aria-label="`Open user menu for ${userEmail}`"
         >
-          <v-avatar
-            size="36"
-            color="primary"
-            class="avatar-with-border"
-          >
+          <v-avatar size="36" color="primary" class="avatar-with-border">
             <span class="text-white font-weight-medium">
               {{ userInitials }}
             </span>
@@ -83,20 +95,11 @@ async function goToSettings() {
       </template>
 
       <!-- Dropdown Menu -->
-      <v-card
-        min-width="280"
-        class="user-dropdown-card"
-        elevation="8"
-        rounded="lg"
-      >
+      <v-card min-width="280" class="user-dropdown-card" elevation="8" rounded="lg">
         <!-- User Info Header -->
         <v-card-item class="pb-2">
           <div class="d-flex align-center">
-            <v-avatar
-              size="48"
-              color="primary"
-              class="me-3"
-            >
+            <v-avatar size="48" color="primary" class="me-3">
               <span class="text-white font-weight-bold">
                 {{ userInitials }}
               </span>
@@ -109,7 +112,7 @@ async function goToSettings() {
               <div class="text-body-2 text-medium-emphasis">
                 {{ userEmail }}
               </div>
-              <div class="d-flex align-center mt-1" v-if="userRole">
+              <div class="d-flex align-center mt-1" v-if="userRoleId">
                 <v-chip
                   :color="userRoleColor"
                   size="x-small"
@@ -167,7 +170,7 @@ async function goToSettings() {
           :loading="authStore.loading"
           :aria-label="'Logout'"
           @click="handleLogout"
-					 rounded="lg"
+          rounded="lg"
         >
           Logout
         </v-btn>
@@ -187,7 +190,6 @@ async function goToSettings() {
   backdrop-filter: blur(8px);
   background: rgba(var(--v-theme-surface), 0.95) !important;
 }
-
 
 /* Responsive adjustments */
 @media (max-width: 599px) {

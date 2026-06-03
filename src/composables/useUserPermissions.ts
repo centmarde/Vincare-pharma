@@ -12,7 +12,9 @@ export const useUserPermissions = () => {
   const error = ref<string | null>(null)
 
   // Get current user's role ID
-  const userRoleId = computed(() => authStore.userData?.role_id || authStore.userData?.user_metadata?.role)
+  const userRoleId = computed(
+    () => authStore.userData?.role_id || authStore.userData?.user_metadata?.role,
+  )
 
   // Fetch accessible pages for the current user's role
   const fetchUserAccessiblePages = async () => {
@@ -26,7 +28,9 @@ export const useUserPermissions = () => {
 
     try {
       const rolePages = await pagesStore.fetchRolePagesByRoleId(userRoleId.value)
-      userAccessiblePages.value = rolePages.map(rolePage => rolePage.pages).filter(Boolean) as string[]
+      userAccessiblePages.value = rolePages
+        .map((rolePage) => rolePage.pages)
+        .filter(Boolean) as string[]
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Failed to fetch user permissions'
       userAccessiblePages.value = []
@@ -58,12 +62,12 @@ export const useUserPermissions = () => {
     }
 
     // Check if any child in the group is accessible
-    return group.children.some(child => hasAccessToRoute(child.route))
+    return group.children.some((child) => hasAccessToRoute(child.route))
   }
 
   // Filter navigation items based on user permissions
   const getFilteredNavigationItems = (items: NavigationItem[]): NavigationItem[] => {
-    return items.filter(item => hasAccessToRoute(item.route))
+    return items.filter((item) => hasAccessToRoute(item.route))
   }
 
   // Filter navigation groups based on user permissions
@@ -74,11 +78,11 @@ export const useUserPermissions = () => {
     }
 
     return navigationConfig
-      .map(group => ({
+      .map((group) => ({
         ...group,
-        children: getFilteredNavigationItems(group.children)
+        children: getFilteredNavigationItems(group.children),
       }))
-      .filter(group => group.children.length > 0) // Only show groups that have accessible children
+      .filter((group) => group.children.length > 0) // Only show groups that have accessible children
   }
 
   // Watch for role changes and refetch permissions
@@ -91,7 +95,7 @@ export const useUserPermissions = () => {
         userAccessiblePages.value = []
       }
     },
-    { immediate: true }
+    { immediate: true },
   )
 
   return {
@@ -103,6 +107,6 @@ export const useUserPermissions = () => {
     hasAccessToGroup,
     getFilteredNavigationItems,
     getFilteredNavigationGroups,
-    fetchUserAccessiblePages
+    fetchUserAccessiblePages,
   }
 }

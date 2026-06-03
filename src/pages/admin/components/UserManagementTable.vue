@@ -8,12 +8,7 @@ import DeleteUserDialog from '@/pages/admin/components/dialogs/DeleteUserDialog.
 import EditUserDialog from '@/pages/admin/components/dialogs/EditUserDialog.vue'
 import UserDetailsDialog from '@/pages/admin/components/dialogs/UserDetailsDialog.vue'
 
-import {
-  formatDate,
-  getErrorMessage,
-  getRoleTitle,
-  getRoleColor
-} from '@/utils/helpers'
+import { formatDate, getErrorMessage, getRoleTitle, getRoleColor } from '@/utils/helpers'
 
 interface User {
   id: string
@@ -41,8 +36,6 @@ const studentEventStatusMap = ref<Record<string, any[]>>({}) // userId -> events
 const deleteDialog = ref(false)
 const userToDelete = ref<User | null>(null)
 
-
-
 // Computed properties
 const filteredUsers = computed(() => {
   if (!authStore.users) return []
@@ -50,10 +43,11 @@ const filteredUsers = computed(() => {
   if (!search.value) return authStore.users
 
   const searchTerm = search.value.toLowerCase()
-  return authStore.users.filter(user =>
-    user.full_name?.toLowerCase().includes(searchTerm) ||
-    user.email?.toLowerCase().includes(searchTerm) ||
-    getRoleTitle(user.role_id, rolesStore.roles).toLowerCase().includes(searchTerm)
+  return authStore.users.filter(
+    (user) =>
+      user.full_name?.toLowerCase().includes(searchTerm) ||
+      user.email?.toLowerCase().includes(searchTerm) ||
+      getRoleTitle(user.role_id, rolesStore.roles).toLowerCase().includes(searchTerm),
   )
 })
 
@@ -105,7 +99,6 @@ const onUserDeleted = (deletedUserId: string) => {
   console.log('User deleted:', deletedUserId)
 }
 
-
 // Lifecycle
 onMounted(async () => {
   await rolesStore.fetchRoles()
@@ -120,7 +113,7 @@ onMounted(async () => {
         <h3>User Management</h3>
         <p class="text-subtitle-1 text-grey">Manage all system users</p>
       </div>
-     <!--  <v-btn
+      <!--  <v-btn
         color="primary"
         prepend-icon="mdi-refresh"
         @click="refreshData"
@@ -148,11 +141,7 @@ onMounted(async () => {
 
       <!-- Loading State -->
       <div v-if="loading" class="text-center pa-8">
-        <v-progress-circular
-          indeterminate
-          color="primary"
-          size="64"
-        />
+        <v-progress-circular indeterminate color="primary" size="64" />
         <p class="text-h6 mt-4">Loading users...</p>
       </div>
 
@@ -161,32 +150,20 @@ onMounted(async () => {
         <v-icon size="64" color="grey">mdi-account-off</v-icon>
         <p class="text-h6 mt-4">No users found</p>
         <p class="text-body-2 text-grey">
-          {{ search ? 'No users match your search criteria.' : 'There are no users in the system yet.' }}
+          {{
+            search
+              ? 'No users match your search criteria.'
+              : 'There are no users in the system yet.'
+          }}
         </p>
       </div>
 
       <!-- User Cards Grid -->
       <v-row v-else>
-        <v-col
-          v-for="user in filteredUsers"
-          :key="user.id"
-          cols="12"
-          sm="6"
-          lg="4"
-          xl="3"
-        >
-          <v-card
-            class="user-card"
-            variant="outlined"
-            hover
-            :elevation="2"
-          >
+        <v-col v-for="user in filteredUsers" :key="user.id" cols="12" sm="6" lg="4" xl="3">
+          <v-card class="user-card" variant="outlined" hover :elevation="2">
             <v-card-title class="d-flex align-center pa-4">
-              <v-avatar
-                :color="getRoleColor(user.role_id)"
-                size="40"
-                class="me-3"
-              >
+              <v-avatar :color="getRoleColor(user.role_id)" size="40" class="me-3">
                 <v-icon color="white">mdi-account</v-icon>
               </v-avatar>
               <div class="flex-grow-1">
@@ -202,12 +179,7 @@ onMounted(async () => {
             <v-card-text class="pt-0">
               <v-row dense>
                 <v-col cols="12" class="pb-2">
-                  <v-chip
-                    :color="getRoleColor(user.role_id)"
-                    variant="tonal"
-                    size="small"
-                    block
-                  >
+                  <v-chip :color="getRoleColor(user.role_id)" variant="tonal" size="small" block>
                     {{ getRoleTitle(user.role_id, rolesStore.roles) }}
                   </v-chip>
                 </v-col>
@@ -224,12 +196,7 @@ onMounted(async () => {
             </v-card-text>
 
             <v-card-actions class="pt-0 px-4 pb-4">
-              <v-btn
-                variant="text"
-                size="small"
-                @click="viewUser(user)"
-                prepend-icon="mdi-eye"
-              >
+              <v-btn variant="text" size="small" @click="viewUser(user)" prepend-icon="mdi-eye">
                 View
               </v-btn>
 
@@ -259,24 +226,13 @@ onMounted(async () => {
     </v-card-text>
 
     <!-- User Details Dialog -->
-    <UserDetailsDialog
-      v-model="userDialog"
-      :user="selectedUser"
-    />
+    <UserDetailsDialog v-model="userDialog" :user="selectedUser" />
 
     <!-- Edit User Dialog -->
-    <EditUserDialog
-      v-model="editDialog"
-      :user="editingUser"
-      @user-updated="onUserUpdated"
-    />
+    <EditUserDialog v-model="editDialog" :user="editingUser" @user-updated="onUserUpdated" />
 
     <!-- Delete User Dialog -->
-    <DeleteUserDialog
-      v-model="deleteDialog"
-      :user="userToDelete"
-      @user-deleted="onUserDeleted"
-    />
+    <DeleteUserDialog v-model="deleteDialog" :user="userToDelete" @user-deleted="onUserDeleted" />
   </div>
 </template>
 

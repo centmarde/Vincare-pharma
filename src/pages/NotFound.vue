@@ -1,62 +1,58 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
-import { useRouter } from "vue-router";
-import { useTheme } from "vuetify";
-import { createDynamicThemeConfigFromExternal } from "@/themes/index";
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { useTheme } from 'vuetify'
+import { createDynamicThemeConfigFromExternal } from '@/themes/index'
 
 // Composables
-const router = useRouter();
-const theme = useTheme();
+const router = useRouter()
+const theme = useTheme()
 
 // Reactive state
-const themeLoading = ref(true);
-const themeError = ref<string | null>(null);
+const themeLoading = ref(true)
+const themeError = ref<string | null>(null)
 
 // Methods
 const navigateHome = () => {
-  router.push("/");
-};
+  router.push('/')
+}
 
 const goBack = () => {
-  router.go(-1);
-};
+  router.go(-1)
+}
 
 // Load dynamic theme configuration
 const loadDynamicTheme = async () => {
   try {
-    themeLoading.value = true;
-    themeError.value = null;
+    themeLoading.value = true
+    themeError.value = null
 
-    const themeConfig = await createDynamicThemeConfigFromExternal();
+    const themeConfig = await createDynamicThemeConfigFromExternal()
 
     // Apply the theme configuration to Vuetify
-    theme.themes.value.light = themeConfig.themes.light;
-    theme.themes.value.dark = themeConfig.themes.dark;
+    theme.themes.value.light = themeConfig.themes.light
+    theme.themes.value.dark = themeConfig.themes.dark
 
-    console.log('Dynamic theme loaded successfully');
+    console.log('Dynamic theme loaded successfully')
   } catch (error) {
-    console.error('Failed to load dynamic theme:', error);
-    themeError.value = error instanceof Error ? error.message : 'Failed to load theme';
+    console.error('Failed to load dynamic theme:', error)
+    themeError.value = error instanceof Error ? error.message : 'Failed to load theme'
   } finally {
-    themeLoading.value = false;
+    themeLoading.value = false
   }
-};
+}
 
 // Lifecycle
 onMounted(async () => {
   // Load dynamic theme configuration
-  await loadDynamicTheme();
-});
+  await loadDynamicTheme()
+})
 </script>
 
 <template>
   <!-- Theme Loading State -->
   <v-overlay v-if="themeLoading" class="d-flex align-center justify-center">
-    <v-progress-circular
-      indeterminate
-      size="64"
-      color="primary"
-    />
+    <v-progress-circular indeterminate size="64" color="primary" />
     <div class="text-h6 ml-4">Loading theme...</div>
   </v-overlay>
 
@@ -79,28 +75,18 @@ onMounted(async () => {
         <v-container class="mx-auto text-center" elevation="8" rounded="lg">
           <v-card-text class="py-8">
             <!-- 404 Icon -->
-            <v-icon
-              size="120"
-              color="primary"
-              class="mb-4"
-            >
-              mdi-file-question-outline
-            </v-icon>
+            <v-icon size="120" color="primary" class="mb-4"> mdi-file-question-outline </v-icon>
 
             <!-- Error Code -->
-            <div class="text-h1 font-weight-bold text-primary mb-2">
-              404
-            </div>
+            <div class="text-h1 font-weight-bold text-primary mb-2">404</div>
 
             <!-- Error Title -->
-            <div class="text-h4 font-weight-light mb-4 text-primary">
-              Page Not Found
-            </div>
+            <div class="text-h4 font-weight-light mb-4 text-primary">Page Not Found</div>
 
             <!-- Error Description -->
             <div class="text-body-1 text-medium-emphasis mb-6">
-              Oops! The page you're looking for doesn't exist. It might have been moved,
-              deleted, or you entered the wrong URL.
+              Oops! The page you're looking for doesn't exist. It might have been moved, deleted, or
+              you entered the wrong URL.
             </div>
 
             <!-- Helpful Suggestions -->
@@ -157,18 +143,13 @@ onMounted(async () => {
     <!-- Background Pattern (Optional) -->
     <div class="background-pattern">
       <v-row no-gutters class="fill-height">
-        <v-col
-          v-for="i in 20"
-          :key="i"
-          cols="1"
-          class="d-flex align-center justify-center"
-        >
+        <v-col v-for="i in 20" :key="i" cols="1" class="d-flex align-center justify-center">
           <v-icon
             :size="Math.random() * 30 + 10"
             :color="`primary`"
             :style="{
               opacity: Math.random() * 0.1 + 0.02,
-              transform: `rotate(${Math.random() * 360}deg)`
+              transform: `rotate(${Math.random() * 360}deg)`,
             }"
           >
             mdi-school

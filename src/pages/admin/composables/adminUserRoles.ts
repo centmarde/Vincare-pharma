@@ -1,5 +1,10 @@
 import { ref, computed, onMounted } from 'vue'
-import { useUserRolesStore, type Role, type CreateRoleData, type UpdateRoleData } from '@/stores/roles'
+import {
+  useUserRolesStore,
+  type Role,
+  type CreateRoleData,
+  type UpdateRoleData,
+} from '@/stores/roles'
 import { useUserPagesStore } from '@/stores/pages'
 import { navigationConfig } from '@/utils/navigation'
 import { useToast } from 'vue-toastification'
@@ -18,15 +23,15 @@ export function useAdminUserRoles() {
 
   // Form data
   const formData = ref<CreateRoleData>({
-    title: ''
+    title: '',
   })
 
   // Computed properties
   const filteredRoles = computed(() => {
     if (!searchQuery.value) return userRolesStore.roles
 
-    return userRolesStore.roles.filter(role =>
-      role.title?.toLowerCase().includes(searchQuery.value.toLowerCase())
+    return userRolesStore.roles.filter((role) =>
+      role.title?.toLowerCase().includes(searchQuery.value.toLowerCase()),
     )
   })
 
@@ -41,7 +46,6 @@ export function useAdminUserRoles() {
     formData.value = { title: '' }
     isDialogOpen.value = true
   }
-
 
   const openEditDialog = (role: Role) => {
     isEditing.value = true
@@ -73,7 +77,11 @@ export function useAdminUserRoles() {
     if (isEditing.value && selectedRole.value) {
       // Update existing role (silent if permissions are being saved)
       const updateData: UpdateRoleData = { title: formData.value.title }
-      const result = await userRolesStore.updateRole(selectedRole.value.id, updateData, hasPermissions)
+      const result = await userRolesStore.updateRole(
+        selectedRole.value.id,
+        updateData,
+        hasPermissions,
+      )
       success = !!result
       targetRoleId = selectedRole.value.id
     } else {
@@ -91,8 +99,8 @@ export function useAdminUserRoles() {
         const routeSet = new Set<string>()
 
         // Build mapping from navigation config and collect routes
-        navigationConfig.forEach(group => {
-          group.children.forEach(item => {
+        navigationConfig.forEach((group) => {
+          group.children.forEach((item) => {
             if (item.route) {
               routeSet.add(item.route)
               if (item.permission) {
@@ -103,7 +111,7 @@ export function useAdminUserRoles() {
         })
 
         const routes = selectedPermissions
-          .map(permission => {
+          .map((permission) => {
             // If it's already a route, return it directly
             if (routeSet.has(permission)) {
               return permission
@@ -120,11 +128,14 @@ export function useAdminUserRoles() {
 
         // Create new role pages for each route (silent mode)
         if (routes.length > 0) {
-          const createPromises = routes.map(route =>
-            userPagesStore.createRolePage({
-              role_id: targetRoleId!,
-              pages: route
-            }, true)
+          const createPromises = routes.map((route) =>
+            userPagesStore.createRolePage(
+              {
+                role_id: targetRoleId!,
+                pages: route,
+              },
+              true,
+            ),
           )
 
           await Promise.all(createPromises)
@@ -195,6 +206,6 @@ export function useAdminUserRoles() {
     handleSubmit,
     handleDelete,
     refreshRoles,
-    clearError: userRolesStore.clearError
+    clearError: userRolesStore.clearError,
   }
 }

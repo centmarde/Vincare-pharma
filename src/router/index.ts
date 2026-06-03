@@ -1,13 +1,12 @@
-
-import { createAppRouter } from './router';
-import { setupGuards } from './guards';
+import { createAppRouter } from './router'
+import { setupGuards } from './guards'
 
 /**
  * Create router instance and setup guards
  */
-const router = createAppRouter();
+const router = createAppRouter()
 
 // Setup authentication guards and error handling
-setupGuards(router);
+setupGuards(router)
 
-export default router;
+export default router

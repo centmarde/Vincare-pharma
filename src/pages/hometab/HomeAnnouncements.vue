@@ -13,35 +13,22 @@
           </p>
         </div>
 
-        <v-chip
-          v-if="announcements.length > 0"
-          color="primary"
-          variant="tonal"
-          size="small"
-        >
-          {{ announcements.length }} {{ announcements.length === 1 ? 'Announcement' : 'Announcements' }}
+        <v-chip v-if="announcements.length > 0" color="primary" variant="tonal" size="small">
+          {{ announcements.length }}
+          {{ announcements.length === 1 ? 'Announcement' : 'Announcements' }}
         </v-chip>
       </div>
     </div>
 
     <!-- Loading State -->
     <div v-if="announcementsStore.isLoading" class="text-center py-8">
-      <v-progress-circular
-        indeterminate
-        color="primary"
-        size="48"
-      />
+      <v-progress-circular indeterminate color="primary" size="48" />
       <p class="mt-3 text-subtitle-1">Loading announcements...</p>
     </div>
 
     <!-- Empty State -->
     <div v-else-if="announcements.length === 0" class="empty-state text-center py-12">
-      <v-icon
-        icon="mdi-bullhorn-outline"
-        size="64"
-        color="grey-lighten-1"
-        class="mb-4"
-      />
+      <v-icon icon="mdi-bullhorn-outline" size="64" color="grey-lighten-1" class="mb-4" />
       <h3 class="text-h6 mb-2">No announcements available</h3>
       <p class="text-body-2 text-medium-emphasis">
         Check back later for new updates and announcements.
@@ -153,16 +140,10 @@
           </v-btn>
         </div>
       </div>
-
-
     </div>
 
     <!-- Detail Dialog -->
-    <v-dialog
-      v-model="showDetailDialog"
-      max-width="800"
-      scrollable
-    >
+    <v-dialog v-model="showDetailDialog" max-width="800" scrollable>
       <v-card v-if="selectedAnnouncement" class="announcement-detail">
         <!-- Header -->
         <v-card-title class="pa-0">
@@ -177,12 +158,7 @@
 
         <!-- Image -->
         <div v-if="selectedAnnouncement.image_url" class="detail-image-section">
-          <v-img
-            :src="selectedAnnouncement.image_url"
-            max-height="300"
-            cover
-            class="detail-image"
-          >
+          <v-img :src="selectedAnnouncement.image_url" max-height="300" cover class="detail-image">
             <template v-slot:error>
               <div class="d-flex align-center justify-center fill-height bg-grey-lighten-3">
                 <v-icon icon="mdi-image-broken-variant" size="48" color="grey-lighten-1" />
@@ -221,9 +197,7 @@
         <!-- Actions -->
         <v-card-actions class="pa-6 pt-0">
           <v-spacer />
-          <v-btn variant="outlined" @click="closeDetailDialog">
-            Close
-          </v-btn>
+          <v-btn variant="outlined" @click="closeDetailDialog"> Close </v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -250,7 +224,7 @@ const announcements = computed(() => {
 })
 
 const announcementsWithImages = computed(() => {
-  return announcements.value.filter(a => a.image_url).length
+  return announcements.value.filter((a) => a.image_url).length
 })
 
 // Methods
@@ -259,7 +233,7 @@ const formatDate = (dateString: string) => {
   return date.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
-    year: 'numeric'
+    year: 'numeric',
   })
 }
 
@@ -270,7 +244,7 @@ const formatDetailDate = (dateString: string) => {
     month: 'long',
     day: 'numeric',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
   })
 }
 
@@ -326,11 +300,19 @@ onMounted(async () => {
 }
 
 .announcement-slide.has-image {
-  background: linear-gradient(135deg, rgba(var(--v-theme-primary), 0.8), rgba(var(--v-theme-secondary), 0.8));
+  background: linear-gradient(
+    135deg,
+    rgba(var(--v-theme-primary), 0.8),
+    rgba(var(--v-theme-secondary), 0.8)
+  );
 }
 
 .announcement-slide:not(.has-image) {
-  background: linear-gradient(135deg, rgba(var(--v-theme-primary), 0.9), rgba(var(--v-theme-secondary), 0.9));
+  background: linear-gradient(
+    135deg,
+    rgba(var(--v-theme-primary), 0.9),
+    rgba(var(--v-theme-secondary), 0.9)
+  );
 }
 
 .slide-background {

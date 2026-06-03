@@ -131,7 +131,7 @@ export interface LandingController {
   fetchLandingData: () => Promise<void>
 }
 
-export function useLandingController (): LandingController {
+export function useLandingController(): LandingController {
   const data = ref<LandingData | null>(null)
   const loading = ref<boolean>(false)
   const error = ref<string | null>(null)
@@ -155,7 +155,7 @@ export function useLandingController (): LandingController {
           headers: {
             'Content-Type': 'application/json',
           },
-        })
+        }),
       ])
 
       data.value = landingResponse.data

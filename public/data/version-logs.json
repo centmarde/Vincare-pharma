@@ -7,7 +7,8 @@
       "title": "Initial Release",
       "changes": [
        "Basic auth for user registration and login",
-       "template/base for the inner components"
+       "template/base for the inner components",
+       "template/partials for reusable components"
       ]
     }
   ]

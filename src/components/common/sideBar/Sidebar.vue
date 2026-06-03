@@ -25,34 +25,26 @@ const { getFilteredNavigationGroups, userRoleId, isLoading } = useUserPermission
 // Reactive state for sidebar
 const isExpanded = ref(true)
 
-// Control admin group expansion - make it persistent
-const adminGroupExpanded = ref(true)
-
-// Control organization group expansion - make it persistent
-const organizationGroupExpanded = ref(true)
-
-// Control my account group expansion - make it persistent
-const myAccountGroupExpanded = ref(true)
+// Track collapse/expand state per group title (works for any group from navigation.ts)
+const groupExpanded = ref<Record<string, boolean>>({})
 
 // Watch for route changes and keep admin group expanded if we're on an admin route
 watch(
   () => route.path,
   (newPath) => {
-    if (newPath.startsWith('/admin') ) {
-      adminGroupExpanded.value = true
-    }
-    if (newPath.startsWith('/organization')) {
-      organizationGroupExpanded.value = true
-    }
-    if (newPath.startsWith('/account')) {
-      myAccountGroupExpanded.value = true
-    }
+    // Keep the current group's section expanded based on route prefix
+    if (newPath.startsWith('/admin')) groupExpanded.value['Admin Controls'] = true
+    if (newPath.startsWith('/executive')) groupExpanded.value['Executive Controls'] = true
+    if (newPath.startsWith('/purchasing')) groupExpanded.value['Purchasing Controls'] = true
+    if (newPath.startsWith('/account')) groupExpanded.value['My Account'] = true
   },
-  { immediate: true }
+  { immediate: true },
 )
 
 // Hide sidebar on small screens or if user has no role
-const showSidebar = computed(() => !smAndDown.value && userRoleId.value !== null && userRoleId.value !== undefined)
+const showSidebar = computed(
+  () => !smAndDown.value && userRoleId.value !== null && userRoleId.value !== undefined,
+)
 
 const footerVersionText = computed(() => {
   const version = props.version?.trim()
@@ -62,12 +54,10 @@ const footerVersionText = computed(() => {
 // Get filtered navigation groups based on user permissions
 const navigationGroups = computed(() => getFilteredNavigationGroups())
 
-// Helper function to get group expansion state
-const getGroupExpansion = (groupTitle: string) => {
-  if (groupTitle === 'Admin Controls') return adminGroupExpanded
-  if (groupTitle === 'My Organization') return organizationGroupExpanded
-  if (groupTitle === 'My Account') return myAccountGroupExpanded
-  return ref(true)
+// Helper functions to get/toggle group expansion state
+const isGroupExpanded = (groupTitle: string) => groupExpanded.value[groupTitle] ?? false
+const toggleGroupExpanded = (groupTitle: string) => {
+  groupExpanded.value[groupTitle] = !isGroupExpanded(groupTitle)
 }
 
 // Methods
@@ -88,22 +78,20 @@ const handleLogout = async () => {
 
 <template>
   <v-navigation-drawer
-      v-if="showSidebar"
-      v-model="isExpanded"
-      :permanent="!smAndDown"
-      :temporary="smAndDown"
-      app
-      fixed
-      class="elevation-2 sidebar-full-height"
-      width="280"
-      color="background"
-    >
+    v-if="showSidebar"
+    v-model="isExpanded"
+    :permanent="!smAndDown"
+    :temporary="smAndDown"
+    app
+    fixed
+    class="elevation-2 sidebar-full-height"
+    width="280"
+    color="background"
+  >
     <!-- Sidebar Header -->
     <v-list-item class="pa-4">
       <v-list-item-content>
-        <v-list-item-title class="text-h6 font-weight-bold primary--text">
-        Menu
-        </v-list-item-title>
+        <v-list-item-title class="text-h6 font-weight-bold primary--text"> Menu </v-list-item-title>
         <v-list-item-subtitle class="text-caption grey--text">
           Management System
         </v-list-item-subtitle>
@@ -136,10 +124,10 @@ const handleLogout = async () => {
       >
         <!-- Group Header -->
         <v-list-item
-          @click="getGroupExpansion(group.title).value = !getGroupExpansion(group.title).value"
+          @click="toggleGroupExpanded(group.title)"
           class="mb-1 rounded-lg group-header"
           :prepend-icon="group.icon"
-          :append-icon="getGroupExpansion(group.title).value ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+          :append-icon="isGroupExpanded(group.title) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
         >
           <v-list-item-title class="font-weight-medium">
             {{ group.title }}
@@ -148,7 +136,7 @@ const handleLogout = async () => {
 
         <!-- Collapsible Children -->
         <v-expand-transition>
-          <div v-show="getGroupExpansion(group.title).value" class="group-children">
+          <div v-show="isGroupExpanded(group.title)" class="group-children">
             <v-list-item
               v-for="child in group.children"
               :key="child.title"
@@ -199,7 +187,6 @@ const handleLogout = async () => {
 </template>
 
 <style scoped>
-
 .v-navigation-drawer {
   /* Remove static background so Vuetify theme color applies */
   z-index: 1000 !important; /* Ensure sidebar is above other content but below navbar */

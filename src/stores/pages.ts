@@ -172,7 +172,7 @@ export const useUserPagesStore = defineStore('userPages', () => {
       if (updateError) throw updateError
 
       // Update in local state
-      const index = rolePages.value.findIndex(rolePage => rolePage.id === id)
+      const index = rolePages.value.findIndex((rolePage) => rolePage.id === id)
       if (index !== -1) {
         rolePages.value[index] = data
       }
@@ -197,16 +197,13 @@ export const useUserPagesStore = defineStore('userPages', () => {
     error.value = null
 
     try {
-      const { error: deleteError } = await supabase
-        .from('role_pages')
-        .delete()
-        .eq('id', id)
+      const { error: deleteError } = await supabase.from('role_pages').delete().eq('id', id)
 
       if (deleteError) throw deleteError
 
       // Remove from local state
-      rolePages.value = rolePages.value.filter(rolePage => rolePage.id !== id)
-      rolePagesWithRoles.value = rolePagesWithRoles.value.filter(rolePage => rolePage.id !== id)
+      rolePages.value = rolePages.value.filter((rolePage) => rolePage.id !== id)
+      rolePagesWithRoles.value = rolePagesWithRoles.value.filter((rolePage) => rolePage.id !== id)
 
       if (currentRolePage.value?.id === id) {
         currentRolePage.value = null
@@ -236,8 +233,10 @@ export const useUserPagesStore = defineStore('userPages', () => {
       if (deleteError) throw deleteError
 
       // Remove from local state
-      rolePages.value = rolePages.value.filter(rolePage => rolePage.role_id !== roleId)
-      rolePagesWithRoles.value = rolePagesWithRoles.value.filter(rolePage => rolePage.role_id !== roleId)
+      rolePages.value = rolePages.value.filter((rolePage) => rolePage.role_id !== roleId)
+      rolePagesWithRoles.value = rolePagesWithRoles.value.filter(
+        (rolePage) => rolePage.role_id !== roleId,
+      )
 
       if (!silent) {
         toast.success('Role pages deleted successfully')
@@ -286,6 +285,6 @@ export const useUserPagesStore = defineStore('userPages', () => {
     deleteRolePagesByRoleId,
     clearError,
     clearCurrentRolePage,
-    clearRolePages
+    clearRolePages,
   }
 })

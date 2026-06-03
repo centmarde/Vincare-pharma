@@ -1,89 +1,89 @@
 <script lang="ts" setup>
-  import type { UIConfig, LogoConfig } from '@/controller/landingController'
-  import { computed, ref, onMounted, onUnmounted } from 'vue'
-  import { useRouter } from 'vue-router'
-  import { useTheme } from '@/composables/useTheme'
-  import { useDisplay } from 'vuetify'
-  import { useAuthUserStore } from '@/stores/authUser'
-  import SlugName from './SlugName.vue'
-  import { useUserPermissions } from '@/composables/useUserPermissions'
+import type { UIConfig, LogoConfig } from '@/controller/landingController'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { useTheme } from '@/composables/useTheme'
+import { useDisplay } from 'vuetify'
+import { useAuthUserStore } from '@/stores/authUser'
+import SlugName from './SlugName.vue'
+import { useUserPermissions } from '@/composables/useUserPermissions'
 
-  interface Props {
-    config?: UIConfig | null
+interface Props {
+  config?: UIConfig | null
+}
+
+const props = defineProps<Props>()
+const router = useRouter()
+const authStore = useAuthUserStore()
+
+// User permissions composable (permission-based navigation)
+const { getFilteredNavigationGroups, isLoading } = useUserPermissions()
+
+// Responsive breakpoints
+const { mobile } = useDisplay()
+
+// Mobile drawer state
+const mobileDrawer = ref(false)
+
+// Theme management
+const { toggleTheme: handleToggleTheme, getCurrentTheme, isLoadingTheme } = useTheme()
+
+// Scroll detection for mobile drawer auto-close
+let lastScrollY = ref(0)
+let ticking = ref(false)
+
+const handleScroll = () => {
+  if (!ticking.value) {
+    requestAnimationFrame(() => {
+      const currentScrollY = window.scrollY
+
+      // Close mobile drawer when scrolling down
+      if (mobile.value && mobileDrawer.value && currentScrollY > lastScrollY.value) {
+        mobileDrawer.value = false
+      }
+
+      lastScrollY.value = currentScrollY
+      ticking.value = false
+    })
+    ticking.value = true
   }
+}
 
-  const props = defineProps<Props>()
-  const router = useRouter()
-  const authStore = useAuthUserStore()
+// Add scroll listener on mount, remove on unmount
+onMounted(() => {
+  window.addEventListener('scroll', handleScroll, { passive: true })
+  lastScrollY.value = window.scrollY
+})
 
-  // User permissions composable (permission-based navigation)
-  const { getFilteredNavigationGroups, isLoading } = useUserPermissions()
+onUnmounted(() => {
+  window.removeEventListener('scroll', handleScroll)
+})
 
-  // Responsive breakpoints
-  const { mobile } = useDisplay()
+const navbarConfig = computed(() => props.config?.navbar)
 
-  // Mobile drawer state
-  const mobileDrawer = ref(false)
+// Get filtered navigation groups based on user permissions
+const navigationGroups = computed(() => getFilteredNavigationGroups())
 
-  // Theme management
-  const { toggleTheme: handleToggleTheme, getCurrentTheme, isLoadingTheme } = useTheme()
+// Theme toggle computed properties
+const currentTheme = computed(() => getCurrentTheme())
+const themeIcon = computed(() => {
+  return currentTheme.value === 'dark' ? 'mdi-white-balance-sunny' : 'mdi-weather-night'
+})
+const themeTooltip = computed(() => {
+  return `Switch to ${currentTheme.value === 'dark' ? 'light' : 'dark'} theme`
+})
 
-  // Scroll detection for mobile drawer auto-close
-  let lastScrollY = ref(0)
-  let ticking = ref(false)
+function toggleTheme() {
+  handleToggleTheme()
+}
 
-  const handleScroll = () => {
-    if (!ticking.value) {
-      requestAnimationFrame(() => {
-        const currentScrollY = window.scrollY
-
-        // Close mobile drawer when scrolling down
-        if (mobile.value && mobileDrawer.value && currentScrollY > lastScrollY.value) {
-          mobileDrawer.value = false
-        }
-
-        lastScrollY.value = currentScrollY
-        ticking.value = false
-      })
-      ticking.value = true
-    }
+async function handleLogout() {
+  try {
+    await authStore.signOut()
+  } catch (error) {
+    console.error('Logout failed:', error)
   }
-
-  // Add scroll listener on mount, remove on unmount
-  onMounted(() => {
-    window.addEventListener('scroll', handleScroll, { passive: true })
-    lastScrollY.value = window.scrollY
-  })
-
-  onUnmounted(() => {
-    window.removeEventListener('scroll', handleScroll)
-  })
-
-  const navbarConfig = computed(() => props.config?.navbar)
-
-  // Get filtered navigation groups based on user permissions
-  const navigationGroups = computed(() => getFilteredNavigationGroups())
-
-  // Theme toggle computed properties
-  const currentTheme = computed(() => getCurrentTheme())
-  const themeIcon = computed(() => {
-    return currentTheme.value === 'dark' ? 'mdi-white-balance-sunny' : 'mdi-weather-night'
-  })
-  const themeTooltip = computed(() => {
-    return `Switch to ${currentTheme.value === 'dark' ? 'light' : 'dark'} theme`
-  })
-
-  function toggleTheme () {
-    handleToggleTheme()
-  }
-
-  async function handleLogout () {
-    try {
-      await authStore.signOut()
-    } catch (error) {
-      console.error('Logout failed:', error)
-    }
-  }
+}
 </script>
 
 <template>
@@ -109,8 +109,8 @@
             <v-img
               :src="navbarConfig.logo.src"
               :alt="navbarConfig.logo.alt"
-              :width="mobile ? (navbarConfig.logo.width || 36) : (navbarConfig.logo.width || 44)"
-              :height="mobile ? (navbarConfig.logo.height || 36) : (navbarConfig.logo.height || 44)"
+              :width="mobile ? navbarConfig.logo.width || 36 : navbarConfig.logo.width || 44"
+              :height="mobile ? navbarConfig.logo.height || 36 : navbarConfig.logo.height || 44"
               class="me-3 brand-avatar"
               contain
             >
@@ -121,11 +121,7 @@
                   :size="mobile ? 36 : 44"
                   class="me-3 brand-avatar"
                 >
-                  <v-icon
-                    :icon="navbarConfig.icon"
-                    :size="mobile ? 20 : 26"
-                    color="white"
-                  />
+                  <v-icon :icon="navbarConfig.icon" :size="mobile ? 20 : 26" color="white" />
                 </v-avatar>
               </template>
             </v-img>
@@ -137,11 +133,7 @@
               :size="mobile ? 36 : 44"
               class="me-3 brand-avatar"
             >
-              <v-icon
-                :icon="navbarConfig.icon"
-                :size="mobile ? 20 : 26"
-                color="white"
-              />
+              <v-icon :icon="navbarConfig.icon" :size="mobile ? 20 : 26" color="white" />
             </v-avatar>
           </template>
 
@@ -149,9 +141,7 @@
             <h2 class="text-h6 font-weight-bold text-primary mb-0">
               {{ navbarConfig.title }}
             </h2>
-            <p class="text-caption text-medium-emphasis mb-0">
-              Academic Platform
-            </p>
+            <p class="text-caption text-medium-emphasis mb-0">Academic Platform</p>
           </div>
         </div>
       </template>
@@ -170,7 +160,7 @@
             :loading="isLoadingTheme"
             @click="toggleTheme"
           >
-          <v-icon></v-icon>
+            <v-icon></v-icon>
             <v-tooltip activator="parent" location="bottom">
               {{ themeTooltip }}
             </v-tooltip>
@@ -201,20 +191,15 @@
       :elevation="8"
     >
       <!-- Mobile Header -->
-      <v-card
-        class="ma-4 pa-4"
-        variant="tonal"
-        rounded="xl"
-        :color="navbarConfig.color"
-      >
+      <v-card class="ma-4 pa-4" variant="tonal" rounded="xl" :color="navbarConfig.color">
         <div class="d-flex align-center">
           <!-- Logo Image with Icon Fallback -->
           <template v-if="navbarConfig.logo?.src">
             <v-img
               :src="navbarConfig.logo.src"
               :alt="navbarConfig.logo.alt"
-              :width="mobile ? (navbarConfig.logo.width || 48) : (navbarConfig.logo.width || 56)"
-              :height="mobile ? (navbarConfig.logo.height || 48) : (navbarConfig.logo.height || 56)"
+              :width="mobile ? navbarConfig.logo.width || 48 : navbarConfig.logo.width || 56"
+              :height="mobile ? navbarConfig.logo.height || 48 : navbarConfig.logo.height || 56"
               class="me-4"
               contain
             >
@@ -226,11 +211,7 @@
                   class="me-4"
                   variant="elevated"
                 >
-                  <v-icon
-                    :icon="navbarConfig.icon"
-                    :size="mobile ? 28 : 32"
-                    color="white"
-                  />
+                  <v-icon :icon="navbarConfig.icon" :size="mobile ? 28 : 32" color="white" />
                 </v-avatar>
               </template>
             </v-img>
@@ -243,11 +224,7 @@
               class="me-4"
               variant="elevated"
             >
-              <v-icon
-                :icon="navbarConfig.icon"
-                :size="mobile ? 28 : 32"
-                color="white"
-              />
+              <v-icon :icon="navbarConfig.icon" :size="mobile ? 28 : 32" color="white" />
             </v-avatar>
           </template>
 
@@ -255,9 +232,7 @@
             <h3 class="text-h6 font-weight-bold">
               {{ navbarConfig.title }}
             </h3>
-            <p class="text-caption opacity-80 mb-0">
-              Academic Platform
-            </p>
+            <p class="text-caption opacity-80 mb-0">Academic Platform</p>
           </div>
         </div>
       </v-card>
@@ -310,11 +285,7 @@
 
       <!-- Mobile Actions -->
       <template #append>
-        <v-card
-          class="ma-4 pa-4"
-          variant="outlined"
-          rounded="xl"
-        >
+        <v-card class="ma-4 pa-4" variant="outlined" rounded="xl">
           <!-- Theme Toggle -->
           <v-btn
             block
@@ -419,7 +390,10 @@
 
 /* Smooth transitions for theme changes */
 * {
-  transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease,
+    border-color 0.2s ease;
 }
 
 /* Enhanced Mobile Drawer Styling */
@@ -444,11 +418,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.1) 0%,
-    rgba(255, 255, 255, 0.05) 100%
-  );
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
   pointer-events: none;
 }
 

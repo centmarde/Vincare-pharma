@@ -1,47 +1,43 @@
-import { computed, ref } from "vue";
-import type { Ref } from "vue";
-import { defineStore } from "pinia";
-import { useRouter } from "vue-router";
-import { supabase, supabaseAdmin } from "@/lib/supabase";
+import { computed, ref } from 'vue'
+import type { Ref } from 'vue'
+import { defineStore } from 'pinia'
+import { useRouter } from 'vue-router'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
 interface UserData {
-  id: string;
-  email?: string;
-  created_at?: string;
-  user_metadata?: Record<string, any>;
-  app_metadata?: Record<string, any>;
-  full_name?: string;
-  role_id?: number;
+  id: string
+  email?: string
+  created_at?: string
+  user_metadata?: Record<string, any>
+  app_metadata?: Record<string, any>
+  full_name?: string
+  role_id?: number
 }
 
 interface SessionUser {
-  id: string;
-  email?: string;
-  user_metadata: Record<string, any>;
+  id: string
+  email?: string
+  user_metadata: Record<string, any>
 }
 
-export const useAuthUserStore = defineStore("authUser", () => {
+export const useAuthUserStore = defineStore('authUser', () => {
   // States
-  const userData: Ref<UserData | null> = ref(null);
-  const users: Ref<UserData[]> = ref([]);
-  const authPages: Ref<string[]> = ref([]);
-  const authBranchIds: Ref<number[]> = ref([]);
-  const loading = ref(false);
-  const router = useRouter();
+  const userData: Ref<UserData | null> = ref(null)
+  const users: Ref<UserData[]> = ref([])
+  const authPages: Ref<string[]> = ref([])
+  const authBranchIds: Ref<number[]> = ref([])
+  const loading = ref(false)
+  const router = useRouter()
 
   // Computed properties
-  const isAuthenticated = computed(() => userData.value !== null);
-  const userEmail = computed(() => userData.value?.email || null);
-  const userName = computed(() => userData.value?.user_metadata?.full_name || userData.value?.email || null);
-  const userRole = computed(() => userData.value?.user_metadata?.role || null);
+  const isAuthenticated = computed(() => userData.value !== null)
+  const userEmail = computed(() => userData.value?.email || null)
+  const userName = computed(
+    () => userData.value?.user_metadata?.full_name || userData.value?.email || null,
+  )
+  const userRole = computed(() => userData.value?.user_metadata?.role || null)
 
- async function registerUser(
-    email: string,
-    password: string,
-    username: string,
-    roleId: number,
-
-  ) {
-    loading.value = true;
+  async function registerUser(email: string, password: string, username: string, roleId: number) {
+    loading.value = true
     try {
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
@@ -50,44 +46,44 @@ export const useAuthUserStore = defineStore("authUser", () => {
           data: {
             full_name: username,
             role: roleId,
-          }
-        }
-      });
+          },
+        },
+      })
 
       if (signUpError) {
-        return { error: signUpError };
+        return { error: signUpError }
       }
 
       if (!signUpData.user) {
-        return { error: new Error("Signup failed") };
+        return { error: new Error('Signup failed') }
       }
 
-      return { data: { id: signUpData.user.id, email } };
+      return { data: { id: signUpData.user.id, email } }
     } finally {
-      loading.value = false;
+      loading.value = false
     }
   }
 
   async function signIn(email: string, password: string, rememberMe = false) {
-    loading.value = true;
+    loading.value = true
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
-      });
+      })
 
       if (error) {
-        return { error };
+        return { error }
       }
 
       if (!data.session) {
-        return { error: new Error("No session") };
+        return { error: new Error('No session') }
       }
 
-      const user = data.user;
-      localStorage.setItem("access_token", data.session.access_token);
-      localStorage.setItem("refresh_token", data.session.refresh_token);
-      localStorage.setItem("auth_id", user.id);
+      const user = data.user
+      localStorage.setItem('access_token', data.session.access_token)
+      localStorage.setItem('refresh_token', data.session.refresh_token)
+      localStorage.setItem('auth_id', user.id)
 
       // Update the store's userData with Supabase user data only
       userData.value = {
@@ -98,87 +94,89 @@ export const useAuthUserStore = defineStore("authUser", () => {
         app_metadata: user.app_metadata,
         full_name: user.user_metadata?.full_name,
         role_id: user.user_metadata?.role,
-      };
+      }
 
       // Log successful login with current user role ID
-      console.log('Successful login - Current user role ID:', user.user_metadata?.role);
+      console.log('Successful login - Current user role ID:', user.user_metadata?.role)
 
-      return { user };
+      return { user }
     } finally {
-      loading.value = false;
+      loading.value = false
     }
   }
 
   async function signOut() {
-    loading.value = true;
+    loading.value = true
     try {
-      const { error } = await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut()
 
       if (error) {
-        return { error };
+        return { error }
       }
 
       // Clear local storage
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
-      localStorage.removeItem("auth_id");
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('refresh_token')
+      localStorage.removeItem('auth_id')
 
       // Clear user data
-      userData.value = null;
+      userData.value = null
 
       // Redirect to home or login page
-      router.push("/");
+      router.push('/')
 
-      return { success: true };
+      return { success: true }
     } finally {
-      loading.value = false;
+      loading.value = false
     }
   }
 
   // Initialize auth state on store creation using getCurrentUser
   async function initializeAuth() {
     try {
-      const result = await getCurrentUser();
+      const result = await getCurrentUser()
 
       if (result.error || !result.user) {
-        userData.value = null;
-        console.log("No authenticated user found on initialization");
-        return;
+        userData.value = null
+        console.log('No authenticated user found on initialization')
+        return
       }
 
       // Set user data from getCurrentUser result
-      userData.value = result.user;
+      userData.value = result.user
 
       // Log user role ID from metadata on mount
-      const roleId = result.user.user_metadata?.role;
-      console.log('User initialized on mount - Role ID:', roleId);
-      console.log('User metadata:', result.user.user_metadata);
-
+      const roleId = result.user.user_metadata?.role
+      console.log('User initialized on mount - Role ID:', roleId)
+      console.log('User metadata:', result.user.user_metadata)
     } catch (error) {
-      console.error("Error initializing auth:", error);
-      userData.value = null;
+      console.error('Error initializing auth:', error)
+      userData.value = null
     }
   }
 
   // Get user data by ID using Supabase API
   async function getUser(userId?: string) {
-    loading.value = true;
+    loading.value = true
     try {
       // Use the current user's ID if no userId is provided
-      const targetUserId = userId || userData.value?.id;
+      const targetUserId = userId || userData.value?.id
 
       if (!targetUserId) {
-        return { error: new Error("No user ID provided") };
+        return { error: new Error('No user ID provided') }
       }
 
-      const { data: { user }, error } = await supabase.auth.admin.getUserById(targetUserId);
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.admin.getUserById(targetUserId)
 
       if (error) {
-        return { error };
+        return { error }
       }
 
       if (!user) {
-        return { error: new Error("User not found") };
+        return { error: new Error('User not found') }
       }
 
       return {
@@ -190,28 +188,31 @@ export const useAuthUserStore = defineStore("authUser", () => {
           app_metadata: user.app_metadata,
           full_name: user.user_metadata?.full_name,
           role_id: user.user_metadata?.role,
-        }
-      };
+        },
+      }
     } catch (error) {
-      console.error("Error fetching user:", error);
-      return { error };
+      console.error('Error fetching user:', error)
+      return { error }
     } finally {
-      loading.value = false;
+      loading.value = false
     }
   }
 
   // Get current authenticated user
   async function getCurrentUser() {
-    loading.value = true;
+    loading.value = true
     try {
-      const { data: { user }, error } = await supabase.auth.getUser();
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser()
 
       if (error) {
-        return { error };
+        return { error }
       }
 
       if (!user) {
-        return { error: new Error("No authenticated user") };
+        return { error: new Error('No authenticated user') }
       }
 
       const userData: UserData = {
@@ -222,100 +223,103 @@ export const useAuthUserStore = defineStore("authUser", () => {
         app_metadata: user.app_metadata,
         full_name: user.user_metadata?.full_name,
         role_id: user.user_metadata?.role,
-      };
+      }
 
       // Log user role ID from metadata
-      const roleId = user.user_metadata?.role;
-      console.log('getCurrentUser - User Role ID from metadata:', roleId);
-      console.log('getCurrentUser - Full user metadata:', user.user_metadata);
+      const roleId = user.user_metadata?.role
+      console.log('getCurrentUser - User Role ID from metadata:', roleId)
+      console.log('getCurrentUser - Full user metadata:', user.user_metadata)
 
-      return { user: userData };
+      return { user: userData }
     } catch (error) {
-      console.error("Error fetching current user:", error);
-      return { error };
+      console.error('Error fetching current user:', error)
+      return { error }
     } finally {
-      loading.value = false;
+      loading.value = false
     }
   }
 
   // Get all users using admin service role
   async function getAllUsers() {
-    loading.value = true;
+    loading.value = true
     try {
-      const { data, error } = await supabaseAdmin.auth.admin.listUsers();
+      const { data, error } = await supabaseAdmin.auth.admin.listUsers()
 
       if (error) {
-        console.error("Error fetching all users:", error);
-        return { error };
+        console.error('Error fetching all users:', error)
+        return { error }
       }
 
       if (!data?.users) {
-        return { error: new Error("No users data returned") };
+        return { error: new Error('No users data returned') }
       }
 
       // Map users to the expected format
-      const mappedUsers: UserData[] = data.users.map(user => ({
+      const mappedUsers: UserData[] = data.users.map((user) => ({
         id: user.id,
         email: user.email,
         created_at: user.created_at,
         user_metadata: user.user_metadata,
         app_metadata: user.app_metadata,
         full_name: user.user_metadata?.full_name,
-        role_id: user.user_metadata?.role
-      }));
+        role_id: user.user_metadata?.role,
+      }))
 
       // Store users in the reactive state
-      users.value = mappedUsers;
+      users.value = mappedUsers
 
-      return { users: mappedUsers };
+      return { users: mappedUsers }
     } catch (error) {
-      console.error("Error fetching all users:", error);
-      return { error };
+      console.error('Error fetching all users:', error)
+      return { error }
     } finally {
-      loading.value = false;
+      loading.value = false
     }
   }
 
   // Delete user using admin service role
   async function deleteUser(userId: string) {
-    loading.value = true;
+    loading.value = true
     try {
-      const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
+      const { error } = await supabaseAdmin.auth.admin.deleteUser(userId)
 
       if (error) {
-        console.error("Error deleting user:", error);
-        return { error };
+        console.error('Error deleting user:', error)
+        return { error }
       }
 
       // Remove user from local state
-      users.value = users.value.filter(user => user.id !== userId);
+      users.value = users.value.filter((user) => user.id !== userId)
 
-      return { success: true };
+      return { success: true }
     } catch (error) {
-      console.error("Error deleting user:", error);
-      return { error };
+      console.error('Error deleting user:', error)
+      return { error }
     } finally {
-      loading.value = false;
+      loading.value = false
     }
   }
 
   // Update user using admin service role
-  async function updateUser(userId: string, updateData: {
-    email?: string;
-    password?: string;
-    user_metadata?: Record<string, any>;
-  }) {
-    loading.value = true;
+  async function updateUser(
+    userId: string,
+    updateData: {
+      email?: string
+      password?: string
+      user_metadata?: Record<string, any>
+    },
+  ) {
+    loading.value = true
     try {
-      const { data, error } = await supabaseAdmin.auth.admin.updateUserById(userId, updateData);
+      const { data, error } = await supabaseAdmin.auth.admin.updateUserById(userId, updateData)
 
       if (error) {
-        console.error("Error updating user:", error);
-        return { error };
+        console.error('Error updating user:', error)
+        return { error }
       }
 
       if (!data.user) {
-        return { error: new Error("No user data returned") };
+        return { error: new Error('No user data returned') }
       }
 
       // Update the user in local state
@@ -326,30 +330,30 @@ export const useAuthUserStore = defineStore("authUser", () => {
         user_metadata: data.user.user_metadata,
         app_metadata: data.user.app_metadata,
         full_name: data.user.user_metadata?.full_name,
-        role_id: data.user.user_metadata?.role
-      };
+        role_id: data.user.user_metadata?.role,
+      }
 
-      const userIndex = users.value.findIndex(user => user.id === userId);
+      const userIndex = users.value.findIndex((user) => user.id === userId)
       if (userIndex !== -1) {
-        users.value[userIndex] = updatedUser;
+        users.value[userIndex] = updatedUser
       }
 
       // If updating current user, update userData
       if (userId === userData.value?.id) {
-        userData.value = updatedUser;
+        userData.value = updatedUser
       }
 
-      return { user: updatedUser };
+      return { user: updatedUser }
     } catch (error) {
-      console.error("Error updating user:", error);
-      return { error };
+      console.error('Error updating user:', error)
+      return { error }
     } finally {
-      loading.value = false;
+      loading.value = false
     }
   }
 
   // Call initialize on store creation
-  initializeAuth();
+  initializeAuth()
 
   return {
     // State
@@ -375,11 +379,11 @@ export const useAuthUserStore = defineStore("authUser", () => {
     getAllUsers,
     deleteUser,
     updateUser,
-  };
-});
+  }
+})
 
 // Utility function for logout (can be used independently)
 export async function doLogout() {
-  const authStore = useAuthUserStore();
-  return await authStore.signOut();
+  const authStore = useAuthUserStore()
+  return await authStore.signOut()
 }

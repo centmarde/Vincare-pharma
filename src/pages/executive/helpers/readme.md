@@ -1,0 +1,1 @@
+helper related functions.  direa ipang butang.

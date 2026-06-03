@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import {
-  getRoleColor,
-  getRoleText,
-  formatDate
-} from '@/utils/helpers'
+import { getRoleColor, getRoleText, formatDate } from '@/utils/helpers'
 import { useUserRolesStore } from '@/stores/roles'
 
 interface User {
@@ -37,7 +33,7 @@ const rolesStore = useUserRolesStore()
 const userRoleTitle = computed(() => {
   if (!props.user?.role_id) return 'Unknown'
 
-  const role = rolesStore.roles.find(role => role.id === props.user?.role_id)
+  const role = rolesStore.roles.find((role) => role.id === props.user?.role_id)
   return role?.title || 'Unknown'
 })
 
@@ -64,8 +60,6 @@ const closeDialog = () => {
 
       <v-card-text class="mt-4">
         <v-list density="compact">
-
-
           <v-divider class="my-2"></v-divider>
 
           <v-list-item prepend-icon="mdi-account-tie">
@@ -84,9 +78,7 @@ const closeDialog = () => {
 
           <v-list-item prepend-icon="mdi-list-status">
             <v-list-item-title>Status</v-list-item-title>
-            <v-list-item-subtitle>
-
-            </v-list-item-subtitle>
+            <v-list-item-subtitle> </v-list-item-subtitle>
           </v-list-item>
 
           <v-divider class="my-2"></v-divider>
@@ -100,9 +92,7 @@ const closeDialog = () => {
 
       <v-card-actions class="mt-4">
         <v-spacer></v-spacer>
-        <v-btn color="primary" variant="flat" @click="closeDialog" block>
-          Close
-        </v-btn>
+        <v-btn color="primary" variant="flat" @click="closeDialog" block> Close </v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>

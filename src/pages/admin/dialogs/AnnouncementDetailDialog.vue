@@ -1,117 +1,88 @@
 <template>
-  <v-dialog
-    v-model="internalDialog"
-    max-width="900"
-    scrollable
-  >
+  <v-dialog v-model="internalDialog" max-width="900" scrollable>
     <v-card v-if="announcement" class="announcement-detail-card">
       <!-- Header -->
       <v-card-title class="pa-0 sticky-header">
-        <v-toolbar
-          color="primary"
-          density="compact"
-          class="px-4"
-        >
+        <v-toolbar color="primary" density="compact" class="px-4">
           <v-toolbar-title class="text-h6 font-weight-bold">
             {{ announcement.title }}
           </v-toolbar-title>
 
           <v-spacer />
 
-          <v-btn
-            icon="mdi-close"
-            variant="text"
-            @click="closeDialog"
-          />
+          <v-btn icon="mdi-close" variant="text" @click="closeDialog" />
         </v-toolbar>
       </v-card-title>
 
       <!-- Scrollable Content Area -->
       <div class="scrollable-content">
         <!-- Image Section -->
-      <div v-if="announcement.image_url" class="image-section">
-        <v-img
-          :src="announcement.image_url"
-          max-height="400"
-          cover
-          class="announcement-detail-image"
-        >
-          <template v-slot:error>
-            <div class="d-flex align-center justify-center fill-height bg-grey-lighten-3">
-              <v-icon
-                icon="mdi-image-broken-variant"
-                size="64"
-                color="grey-lighten-1"
-              />
-            </div>
-          </template>
+        <div v-if="announcement.image_url" class="image-section">
+          <v-img
+            :src="announcement.image_url"
+            max-height="400"
+            cover
+            class="announcement-detail-image"
+          >
+            <template v-slot:error>
+              <div class="d-flex align-center justify-center fill-height bg-grey-lighten-3">
+                <v-icon icon="mdi-image-broken-variant" size="64" color="grey-lighten-1" />
+              </div>
+            </template>
 
-          <template v-slot:placeholder>
-            <div class="d-flex align-center justify-center fill-height">
-              <v-progress-circular
-                indeterminate
-                color="primary"
-              />
-            </div>
-          </template>
-        </v-img>
-      </div>
-
-      <!-- Content -->
-      <v-card-text class="pa-6">
-        <!-- Title (repeated for emphasis) -->
-        <h2 class="text-h5 font-weight-bold mb-4">
-          {{ announcement.title }}
-        </h2>
-
-        <!-- Description -->
-        <div class="announcement-description mb-6">
-          <p class="text-body-1 line-height-1-6">
-            {{ announcement.description }}
-          </p>
+            <template v-slot:placeholder>
+              <div class="d-flex align-center justify-center fill-height">
+                <v-progress-circular indeterminate color="primary" />
+              </div>
+            </template>
+          </v-img>
         </div>
 
-        <!-- Metadata -->
-        <v-divider class="my-4" />
+        <!-- Content -->
+        <v-card-text class="pa-6">
+          <!-- Title (repeated for emphasis) -->
+          <h2 class="text-h5 font-weight-bold mb-4">
+            {{ announcement.title }}
+          </h2>
 
-        <div class="metadata-section">
-          <v-row>
-            <v-col cols="12" sm="6">
-              <div class="d-flex align-center">
-                <v-icon
-                  icon="mdi-calendar"
-                  size="20"
-                  color="primary"
-                  class="me-2"
-                />
-                <div>
-                  <div class="text-caption text-medium-emphasis">Created</div>
-                  <div class="text-body-2 font-weight-medium">
-                    {{ formatDetailDate(announcement.created_at) }}
+          <!-- Description -->
+          <div class="announcement-description mb-6">
+            <p class="text-body-1 line-height-1-6">
+              {{ announcement.description }}
+            </p>
+          </div>
+
+          <!-- Metadata -->
+          <v-divider class="my-4" />
+
+          <div class="metadata-section">
+            <v-row>
+              <v-col cols="12" sm="6">
+                <div class="d-flex align-center">
+                  <v-icon icon="mdi-calendar" size="20" color="primary" class="me-2" />
+                  <div>
+                    <div class="text-caption text-medium-emphasis">Created</div>
+                    <div class="text-body-2 font-weight-medium">
+                      {{ formatDetailDate(announcement.created_at) }}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </v-col>
+              </v-col>
 
-            <v-col cols="12" sm="6">
-              <div class="d-flex align-center">
-                <v-icon
-                  icon="mdi-image"
-                  size="20"
-                  color="success"
-                  class="me-2"
-                />
-                <div>
-                  <div class="text-caption text-medium-emphasis">Image Status</div>
-                  <div class="text-body-2 font-weight-medium">
-                    {{ announcement.image_url ? 'Has Image' : 'Text Only' }}
+              <v-col cols="12" sm="6">
+                <div class="d-flex align-center">
+                  <v-icon icon="mdi-image" size="20" color="success" class="me-2" />
+                  <div>
+                    <div class="text-caption text-medium-emphasis">Image Status</div>
+                    <div class="text-body-2 font-weight-medium">
+                      {{ announcement.image_url ? 'Has Image' : 'Text Only' }}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </v-col>
-          </v-row>
-        </div>
-      </v-card-text>
+              </v-col>
+            </v-row>
+          </div>
+        </v-card-text>
       </div>
       <!-- End Scrollable Content Area -->
 
@@ -119,19 +90,9 @@
       <v-card-actions class="pa-6 pt-0 sticky-actions">
         <v-spacer />
 
-        <v-btn
-          variant="outlined"
-          @click="closeDialog"
-        >
-          Close
-        </v-btn>
+        <v-btn variant="outlined" @click="closeDialog"> Close </v-btn>
 
-        <v-btn
-          color="primary"
-          variant="flat"
-          prepend-icon="mdi-pencil"
-          @click="editAnnouncement"
-        >
+        <v-btn color="primary" variant="flat" prepend-icon="mdi-pencil" @click="editAnnouncement">
           Edit
         </v-btn>
       </v-card-actions>
@@ -158,7 +119,7 @@ const emit = defineEmits<Emits>()
 
 const internalDialog = computed({
   get: () => props.modelValue,
-  set: (value: boolean) => emit('update:modelValue', value)
+  set: (value: boolean) => emit('update:modelValue', value),
 })
 
 const formatDetailDate = (dateString: string) => {
@@ -168,7 +129,7 @@ const formatDetailDate = (dateString: string) => {
     month: 'long',
     day: 'numeric',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
   })
 }
 

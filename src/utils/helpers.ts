@@ -26,27 +26,27 @@ export function getErrorMessage(error: any): string {
  * @returns A string of 1-2 uppercase letters representing the user's initials
  */
 export function getEmailInitials(email: string | null | undefined): string {
-  if (!email) return 'U'; // Default to 'U' for User if no email
+  if (!email) return 'U' // Default to 'U' for User if no email
 
   // Extract the local part (before @) from email
-  const localPart = email.split('@')[0];
+  const localPart = email.split('@')[0]
 
   // Split by common separators (dots, underscores, hyphens, numbers)
-  const parts = localPart.split(/[\._\-\d]+/).filter(part => part.length > 0);
+  const parts = localPart.split(/[\._\-\d]+/).filter((part) => part.length > 0)
 
   if (parts.length >= 2) {
     // Take first letter of first two parts
-    return (parts[0][0] + parts[1][0]).toUpperCase();
+    return (parts[0][0] + parts[1][0]).toUpperCase()
   } else if (parts.length === 1 && parts[0].length >= 2) {
     // Take first two letters of single part
-    return (parts[0][0] + parts[0][1]).toUpperCase();
+    return (parts[0][0] + parts[0][1]).toUpperCase()
   } else if (parts.length === 1 && parts[0].length === 1) {
     // Single letter part
-    return parts[0][0].toUpperCase();
+    return parts[0][0].toUpperCase()
   }
 
   // Fallback: take first letter of email
-  return email[0].toUpperCase();
+  return email[0].toUpperCase()
 }
 
 /**
@@ -54,26 +54,29 @@ export function getEmailInitials(email: string | null | undefined): string {
  * @param userData - User data object containing name/email information
  * @returns A formatted display name
  */
-export function getUserDisplayName(userData: {
-  user_metadata?: { full_name?: string };
-  email?: string
-} | null): string {
-  if (!userData) return 'User';
+export function getUserDisplayName(
+  userData: {
+    user_metadata?: { full_name?: string }
+    email?: string
+  } | null,
+): string {
+  if (!userData) return 'User'
 
-  const fullName = userData.user_metadata?.full_name;
-  if (fullName) return fullName;
+  const fullName = userData.user_metadata?.full_name
+  if (fullName) return fullName
 
   if (userData.email) {
     // Extract name from email (part before @)
-    const emailLocal = userData.email.split('@')[0];
+    const emailLocal = userData.email.split('@')[0]
     // Replace dots/underscores with spaces and capitalize
-    return emailLocal.replace(/[\._]/g, ' ')
+    return emailLocal
+      .replace(/[\._]/g, ' ')
       .split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ')
   }
 
-  return 'User';
+  return 'User'
 }
 
 /**
@@ -85,10 +88,14 @@ export function getRoleColor(roleId: number | null | undefined): string {
   if (!roleId) return 'grey'
   // You can customize colors based on role ID or title
   switch (roleId) {
-    case 1: return 'red' // Admin
-    case 2: return 'blue' // Student
-    case 3: return 'green' // Organization Leader
-    default: return 'grey'
+    case 1:
+      return 'red' // Admin
+    case 2:
+      return 'blue' // Student
+    case 3:
+      return 'green' // Organization Leader
+    default:
+      return 'grey'
   }
 }
 
@@ -98,9 +105,12 @@ export function getRoleColor(roleId: number | null | undefined): string {
  * @param roles - The roles array to search in
  * @returns A human-readable role title
  */
-export function getRoleTitle(roleId: number | null | undefined, roles: Array<{ id: number; title: string | null }>): string {
+export function getRoleTitle(
+  roleId: number | null | undefined,
+  roles: Array<{ id: number; title: string | null }>,
+): string {
   if (!roleId) return 'Unknown'
-  const role = roles.find(r => r.id === roleId)
+  const role = roles.find((r) => r.id === roleId)
   return role?.title || 'Unknown'
 }
 
@@ -111,13 +121,12 @@ export function getRoleTitle(roleId: number | null | undefined, roles: Array<{ i
  * @param roles - The roles array to search in
  * @returns A human-readable role title
  */
-export function getRoleText(roleId: number | null | undefined, roles: Array<{ id: number; title: string | null }>): string {
+export function getRoleText(
+  roleId: number | null | undefined,
+  roles: Array<{ id: number; title: string | null }>,
+): string {
   return getRoleTitle(roleId, roles)
 }
-
-
-
-
 
 /**
  * Formats a date string into a human-readable format
@@ -131,7 +140,7 @@ export function formatDate(dateString: string | undefined): string {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
   })
 }
 
@@ -141,24 +150,24 @@ export function formatDate(dateString: string | undefined): string {
  * @returns A formatted slug name string
  */
 export function createSlugName(email: string | null | undefined): string {
-  if (!email) return 'user';
+  if (!email) return 'user'
 
   // Extract the local part (before @) from email
-  const localPart = email.split('@')[0];
+  const localPart = email.split('@')[0]
 
   // Replace dots, underscores, hyphens, and numbers with spaces
-  const cleaned = localPart.replace(/[\._\-\d]+/g, ' ');
+  const cleaned = localPart.replace(/[\._\-\d]+/g, ' ')
 
   // Split by spaces and filter out empty parts
-  const parts = cleaned.split(' ').filter(part => part.length > 0);
+  const parts = cleaned.split(' ').filter((part) => part.length > 0)
 
   if (parts.length === 0) {
     // Fallback: use first part of email before @
-    return localPart.toLowerCase();
+    return localPart.toLowerCase()
   }
 
   // Join parts with dots to create slug-like name
-  return parts.map(part => part.toLowerCase()).join('.');
+  return parts.map((part) => part.toLowerCase()).join('.')
 }
 
 /**
@@ -167,18 +176,16 @@ export function createSlugName(email: string | null | undefined): string {
  * @returns A capitalized display name
  */
 export function createDisplaySlugName(email: string | null | undefined): string {
-  if (!email) return 'User';
+  if (!email) return 'User'
 
-  const slugName = createSlugName(email);
+  const slugName = createSlugName(email)
 
   // Split by dots and capitalize each part
   return slugName
     .split('.')
-    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
 }
-
-
 
 // ========================================
 // ORGANIZATION MEMBERS HELPERS
@@ -191,25 +198,37 @@ export const memberStatusOptions = [
   { value: 'active', title: 'Active', color: 'success', icon: 'mdi-check-circle' },
   { value: 'pending', title: 'Pending', color: 'warning', icon: 'mdi-clock' },
   { value: 'inactive', title: 'Inactive', color: 'grey', icon: 'mdi-minus-circle' },
-  { value: 'suspended', title: 'Suspended', color: 'error', icon: 'mdi-alert-circle' }
+  { value: 'suspended', title: 'Suspended', color: 'error', icon: 'mdi-alert-circle' },
 ] as const
 
 export const memberRoleOptions = [
   { value: 'member', title: 'Member', description: 'Regular organization member' },
-  { value: 'officer', title: 'Officer', description: 'Organization officer with special responsibilities' },
-  { value: 'secretary', title: 'Secretary', description: 'Handles documentation and communications' },
+  {
+    value: 'officer',
+    title: 'Officer',
+    description: 'Organization officer with special responsibilities',
+  },
+  {
+    value: 'secretary',
+    title: 'Secretary',
+    description: 'Handles documentation and communications',
+  },
   { value: 'treasurer', title: 'Treasurer', description: 'Manages organization finances' },
-  { value: 'vice_president', title: 'Vice President', description: 'Second-in-command of the organization' }
+  {
+    value: 'vice_president',
+    title: 'Vice President',
+    description: 'Second-in-command of the organization',
+  },
 ] as const
 
-export type MemberStatus = typeof memberStatusOptions[number]['value']
-export type MemberRole = typeof memberRoleOptions[number]['value']
+export type MemberStatus = (typeof memberStatusOptions)[number]['value']
+export type MemberRole = (typeof memberRoleOptions)[number]['value']
 
 /**
  * Gets the color for a member status
  */
 export const getMemberStatusColor = (status: string): string => {
-  const option = memberStatusOptions.find(opt => opt.value === status)
+  const option = memberStatusOptions.find((opt) => opt.value === status)
   return option?.color || 'grey'
 }
 
@@ -217,7 +236,7 @@ export const getMemberStatusColor = (status: string): string => {
  * Gets the icon for a member status
  */
 export const getMemberStatusIcon = (status: string): string => {
-  const option = memberStatusOptions.find(opt => opt.value === status)
+  const option = memberStatusOptions.find((opt) => opt.value === status)
   return option?.icon || 'mdi-help-circle'
 }
 
@@ -225,7 +244,7 @@ export const getMemberStatusIcon = (status: string): string => {
  * Gets the title for a member role
  */
 export const getMemberRoleTitle = (role: string): string => {
-  const option = memberRoleOptions.find(opt => opt.value === role)
+  const option = memberRoleOptions.find((opt) => opt.value === role)
   return option?.title || role
 }
 
@@ -233,7 +252,7 @@ export const getMemberRoleTitle = (role: string): string => {
  * Gets the description for a member role
  */
 export const getMemberRoleDescription = (role: string): string => {
-  const option = memberRoleOptions.find(opt => opt.value === role)
+  const option = memberRoleOptions.find((opt) => opt.value === role)
   return option?.description || ''
 }
 
@@ -241,14 +260,14 @@ export const getMemberRoleDescription = (role: string): string => {
  * Validates if a member status is valid
  */
 export const isValidMemberStatus = (status: string): status is MemberStatus => {
-  return memberStatusOptions.some(opt => opt.value === status)
+  return memberStatusOptions.some((opt) => opt.value === status)
 }
 
 /**
  * Validates if a member role is valid
  */
 export const isValidMemberRole = (role: string): role is MemberRole => {
-  return memberRoleOptions.some(opt => opt.value === role)
+  return memberRoleOptions.some((opt) => opt.value === role)
 }
 
 // ========================================
@@ -261,9 +280,12 @@ export const isValidMemberRole = (role: string): role is MemberRole => {
  * @param leaderId - ID of the leader to filter by
  * @returns Organizations where the user is the leader
  */
-export const filterOrganizationsByLeader = (organizations: any[], leaderId: string | undefined): any[] => {
+export const filterOrganizationsByLeader = (
+  organizations: any[],
+  leaderId: string | undefined,
+): any[] => {
   if (!leaderId) return []
-  return organizations.filter(org => org.leader_id === leaderId)
+  return organizations.filter((org) => org.leader_id === leaderId)
 }
 
 /**
@@ -276,10 +298,11 @@ export const filterMembersBySearch = (members: any[], searchTerm: string): any[]
   if (!searchTerm) return members
 
   const term = searchTerm.toLowerCase()
-  return members.filter(member =>
-    member.student?.full_name?.toLowerCase().includes(term) ||
-    member.student?.email?.toLowerCase().includes(term) ||
-    member.student?.student_number?.toLowerCase().includes(term)
+  return members.filter(
+    (member) =>
+      member.student?.full_name?.toLowerCase().includes(term) ||
+      member.student?.email?.toLowerCase().includes(term) ||
+      member.student?.student_number?.toLowerCase().includes(term),
   )
 }
 
@@ -295,7 +318,7 @@ export const prepareOrganizationCardData = (organization: any) => {
     createdAt: organization.created_at,
     formattedCreatedAt: formatDate(organization.created_at),
     isLeader: true, // This would be determined by the calling component
-    memberCount: organization.member_count || 0
+    memberCount: organization.member_count || 0,
   }
 }
 
@@ -316,7 +339,6 @@ export const createMemberManagementHandlers = (config: {
   clearMembersData: () => void
   getSelectedOrganization: () => any
 }) => {
-
   const handleManageMembers = async (organization: any) => {
     config.setSelectedOrganization(organization)
     config.setMembersDialog(true)
@@ -324,7 +346,7 @@ export const createMemberManagementHandlers = (config: {
     // Fetch members and available students
     await Promise.all([
       config.fetchOrganizationMembers(organization.id),
-      config.fetchAvailableStudents(organization.id)
+      config.fetchAvailableStudents(organization.id),
     ])
   }
 
@@ -337,7 +359,7 @@ export const createMemberManagementHandlers = (config: {
       if (selectedOrg) {
         await Promise.all([
           config.fetchOrganizationMembers(selectedOrg.id),
-          config.fetchAvailableStudents(selectedOrg.id)
+          config.fetchAvailableStudents(selectedOrg.id),
         ])
       }
     }
@@ -377,7 +399,7 @@ export const createMemberManagementHandlers = (config: {
     handleAddMember,
     handleUpdateMember,
     handleRemoveMember,
-    handleCloseMembersDialog
+    handleCloseMembersDialog,
   }
 }
 
@@ -393,7 +415,6 @@ export const createViewMembersHandler = (config: {
   fetchAvailableStudents?: (orgId: string) => Promise<any> // Optional for view-only mode
   viewOnly?: boolean // If true, won't fetch available students
 }) => {
-
   return async (organization: any) => {
     config.setSelectedOrganization(organization)
     config.setMembersDialog(true)
@@ -406,7 +427,7 @@ export const createViewMembersHandler = (config: {
       // Full management mode: fetch both members and available students
       await Promise.all([
         config.fetchOrganizationMembers(organization.id),
-        config.fetchAvailableStudents(organization.id)
+        config.fetchAvailableStudents(organization.id),
       ])
     }
   }
@@ -430,7 +451,5 @@ export const organizationsTableHeaders = [
  * Form validation rules for organizations
  */
 export const organizationValidationRules = {
-  title: [
-    (v: string) => !!v || 'Organization name is required'
-  ]
+  title: [(v: string) => !!v || 'Organization name is required'],
 }

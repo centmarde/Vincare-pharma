@@ -3,8 +3,12 @@ import pluginVue from 'eslint-plugin-vue'
 import tseslint from '@typescript-eslint/eslint-plugin'
 import tsParser from '@typescript-eslint/parser'
 import vueParser from 'vue-eslint-parser'
+import prettier from 'eslint-plugin-prettier'
+import eslintConfigPrettier from 'eslint-config-prettier'
 
 export default [
+  // Disable ESLint rules that conflict with Prettier
+  eslintConfigPrettier,
   {
     files: ['**/*.js', '**/*.ts', '**/*.tsx', '**/*.vue'],
     languageOptions: {
@@ -32,6 +36,7 @@ export default [
     plugins: {
       vue: pluginVue,
       '@typescript-eslint': tseslint,
+  prettier,
     },
     rules: {
       // Only essential rules - very lenient
@@ -71,6 +76,10 @@ export default [
       'vue/singleline-html-element-content-newline': 'off',
       'vue/multiline-html-element-content-newline': 'off',
       'vue/attributes-order': 'off',
+
+  // Prettier formatting as an ESLint rule (auto-fixable)
+  // Use "warn" so it doesn't fail the command / show as errors.
+  'prettier/prettier': 'warn',
     },
   },
   {
@@ -84,6 +93,8 @@ export default [
       'auto-imports.d.ts',
       'components.d.ts',
       'typed-router.d.ts',
+  'vite.config.*',
+  'eslint.config.*',
     ],
   },
 ]

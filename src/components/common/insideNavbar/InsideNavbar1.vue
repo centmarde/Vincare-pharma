@@ -1,89 +1,79 @@
 <script lang="ts" setup>
-  import type { UIConfig, LogoConfig } from '@/controller/landingController'
-  import { computed, ref, onMounted, onUnmounted } from 'vue'
-  import { useRouter } from 'vue-router'
-  import { useTheme } from '@/composables/useTheme'
-  import { useDisplay } from 'vuetify'
-  import { useAuthUserStore } from '@/stores/authUser'
-  import SlugName from './SlugName.vue'
-  import { useUserPermissions } from '@/composables/useUserPermissions'
+import type { UIConfig } from '@/controller/landingController'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 
-  interface Props {
-    config?: UIConfig | null
+import { useTheme } from '@/composables/useTheme'
+import { useDisplay } from 'vuetify'
+
+import SlugName from './SlugName.vue'
+import { useUserPermissions } from '@/composables/useUserPermissions'
+
+interface Props {
+  config?: UIConfig | null
+}
+
+const props = defineProps<Props>()
+
+// User permissions composable (permission-based navigation)
+const { getFilteredNavigationGroups, isLoading } = useUserPermissions()
+
+// Responsive breakpoints
+const { mobile } = useDisplay()
+
+// Mobile drawer state
+const mobileDrawer = ref(false)
+
+// Theme management
+const { toggleTheme: handleToggleTheme, getCurrentTheme, isLoadingTheme } = useTheme()
+
+// Scroll detection for mobile drawer auto-close
+let lastScrollY = ref(0)
+let ticking = ref(false)
+
+const handleScroll = () => {
+  if (!ticking.value) {
+    requestAnimationFrame(() => {
+      const currentScrollY = window.scrollY
+
+      // Close mobile drawer when scrolling down
+      if (mobile.value && mobileDrawer.value && currentScrollY > lastScrollY.value) {
+        mobileDrawer.value = false
+      }
+
+      lastScrollY.value = currentScrollY
+      ticking.value = false
+    })
+    ticking.value = true
   }
+}
 
-  const props = defineProps<Props>()
-  const router = useRouter()
-  const authStore = useAuthUserStore()
+// Add scroll listener on mount, remove on unmount
+onMounted(() => {
+  window.addEventListener('scroll', handleScroll, { passive: true })
+  lastScrollY.value = window.scrollY
+})
 
-  // User permissions composable (permission-based navigation)
-  const { getFilteredNavigationGroups, isLoading } = useUserPermissions()
+onUnmounted(() => {
+  window.removeEventListener('scroll', handleScroll)
+})
 
-  // Responsive breakpoints
-  const { mobile } = useDisplay()
+const navbarConfig = computed(() => props.config?.navbar)
 
-  // Mobile drawer state
-  const mobileDrawer = ref(false)
+// Get filtered navigation groups based on user permissions
+const navigationGroups = computed(() => getFilteredNavigationGroups())
 
-  // Theme management
-  const { toggleTheme: handleToggleTheme, getCurrentTheme, isLoadingTheme } = useTheme()
+// Theme toggle computed properties
+const currentTheme = computed(() => getCurrentTheme())
+const themeIcon = computed(() => {
+  return currentTheme.value === 'dark' ? 'mdi-white-balance-sunny' : 'mdi-weather-night'
+})
+const themeTooltip = computed(() => {
+  return `Switch to ${currentTheme.value === 'dark' ? 'light' : 'dark'} theme`
+})
 
-  // Scroll detection for mobile drawer auto-close
-  let lastScrollY = ref(0)
-  let ticking = ref(false)
-
-  const handleScroll = () => {
-    if (!ticking.value) {
-      requestAnimationFrame(() => {
-        const currentScrollY = window.scrollY
-
-        // Close mobile drawer when scrolling down
-        if (mobile.value && mobileDrawer.value && currentScrollY > lastScrollY.value) {
-          mobileDrawer.value = false
-        }
-
-        lastScrollY.value = currentScrollY
-        ticking.value = false
-      })
-      ticking.value = true
-    }
-  }
-
-  // Add scroll listener on mount, remove on unmount
-  onMounted(() => {
-    window.addEventListener('scroll', handleScroll, { passive: true })
-    lastScrollY.value = window.scrollY
-  })
-
-  onUnmounted(() => {
-    window.removeEventListener('scroll', handleScroll)
-  })
-
-  const navbarConfig = computed(() => props.config?.navbar)
-
-  // Get filtered navigation groups based on user permissions
-  const navigationGroups = computed(() => getFilteredNavigationGroups())
-
-  // Theme toggle computed properties
-  const currentTheme = computed(() => getCurrentTheme())
-  const themeIcon = computed(() => {
-    return currentTheme.value === 'dark' ? 'mdi-white-balance-sunny' : 'mdi-weather-night'
-  })
-  const themeTooltip = computed(() => {
-    return `Switch to ${currentTheme.value === 'dark' ? 'light' : 'dark'} theme`
-  })
-
-  function toggleTheme () {
-    handleToggleTheme()
-  }
-
-  async function handleLogout () {
-    try {
-      await authStore.signOut()
-    } catch (error) {
-      console.error('Logout failed:', error)
-    }
-  }
+function toggleTheme() {
+  handleToggleTheme()
+}
 </script>
 
 <template>
@@ -109,20 +99,12 @@
           contain
         >
           <template #error>
-            <v-icon
-              class="me-2"
-              :icon="navbarConfig.icon"
-              size="large"
-            />
+            <v-icon class="me-2" :icon="navbarConfig.icon" size="large" />
           </template>
         </v-img>
       </template>
       <template v-else>
-        <v-icon
-          class="me-2"
-          :icon="navbarConfig?.icon"
-          size="large"
-        />
+        <v-icon class="me-2" :icon="navbarConfig?.icon" size="large" />
       </template>
       <span class="text-h6 font-weight-bold">{{ navbarConfig?.title }}</span>
     </div>
@@ -201,12 +183,7 @@
   >
     <template #prepend>
       <!-- Mobile Hamburger Menu -->
-      <v-btn
-        v-if="mobile"
-        icon
-        variant="text"
-        @click="mobileDrawer = !mobileDrawer"
-      >
+      <v-btn v-if="mobile" icon variant="text" @click="mobileDrawer = !mobileDrawer">
         <v-icon icon="mdi-menu" />
       </v-btn>
 
@@ -224,22 +201,14 @@
           >
             <template #error>
               <!-- Fallback to icon if image fails to load -->
-              <v-icon
-                class="me-2"
-                :icon="navbarConfig.icon"
-                size="large"
-              />
+              <v-icon class="me-2" :icon="navbarConfig.icon" size="large" />
             </template>
           </v-img>
         </template>
 
         <template v-else>
           <!-- Default icon when no logo is configured -->
-          <v-icon
-            class="me-2"
-            :icon="navbarConfig?.icon"
-            size="large"
-          />
+          <v-icon class="me-2" :icon="navbarConfig?.icon" size="large" />
         </template>
 
         <span class="text-h6 font-weight-bold ms-2">{{ navbarConfig?.title }}</span>
@@ -251,12 +220,7 @@
     <!-- Desktop Actions -->
     <template #append>
       <!-- Theme Toggle Button -->
-      <v-btn
-        :loading="isLoadingTheme"
-        size="small"
-        variant="text"
-        @click="toggleTheme"
-      >
+      <v-btn :loading="isLoadingTheme" size="small" variant="text" @click="toggleTheme">
         <v-icon :icon="themeIcon" />
         <v-tooltip activator="parent" location="bottom">
           {{ themeTooltip }}
