@@ -84,6 +84,8 @@ export default [
       'auto-imports.d.ts',
       'components.d.ts',
       'typed-router.d.ts',
+  'vite.config.*',
+  'eslint.config.*',
     ],
   },
 ]
