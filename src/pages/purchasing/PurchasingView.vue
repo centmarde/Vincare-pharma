@@ -15,7 +15,7 @@ import HomeLogs from "@/pages/hometab/HomeLogs.vue";
               </v-col>
               <v-col cols="12">
                 <v-card>
-                  <div class="text-center py-5">Executive View Content</div>
+                  <div class="text-center py-5">Purchasing View Content</div>
                 </v-card>
               </v-col>
             </v-row>

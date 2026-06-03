@@ -69,6 +69,19 @@ export const navigationConfig: NavigationGroup[] = [
         permission: 'executive.dashboard.view'
       }
     ]
+  },
+  {
+    title: 'Purchasing Controls',
+    icon: 'mdi-cart',
+    permission: 'purchasing.access',
+    children: [
+      {
+        title: 'Purchasing Dashboard',
+        icon: 'mdi-view-dashboard',
+        route: '/purchasing/dashboard',
+        permission: 'purchasing.dashboard.view'
+      }
+    ]
   }
 
 ]

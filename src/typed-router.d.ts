@@ -40,5 +40,6 @@ declare module 'vue-router/auto-routes' {
     '/HomeView': RouteRecordInfo<'/HomeView', '/HomeView', Record<never, never>, Record<never, never>>,
     '/NotFound': RouteRecordInfo<'/NotFound', '/NotFound', Record<never, never>, Record<never, never>>,
     '/otherTab/Page1View': RouteRecordInfo<'/otherTab/Page1View', '/otherTab/Page1View', Record<never, never>, Record<never, never>>,
+    '/purchasing/PurchasingView': RouteRecordInfo<'/purchasing/PurchasingView', '/purchasing/PurchasingView', Record<never, never>, Record<never, never>>,
   }
 }
