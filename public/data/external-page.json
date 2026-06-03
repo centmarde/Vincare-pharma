@@ -7,7 +7,7 @@
     "alt": "Abstract healthcare supply chain background with geometric patterns",
     "overlay": {
       "enabled": true,
-      "color": "rgba(63, 81, 181, 0.15)",
+      "color": "#d52e2e",
       "opacity": 0.8
     }
   },
@@ -36,8 +36,8 @@
   "author": "Vincare-Pharma",
   "lastUpdated": "2026-06-02",
   "theme": {
-    "primaryColor": "#3F51B5",
-    "secondaryColor": "#7688e0"
+    "primaryColor": "#d52e2e",
+    "secondaryColor": "#b61f1f"
   },
   "ui": {
     "showNavbar": true,
@@ -50,7 +50,7 @@
       "title": "Vincare-Pharma",
       "icon": "mdi-hospital-box-outline",
       "logo": {
-        "src": "/assets/logo.svg",
+        "src": "/vincare.png",
         "alt": "Vincare-Pharma Logo",
         "width": 32,
         "height": 32
