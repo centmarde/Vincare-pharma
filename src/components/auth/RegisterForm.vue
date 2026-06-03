@@ -183,6 +183,10 @@ const handleRegister = async () => {
     return;
   }
 
+  // Normalize inputs (avoid case-sensitive duplicates in auth / profiles)
+  const normalizedEmail = registerForm.email.trim().toLowerCase();
+  const normalizedUsername = registerForm.username.trim().toLowerCase();
+
   if (registerForm.password !== registerForm.confirmPassword) {
     toast.error("Passwords do not match");
     return;
@@ -193,9 +197,9 @@ const handleRegister = async () => {
 
   try {
     const result = await authStore.registerUser(
-      registerForm.email,
+  normalizedEmail,
       registerForm.password,
-      registerForm.username,
+  normalizedUsername,
   3,
 
     );
