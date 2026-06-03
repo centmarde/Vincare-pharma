@@ -34,13 +34,13 @@ const {
   fetchRolePermissions,
   saveRolePermissions,
   hasPermission,
-  clearPermissions
+  clearPermissions,
 } = useRoleEditFetchDialog()
 
 // Local reactive form data
 const localFormData = computed({
   get: () => props.formData,
-  set: (value) => emit('update:formData', value)
+  set: (value) => emit('update:formData', value),
 })
 
 // Page control data - dynamically generated from navigation config
@@ -66,7 +66,7 @@ watch(
       clearPermissions()
     }
   },
-  { immediate: true }
+  { immediate: true },
 )
 
 // Watch for dialog open/close to reset permissions
@@ -77,13 +77,11 @@ watch(
       selectedPermissions.value = []
       clearPermissions()
     }
-  }
+  },
 )
 
 // Get navigation groups with selection state
-const navigationGroups = computed(() =>
-  getNavigationWithSelection(selectedPermissions.value)
-)
+const navigationGroups = computed(() => getNavigationWithSelection(selectedPermissions.value))
 
 // Helper function to get group expansion state
 const getGroupExpansion = (groupTitle: string) => {
@@ -145,7 +143,7 @@ const handleDelete = () => {
                 v-model="localFormData.title"
                 label="Role Title *"
                 variant="outlined"
-                :rules="[v => !!v || 'Role title is required']"
+                :rules="[(v) => !!v || 'Role title is required']"
                 required
                 autofocus
               />
@@ -156,7 +154,6 @@ const handleDelete = () => {
           <v-col cols="12" md="6">
             <h3 class="text-h6 mb-4">Page Access Control</h3>
             <div class="page-control-container">
-
               <!-- Loading state for permissions -->
               <div v-if="permissionsLoading" class="text-center py-6">
                 <v-progress-circular indeterminate color="primary" size="32" />
@@ -172,10 +169,14 @@ const handleDelete = () => {
               >
                 <!-- Group Header -->
                 <v-list-item
-                  @click="getGroupExpansion(group.title).value = !getGroupExpansion(group.title).value"
+                  @click="
+                    getGroupExpansion(group.title).value = !getGroupExpansion(group.title).value
+                  "
                   class="mb-1 rounded-lg group-header pa-2"
                   :prepend-icon="group.icon"
-                  :append-icon="getGroupExpansion(group.title).value ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                  :append-icon="
+                    getGroupExpansion(group.title).value ? 'mdi-chevron-up' : 'mdi-chevron-down'
+                  "
                   density="compact"
                 >
                   <v-list-item-title class="font-weight-medium text-body-2">
@@ -195,7 +196,9 @@ const handleDelete = () => {
                       <template #prepend>
                         <v-checkbox
                           :model-value="child.selected"
-                          @update:model-value="(value) => togglePermission(child.permission || child.route, !!value)"
+                          @update:model-value="
+                            (value) => togglePermission(child.permission || child.route, !!value)
+                          "
                           hide-details
                           density="compact"
                           class="mr-2"
@@ -213,7 +216,6 @@ const handleDelete = () => {
                   </div>
                 </v-expand-transition>
               </div>
-
             </div>
           </v-col>
         </v-row>
@@ -221,13 +223,7 @@ const handleDelete = () => {
 
       <v-card-actions class="pa-6 pt-0">
         <v-spacer />
-        <v-btn
-          variant="text"
-          @click="closeDialog"
-          :disabled="loading"
-        >
-          Cancel
-        </v-btn>
+        <v-btn variant="text" @click="closeDialog" :disabled="loading"> Cancel </v-btn>
         <v-btn
           color="primary"
           @click="handleSubmit"
@@ -248,41 +244,22 @@ const handleDelete = () => {
     @update:model-value="!$event && closeDialog()"
   >
     <v-card>
-      <v-card-title class="text-h5 pa-6 pb-4">
-        Confirm Delete
-      </v-card-title>
+      <v-card-title class="text-h5 pa-6 pb-4"> Confirm Delete </v-card-title>
 
       <v-card-text class="pa-6 pt-0">
         <p class="text-body-1 mb-4">
           Are you sure you want to delete the role
           <strong>"{{ selectedRole?.title }}"</strong>?
         </p>
-        <v-alert
-          type="warning"
-          variant="tonal"
-          density="compact"
-          class="mb-0"
-        >
+        <v-alert type="warning" variant="tonal" density="compact" class="mb-0">
           This action cannot be undone and will also delete all associated role pages.
         </v-alert>
       </v-card-text>
 
       <v-card-actions class="pa-6 pt-0">
         <v-spacer />
-        <v-btn
-          variant="text"
-          @click="closeDialog"
-          :disabled="loading"
-        >
-          Cancel
-        </v-btn>
-        <v-btn
-          color="error"
-          @click="handleDelete"
-          :loading="loading"
-        >
-          Delete
-        </v-btn>
+        <v-btn variant="text" @click="closeDialog" :disabled="loading"> Cancel </v-btn>
+        <v-btn color="error" @click="handleDelete" :loading="loading"> Delete </v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>

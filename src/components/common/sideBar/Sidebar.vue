@@ -32,17 +32,19 @@ const groupExpanded = ref<Record<string, boolean>>({})
 watch(
   () => route.path,
   (newPath) => {
-  // Keep the current group's section expanded based on route prefix
-  if (newPath.startsWith('/admin')) groupExpanded.value['Admin Controls'] = true
-  if (newPath.startsWith('/executive')) groupExpanded.value['Executive Controls'] = true
-  if (newPath.startsWith('/purchasing')) groupExpanded.value['Purchasing Controls'] = true
-  if (newPath.startsWith('/account')) groupExpanded.value['My Account'] = true
+    // Keep the current group's section expanded based on route prefix
+    if (newPath.startsWith('/admin')) groupExpanded.value['Admin Controls'] = true
+    if (newPath.startsWith('/executive')) groupExpanded.value['Executive Controls'] = true
+    if (newPath.startsWith('/purchasing')) groupExpanded.value['Purchasing Controls'] = true
+    if (newPath.startsWith('/account')) groupExpanded.value['My Account'] = true
   },
-  { immediate: true }
+  { immediate: true },
 )
 
 // Hide sidebar on small screens or if user has no role
-const showSidebar = computed(() => !smAndDown.value && userRoleId.value !== null && userRoleId.value !== undefined)
+const showSidebar = computed(
+  () => !smAndDown.value && userRoleId.value !== null && userRoleId.value !== undefined,
+)
 
 const footerVersionText = computed(() => {
   const version = props.version?.trim()
@@ -76,22 +78,20 @@ const handleLogout = async () => {
 
 <template>
   <v-navigation-drawer
-      v-if="showSidebar"
-      v-model="isExpanded"
-      :permanent="!smAndDown"
-      :temporary="smAndDown"
-      app
-      fixed
-      class="elevation-2 sidebar-full-height"
-      width="280"
-      color="background"
-    >
+    v-if="showSidebar"
+    v-model="isExpanded"
+    :permanent="!smAndDown"
+    :temporary="smAndDown"
+    app
+    fixed
+    class="elevation-2 sidebar-full-height"
+    width="280"
+    color="background"
+  >
     <!-- Sidebar Header -->
     <v-list-item class="pa-4">
       <v-list-item-content>
-        <v-list-item-title class="text-h6 font-weight-bold primary--text">
-        Menu
-        </v-list-item-title>
+        <v-list-item-title class="text-h6 font-weight-bold primary--text"> Menu </v-list-item-title>
         <v-list-item-subtitle class="text-caption grey--text">
           Management System
         </v-list-item-subtitle>
@@ -187,7 +187,6 @@ const handleLogout = async () => {
 </template>
 
 <style scoped>
-
 .v-navigation-drawer {
   /* Remove static background so Vuetify theme color applies */
   z-index: 1000 !important; /* Ensure sidebar is above other content but below navbar */

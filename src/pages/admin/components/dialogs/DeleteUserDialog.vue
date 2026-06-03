@@ -74,11 +74,7 @@ const handleClose = () => {
           Are you sure you want to delete this user? This action cannot be undone.
         </div>
 
-        <v-alert
-          type="warning"
-          variant="tonal"
-          class="mb-4"
-        >
+        <v-alert type="warning" variant="tonal" class="mb-4">
           <div class="font-weight-medium">User Details:</div>
           <div><strong>Name:</strong> {{ user?.full_name || 'N/A' }}</div>
           <div><strong>Email:</strong> {{ user?.email || 'N/A' }}</div>
@@ -93,20 +89,10 @@ const handleClose = () => {
 
       <v-card-actions class="px-4 pb-4">
         <v-spacer />
-        <v-btn
-          color="grey"
-          variant="text"
-          @click="handleClose"
-          :disabled="deleting"
-        >
+        <v-btn color="grey" variant="text" @click="handleClose" :disabled="deleting">
           Cancel
         </v-btn>
-        <v-btn
-          color="error"
-          variant="flat"
-          @click="handleDelete"
-          :loading="deleting"
-        >
+        <v-btn color="error" variant="flat" @click="handleDelete" :loading="deleting">
           Delete User
         </v-btn>
       </v-card-actions>

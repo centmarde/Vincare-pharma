@@ -18,44 +18,43 @@ export const navigationConfig: NavigationGroup[] = [
     title: 'My Account',
     icon: 'mdi-account',
     children: [
-       {
+      {
         title: 'Home',
         icon: 'mdi-home',
         route: '/account/home',
-        permission: 'admin.dashboard.view'
+        permission: 'admin.dashboard.view',
       },
       {
         title: 'Settings',
         icon: 'mdi-cog-outline',
-        route: '/account/settings'
+        route: '/account/settings',
       },
-    ]
+    ],
   },
   {
     title: 'Admin Controls',
     icon: 'mdi-cog',
     permission: 'admin.access',
     children: [
-
       {
         title: 'User Management',
         icon: 'mdi-account-multiple',
         route: '/admin/user-management',
-        permission: 'admin.users.manage'
+        permission: 'admin.users.manage',
       },
       {
         title: 'User Roles',
         icon: 'mdi-account-key',
         route: '/admin/user-roles',
-        permission: 'admin.roles.manage'
+        permission: 'admin.roles.manage',
       },
       {
         title: 'Announcements',
         icon: 'mdi-bullhorn',
         route: '/admin/announcements',
-        permission: 'admin.announcements.manage'
+        permission: 'admin.announcements.manage',
       },
-    ]
+    ],
   },
   {
     title: 'Executive Controls',
@@ -66,9 +65,9 @@ export const navigationConfig: NavigationGroup[] = [
         title: 'Executive Dashboard',
         icon: 'mdi-view-dashboard',
         route: '/executive/dashboard',
-        permission: 'executive.dashboard.view'
-      }
-    ]
+        permission: 'executive.dashboard.view',
+      },
+    ],
   },
   {
     title: 'Purchasing Controls',
@@ -79,9 +78,9 @@ export const navigationConfig: NavigationGroup[] = [
         title: 'Purchasing Dashboard',
         icon: 'mdi-view-dashboard',
         route: '/purchasing/dashboard',
-        permission: 'purchasing.dashboard.view'
-      }
-    ]
+        permission: 'purchasing.dashboard.view',
+      },
+    ],
   },
   {
     title: 'Warehouse Controls',
@@ -92,9 +91,9 @@ export const navigationConfig: NavigationGroup[] = [
         title: 'Warehouse Dashboard',
         icon: 'mdi-view-dashboard',
         route: '/warehouse/dashboard',
-        permission: 'warehouse.dashboard.view'
-      }
-    ]
+        permission: 'warehouse.dashboard.view',
+      },
+    ],
   },
   {
     title: 'Sales Controls',
@@ -105,9 +104,9 @@ export const navigationConfig: NavigationGroup[] = [
         title: 'Sales Dashboard',
         icon: 'mdi-view-dashboard',
         route: '/sales/dashboard',
-        permission: 'sales.dashboard.view'
-      }
-    ]
+        permission: 'sales.dashboard.view',
+      },
+    ],
   },
   {
     title: 'Finance Controls',
@@ -118,23 +117,22 @@ export const navigationConfig: NavigationGroup[] = [
         title: 'Finance Dashboard',
         icon: 'mdi-view-dashboard',
         route: '/finance/dashboard',
-        permission: 'finance.dashboard.view'
-      }
-    ]
-  }
-
+        permission: 'finance.dashboard.view',
+      },
+    ],
+  },
 ]
 
 // Helper function to get all permissions from navigation config
 export const getAllPermissions = (): string[] => {
   const permissions: string[] = []
 
-  navigationConfig.forEach(group => {
+  navigationConfig.forEach((group) => {
     if (group.permission) {
       permissions.push(group.permission)
     }
 
-    group.children.forEach(item => {
+    group.children.forEach((item) => {
       if (item.permission) {
         permissions.push(item.permission)
       }
@@ -145,12 +143,14 @@ export const getAllPermissions = (): string[] => {
 }
 
 // Helper function to get navigation items with selected state
-export const getNavigationWithSelection = (selectedPermissions: string[] = []): NavigationGroup[] => {
-  return navigationConfig.map(group => ({
+export const getNavigationWithSelection = (
+  selectedPermissions: string[] = [],
+): NavigationGroup[] => {
+  return navigationConfig.map((group) => ({
     ...group,
-    children: group.children.map(item => ({
+    children: group.children.map((item) => ({
       ...item,
-      selected: selectedPermissions.includes(item.permission || item.route)
-    }))
+      selected: selectedPermissions.includes(item.permission || item.route),
+    })),
   }))
 }

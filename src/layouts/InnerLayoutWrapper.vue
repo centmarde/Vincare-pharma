@@ -3,7 +3,6 @@ import { onMounted } from 'vue'
 import { useLandingController } from '@/controller/landingController'
 import Sidebar1 from '@/components/common/sideBar/Sidebar.vue'
 
-
 const { data, fetchLandingData } = useLandingController()
 
 onMounted(async () => {
@@ -47,20 +46,10 @@ onMounted(async () => {
       </slot>
     </v-main>
 
-    <OuterFooter
-      v-if="data?.ui?.footerComponent === '1'"
-      :config="data?.ui"
-  compact
-    />
-    <OuterFooter2
-      v-else-if="data?.ui?.footerComponent === '2'"
-      :config="data?.ui"
-  compact
-    />
+    <OuterFooter v-if="data?.ui?.footerComponent === '1'" :config="data?.ui" compact />
+    <OuterFooter2 v-else-if="data?.ui?.footerComponent === '2'" :config="data?.ui" compact />
   </v-app>
 </template>
-
-
 
 <style scoped>
 /* Navbar positioning - push to the right of sidebar */

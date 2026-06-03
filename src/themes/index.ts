@@ -1,8 +1,13 @@
 import type { ThemeConfig } from '@/controller/landingController'
-import { createDarkTheme, createDynamicThemes, createLightTheme, getColorsFromExternal } from './base'
+import {
+  createDarkTheme,
+  createDynamicThemes,
+  createLightTheme,
+  getColorsFromExternal,
+} from './base'
 
 // Function to create dynamic theme configuration from external config interface
-export function createDynamicThemeConfig (themeConfig: ThemeConfig) {
+export function createDynamicThemeConfig(themeConfig: ThemeConfig) {
   const { primaryColor, secondaryColor } = themeConfig
 
   return {
@@ -15,7 +20,7 @@ export function createDynamicThemeConfig (themeConfig: ThemeConfig) {
 }
 
 // Function to create dynamic theme configuration from external-page.json
-export async function createDynamicThemeConfigFromExternal () {
+export async function createDynamicThemeConfigFromExternal() {
   const { primary, secondary } = await getColorsFromExternal()
 
   return {
@@ -28,7 +33,7 @@ export async function createDynamicThemeConfigFromExternal () {
 }
 
 // Main theme configuration - dynamically loads from external-page.json
-export async function getThemeConfig () {
+export async function getThemeConfig() {
   try {
     const themes = await createDynamicThemes()
     return {
@@ -41,4 +46,9 @@ export async function getThemeConfig () {
   }
 }
 
-export { createDarkTheme, createDynamicThemes, createLightTheme, getColorsFromExternal } from './base'
+export {
+  createDarkTheme,
+  createDynamicThemes,
+  createLightTheme,
+  getColorsFromExternal,
+} from './base'

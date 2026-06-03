@@ -1,121 +1,126 @@
 <script lang="ts" setup>
-  import type { CTAButton, NavigationItem, UIConfig, LogoConfig } from '@/controller/landingController'
-  import { computed, ref, onMounted, onUnmounted } from 'vue'
-  import { useRouter } from 'vue-router'
-  import { useTheme } from '@/composables/useTheme'
-  import { useDisplay } from 'vuetify'
+import type {
+  CTAButton,
+  NavigationItem,
+  UIConfig,
+  LogoConfig,
+} from '@/controller/landingController'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { useTheme } from '@/composables/useTheme'
+import { useDisplay } from 'vuetify'
 
-  interface Props {
-    config?: UIConfig | null
+interface Props {
+  config?: UIConfig | null
+}
+
+const props = defineProps<Props>()
+const router = useRouter()
+
+// Responsive breakpoints
+const { mobile } = useDisplay()
+
+// Mobile drawer state
+const drawer = ref(false)
+
+// Theme management
+const { toggleTheme: handleToggleTheme, getCurrentTheme, isLoadingTheme } = useTheme()
+
+// Scroll detection for mobile drawer auto-close
+let lastScrollY = ref(0)
+let ticking = ref(false)
+
+const handleScroll = () => {
+  if (!ticking.value) {
+    requestAnimationFrame(() => {
+      const currentScrollY = window.scrollY
+
+      // Close mobile drawer when scrolling down
+      if (mobile.value && drawer.value && currentScrollY > lastScrollY.value) {
+        drawer.value = false
+      }
+
+      lastScrollY.value = currentScrollY
+      ticking.value = false
+    })
+    ticking.value = true
   }
+}
 
-  const props = defineProps<Props>()
-  const router = useRouter()
+// Add scroll listener on mount, remove on unmount
+onMounted(() => {
+  window.addEventListener('scroll', handleScroll, { passive: true })
+  lastScrollY.value = window.scrollY
+})
 
-  // Responsive breakpoints
-  const { mobile } = useDisplay()
+onUnmounted(() => {
+  window.removeEventListener('scroll', handleScroll)
+})
 
-  // Mobile drawer state
-  const drawer = ref(false)
+const navbarConfig = computed(() => props.config?.navbar)
 
-  // Theme management
-  const { toggleTheme: handleToggleTheme, getCurrentTheme, isLoadingTheme } = useTheme()
+// Theme toggle computed properties
+const currentTheme = computed(() => getCurrentTheme())
+const themeIcon = computed(() => {
+  return currentTheme.value === 'dark' ? 'mdi-white-balance-sunny' : 'mdi-weather-night'
+})
+const themeTooltip = computed(() => {
+  return `Switch to ${currentTheme.value === 'dark' ? 'light' : 'dark'} theme`
+})
 
-  // Scroll detection for mobile drawer auto-close
-  let lastScrollY = ref(0)
-  let ticking = ref(false)
+function toggleTheme() {
+  handleToggleTheme()
+}
 
-  const handleScroll = () => {
-    if (!ticking.value) {
-      requestAnimationFrame(() => {
-        const currentScrollY = window.scrollY
+function handleNavigation(item: NavigationItem) {
+  // Close drawer on mobile after navigation
+  drawer.value = false
 
-        // Close mobile drawer when scrolling down
-        if (mobile.value && drawer.value && currentScrollY > lastScrollY.value) {
-          drawer.value = false
-        }
-
-        lastScrollY.value = currentScrollY
-        ticking.value = false
-      })
-      ticking.value = true
+  switch (item.action) {
+    case 'scroll': {
+      scrollToSection(item.target)
+      break
+    }
+    case 'navigate': {
+      router.push(item.target)
+      break
+    }
+    case 'external': {
+      window.open(item.target, '_blank', 'noopener,noreferrer')
+      break
     }
   }
+}
 
-  // Add scroll listener on mount, remove on unmount
-  onMounted(() => {
-    window.addEventListener('scroll', handleScroll, { passive: true })
-    lastScrollY.value = window.scrollY
-  })
+function handleCTAAction(button: CTAButton) {
+  // Close drawer on mobile after CTA action
+  drawer.value = false
 
-  onUnmounted(() => {
-    window.removeEventListener('scroll', handleScroll)
-  })
-
-  const navbarConfig = computed(() => props.config?.navbar)
-
-  // Theme toggle computed properties
-  const currentTheme = computed(() => getCurrentTheme())
-  const themeIcon = computed(() => {
-    return currentTheme.value === 'dark' ? 'mdi-white-balance-sunny' : 'mdi-weather-night'
-  })
-  const themeTooltip = computed(() => {
-    return `Switch to ${currentTheme.value === 'dark' ? 'light' : 'dark'} theme`
-  })
-
-  function toggleTheme () {
-    handleToggleTheme()
-  }
-
-  function handleNavigation (item: NavigationItem) {
-    // Close drawer on mobile after navigation
-    drawer.value = false
-
-    switch (item.action) {
-      case 'scroll': {
-        scrollToSection(item.target)
-        break
-      }
-      case 'navigate': {
-        router.push(item.target)
-        break
-      }
-      case 'external': {
-        window.open(item.target, '_blank', 'noopener,noreferrer')
-        break
-      }
+  switch (button.action) {
+    case 'scroll': {
+      scrollToSection(button.target)
+      break
+    }
+    case 'navigate': {
+      router.push(button.target)
+      break
+    }
+    case 'external': {
+      window.open(button.target, '_blank', 'noopener,noreferrer')
+      break
     }
   }
+}
 
-  function handleCTAAction (button: CTAButton) {
-    // Close drawer on mobile after CTA action
-    drawer.value = false
-
-    switch (button.action) {
-      case 'scroll': {
-        scrollToSection(button.target)
-        break
-      }
-      case 'navigate': {
-        router.push(button.target)
-        break
-      }
-      case 'external': {
-        window.open(button.target, '_blank', 'noopener,noreferrer')
-        break
-      }
-    }
+function scrollToSection(sectionId: string) {
+  const element = document.querySelector(`#${sectionId}`)
+  if (element) {
+    element.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    })
   }
-
-  function scrollToSection (sectionId: string) {
-    const element = document.querySelector(`#${sectionId}`)
-    if (element) {
-      element.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start',
-      })
-    }
-  }
+}
 </script>
 
 <template>
@@ -149,11 +154,7 @@
                 size="40"
                 :color="navbarConfig.color === 'transparent' ? 'primary' : 'primary-darken-1'"
               >
-                <v-icon
-                  :icon="navbarConfig.icon"
-                  size="24"
-                  color="white"
-                />
+                <v-icon :icon="navbarConfig.icon" size="24" color="white" />
               </v-avatar>
             </template>
           </v-img>
@@ -165,21 +166,15 @@
             size="40"
             :color="navbarConfig.color === 'transparent' ? 'primary' : 'primary-darken-1'"
           >
-            <v-icon
-              :icon="navbarConfig.icon"
-              size="24"
-              color="white"
-            />
+            <v-icon :icon="navbarConfig.icon" size="24" color="white" />
           </v-avatar>
         </template>
 
         <div class="d-flex flex-column">
-          <span class="text-h6 font-weight-bold ">
+          <span class="text-h6 font-weight-bold">
             {{ navbarConfig.title }}
           </span>
-          <span class="text-caption text-medium-emphasis">
-            Modern Design
-          </span>
+          <span class="text-caption text-medium-emphasis"> Modern Design </span>
         </div>
       </template>
 
@@ -189,11 +184,7 @@
       <template #append>
         <div class="d-none d-md-flex align-center">
           <!-- Navigation Pills -->
-          <v-chip-group
-            class="me-4"
-            color="primary"
-            variant="text"
-          >
+          <v-chip-group class="me-4" color="primary" variant="text">
             <v-chip
               v-for="item in navbarConfig.navigationItems"
               :key="item.label"
@@ -208,7 +199,7 @@
           </v-chip-group>
 
           <!-- Action Buttons Container -->
-            <div class="d-flex align-center">
+          <div class="d-flex align-center">
             <!-- Theme Toggle with Badge -->
             <v-badge
               :content="currentTheme.charAt(0).toUpperCase()"
@@ -218,21 +209,19 @@
               class="me-4"
             >
               <v-btn
-              :loading="isLoadingTheme"
-              size="large"
-              variant="text"
-              rounded="xl"
-              :aria-label="themeTooltip"
-              @click="toggleTheme"
+                :loading="isLoadingTheme"
+                size="large"
+                variant="text"
+                rounded="xl"
+                :aria-label="themeTooltip"
+                @click="toggleTheme"
               >
-              <v-icon :icon="themeIcon" />
-              <v-tooltip activator="parent" location="bottom">
-                {{ themeTooltip }}
-              </v-tooltip>
+                <v-icon :icon="themeIcon" />
+                <v-tooltip activator="parent" location="bottom">
+                  {{ themeTooltip }}
+                </v-tooltip>
               </v-btn>
             </v-badge>
-
-
 
             <!-- CTA Button with Enhanced Design -->
             <v-btn
@@ -251,23 +240,12 @@
         </div>
 
         <!-- Mobile Menu Button -->
-        <v-btn
-          class="d-md-none"
-          icon="mdi-menu"
-          variant="text"
-          @click="drawer = !drawer"
-        />
+        <v-btn class="d-md-none" icon="mdi-menu" variant="text" @click="drawer = !drawer" />
       </template>
     </v-app-bar>
 
     <!-- Mobile Navigation Drawer -->
-    <v-navigation-drawer
-      v-model="drawer"
-      location="end"
-      temporary
-      width="300"
-      class="d-md-none"
-    >
+    <v-navigation-drawer v-model="drawer" location="end" temporary width="300" class="d-md-none">
       <!-- Drawer Header -->
       <v-list-item class="pa-4 border-b">
         <template #prepend>
@@ -287,11 +265,7 @@
                   :color="navbarConfig.color === 'transparent' ? 'light' : 'primary-darken-1'"
                   size="48"
                 >
-                  <v-icon
-                    :icon="navbarConfig.icon"
-                    size="28"
-                    color="white"
-                  />
+                  <v-icon :icon="navbarConfig.icon" size="28" color="white" />
                 </v-avatar>
               </template>
             </v-img>
@@ -302,11 +276,7 @@
               :color="navbarConfig.color === 'transparent' ? 'light' : 'primary-darken-1'"
               size="48"
             >
-              <v-icon
-                :icon="navbarConfig.icon"
-                size="28"
-                color="white"
-              />
+              <v-icon :icon="navbarConfig.icon" size="28" color="white" />
             </v-avatar>
           </template>
         </template>
@@ -314,9 +284,7 @@
         <v-list-item-title class="text-h6 font-weight-bold text-primary">
           {{ navbarConfig.title }}
         </v-list-item-title>
-        <v-list-item-subtitle class="text-caption">
-          Modern Design
-        </v-list-item-subtitle>
+        <v-list-item-subtitle class="text-caption"> Modern Design </v-list-item-subtitle>
       </v-list-item>
 
       <v-divider />

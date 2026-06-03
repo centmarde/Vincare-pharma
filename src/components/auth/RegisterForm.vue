@@ -37,7 +37,6 @@
           </v-col>
         </v-row>
 
-
         <v-row no-gutters>
           <v-col cols="12">
             <v-text-field
@@ -66,15 +65,10 @@
               :type="showConfirmPassword ? 'text' : 'password'"
               variant="outlined"
               density="comfortable"
-              :rules="[
-                  requiredValidator,
-                  (v) => confirmedValidator(v, registerForm.password)
-                ]"
+              :rules="[requiredValidator, (v) => confirmedValidator(v, registerForm.password)]"
               :error-messages="errors.confirmPassword"
               prepend-inner-icon="mdi-lock-check"
-              :append-inner-icon="
-                showConfirmPassword ? 'mdi-eye' : 'mdi-eye-off'
-              "
+              :append-inner-icon="showConfirmPassword ? 'mdi-eye' : 'mdi-eye-off'"
               @click:append-inner="showConfirmPassword = !showConfirmPassword"
               class="mb-6"
             />
@@ -100,9 +94,7 @@
 
         <v-row no-gutters>
           <v-col cols="12" class="text-center">
-            <span class="text-body-2 text-medium-emphasis">
-              Already have an account?
-            </span>
+            <span class="text-body-2 text-medium-emphasis"> Already have an account? </span>
             <v-btn
               variant="text"
               color="light"
@@ -120,7 +112,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, computed } from 'vue'
 import {
   requiredValidator,
   emailValidator,
@@ -128,121 +120,115 @@ import {
   usernameValidator,
   confirmedValidator,
   getErrorMessage,
-} from "@/lib/validator";
-import { useAuthUserStore } from "@/stores/authUser";
-import { useToast } from "vue-toastification";
-import { useRouter } from "vue-router";
+} from '@/lib/validator'
+import { useAuthUserStore } from '@/stores/authUser'
+import { useToast } from 'vue-toastification'
 
 // Emits
 const emit = defineEmits<{
-  "switch-to-login": [];
-}>();
+  'switch-to-login': []
+}>()
 
 // Composables
-const authStore = useAuthUserStore();
-const toast = useToast();
-const router = useRouter();
-
+const authStore = useAuthUserStore()
+const toast = useToast()
 // Form refs and reactive data
-const formRef = ref();
-const formValid = ref(false);
-const loading = ref(false);
-const showPassword = ref(false);
-const showConfirmPassword = ref(false);
+const formRef = ref()
+const formValid = ref(false)
+const loading = ref(false)
+const showPassword = ref(false)
+const showConfirmPassword = ref(false)
 
 // Computed
-const isLoading = computed(() => loading.value || authStore.loading);
+const isLoading = computed(() => loading.value || authStore.loading)
 
 // Form data
 const registerForm = reactive({
-  username: "",
-  email: "",
-  password: "",
-  confirmPassword: "",
-});
+  username: '',
+  email: '',
+  password: '',
+  confirmPassword: '',
+})
 
 // Error handling
 const errors = reactive({
-  username: "",
-  email: "",
-  password: "",
-  confirmPassword: "",
-});
+  username: '',
+  email: '',
+  password: '',
+  confirmPassword: '',
+})
 
 // Methods
 const clearErrors = () => {
-  errors.username = "";
-  errors.email = "";
-  errors.password = "";
-  errors.confirmPassword = "";
-};
+  errors.username = ''
+  errors.email = ''
+  errors.password = ''
+  errors.confirmPassword = ''
+}
 
 const handleRegister = async () => {
   if (!formValid.value) {
-    toast.error("Please fill in all required fields correctly");
-    return;
+    toast.error('Please fill in all required fields correctly')
+    return
   }
 
   // Normalize inputs (avoid case-sensitive duplicates in auth / profiles)
-  const normalizedEmail = registerForm.email.trim().toLowerCase();
-  const normalizedUsername = registerForm.username.trim().toLowerCase();
+  const normalizedEmail = registerForm.email.trim().toLowerCase()
+  const normalizedUsername = registerForm.username.trim().toLowerCase()
 
   if (registerForm.password !== registerForm.confirmPassword) {
-    toast.error("Passwords do not match");
-    return;
+    toast.error('Passwords do not match')
+    return
   }
 
-  loading.value = true;
-  clearErrors();
+  loading.value = true
+  clearErrors()
 
   try {
     const result = await authStore.registerUser(
-  normalizedEmail,
+      normalizedEmail,
       registerForm.password,
-  normalizedUsername,
-  3,
-
-    );
+      normalizedUsername,
+      3,
+    )
 
     if (result.error) {
-      const errorMessage = getErrorMessage(result.error);
-      toast.error(errorMessage || "Registration failed");
+      const errorMessage = getErrorMessage(result.error)
+      toast.error(errorMessage || 'Registration failed')
 
       // Handle specific error types
-      if (errorMessage.toLowerCase().includes("email")) {
-        errors.email = errorMessage;
-      } else if (errorMessage.toLowerCase().includes("username")) {
-        errors.username = errorMessage;
-      } else if (errorMessage.toLowerCase().includes("password")) {
-        errors.password = errorMessage;
+      if (errorMessage.toLowerCase().includes('email')) {
+        errors.email = errorMessage
+      } else if (errorMessage.toLowerCase().includes('username')) {
+        errors.username = errorMessage
+      } else if (errorMessage.toLowerCase().includes('password')) {
+        errors.password = errorMessage
       }
     } else {
-      toast.success(
-        "Account created successfully! Please check your email to verify your account."
-      );
-      resetForm();
+      toast.success('Account created successfully! Please check your email to verify your account.')
+      resetForm()
       // Switch back to login form after successful registration
-      emit('switch-to-login');
+      emit('switch-to-login')
     }
   } catch (error: any) {
-    toast.error(error.message || "An unexpected error occurred");
+    toast.error(error.message || 'An unexpected error occurred')
   } finally {
-    loading.value = false;
+    loading.value = false
   }
-};
+}
 
 // Reset form
 const resetForm = () => {
-  registerForm.username = "";
-  registerForm.email = "";
-  registerForm.password = "";
-  registerForm.confirmPassword = "";
-  clearErrors();
-  formRef.value?.resetValidation();
-};
+  registerForm.username = ''
+  registerForm.email = ''
+  registerForm.password = ''
+  registerForm.confirmPassword = ''
+  clearErrors()
+  formRef.value?.resetValidation()
+}
 
 // Expose methods for parent component
 defineExpose({
   resetForm,
-});
+})
 </script>

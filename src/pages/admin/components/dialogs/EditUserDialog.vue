@@ -39,44 +39,46 @@ const form = ref()
 const formData = reactive({
   email: '',
   full_name: '',
-  role_id: null as number | null
+  role_id: null as number | null,
 })
 
 // Validation rules
 const rules = computed(() => ({
   email: [
     (v: string) => !!v || 'Email is required',
-    (v: string) => /.+@.+\..+/.test(v) || 'Email must be valid'
+    (v: string) => /.+@.+\..+/.test(v) || 'Email must be valid',
   ],
   full_name: [
     (v: string) => !!v || 'Full name is required',
-    (v: string) => v.length >= 2 || 'Full name must be at least 2 characters'
+    (v: string) => v.length >= 2 || 'Full name must be at least 2 characters',
   ],
-  role_id: isCurrentUserAdmin.value ? [
-    (v: number | null) => v !== null || 'Role is required'
-  ] : []
+  role_id: isCurrentUserAdmin.value ? [(v: number | null) => v !== null || 'Role is required'] : [],
 }))
 
 // Computed
 const roleOptions = computed(() => {
-  return rolesStore.roles.map(role => ({
+  return rolesStore.roles.map((role) => ({
     title: role.title,
-    value: role.id
+    value: role.id,
   }))
 })
 
 const isCurrentUserAdmin = computed(() => {
-  return authStore.userRole === 1 || authStore.userRole === 2;
+  return authStore.userRole === 1 || authStore.userRole === 2
 })
 
 // Watch for user changes to populate form
-watch(() => props.user, (newUser) => {
-  if (newUser) {
-    formData.email = newUser.email || ''
-    formData.full_name = newUser.full_name || ''
-    formData.role_id = newUser.role_id || null
-  }
-}, { immediate: true })
+watch(
+  () => props.user,
+  (newUser) => {
+    if (newUser) {
+      formData.email = newUser.email || ''
+      formData.full_name = newUser.full_name || ''
+      formData.role_id = newUser.role_id || null
+    }
+  },
+  { immediate: true },
+)
 
 // Watch for dialog close to reset form
 watch(model, (isOpen) => {
@@ -105,7 +107,7 @@ const handleSubmit = async () => {
   try {
     const userMetadata: Record<string, any> = {
       ...props.user.user_metadata,
-      full_name: formData.full_name
+      full_name: formData.full_name,
     }
 
     // Only update role if current user is admin
@@ -115,7 +117,7 @@ const handleSubmit = async () => {
 
     const updateData = {
       email: formData.email,
-      user_metadata: userMetadata
+      user_metadata: userMetadata,
     }
 
     const result = await authStore.updateUser(props.user.id, updateData)
@@ -193,12 +195,7 @@ const handleClose = () => {
           </v-container>
         </v-form>
 
-        <v-alert
-          v-if="user"
-          type="info"
-          variant="tonal"
-          class="mt-4"
-        >
+        <v-alert v-if="user" type="info" variant="tonal" class="mt-4">
           <div class="font-weight-medium">Current User ID:</div>
           <div class="text-caption">{{ user.id }}</div>
         </v-alert>
@@ -206,20 +203,10 @@ const handleClose = () => {
 
       <v-card-actions class="px-4 pb-4">
         <v-spacer />
-        <v-btn
-          color="grey"
-          variant="text"
-          @click="handleClose"
-          :disabled="updating"
-        >
+        <v-btn color="grey" variant="text" @click="handleClose" :disabled="updating">
           Cancel
         </v-btn>
-        <v-btn
-          color="primary"
-          variant="flat"
-          @click="handleSubmit"
-          :loading="updating"
-        >
+        <v-btn color="primary" variant="flat" @click="handleSubmit" :loading="updating">
           Update User
         </v-btn>
       </v-card-actions>
