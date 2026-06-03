@@ -36,8 +36,8 @@
   "author": "Vincare-Pharma",
   "lastUpdated": "2026-06-02",
   "theme": {
-    "primaryColor": "#d52e2e",
-    "secondaryColor": "#b61f1f"
+    "primaryColor": "#9d0f0f",
+    "secondaryColor": "#840000"
   },
   "ui": {
     "showNavbar": true,
@@ -64,12 +64,6 @@
           "label": "Features",
           "action": "scroll",
           "target": "features"
-        },
-        {
-          "_comment": "dont change this",
-          "label": "About",
-          "action": "scroll",
-          "target": "about"
         }
       ],
       "ctaButton": {
