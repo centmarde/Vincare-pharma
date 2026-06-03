@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
-import { createDisplaySlugName, getEmailInitials, getErrorMessage } from '@/utils/helpers'
+import { getEmailInitials, getErrorMessage } from '@/utils/helpers'
 import { passwordValidator } from '@/lib/validator'
 
 const toast = useToast()
@@ -32,8 +32,18 @@ const passwordFormRef = ref<any>(null)
 
 // Computed properties - Use authStore email for more reliable data
 const userEmail = computed(() => authStore.userEmail || userProfile.value.email)
-const slugName = computed(() => createDisplaySlugName(userEmail.value))
 const userInitials = computed(() => getEmailInitials(userEmail.value))
+
+// Prefer full name from auth store metadata, fall back to loaded profile, then email.
+const fullName = computed(() => {
+  return (
+    authStore.userData?.user_metadata?.full_name ||
+    userProfile.value.displayName ||
+    authStore.userName ||
+    userEmail.value ||
+    ''
+  )
+})
 
 // Password validation computed properties
 const passwordRequirements = computed(() => {
@@ -198,7 +208,7 @@ onMounted(() => {
             </span>
           </v-avatar>
 
-          <h4 class="text-h5 font-weight-bold mb-1">{{ slugName }}</h4>
+          <h4 class="text-h5 font-weight-bold mb-1">{{ fullName }}</h4>
           <p class="text-body-2 text-grey-lighten-1">{{ userEmail }}</p>
         </div>
       </v-card>
@@ -246,6 +256,7 @@ onMounted(() => {
                 </v-col>
                 <v-col cols="12" sm="6">
                   <v-text-field
+                    disabled
                     v-model="userProfile.email"
                     label="Email Address"
                     prepend-inner-icon="mdi-email"
