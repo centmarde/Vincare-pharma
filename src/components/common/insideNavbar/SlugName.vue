@@ -1,10 +1,10 @@
 <script lang="ts" setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useUserRolesStore } from '@/stores/roles'
-import { createDisplaySlugName, getEmailInitials, getRoleText, getRoleColor } from '@/utils/helpers'
+import { getEmailInitials, getRoleText, getRoleColor } from '@/utils/helpers'
 
 const authStore = useAuthUserStore()
 const rolesStore = useUserRolesStore()
@@ -25,11 +25,27 @@ const menu = ref(false)
 
 // Computed properties for user data
 const userEmail = computed(() => authStore.userEmail)
-const displayName = computed(() => createDisplaySlugName(userEmail.value))
+const displayName = computed(
+  () => authStore.userData?.user_metadata?.full_name || authStore.userName,
+)
 const userInitials = computed(() => getEmailInitials(userEmail.value))
-const userRole = computed(() => authStore.userRole)
-const userRoleText = computed(() => getRoleText(userRole.value, rolesStore.roles))
-const userRoleColor = computed(() => getRoleColor(userRole.value))
+// Normalize role id because Supabase metadata can be a string (e.g. "2")
+const userRoleId = computed<number | null>(() => {
+  const raw = authStore.userRole as unknown
+  if (raw === null || raw === undefined || raw === '') return null
+  const n = typeof raw === 'number' ? raw : Number(raw)
+  return Number.isFinite(n) ? n : null
+})
+
+const userRoleText = computed(() => getRoleText(userRoleId.value, rolesStore.roles))
+const userRoleColor = computed(() => getRoleColor(userRoleId.value))
+
+onMounted(async () => {
+  // Prevent intermittent "Unknown" when roles haven't been fetched yet.
+  if (!rolesStore.roles.length && !rolesStore.loading) {
+    await rolesStore.fetchRoles()
+  }
+})
 
 // Handle logout
 async function handleLogout() {
@@ -96,7 +112,7 @@ async function goToSettings() {
               <div class="text-body-2 text-medium-emphasis">
                 {{ userEmail }}
               </div>
-              <div class="d-flex align-center mt-1" v-if="userRole">
+              <div class="d-flex align-center mt-1" v-if="userRoleId">
                 <v-chip
                   :color="userRoleColor"
                   size="x-small"
