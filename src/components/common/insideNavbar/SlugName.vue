@@ -17,7 +17,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  showInlineLogout: false
+  showInlineLogout: false,
 })
 
 // Dropdown menu state
@@ -61,7 +61,7 @@ async function goToSettings() {
       :offset="8"
       transition="slide-y-transition"
       attach="body"
-  :z-index="20000"
+      :z-index="20000"
     >
       <template #activator="{ props: menuActivatorProps }">
         <v-btn
@@ -70,11 +70,7 @@ async function goToSettings() {
           variant="text"
           :aria-label="`Open user menu for ${userEmail}`"
         >
-          <v-avatar
-            size="36"
-            color="primary"
-            class="avatar-with-border"
-          >
+          <v-avatar size="36" color="primary" class="avatar-with-border">
             <span class="text-white font-weight-medium">
               {{ userInitials }}
             </span>
@@ -83,20 +79,11 @@ async function goToSettings() {
       </template>
 
       <!-- Dropdown Menu -->
-      <v-card
-        min-width="280"
-        class="user-dropdown-card"
-        elevation="8"
-        rounded="lg"
-      >
+      <v-card min-width="280" class="user-dropdown-card" elevation="8" rounded="lg">
         <!-- User Info Header -->
         <v-card-item class="pb-2">
           <div class="d-flex align-center">
-            <v-avatar
-              size="48"
-              color="primary"
-              class="me-3"
-            >
+            <v-avatar size="48" color="primary" class="me-3">
               <span class="text-white font-weight-bold">
                 {{ userInitials }}
               </span>
@@ -167,7 +154,7 @@ async function goToSettings() {
           :loading="authStore.loading"
           :aria-label="'Logout'"
           @click="handleLogout"
-					 rounded="lg"
+          rounded="lg"
         >
           Logout
         </v-btn>
@@ -187,7 +174,6 @@ async function goToSettings() {
   backdrop-filter: blur(8px);
   background: rgba(var(--v-theme-surface), 0.95) !important;
 }
-
 
 /* Responsive adjustments */
 @media (max-width: 599px) {

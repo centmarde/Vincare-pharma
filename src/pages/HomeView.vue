@@ -1,4 +1,3 @@
-
 <script setup lang="ts">
 import { useAuthUserStore } from '@/stores/authUser'
 import { useToast } from 'vue-toastification'
@@ -57,4 +56,3 @@ const handleLogout = async () => {
     </template>
   </InnerLayoutWrapper>
 </template>
-

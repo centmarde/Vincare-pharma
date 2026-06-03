@@ -169,7 +169,7 @@ export const useUserRolesStore = defineStore('userRoles', () => {
       if (updateError) throw updateError
 
       // Update in local state
-      const index = roles.value.findIndex(role => role.id === id)
+      const index = roles.value.findIndex((role) => role.id === id)
       if (index !== -1) {
         roles.value[index] = data
       }
@@ -198,15 +198,12 @@ export const useUserRolesStore = defineStore('userRoles', () => {
     error.value = null
 
     try {
-      const { error: deleteError } = await supabase
-        .from('roles')
-        .delete()
-        .eq('id', id)
+      const { error: deleteError } = await supabase.from('roles').delete().eq('id', id)
 
       if (deleteError) throw deleteError
 
       // Remove from local state
-      roles.value = roles.value.filter(role => role.id !== id)
+      roles.value = roles.value.filter((role) => role.id !== id)
 
       if (currentRole.value?.id === id) {
         currentRole.value = null
@@ -253,6 +250,6 @@ export const useUserRolesStore = defineStore('userRoles', () => {
     deleteRole,
     clearError,
     clearCurrentRole,
-    clearRolesWithPages
+    clearRolesWithPages,
   }
 })

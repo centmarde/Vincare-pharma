@@ -36,7 +36,7 @@
               <v-card
                 variant="outlined"
                 class="pa-4 upload-area"
-                :class="{ 'dragover': isDragOver }"
+                :class="{ dragover: isDragOver }"
                 @drop="handleDrop"
                 @dragover.prevent="isDragOver = true"
                 @dragleave="isDragOver = false"
@@ -73,18 +73,11 @@
 
                   <!-- Upload prompt -->
                   <div v-if="!imagePreview">
-                    <v-icon
-                      icon="mdi-cloud-upload"
-                      size="48"
-                      color="primary"
-                      class="mb-2"
-                    />
+                    <v-icon icon="mdi-cloud-upload" size="48" color="primary" class="mb-2" />
                     <p class="text-body-1 mb-2">
                       <strong>Click to upload</strong> or drag and drop
                     </p>
-                    <p class="text-caption text-medium-emphasis">
-                      PNG, JPG, GIF up to 5MB
-                    </p>
+                    <p class="text-caption text-medium-emphasis">PNG, JPG, GIF up to 5MB</p>
                   </div>
 
                   <!-- Upload progress -->
@@ -106,15 +99,8 @@
 
       <v-card-actions class="pa-6">
         <v-spacer />
-        <v-btn @click="handleCancel" variant="outlined" :disabled="loading">
-          Cancel
-        </v-btn>
-        <v-btn
-          @click="handleSave"
-          color="primary"
-          :disabled="!valid || loading"
-          :loading="loading"
-        >
+        <v-btn @click="handleCancel" variant="outlined" :disabled="loading"> Cancel </v-btn>
+        <v-btn @click="handleSave" color="primary" :disabled="!valid || loading" :loading="loading">
           {{ isEditing ? 'Update' : 'Create' }}
         </v-btn>
       </v-card-actions>
@@ -140,7 +126,7 @@ const props = withDefaults(defineProps<Props>(), {
   modelValue: false,
   isEditing: false,
   announcement: undefined,
-  loading: false
+  loading: false,
 })
 
 // Emits
@@ -171,18 +157,18 @@ const formData = ref({
   id: 0,
   title: '',
   description: '',
-  image_url: ''
+  image_url: '',
 })
 
 // Computed
 const show = computed({
   get: () => props.modelValue,
-  set: (value: boolean) => emit('update:modelValue', value)
+  set: (value: boolean) => emit('update:modelValue', value),
 })
 
 // Form validation rules
 const rules = {
-  required: (value: string) => !!value || 'This field is required'
+  required: (value: string) => !!value || 'This field is required',
 }
 
 // Watch for changes in announcement prop to populate form
@@ -194,7 +180,7 @@ watch(
         id: newAnnouncement.id,
         title: newAnnouncement.title,
         description: newAnnouncement.description,
-        image_url: newAnnouncement.image_url || ''
+        image_url: newAnnouncement.image_url || '',
       }
       // Set image preview if URL exists
       if (newAnnouncement.image_url) {
@@ -206,14 +192,14 @@ watch(
         id: 0,
         title: '',
         description: '',
-        image_url: ''
+        image_url: '',
       }
       // Clear image preview
       imagePreview.value = null
       selectedFile.value = null
     }
   },
-  { immediate: true }
+  { immediate: true },
 )
 
 // Watch for dialog open/close to reset validation
@@ -229,7 +215,7 @@ const handleSave = async () => {
 
   const saveData = {
     ...formData.value,
-    image_url: formData.value.image_url || ''
+    image_url: formData.value.image_url || '',
   }
 
   emit('save', saveData)
@@ -237,16 +223,18 @@ const handleSave = async () => {
 
 const handleCancel = async () => {
   // If user uploaded a new image but is canceling, clean it up
-  if (selectedFile.value && formData.value.image_url && formData.value.image_url.includes('supabase.co/storage/v1/object/public/announcements/')) {
+  if (
+    selectedFile.value &&
+    formData.value.image_url &&
+    formData.value.image_url.includes('supabase.co/storage/v1/object/public/announcements/')
+  ) {
     try {
       // Extract filename from URL
       const urlParts = formData.value.image_url.split('/')
       const fileName = urlParts[urlParts.length - 1]
 
       // Delete the uploaded file since user is canceling
-      await supabase.storage
-        .from('announcements')
-        .remove([fileName])
+      await supabase.storage.from('announcements').remove([fileName])
     } catch (error) {
       console.error('Error cleaning up uploaded file:', error)
     }
@@ -257,7 +245,7 @@ const handleCancel = async () => {
     id: 0,
     title: '',
     description: '',
-    image_url: ''
+    image_url: '',
   }
 
   // Reset image upload state
@@ -342,12 +330,10 @@ const uploadToSupabase = async (file: File) => {
     uploadProgress.value = 10
 
     // Upload file to Supabase Storage
-    const { data, error } = await supabase.storage
-      .from('announcements')
-      .upload(fileName, file, {
-        cacheControl: '3600',
-        upsert: false
-      })
+    const { data, error } = await supabase.storage.from('announcements').upload(fileName, file, {
+      cacheControl: '3600',
+      upsert: false,
+    })
 
     if (error) {
       throw error
@@ -357,7 +343,7 @@ const uploadToSupabase = async (file: File) => {
     uploadProgress.value = 90
 
     // Small delay to show progress completion
-    await new Promise(resolve => setTimeout(resolve, 500))
+    await new Promise((resolve) => setTimeout(resolve, 500))
 
     uploadProgress.value = 100
     uploading.value = false
@@ -369,7 +355,6 @@ const uploadToSupabase = async (file: File) => {
     formData.value.image_url = publicUrl
 
     toast.success('Image uploaded successfully!')
-
   } catch (error) {
     uploading.value = false
     uploadProgress.value = 0
@@ -387,15 +372,16 @@ const uploadToSupabase = async (file: File) => {
 const removeImage = async () => {
   try {
     // If there's an image URL and it's from Supabase, delete it from storage
-    if (formData.value.image_url && formData.value.image_url.includes('supabase.co/storage/v1/object/public/announcements/')) {
+    if (
+      formData.value.image_url &&
+      formData.value.image_url.includes('supabase.co/storage/v1/object/public/announcements/')
+    ) {
       // Extract filename from URL
       const urlParts = formData.value.image_url.split('/')
       const fileName = urlParts[urlParts.length - 1]
 
       // Delete from Supabase Storage
-      const { error } = await supabase.storage
-        .from('announcements')
-        .remove([fileName])
+      const { error } = await supabase.storage.from('announcements').remove([fileName])
 
       if (error) {
         console.error('Error deleting file from storage:', error)

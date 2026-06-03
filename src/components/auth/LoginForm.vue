@@ -1,18 +1,7 @@
 <template>
   <div class="d-flex justify-center pt-6">
-    <v-card
-      color="white"
-      class="pa-4"
-      rounded="lg"
-      elevation="2"
-    >
-      <v-img
-        src="/vincare.png"
-        alt="Vincare"
-        width="140"
-        height="140"
-        contain
-      />
+    <v-card color="white" class="pa-4" rounded="lg" elevation="2">
+      <v-img src="/vincare.png" alt="Vincare" width="140" height="140" contain />
     </v-card>
   </div>
 
@@ -74,15 +63,8 @@
 
         <v-row no-gutters>
           <v-col cols="12" class="text-center">
-            <span class="text-body-2 text-medium-emphasis">
-              Don't have an account?
-            </span>
-            <v-btn
-              variant="text"
-              size="small"
-              class="ml-1"
-              @click="$emit('switch-to-register')"
-            >
+            <span class="text-body-2 text-medium-emphasis"> Don't have an account? </span>
+            <v-btn variant="text" size="small" class="ml-1" @click="$emit('switch-to-register')">
               Sign Up
             </v-btn>
           </v-col>
@@ -93,104 +75,97 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from "vue";
-import {
-  requiredValidator,
-  emailValidator,
-  getErrorMessage,
-} from "@/lib/validator";
-import { useAuthUserStore } from "@/stores/authUser";
-import { useToast } from "vue-toastification";
-import { useRouter } from "vue-router";
+import { ref, reactive, computed } from 'vue'
+import { requiredValidator, emailValidator, getErrorMessage } from '@/lib/validator'
+import { useAuthUserStore } from '@/stores/authUser'
+import { useToast } from 'vue-toastification'
+import { useRouter } from 'vue-router'
 
 // Emits
 defineEmits<{
-  "switch-to-register": [];
-}>();
+  'switch-to-register': []
+}>()
 
 // Composables
-const authStore = useAuthUserStore();
-const toast = useToast();
-const router = useRouter();
+const authStore = useAuthUserStore()
+const toast = useToast()
+const router = useRouter()
 
 // Form refs and reactive data
-const formRef = ref();
-const formValid = ref(false);
-const loading = ref(false);
-const showPassword = ref(false);
+const formRef = ref()
+const formValid = ref(false)
+const loading = ref(false)
+const showPassword = ref(false)
 
 // Form data
 const loginForm = reactive({
-  email: "",
-  password: "",
-});
+  email: '',
+  password: '',
+})
 
 // Error handling
 const errors = reactive({
-  email: "",
-  password: "",
-});
+  email: '',
+  password: '',
+})
 
 // Computed
-const isLoading = computed(() => loading.value || authStore.loading);
-const passwordLabel = "Password";
+const isLoading = computed(() => loading.value || authStore.loading)
+const passwordLabel = 'Password'
 
 // Methods
 const clearErrors = () => {
-  errors.email = "";
-  errors.password = "";
-};
+  errors.email = ''
+  errors.password = ''
+}
 
 const handleLogin = async () => {
   if (!formValid.value) {
-    toast.error("Please fill in all required fields correctly");
-    return;
+    toast.error('Please fill in all required fields correctly')
+    return
   }
 
   // Normalize email to avoid case-sensitive login issues
-  const normalizedEmail = loginForm.email.trim().toLowerCase();
+  const normalizedEmail = loginForm.email.trim().toLowerCase()
 
-  loading.value = true;
-  clearErrors();
+  loading.value = true
+  clearErrors()
 
   try {
-    const result = await authStore.signIn(
-      normalizedEmail,
-      loginForm.password
-    );
+    const result = await authStore.signIn(normalizedEmail, loginForm.password)
 
     if (result.error) {
-      const errorMessage = getErrorMessage(result.error);
-      toast.error(errorMessage || "Login failed");
+      const errorMessage = getErrorMessage(result.error)
+      toast.error(errorMessage || 'Login failed')
 
       // Handle specific error types
-      if (errorMessage.toLowerCase().includes("email")) {
-        errors.email = errorMessage;
-      } else if (errorMessage.toLowerCase().includes("password")) {
-        errors.password = errorMessage;
+      if (errorMessage.toLowerCase().includes('email')) {
+        errors.email = errorMessage
+      } else if (errorMessage.toLowerCase().includes('password')) {
+        errors.password = errorMessage
       }
     } else {
-      toast.success("Login successful!");
-      resetForm();
-      router.push("/");
+      toast.success('Login successful!')
+      resetForm()
+      router.push('/')
     }
   } catch (error: any) {
-    toast.error(error.message || "An unexpected error occurred");
+    toast.error(error.message || 'An unexpected error occurred')
   } finally {
-    loading.value = false;
+    loading.value = false
   }
-};
+}
 
 // Reset form
 const resetForm = () => {
-  loginForm.email = "";
-  loginForm.password = "";
-  clearErrors();
-  formRef.value?.resetValidation();
-};
+  loginForm.email = ''
+  loginForm.password = ''
+  clearErrors()
+  formRef.value?.resetValidation()
+}
 
 // Expose methods for parent component
 defineExpose({
   resetForm,
-});
+})
 </script>

@@ -1,89 +1,89 @@
 <script lang="ts" setup>
-  import type { UIConfig, LogoConfig } from '@/controller/landingController'
-  import { computed, ref, onMounted, onUnmounted } from 'vue'
-  import { useRouter } from 'vue-router'
-  import { useTheme } from '@/composables/useTheme'
-  import { useDisplay } from 'vuetify'
-  import { useAuthUserStore } from '@/stores/authUser'
-  import SlugName from './SlugName.vue'
-  import { useUserPermissions } from '@/composables/useUserPermissions'
+import type { UIConfig, LogoConfig } from '@/controller/landingController'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { useTheme } from '@/composables/useTheme'
+import { useDisplay } from 'vuetify'
+import { useAuthUserStore } from '@/stores/authUser'
+import SlugName from './SlugName.vue'
+import { useUserPermissions } from '@/composables/useUserPermissions'
 
-  interface Props {
-    config?: UIConfig | null
+interface Props {
+  config?: UIConfig | null
+}
+
+const props = defineProps<Props>()
+const router = useRouter()
+const authStore = useAuthUserStore()
+
+// User permissions composable (permission-based navigation)
+const { getFilteredNavigationGroups, isLoading } = useUserPermissions()
+
+// Responsive breakpoints
+const { mobile } = useDisplay()
+
+// Mobile drawer state
+const drawer = ref(false)
+
+// Theme management
+const { toggleTheme: handleToggleTheme, getCurrentTheme, isLoadingTheme } = useTheme()
+
+// Scroll detection for mobile drawer auto-close
+let lastScrollY = ref(0)
+let ticking = ref(false)
+
+const handleScroll = () => {
+  if (!ticking.value) {
+    requestAnimationFrame(() => {
+      const currentScrollY = window.scrollY
+
+      // Close mobile drawer when scrolling down
+      if (mobile.value && drawer.value && currentScrollY > lastScrollY.value) {
+        drawer.value = false
+      }
+
+      lastScrollY.value = currentScrollY
+      ticking.value = false
+    })
+    ticking.value = true
   }
+}
 
-  const props = defineProps<Props>()
-  const router = useRouter()
-  const authStore = useAuthUserStore()
+// Add scroll listener on mount, remove on unmount
+onMounted(() => {
+  window.addEventListener('scroll', handleScroll, { passive: true })
+  lastScrollY.value = window.scrollY
+})
 
-  // User permissions composable (permission-based navigation)
-  const { getFilteredNavigationGroups, isLoading } = useUserPermissions()
+onUnmounted(() => {
+  window.removeEventListener('scroll', handleScroll)
+})
 
-  // Responsive breakpoints
-  const { mobile } = useDisplay()
+const navbarConfig = computed(() => props.config?.navbar)
 
-  // Mobile drawer state
-  const drawer = ref(false)
+// Get filtered navigation groups based on user permissions
+const navigationGroups = computed(() => getFilteredNavigationGroups())
 
-  // Theme management
-  const { toggleTheme: handleToggleTheme, getCurrentTheme, isLoadingTheme } = useTheme()
+// Theme toggle computed properties
+const currentTheme = computed(() => getCurrentTheme())
+const themeIcon = computed(() => {
+  return currentTheme.value === 'dark' ? 'mdi-white-balance-sunny' : 'mdi-weather-night'
+})
+const themeTooltip = computed(() => {
+  return `Switch to ${currentTheme.value === 'dark' ? 'light' : 'dark'} theme`
+})
 
-  // Scroll detection for mobile drawer auto-close
-  let lastScrollY = ref(0)
-  let ticking = ref(false)
+function toggleTheme() {
+  handleToggleTheme()
+}
 
-  const handleScroll = () => {
-    if (!ticking.value) {
-      requestAnimationFrame(() => {
-        const currentScrollY = window.scrollY
-
-        // Close mobile drawer when scrolling down
-        if (mobile.value && drawer.value && currentScrollY > lastScrollY.value) {
-          drawer.value = false
-        }
-
-        lastScrollY.value = currentScrollY
-        ticking.value = false
-      })
-      ticking.value = true
-    }
+async function handleLogout() {
+  try {
+    await authStore.signOut()
+  } catch (error) {
+    console.error('Logout failed:', error)
   }
-
-  // Add scroll listener on mount, remove on unmount
-  onMounted(() => {
-    window.addEventListener('scroll', handleScroll, { passive: true })
-    lastScrollY.value = window.scrollY
-  })
-
-  onUnmounted(() => {
-    window.removeEventListener('scroll', handleScroll)
-  })
-
-  const navbarConfig = computed(() => props.config?.navbar)
-
-  // Get filtered navigation groups based on user permissions
-  const navigationGroups = computed(() => getFilteredNavigationGroups())
-
-  // Theme toggle computed properties
-  const currentTheme = computed(() => getCurrentTheme())
-  const themeIcon = computed(() => {
-    return currentTheme.value === 'dark' ? 'mdi-white-balance-sunny' : 'mdi-weather-night'
-  })
-  const themeTooltip = computed(() => {
-    return `Switch to ${currentTheme.value === 'dark' ? 'light' : 'dark'} theme`
-  })
-
-  function toggleTheme () {
-    handleToggleTheme()
-  }
-
-  async function handleLogout () {
-    try {
-      await authStore.signOut()
-    } catch (error) {
-      console.error('Logout failed:', error)
-    }
-  }
+}
 </script>
 
 <template>
@@ -117,11 +117,7 @@
                 size="40"
                 :color="navbarConfig.color === 'transparent' ? 'primary' : 'primary-darken-1'"
               >
-                <v-icon
-                  :icon="navbarConfig.icon"
-                  size="24"
-                  color="white"
-                />
+                <v-icon :icon="navbarConfig.icon" size="24" color="white" />
               </v-avatar>
             </template>
           </v-img>
@@ -133,21 +129,15 @@
             size="40"
             :color="navbarConfig.color === 'transparent' ? 'primary' : 'primary-darken-1'"
           >
-            <v-icon
-              :icon="navbarConfig.icon"
-              size="24"
-              color="white"
-            />
+            <v-icon :icon="navbarConfig.icon" size="24" color="white" />
           </v-avatar>
         </template>
 
         <div class="d-flex flex-column">
-          <span class="text-h6 font-weight-bold ">
+          <span class="text-h6 font-weight-bold">
             {{ navbarConfig.title }}
           </span>
-          <span class="text-caption text-medium-emphasis">
-            Modern Design
-          </span>
+          <span class="text-caption text-medium-emphasis"> Modern Design </span>
         </div>
       </template>
 
@@ -186,23 +176,12 @@
         </div>
 
         <!-- Mobile Menu Button -->
-        <v-btn
-          class="d-md-none"
-          icon="mdi-menu"
-          variant="text"
-          @click="drawer = !drawer"
-        />
+        <v-btn class="d-md-none" icon="mdi-menu" variant="text" @click="drawer = !drawer" />
       </template>
     </v-app-bar>
 
     <!-- Mobile Navigation Drawer -->
-    <v-navigation-drawer
-      v-model="drawer"
-      location="end"
-      temporary
-      width="300"
-      class="d-md-none"
-    >
+    <v-navigation-drawer v-model="drawer" location="end" temporary width="300" class="d-md-none">
       <!-- Drawer Header -->
       <v-list-item class="pa-4 border-b">
         <template #prepend>
@@ -222,11 +201,7 @@
                   :color="navbarConfig.color === 'transparent' ? 'light' : 'primary-darken-1'"
                   size="48"
                 >
-                  <v-icon
-                    :icon="navbarConfig.icon"
-                    size="28"
-                    color="white"
-                  />
+                  <v-icon :icon="navbarConfig.icon" size="28" color="white" />
                 </v-avatar>
               </template>
             </v-img>
@@ -237,11 +212,7 @@
               :color="navbarConfig.color === 'transparent' ? 'light' : 'primary-darken-1'"
               size="48"
             >
-              <v-icon
-                :icon="navbarConfig.icon"
-                size="28"
-                color="white"
-              />
+              <v-icon :icon="navbarConfig.icon" size="28" color="white" />
             </v-avatar>
           </template>
         </template>
@@ -249,9 +220,7 @@
         <v-list-item-title class="text-h6 font-weight-bold text-primary">
           {{ navbarConfig.title }}
         </v-list-item-title>
-        <v-list-item-subtitle class="text-caption">
-          Modern Design
-        </v-list-item-subtitle>
+        <v-list-item-subtitle class="text-caption"> Modern Design </v-list-item-subtitle>
       </v-list-item>
 
       <v-divider />

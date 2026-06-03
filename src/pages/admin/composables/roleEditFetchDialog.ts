@@ -30,9 +30,7 @@ export function useRoleEditFetchDialog() {
         // Extract pages (routes) from role_pages and convert to permissions
         // The pages field contains the route like '/admin/user-management'
         // We need to map these routes back to permissions
-        const routes = rolePages
-          .map(rolePage => rolePage.pages)
-          .filter(Boolean) as string[]
+        const routes = rolePages.map((rolePage) => rolePage.pages).filter(Boolean) as string[]
 
         // Convert routes back to permissions using navigation mapping
         currentRolePermissions.value = routesToPermissions(routes)
@@ -55,8 +53,8 @@ export function useRoleEditFetchDialog() {
     const routeToPermissionMap: Record<string, string> = {}
 
     // Build mapping from navigation config
-    navigationConfig.forEach(group => {
-      group.children.forEach(item => {
+    navigationConfig.forEach((group) => {
+      group.children.forEach((item) => {
         if (item.route) {
           // Use permission if available, otherwise use the route itself
           routeToPermissionMap[item.route] = item.permission || item.route
@@ -64,9 +62,7 @@ export function useRoleEditFetchDialog() {
       })
     })
 
-    return routes
-      .map(route => routeToPermissionMap[route])
-      .filter(Boolean) as string[]
+    return routes.map((route) => routeToPermissionMap[route]).filter(Boolean) as string[]
   }
 
   /**
@@ -78,8 +74,8 @@ export function useRoleEditFetchDialog() {
     const routeSet = new Set<string>()
 
     // Build mapping from navigation config and collect routes
-    navigationConfig.forEach(group => {
-      group.children.forEach(item => {
+    navigationConfig.forEach((group) => {
+      group.children.forEach((item) => {
         if (item.route) {
           routeSet.add(item.route)
           if (item.permission) {
@@ -90,7 +86,7 @@ export function useRoleEditFetchDialog() {
     })
 
     return permissions
-      .map(permission => {
+      .map((permission) => {
         // If it's already a route, return it directly
         if (routeSet.has(permission)) {
           return permission
@@ -118,11 +114,11 @@ export function useRoleEditFetchDialog() {
       const routes = permissionsToRoutes(selectedPermissions)
 
       // Create new role pages for each route
-      const createPromises = routes.map(route =>
+      const createPromises = routes.map((route) =>
         pagesStore.createRolePage({
           role_id: roleId,
-          pages: route
-        })
+          pages: route,
+        }),
       )
 
       await Promise.all(createPromises)
@@ -165,6 +161,6 @@ export function useRoleEditFetchDialog() {
     hasPermission,
     clearPermissions,
     routesToPermissions,
-    permissionsToRoutes
+    permissionsToRoutes,
   }
 }

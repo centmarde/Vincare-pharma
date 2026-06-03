@@ -14,12 +14,12 @@ const activeTab = ref(0)
 // Form state
 const userProfile = ref({
   displayName: '',
-  email: ''
+  email: '',
 })
 
 const passwordForm = ref({
   newPassword: '',
-  confirmPassword: ''
+  confirmPassword: '',
 })
 
 // Loading states
@@ -44,7 +44,7 @@ const passwordRequirements = computed(() => {
     upperAndLower: /(?=.*[a-z])(?=.*[A-Z])/.test(password),
     number: /(?=.*\d)/.test(password),
     special: /(?=.*[!@#$%&*()_+\-=\[\]{};':"\\|,.<>\/?])/.test(password),
-    different: password !== '' // We'll assume different from current for now
+    different: password !== '', // We'll assume different from current for now
   }
 })
 
@@ -62,7 +62,7 @@ const rules = {
   },
   password: (value: string) => passwordValidator(value),
   passwordMatch: (value: string) =>
-    value === passwordForm.value.newPassword || 'Passwords do not match'
+    value === passwordForm.value.newPassword || 'Passwords do not match',
 }
 
 // Methods
@@ -78,7 +78,7 @@ const loadUserProfile = async () => {
 
     userProfile.value = {
       displayName: result.user.user_metadata?.full_name || result.user.full_name || '',
-      email: result.user.email || ''
+      email: result.user.email || '',
     }
   } catch (error) {
     console.error('Error loading user profile:', error)
@@ -101,8 +101,8 @@ const saveProfile = async () => {
       email: userProfile.value.email,
       user_metadata: {
         ...authStore.userData.user_metadata,
-        full_name: userProfile.value.displayName
-      }
+        full_name: userProfile.value.displayName,
+      },
     }
 
     const result = await authStore.updateUser(authStore.userData.id, updateData)
@@ -145,7 +145,7 @@ const changePassword = async () => {
 
     // Use Supabase admin to update password
     const result = await authStore.updateUser(authStore.userData.id, {
-      password: passwordForm.value.newPassword
+      password: passwordForm.value.newPassword,
     })
 
     if (result.error) {
@@ -156,7 +156,7 @@ const changePassword = async () => {
     // Clear password form
     passwordForm.value = {
       newPassword: '',
-      confirmPassword: ''
+      confirmPassword: '',
     }
 
     // Reset form validation
@@ -214,25 +214,12 @@ onMounted(() => {
         </div>
 
         <!-- Tabs -->
-        <v-tabs
-          v-model="activeTab"
-          bg-color="transparent"
-          color="blue-accent-2"
-          class="mb-6"
-        >
-          <v-tab
-            :value="0"
-            prepend-icon="mdi-account"
-            class="text-uppercase font-weight-bold px-8"
-          >
+        <v-tabs v-model="activeTab" bg-color="transparent" color="blue-accent-2" class="mb-6">
+          <v-tab :value="0" prepend-icon="mdi-account" class="text-uppercase font-weight-bold px-8">
             Profile Information
           </v-tab>
 
-          <v-tab
-            :value="1"
-            prepend-icon="mdi-lock"
-            class="text-uppercase font-weight-bold px-8"
-          >
+          <v-tab :value="1" prepend-icon="mdi-lock" class="text-uppercase font-weight-bold px-8">
             Change Password
           </v-tab>
         </v-tabs>
@@ -370,7 +357,9 @@ onMounted(() => {
                     :variant="passwordRequirements.upperAndLower ? 'flat' : 'outlined'"
                   >
                     <v-icon
-                      :icon="passwordRequirements.upperAndLower ? 'mdi-check' : 'mdi-circle-outline'"
+                      :icon="
+                        passwordRequirements.upperAndLower ? 'mdi-check' : 'mdi-circle-outline'
+                      "
                       start
                       size="x-small"
                     ></v-icon>
@@ -425,7 +414,11 @@ onMounted(() => {
                     color="blue-accent-2"
                     variant="elevated"
                     :loading="changingPassword"
-                    :disabled="loading || !isPasswordValid || passwordForm.newPassword !== passwordForm.confirmPassword"
+                    :disabled="
+                      loading ||
+                      !isPasswordValid ||
+                      passwordForm.newPassword !== passwordForm.confirmPassword
+                    "
                     class="mr-4"
                   >
                     <v-icon icon="mdi-key-change" class="mr-2"></v-icon>

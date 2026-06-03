@@ -6,7 +6,7 @@
 
 // Plugins
 import { registerPlugins } from '@/plugins'
-import "vue-toastification/dist/index.css";
+import 'vue-toastification/dist/index.css'
 // Components
 import App from './App.vue'
 

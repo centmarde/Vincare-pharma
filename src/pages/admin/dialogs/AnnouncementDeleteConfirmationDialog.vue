@@ -7,18 +7,12 @@
       </v-card-title>
 
       <v-card-text class="pa-6">
-        <p class="mb-4">
-          Are you sure you want to delete this announcement?
-        </p>
+        <p class="mb-4">Are you sure you want to delete this announcement?</p>
 
-        <v-alert
-          type="warning"
-          variant="tonal"
-          class="mb-0"
-        >
+        <v-alert type="warning" variant="tonal" class="mb-0">
           <template v-slot:text>
             <strong>This action cannot be undone.</strong>
-            <br>
+            <br />
             The announcement will be permanently removed from the system.
           </template>
         </v-alert>
@@ -26,19 +20,8 @@
 
       <v-card-actions class="pa-6">
         <v-spacer />
-        <v-btn
-          @click="handleCancel"
-          variant="outlined"
-          :disabled="loading"
-        >
-          Cancel
-        </v-btn>
-        <v-btn
-          @click="handleConfirm"
-          color="error"
-          :loading="loading"
-          :disabled="loading"
-        >
+        <v-btn @click="handleCancel" variant="outlined" :disabled="loading"> Cancel </v-btn>
+        <v-btn @click="handleConfirm" color="error" :loading="loading" :disabled="loading">
           <v-icon start>mdi-delete</v-icon>
           Delete
         </v-btn>
@@ -60,7 +43,7 @@ type Props = {
 const props = withDefaults(defineProps<Props>(), {
   modelValue: false,
   loading: false,
-  announcementTitle: ''
+  announcementTitle: '',
 })
 
 // Emits
@@ -75,7 +58,7 @@ const emit = defineEmits<Emits>()
 // Computed
 const show = computed({
   get: () => props.modelValue,
-  set: (value: boolean) => emit('update:modelValue', value)
+  set: (value: boolean) => emit('update:modelValue', value),
 })
 
 // Methods

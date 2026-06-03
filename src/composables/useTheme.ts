@@ -14,7 +14,7 @@ const isThemeLoaded = ref(false)
 const themeLoadError = ref<string | null>(null)
 const isLoadingTheme = ref(false)
 
-export function useTheme () {
+export function useTheme() {
   /**
    * Initialize and load dynamic themes from external-page.json
    */
@@ -39,7 +39,8 @@ export function useTheme () {
       isThemeLoaded.value = true
       console.log('Dynamic themes loaded successfully')
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to load theme configuration'
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to load theme configuration'
       themeLoadError.value = errorMessage
       console.error('Theme initialization failed:', error)
       throw error

@@ -4,8 +4,8 @@
  * Vue Toastification plugin configuration
  */
 
-import Toast, { POSITION } from "vue-toastification";
-import type { PluginOptions } from "vue-toastification";
+import Toast, { POSITION } from 'vue-toastification'
+import type { PluginOptions } from 'vue-toastification'
 import type { App } from 'vue'
 
 const options: PluginOptions = {
@@ -18,9 +18,9 @@ const options: PluginOptions = {
   draggablePercent: 0.6,
   showCloseButtonOnHover: false,
   hideProgressBar: false,
-  closeButton: "button",
+  closeButton: 'button',
   icon: true,
-  rtl: false
+  rtl: false,
 }
 
 export default function (app: App) {

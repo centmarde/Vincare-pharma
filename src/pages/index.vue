@@ -1,39 +1,39 @@
 <script lang="ts" setup>
-  import { onMounted } from 'vue'
-  import { useLandingController } from '@/controller/landingController'
-  import OuterLayoutWrapper from '@/layouts/OuterLayoutWrapper.vue'
+import { onMounted } from 'vue'
+import { useLandingController } from '@/controller/landingController'
+import OuterLayoutWrapper from '@/layouts/OuterLayoutWrapper.vue'
 
-  const { data, loading, error, fetchLandingData } = useLandingController()
+const { data, loading, error, fetchLandingData } = useLandingController()
 
-  onMounted(async () => {
-    await fetchLandingData()
-  })
+onMounted(async () => {
+  await fetchLandingData()
+})
 
-  function scrollToFeatures () {
-    const element = document.querySelector('#features')
-    if (element) {
-      element.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start',
-      })
-    }
-  }
-
-  function openGithub () {
-    window.open('https://github.com', '_blank', 'noopener,noreferrer')
-  }
-
-  function openDocumentation () {
-    window.open('https://vuetifyjs.com/', '_blank', 'noopener,noreferrer')
-  }
-
-  function formatDate (dateString: string) {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
+function scrollToFeatures() {
+  const element = document.querySelector('#features')
+  if (element) {
+    element.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
     })
   }
+}
+
+function openGithub() {
+  window.open('https://github.com', '_blank', 'noopener,noreferrer')
+}
+
+function openDocumentation() {
+  window.open('https://vuetifyjs.com/', '_blank', 'noopener,noreferrer')
+}
+
+function formatDate(dateString: string) {
+  return new Date(dateString).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
+}
 </script>
 
 <template>
@@ -55,12 +55,7 @@
           class="d-flex justify-center align-center"
           style="min-height: 50vh"
         >
-          <v-alert
-            color="error"
-            icon="mdi-alert-circle"
-            type="error"
-            variant="tonal"
-          >
+          <v-alert color="error" icon="mdi-alert-circle" type="error" variant="tonal">
             <v-alert-title>Failed to load content</v-alert-title>
             {{ error }}
           </v-alert>
@@ -86,9 +81,7 @@
                       {{ data.description }}
                     </p>
 
-                    <div
-                      class="d-flex flex-column flex-sm-row gap-4 justify-center"
-                    >
+                    <div class="d-flex flex-column flex-sm-row gap-4 justify-center">
                       <v-btn
                         class="text-none"
                         color="primary"
@@ -155,50 +148,7 @@
             </v-container>
           </section>
 
-          <!-- About Section -->
-          <section id="about" class="about-section py-16 ">
-            <v-container>
-              <v-row align="center" justify="center">
-                <v-col cols="12" lg="8" md="10">
-                  <div class="text-center">
-                    <h2 class="text-h3 font-weight-bold mb-6">
-                      About This Template
-                    </h2>
-
-                    <div class="pa-8" elevation="4">
-                      <v-row align="center">
-                        <v-col cols="12" md="8">
-                          <h3 class="text-h4 font-weight-bold mb-4">
-                            Version {{ data.version }}
-                          </h3>
-                          <p class="text-h6 text-grey-darken-1 mb-4">
-                            Created by {{ data.author }}
-                          </p>
-                          <p class="text-body-1 text-grey-darken-2">
-                            Last updated: {{ formatDate(data.lastUpdated) }}
-                          </p>
-                        </v-col>
-
-                        <v-col cols="12" md="4">
-                          <v-btn
-                            block
-                            class="text-none"
-                            color="primary"
-                            size="large"
-                            variant="elevated"
-                            @click="openDocumentation"
-                          >
-                            <v-icon class="me-2" icon="mdi-book-open" />
-                            Documentation
-                          </v-btn>
-                        </v-col>
-                      </v-row>
-                    </div>
-                  </div>
-                </v-col>
-              </v-row>
-            </v-container>
-          </section>
+          <!-- About section removed -->
         </div>
       </div>
     </template>
@@ -206,7 +156,6 @@
 </template>
 
 <style scoped>
-
 .min-height-screen {
   min-height: calc(100vh - 64px);
 }
