@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import InnerLayoutWrapper from "@/layouts/InnerLayoutWrapper.vue";
+
 </script>
 
 <template>
@@ -14,7 +15,7 @@ import InnerLayoutWrapper from "@/layouts/InnerLayoutWrapper.vue";
               </v-col>
               <v-col cols="12">
                 <v-card>
-                  <div class="text-center py-5">Purchasing View Content</div>
+                  <div class="text-center py-5">Warehouse View Content</div>
                 </v-card>
               </v-col>
             </v-row>

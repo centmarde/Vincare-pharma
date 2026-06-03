@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import InnerLayoutWrapper from "@/layouts/InnerLayoutWrapper.vue";
-import HomeLogs from "@/pages/hometab/HomeLogs.vue";
 </script>
 
 <template>

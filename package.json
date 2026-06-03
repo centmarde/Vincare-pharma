@@ -14,7 +14,7 @@
     "lint:check": "eslint .",
     "format": "eslint . --fix",
     "pre-commit-check": "lint-staged",
-    "prepare": "husky"
+  "prepare": "husky"
   },
   "dependencies": {
     "@fontsource/roboto": "5.2.6",
