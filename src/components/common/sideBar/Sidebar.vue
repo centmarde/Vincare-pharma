@@ -28,8 +28,8 @@ const isExpanded = ref(true)
 // Control admin group expansion - make it persistent
 const adminGroupExpanded = ref(true)
 
-// Control organization group expansion - make it persistent
-const organizationGroupExpanded = ref(true)
+// Control executive group expansion - make it persistent
+const executiveGroupExpanded = ref(true)
 
 // Control my account group expansion - make it persistent
 const myAccountGroupExpanded = ref(true)
@@ -41,8 +41,8 @@ watch(
     if (newPath.startsWith('/admin') ) {
       adminGroupExpanded.value = true
     }
-    if (newPath.startsWith('/organization')) {
-      organizationGroupExpanded.value = true
+    if (newPath.startsWith('/executive')) {
+      executiveGroupExpanded.value = true
     }
     if (newPath.startsWith('/account')) {
       myAccountGroupExpanded.value = true
@@ -65,7 +65,7 @@ const navigationGroups = computed(() => getFilteredNavigationGroups())
 // Helper function to get group expansion state
 const getGroupExpansion = (groupTitle: string) => {
   if (groupTitle === 'Admin Controls') return adminGroupExpanded
-  if (groupTitle === 'My Organization') return organizationGroupExpanded
+  if (groupTitle === 'Executive Controls') return executiveGroupExpanded
   if (groupTitle === 'My Account') return myAccountGroupExpanded
   return ref(true)
 }

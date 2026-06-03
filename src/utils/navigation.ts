@@ -57,6 +57,19 @@ export const navigationConfig: NavigationGroup[] = [
       },
     ]
   },
+  {
+    title: 'Executive Controls',
+    icon: 'mdi-briefcase',
+    permission: 'executive.access',
+    children: [
+      {
+        title: 'Executive Dashboard',
+        icon: 'mdi-view-dashboard',
+        route: '/executive/dashboard',
+        permission: 'executive.dashboard.view'
+      }
+    ]
+  }
 
 ]
 

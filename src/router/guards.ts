@@ -1,6 +1,7 @@
 import { useToast } from 'vue-toastification';
 import { useAuthUserStore } from '@/stores/authUser';
 import { useUserPagesStore } from '@/stores/pages';
+import { navigationConfig } from '@/utils/navigation';
 import type { RouteLocationNormalized, NavigationGuardNext, Router } from 'vue-router';
 
 /**
@@ -28,6 +29,16 @@ export const authGuard = async (to: RouteLocationNormalized, from: RouteLocation
     try {
       const authStore = useAuthUserStore();
       const pagesStore = useUserPagesStore();
+
+      // Only enforce role-page rules for routes that exist in our navigation config.
+      // (Keeps guard from blocking non-menu technical routes unless you add them to navigationConfig.)
+      const navRoutes = new Set(
+        navigationConfig.flatMap(group => group.children.map(child => child.route))
+      );
+
+      if (!navRoutes.has(to.path)) {
+        return next();
+      }
 
       // Get current user data to access role ID from metadata
       const currentUserResult = await authStore.getCurrentUser();
