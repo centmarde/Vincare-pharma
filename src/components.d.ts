@@ -21,6 +21,7 @@ declare module 'vue' {
     OuterNavbar2: typeof import('./components/common/outerNavbars/OuterNavbar2.vue')['default']
     OuterNavbar3: typeof import('./components/common/outerNavbars/OuterNavbar3.vue')['default']
     OuterNavbar4: typeof import('./components/common/outerNavbars/OuterNavbar4.vue')['default']
+    ProductsWidget: typeof import('./components/products/ProductsWidget.vue')['default']
     RegisterForm: typeof import('./components/auth/RegisterForm.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
