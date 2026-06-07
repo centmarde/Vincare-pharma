@@ -75,9 +75,9 @@ export const navigationConfig: NavigationGroup[] = [
     permission: 'purchasing.access',
     children: [
       {
-        title: 'Purchasing Dashboard',
-        icon: 'mdi-view-dashboard',
-        route: '/purchasing/dashboard',
+        title: 'List of Purchases',
+        icon: 'mdi-download-outline',
+        route: '/purchasing/list-of-purchases',
         permission: 'purchasing.dashboard.view',
       },
     ],
