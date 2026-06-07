@@ -8,7 +8,7 @@ import type {
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
-import { useTheme } from '@/composables/useTheme'
+import { useTheme } from '@/stores/useTheme'
 
 interface Props {
   config?: UIConfig | null

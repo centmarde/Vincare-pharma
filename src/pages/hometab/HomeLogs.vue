@@ -3,7 +3,7 @@ import { onMounted, computed, ref, nextTick, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useLogsDataStore } from '@/stores/logsData'
 import type { LogType } from '@/stores/logsData'
-import { useTheme } from '@/composables/useTheme'
+import { useTheme } from '@/stores/useTheme'
 
 // Initialize logs store
 const logsStore = useLogsDataStore()

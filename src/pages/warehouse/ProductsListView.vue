@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import InnerLayoutWrapper from '@/layouts/InnerLayoutWrapper.vue'
+import ProductsWidget from '@/components/products/ProductsWidget.vue'
 </script>
 
 <template>
@@ -9,13 +10,8 @@ import InnerLayoutWrapper from '@/layouts/InnerLayoutWrapper.vue'
         <section>
           <v-container fluid class="px-2 px-sm-4 px-md-6">
             <v-row>
-              <v-col>
-                <div style="min-height: 200px"></div>
-              </v-col>
               <v-col cols="12">
-                <v-card>
-                  <div class="text-center py-5">Products View Content</div>
-                </v-card>
+                <ProductsWidget />
               </v-col>
             </v-row>
           </v-container>

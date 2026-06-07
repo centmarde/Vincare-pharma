@@ -79,7 +79,7 @@ export default [
 
   // Prettier formatting as an ESLint rule (auto-fixable)
   // Use "warn" so it doesn't fail the command / show as errors.
-  'prettier/prettier': 'warn',
+  'prettier/prettier': 'off',
     },
   },
   {

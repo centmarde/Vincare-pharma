@@ -1,6 +1,6 @@
 import axios from 'axios'
 import { ref, type Ref } from 'vue'
-import { useTheme } from '@/composables/useTheme'
+import { useTheme } from '@/stores/useTheme'
 
 export interface Feature {
   title: string

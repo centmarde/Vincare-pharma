@@ -7,7 +7,7 @@ import type {
 } from '@/controller/landingController'
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useTheme } from '@/composables/useTheme'
+import { useTheme } from '@/stores/useTheme'
 import { useDisplay } from 'vuetify'
 
 interface Props {
