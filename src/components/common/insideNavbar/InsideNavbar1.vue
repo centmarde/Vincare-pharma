@@ -2,7 +2,7 @@
 import type { UIConfig } from '@/controller/landingController'
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 
-import { useTheme } from '@/composables/useTheme'
+import { useTheme } from '@/stores/useTheme.ts'
 import { useDisplay } from 'vuetify'
 
 import SlugName from './SlugName.vue'
