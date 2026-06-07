@@ -93,6 +93,12 @@ export const navigationConfig: NavigationGroup[] = [
         route: '/warehouse/dashboard',
         permission: 'warehouse.dashboard.view',
       },
+      {
+        title: 'Products',
+        icon: 'mdi-box',
+        route: '/warehouse/products',
+        permission: 'warehouse.products.view',
+      },
     ],
   },
   {
@@ -118,6 +124,19 @@ export const navigationConfig: NavigationGroup[] = [
         icon: 'mdi-view-dashboard',
         route: '/finance/dashboard',
         permission: 'finance.dashboard.view',
+      },
+    ],
+  },
+  {
+    title: 'Logs History',
+    icon: 'mdi-file-document',
+    permission: 'logs.access',
+    children: [
+      {
+        title: 'Logs View',
+        icon: 'mdi-file-document',
+        route: '/logs',
+        permission: 'logs.view',
       },
     ],
   },
