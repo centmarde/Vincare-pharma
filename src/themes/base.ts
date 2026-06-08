@@ -101,11 +101,11 @@ export function createLightTheme(primaryColor: string, secondaryColor: string) {
 
       // Background and surface colors
       background: '#FEFFFE',
-      surface: secondaryColor,
+      surface: '#FFFFFF',
       'surface-bright': '#FFFFFF',
-      'surface-light': secondaryColor,
-      'surface-variant': adjustColor(secondaryColor, -0.05),
-      'on-surface-variant': primaryColor,
+      'surface-light': adjustColor(primaryColor, 0.6),
+      'surface-variant': '#F5F5F5',
+      'on-surface-variant': '#757575',
 
       // Text colors
       'on-primary': getContrastColor(primaryColor),

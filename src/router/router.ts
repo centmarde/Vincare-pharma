@@ -62,7 +62,7 @@ const routes = setupLayouts([
     meta: { requiresAuth: true },
   },
   {
-    path: '/purchasing/dashboard',
+    path: '/purchasing/list-of-purchases',
     component: PurchasingView,
     meta: { requiresAuth: true },
   },

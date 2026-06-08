@@ -41,6 +41,7 @@ onMounted(async () => {
     />
 
     <v-main class="main-with-sidebar">
+			<div style="margin-top: 1.2rem;"></div>
       <slot name="content">
         <router-view />
       </slot>

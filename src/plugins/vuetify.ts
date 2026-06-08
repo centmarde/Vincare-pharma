@@ -12,7 +12,7 @@ import '@mdi/font/css/materialdesignicons.css'
 import 'vuetify/styles'
 
 // Create vuetify instance with minimal initial configuration
-// Theme will be loaded dynamically from external-page.json
+// Theme will be loaded dynamically from external-page.json and persisted via theme store
 const vuetify = createVuetify({
   theme: {
     defaultTheme: 'dark',

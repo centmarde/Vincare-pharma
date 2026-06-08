@@ -2,7 +2,7 @@
 import type { UIConfig, LogoConfig } from '@/controller/landingController'
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useTheme } from '@/composables/useTheme'
+import { useTheme } from '@/stores/useTheme.ts'
 import { useDisplay } from 'vuetify'
 import { useAuthUserStore } from '@/stores/authUser'
 import SlugName from './SlugName.vue'
