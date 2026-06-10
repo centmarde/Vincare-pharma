@@ -453,3 +453,12 @@ export const organizationsTableHeaders = [
 export const organizationValidationRules = {
   title: [(v: string) => !!v || 'Organization name is required'],
 }
+
+export const formatCurrency = (value: number): string =>
+  new Intl.NumberFormat('en-PH', {
+    style: 'currency',
+    currency: 'PHP',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(value).replace('PHP', '₱')
+ 

@@ -75,10 +75,16 @@ export const navigationConfig: NavigationGroup[] = [
     permission: 'purchasing.access',
     children: [
       {
+        title: 'Purchase Requisitions',
+        icon: 'mdi-file-document',
+        route: '/purchasing/purchase-requisitions',
+        permission: 'purchasing.requisitions.view',
+      },
+      {
         title: 'List of Purchases',
         icon: 'mdi-download-outline',
         route: '/purchasing/list-of-purchases',
-        permission: 'purchasing.dashboard.view',
+        permission: 'purchasing.list.view',
       },
     ],
   },
