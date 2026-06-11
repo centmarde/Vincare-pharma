@@ -453,3 +453,27 @@ export const organizationsTableHeaders = [
 export const organizationValidationRules = {
   title: [(v: string) => !!v || 'Organization name is required'],
 }
+
+export const formatCurrency = (value: number): string =>
+  new Intl.NumberFormat('en-PH', {
+    style: 'currency',
+    currency: 'PHP',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(value).replace('PHP', '₱')
+
+export const formatDatePR = (dateString: string) => {
+  if (!dateString) return ''
+  const date = new Date(dateString)
+  
+  return new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true // Change to false for 24-hour format
+  }).format(date)
+}
+
+ 
