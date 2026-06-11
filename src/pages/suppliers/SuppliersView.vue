@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import InnerLayoutWrapper from '@/layouts/InnerLayoutWrapper.vue'
-import PurchaseRequisition from '@/pages/purchasing/components/PurchaseRequisition.vue'
+import SuppliersCRUD from './components/SuppliersCRUD.vue';
 </script>
 
 <template>
@@ -15,8 +15,7 @@ import PurchaseRequisition from '@/pages/purchasing/components/PurchaseRequisiti
               </v-col>
               <v-col cols="12">
                 <v-card>
-                  <!-- <div class="text-center py-5">Purchasing View Content</div> -->
-                  <PurchaseRequisition />
+                  <SuppliersCRUD />
                 </v-card>
               </v-col>
             </v-row>
