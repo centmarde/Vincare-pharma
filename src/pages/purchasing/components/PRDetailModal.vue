@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisition'
 import type { PR } from '@/stores/purchaseRequisition'
+import {formatCurrency, formatDate} from '@/utils/helpers'
 
 const store = usePurchaseRequisitionStore()
 const { statusConfig } = store
@@ -33,25 +34,6 @@ const marginPercent = computed(() => {
   if (customerOfferTotal.value === 0) return '0'
   return Math.floor((profit.value / customerOfferTotal.value) * 100)
 })
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat('en-PH', {
-    style: 'currency',
-    currency: 'PHP',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value).replace('PHP', '₱')
-
-const formatDate = (dateStr: string | null) => {
-  if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    month: 'short',
-    day: '2-digit',
-    year: 'numeric',
-  })
-}
 </script>
 
 <template>
@@ -66,22 +48,16 @@ const formatDate = (dateStr: string | null) => {
         </h2>
 
         <!-- Meta row -->
-        <div class="d-flex align-center flex-wrap gap-2 text-body-2 text-grey-darken-1 mb-4">
+        <div class="d-flex align-center flex-wrap gap-2 text-body-2 mb-4">
           <span>Requested by <strong>{{ pr.requester_name ?? '—' }}</strong></span>
-          <span>·</span>
+          <span>&nbsp; - &nbsp;</span>
           <span>{{ formatDate(pr.created_at) }}</span>
           <span>·</span>
           <span
             class="status-chip text-caption font-weight-bold"
-            :style="{
-              color: statusConfig(pr.status).color,
-              background: statusConfig(pr.status).bg,
-            }"
+            :class="`status-chip--${pr.status}`"
           >
-            <span
-              class="status-dot"
-              :style="{ background: statusConfig(pr.status).dot }"
-            />
+            <span class="status-dot" />
             {{ statusConfig(pr.status).label }}
           </span>
           <template v-if="pr.reviewed_by">
@@ -98,14 +74,14 @@ const formatDate = (dateStr: string | null) => {
         <v-table density="compact" class="items-table rounded-lg mb-4">
           <thead>
             <tr class="bg-blue-darken-3">
-              <th class="text-white text-caption">#</th>
-              <th class="text-white text-caption">UNIT</th>
-              <th class="text-white text-caption">ITEM DESCRIPTION</th>
-              <th class="text-white text-caption">QTY</th>
-              <th class="text-white text-caption">OFFER/UNIT</th>
-              <th class="text-white text-caption">OFFER TOTAL</th>
-              <th class="text-white text-caption">COST/UNIT</th>
-              <th class="text-white text-caption">COST TOTAL</th>
+              <th class="table-header text-caption">#</th>
+              <th class="table-header text-caption">UNIT</th>
+              <th class="table-header text-caption">ITEM DESCRIPTION</th>
+              <th class="table-header text-caption">QTY</th>
+              <th class="table-header text-caption">OFFER/UNIT</th>
+              <th class="table-header text-caption">OFFER TOTAL</th>
+              <th class="table-header text-caption">COST/UNIT</th>
+              <th class="table-header text-caption">COST TOTAL</th>
             </tr>
           </thead>
           <tbody>
@@ -125,26 +101,25 @@ const formatDate = (dateStr: string | null) => {
         <!-- Summary Card -->
         <div class="d-flex justify-end mb-4">
           <v-card
-            variant="flat"
-            color="#f9f9f7"
+            variant="tonal"
             rounded="lg"
             class="pa-4 border"
             min-width="340"
           >
             <div class="d-flex justify-space-between align-center mb-2">
-              <span class="text-body-2 text-grey-darken-1">Customer Offer Total</span>
+              <span class="text-body-2 text-medium-emphasis">Customer Offer Total</span>
               <span class="text-body-1 font-weight-bold">{{ formatCurrency(customerOfferTotal) }}</span>
             </div>
 
             <div class="d-flex justify-space-between align-center mb-3">
-              <span class="text-body-2 text-grey-darken-1">Company Cost Total</span>
+              <span class="text-body-2 text-medium-emphasis">Company Cost Total</span>
               <span class="text-body-1 font-weight-bold">{{ formatCurrency(companyCostTotal) }}</span>
             </div>
 
             <v-divider class="mb-3" />
 
             <div class="d-flex justify-space-between align-center mb-2">
-              <span class="text-body-2 text-grey-darken-1">Profit / (Loss)</span>
+              <span class="text-body-2 text-medium-emphasis">Profit / (Loss)</span>
               <div class="d-flex align-center gap-2">
                 <span
                   class="text-body-1 font-weight-bold"
@@ -153,10 +128,10 @@ const formatDate = (dateStr: string | null) => {
                   {{ formatCurrency(profit) }}
                 </span>
                 <v-chip
-                  :color="isProfitable ? 'green-lighten-4' : 'red-lighten-4'"
+                  :color="isProfitable ? 'green' : 'red'"
+                  variant="tonal"
                   size="small"
                   class="font-weight-bold"
-                  :class="isProfitable ? 'text-green-darken-3' : 'text-red-darken-3'"
                 >
                   {{ isProfitable ? '● Profitable' : '● Loss' }}
                 </v-chip>
@@ -164,7 +139,7 @@ const formatDate = (dateStr: string | null) => {
             </div>
 
             <div class="d-flex justify-space-between align-center">
-              <span class="text-body-2 text-grey-darken-1">Offer : Cost Ratio</span>
+              <span class="text-body-2 text-medium-emphasis">Offer : Cost Ratio</span>
               <span class="text-body-2 font-weight-bold">
                 {{ offerCostRatio }}x · {{ marginPercent }}% margin
               </span>
@@ -173,7 +148,7 @@ const formatDate = (dateStr: string | null) => {
         </div>
 
         <!-- Justification -->
-        <div v-if="pr.justification" class="text-body-2 text-grey-darken-2">
+        <div v-if="pr.justification" class="text-body-2 text-medium-emphasis">
           <strong>Justification:</strong> {{ pr.justification }}
         </div>
 
@@ -191,12 +166,14 @@ const formatDate = (dateStr: string | null) => {
 </template>
 
 <style scoped>
+/* Status chip — same as PRList, rgba backgrounds adapt to dark */
 .status-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 10px;
+  gap: 6px;
+  padding: 4px 10px;
   border-radius: 20px;
+  white-space: nowrap;
 }
 .status-dot {
   width: 7px;
@@ -204,15 +181,28 @@ const formatDate = (dateStr: string | null) => {
   border-radius: 50%;
   flex-shrink: 0;
 }
-.items-table :deep(th) {
-  padding: 10px 12px !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.04em;
+
+.status-chip--pending_approval {
+  color: #c2922e;
+  background: rgba(194, 146, 46, 0.12);
 }
-.items-table :deep(td) {
-  padding: 10px 12px !important;
+.status-chip--pending_approval .status-dot { background: #c2922e; }
+
+.status-chip--approved {
+  color: #2e7d32;
+  background: rgba(46, 125, 50, 0.12);
 }
-.gap-2 {
-  gap: 8px;
+.status-chip--approved .status-dot { background: #4caf50; }
+
+.status-chip--rejected {
+  color: #c62828;
+  background: rgba(198, 40, 40, 0.12);
+}
+.status-chip--rejected .status-dot { background: #ef5350; }
+
+/* Table header — uses primary color with readable white text in both modes */
+:deep(.items-table thead tr th.table-header) {
+  color: #ffffff !important;
+  font-weight: 600;
 }
 </style>
