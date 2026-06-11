@@ -315,7 +315,6 @@ return {
     error,
     selectedPR,
     filterStatus,
-    
     prs,
     // Computed
     customerOfferTotal,
@@ -332,7 +331,6 @@ return {
     totalCost,
     itemSummary,
     statusConfig,
-    // setFilter,
     // Actions
     savePurchaseRequisition,
     resetStore,
