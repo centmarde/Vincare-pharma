@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisition'
+import { useSuppliersDataStore } from '@/stores/suppliersDataStore'
 import { storeToRefs } from 'pinia'
 import { formatCurrency } from '@/utils/helpers'
 
+const supplierStore = useSuppliersDataStore()
+const { activeSuppliers } = storeToRefs(supplierStore)
 const store = usePurchaseRequisitionStore()
 const {
   currentPR,
@@ -39,6 +42,7 @@ const handleSubmit = async () => {
 }
 
 if (items.value.length === 0) addItem()
+onMounted(() => supplierStore.fetchSuppliers({ activeOnly: true }))
 </script>
 
 <template>
@@ -50,6 +54,22 @@ if (items.value.length === 0) addItem()
         <span class="text-h6 font-weight-bold">Raise Purchase Requisition</span>
         <span class="text-caption">Customer offer vs. company cost</span>
       </v-card-title>
+
+      <div class="mb-4 ml-5">
+        <label class="text-subtitle-2 font-weight-bold d-block mb-2">Supplier</label>
+        <v-select
+          v-model="currentPR.supplier_id"
+          :items="activeSuppliers"
+          item-title="name"
+          item-value="id"
+          placeholder="Select a supplier..."
+          variant="outlined"
+          density="compact"
+          hide-details
+          clearable
+          style="max-width: 250px"
+        />
+      </div>
 
       <v-divider />
 

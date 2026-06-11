@@ -15,6 +15,7 @@ export type PurchaseRequisitionType = {
   reviewed_by?: string | null
   reviewed_at?: string | null
   updated_at?: string
+  supplier_id?: number | null
 }
 
 export type RequisitionItemType = {
@@ -68,6 +69,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisition', ()
     requested_by: null,
     reviewed_by: null,
     reviewed_at: null,
+    supplier_id: null,
   })
 
   // ─── Computed ─────────────────────────────────────────────────────
@@ -130,6 +132,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisition', ()
       requested_by: null,
       reviewed_by: null,
       reviewed_at: null,
+      supplier_id: null,
     }
     items.value = []
     error.value = ''
@@ -152,6 +155,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisition', ()
           justification: currentPR.value.justification || '',
           status: currentPR.value.status,
           requested_by: user.id,
+          supplier_id: currentPR.value.supplier_id,
         })
         .select('id, pr_number')
         .single()
@@ -226,6 +230,8 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisition', ()
             items: pr.purchase_requisition_items || [],
             requester_name: requesterRes.data?.toUpperCase() ?? '-',
             reviewer_name:  reviewerRes.data?.toUpperCase()  ?? '-',
+            total_qty:  (pr.purchase_requisition_items || []).reduce((s: number, i: any) => s + i.qty, 0),
+            total_cost: (pr.purchase_requisition_items || []).reduce((s: number, i: any) => s + i.qty * i.cost_per_unit, 0),
           }
         })
       )
