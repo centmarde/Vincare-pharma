@@ -16,6 +16,7 @@ import PurchasingListView from '@/pages/purchasing/PurchasingList.vue'
 import WareHouseView from '@/pages/warehouse/WareHouseView.vue'
 import SalesView from '@/pages/sales/SalesView.vue'
 import FinanceView from '@/pages/finance/FinanceView.vue'
+import SuppliersView from '@/pages/suppliers/SuppliersView.vue'
 import LogsView from '@/pages/logs/LogsView.vue'
 import WarehouseProductsListView from '@/pages/warehouse/ProductsListView.vue'
 
@@ -92,7 +93,11 @@ const routes = setupLayouts([
     component: FinanceView,
     meta: { requiresAuth: true },
   },
-
+  {
+    path: '/suppliers/dashboard',
+    component: SuppliersView,
+    meta: { requiresAuth: true },
+  },
   {
     path: '/logs',
     component: LogsView,

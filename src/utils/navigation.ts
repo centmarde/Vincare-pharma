@@ -134,6 +134,19 @@ export const navigationConfig: NavigationGroup[] = [
     ],
   },
   {
+    title: 'Suppliers Controls',
+    icon: 'mdi-truck-delivery',
+    permission: 'suppliers.access',
+    children: [
+      {
+        title: 'Suppliers Dashboard',
+        icon: 'mdi-view-dashboard-variant',
+        route: '/suppliers/dashboard',
+        permission: 'suppliers.dashboard.view',
+      },
+    ],
+  },
+  {
     title: 'Logs History',
     icon: 'mdi-file-document',
     permission: 'logs.access',
