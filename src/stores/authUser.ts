@@ -35,6 +35,10 @@ export const useAuthUserStore = defineStore('authUser', () => {
     () => userData.value?.user_metadata?.full_name || userData.value?.email || null,
   )
   const userRole = computed(() => userData.value?.user_metadata?.role || null)
+  const canViewValuation = computed(() => {
+    const roleId = userData.value?.role_id
+    return roleId === 1 || roleId === 2
+  })
 
   async function registerUser(email: string, password: string, username: string, roleId: number) {
     loading.value = true
@@ -368,6 +372,7 @@ export const useAuthUserStore = defineStore('authUser', () => {
     userEmail,
     userName,
     userRole,
+    canViewValuation,
 
     // Actions
     registerUser,
