@@ -86,6 +86,12 @@ export const navigationConfig: NavigationGroup[] = [
         route: '/purchasing/list-of-purchases',
         permission: 'purchasing.list.view',
       },
+      {
+        title: 'Purchase Orders',
+        icon: 'mdi-download-outline',
+        route: '/purchasing/purchase-orders',
+        permission: 'purchasing.orders.view',
+      },
     ],
   },
   {

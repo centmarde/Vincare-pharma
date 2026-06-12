@@ -13,6 +13,7 @@ import SettingsView from '@/pages/account/SettingsView.vue'
 import ExecutiveView from '@/pages/executive/ExecutiveView.vue'
 import PurchasingView from '@/pages/purchasing/PurchasingView.vue'
 import PurchasingListView from '@/pages/purchasing/PurchasingList.vue'
+import PurchaseOrdersView from '@/pages/purchasing/PurchaseOrdersView.vue'
 import WareHouseView from '@/pages/warehouse/WareHouseView.vue'
 import SalesView from '@/pages/sales/SalesView.vue'
 import FinanceView from '@/pages/finance/FinanceView.vue'
@@ -71,6 +72,11 @@ const routes = setupLayouts([
   {
     path: '/purchasing/list-of-purchases',
     component: PurchasingListView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/purchasing/purchase-orders',
+    component: PurchaseOrdersView,
     meta: { requiresAuth: true },
   },
   {
