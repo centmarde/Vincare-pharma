@@ -6,7 +6,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 
 // Matches `public.supppliers` schema
 export type SupplierType = {
-  id: number
+  id: string | number
   created_at: string
   name: string | null
   contact_no: string | null

@@ -62,6 +62,7 @@ export type PR = {
   requester_name?: string
   reviewer_name?: string
   items: PRItem[]
+  supplier_id?: string | null  // add this
 }
 
 export const usePurchaseRequisitionStore = defineStore('purchaseRequisition', () => {
