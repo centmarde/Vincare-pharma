@@ -1,9 +1,17 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisition'
+import { useAuthUserStore } from '@/stores/authUser'
 import { formatCurrency } from '@/utils/helpers'
 
 const purchaseRequisitionStore = usePurchaseRequisitionStore()
+const authUserStore = useAuthUserStore()
+
+// Check if user can view valuation fields (role_id 1 or 2)
+const canViewValuation = computed(() => {
+  const roleId = authUserStore.userData?.role_id
+  return roleId === 1 || roleId === 2
+})
 
 // Search and filter state
 const searchQuery = ref('')
@@ -58,6 +66,7 @@ const products = computed(() => {
           adjusted: item.adjusted,
           expiry_date: item.expiry_date,
           reorder_pt: item.reorder_pt,
+          supplier_name: '',
         })
       })
     })
@@ -163,17 +172,20 @@ onMounted(() => {
                       <div class="text-body-1 font-weight-medium">{{ item.unit ?? 'N/A' }}</div>
                     </div>
                   </v-col>
-                  <v-col cols="12" md="3" class="d-flex align-center py-2">
-                    <v-icon icon="mdi-currency-php" color="primary" class="mr-3"></v-icon>
-                    <div>
-                      <div class="text-caption text-grey-darken-1">Cost Price</div>
-                      <div class="text-body-1 font-weight-medium">
-                        {{
-                          item.cost_price != null ? formatCurrency(Number(item.cost_price)) : 'N/A'
-                        }}
+                  <!-- Row 1 -->
+                  <template v-if="canViewValuation">
+                    <v-col cols="12" md="3" class="d-flex align-center py-2">
+                      <v-icon icon="mdi-currency-php" color="primary" class="mr-3"></v-icon>
+                      <div>
+                        <div class="text-caption text-grey-darken-1">Cost Price</div>
+                        <div class="text-body-1 font-weight-medium">
+                          {{
+                            item.cost_price != null ? formatCurrency(Number(item.cost_price)) : 'N/A'
+                          }}
+                        </div>
                       </div>
-                    </div>
-                  </v-col>
+                    </v-col>
+                  </template>
                   <v-col cols="12" md="3" class="d-flex align-center py-2">
                     <v-icon icon="mdi-tag" color="primary" class="mr-3"></v-icon>
                     <div>
@@ -185,25 +197,38 @@ onMounted(() => {
                       </div>
                     </div>
                   </v-col>
+                  <template v-if="canViewValuation">
+                  <v-col cols="12" md="3" class="d-flex align-center py-2">
+                    <v-icon icon="mdi-store" color="primary" class="mr-3"></v-icon>
+                    <div>
+                      <div class="text-caption text-grey-darken-1">Supplier</div>
+                      <div class="text-body-1 font-weight-medium">
+                        {{ item.supplier_name || 'N/A' }}
+                      </div>
+                    </div>
+                  </v-col>
+                  </template>
                   <!-- Row 2 -->
-                  <v-col cols="12" md="3" class="d-flex align-center py-2">
-                    <v-icon icon="mdi-wallet" color="primary" class="mr-3"></v-icon>
-                    <div>
-                      <div class="text-caption text-grey-darken-1">Val Cost</div>
-                      <div class="text-body-1 font-weight-medium">
-                        {{ item.val_cost != null ? formatCurrency(Number(item.val_cost)) : 'N/A' }}
+                  <template v-if="canViewValuation">
+                    <v-col cols="12" md="3" class="d-flex align-center py-2">
+                      <v-icon icon="mdi-wallet" color="primary" class="mr-3"></v-icon>
+                      <div>
+                        <div class="text-caption text-grey-darken-1">Val Cost</div>
+                        <div class="text-body-1 font-weight-medium">
+                          {{ item.val_cost != null ? formatCurrency(Number(item.val_cost)) : 'N/A' }}
+                        </div>
                       </div>
-                    </div>
-                  </v-col>
-                  <v-col cols="12" md="3" class="d-flex align-center py-2">
-                    <v-icon icon="mdi-cash" color="primary" class="mr-3"></v-icon>
-                    <div>
-                      <div class="text-caption text-grey-darken-1">Val Sell</div>
-                      <div class="text-body-1 font-weight-medium">
-                        {{ item.val_sell != null ? formatCurrency(Number(item.val_sell)) : 'N/A' }}
+                    </v-col>
+                    <v-col cols="12" md="3" class="d-flex align-center py-2">
+                      <v-icon icon="mdi-cash" color="primary" class="mr-3"></v-icon>
+                      <div>
+                        <div class="text-caption text-grey-darken-1">Val Sell</div>
+                        <div class="text-body-1 font-weight-medium">
+                          {{ item.val_sell != null ? formatCurrency(Number(item.val_sell)) : 'N/A' }}
+                        </div>
                       </div>
-                    </div>
-                  </v-col>
+                    </v-col>
+                  </template>
                   <v-col cols="12" md="3" class="d-flex align-center py-2">
                     <v-icon icon="mdi-package-variant-closed" color="primary" class="mr-3"></v-icon>
                     <div>
