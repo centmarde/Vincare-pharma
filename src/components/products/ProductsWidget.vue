@@ -7,11 +7,8 @@ import { formatCurrency } from '@/utils/helpers'
 const purchaseRequisitionStore = usePurchaseRequisitionStore()
 const authUserStore = useAuthUserStore()
 
-// Check if user can view valuation fields (role_id 1 or 2)
-const canViewValuation = computed(() => {
-  const roleId = authUserStore.userData?.role_id
-  return roleId === 1 || roleId === 2
-})
+// Use canViewValuation from authUser store (role_id 1 or 2)
+const { canViewValuation } = authUserStore
 
 // Search and filter state
 const searchQuery = ref('')
