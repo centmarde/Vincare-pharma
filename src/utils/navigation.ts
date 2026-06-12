@@ -100,7 +100,7 @@ export const navigationConfig: NavigationGroup[] = [
         permission: 'warehouse.dashboard.view',
       },
       {
-        title: 'Products',
+        title: 'Products Inventory',
         icon: 'mdi-box',
         route: '/warehouse/products',
         permission: 'warehouse.products.view',
