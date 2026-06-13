@@ -64,7 +64,7 @@ export function useSuppliers() {
     form.value = {
       name: supplier.name,
       contact_person: supplier.contact_person,
-      phone: supplier.phone,
+      phone: supplier.contact_no,
       email: supplier.email,
       city: supplier.city,
       address: supplier.address,

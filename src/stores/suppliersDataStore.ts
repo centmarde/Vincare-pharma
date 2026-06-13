@@ -13,7 +13,7 @@ export type SupplierType = {
   name: string
   address: string | null
   city: string | null
-  phone: string | null
+  contact_no: string | null
   email: string | null
   contact_person: string | null
   is_active: boolean
@@ -24,7 +24,7 @@ export type CreateSupplierData = {
   name: string
   address?: string | null
   city?: string | null
-  phone?: string | null
+  contact_no?: string | null
   email?: string | null
   contact_person?: string | null
   is_active?: boolean
@@ -144,7 +144,7 @@ export const useSuppliersDataStore = defineStore('suppliersData', () => {
       if (search?.trim()) {
         const s = search.trim()
         q = q.or(
-          `name.ilike.%${s}%,email.ilike.%${s}%,phone.ilike.%${s}%,contact_person.ilike.%${s}%`
+          `name.ilike.%${s}%,email.ilike.%${s}%,contact_no.ilike.%${s}%,contact_person.ilike.%${s}%`
         )
       }
 

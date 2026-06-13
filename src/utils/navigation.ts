@@ -76,19 +76,19 @@ export const navigationConfig: NavigationGroup[] = [
     children: [
       {
         title: 'Purchase Requisitions',
-        icon: 'mdi-file-document',
+        icon: 'mdi-file-document-edit-outline',
         route: '/purchasing/purchase-requisitions',
         permission: 'purchasing.requisitions.view',
       },
       {
         title: 'List of Purchases',
-        icon: 'mdi-download-outline',
+        icon: 'mdi-format-list-bulleted',
         route: '/purchasing/list-of-purchases',
         permission: 'purchasing.list.view',
       },
       {
         title: 'Purchase Orders',
-        icon: 'mdi-download-outline',
+        icon: 'mdi-file-check-outline',
         route: '/purchasing/purchase-orders',
         permission: 'purchasing.orders.view',
       },

@@ -96,7 +96,7 @@ onMounted(fetchSuppliers)
         </template>
 
         <template #item.phone="{ item }">
-          {{ item.phone ?? '—' }}
+          {{ item.contact_no ?? '—' }}
         </template>
 
         <template #item.email="{ item }">
