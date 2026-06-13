@@ -1,39 +1,20 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisition'
 import type { PR } from '@/stores/purchaseRequisition'
-import {formatCurrency, formatDate} from '@/utils/helpers'
-
-const store = usePurchaseRequisitionStore()
-const { statusConfig } = store
-
-// ─── Props ────────────────────────────────────────────────────────────────────
+import { usePRDetailModal } from '../composables/usePRDetailModal'
+import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const props = defineProps<{ pr: PR }>()
 const model = defineModel<boolean>()
 
-// ─── Computed ─────────────────────────────────────────────────────────────────
-
-const customerOfferTotal = computed(() =>
-  props.pr.items.reduce((sum, i) => sum + i.qty * i.offer_per_unit, 0)
-)
-
-const companyCostTotal = computed(() =>
-  props.pr.items.reduce((sum, i) => sum + i.qty * i.cost_per_unit, 0)
-)
-
-const profit = computed(() => customerOfferTotal.value - companyCostTotal.value)
-const isProfitable = computed(() => profit.value > 0)
-
-const offerCostRatio = computed(() => {
-  if (companyCostTotal.value === 0) return '0.00'
-  return (customerOfferTotal.value / companyCostTotal.value).toFixed(2)
-})
-
-const marginPercent = computed(() => {
-  if (customerOfferTotal.value === 0) return '0'
-  return Math.floor((profit.value / customerOfferTotal.value) * 100)
-})
+const {
+  statusConfig,
+  customerOfferTotal,
+  companyCostTotal,
+  profit,
+  isProfitable,
+  offerCostRatio,
+  marginPercent,
+} = usePRDetailModal(props)
 </script>
 
 <template>
@@ -44,15 +25,15 @@ const marginPercent = computed(() => {
 
         <!-- Header -->
         <h2 class="text-h6 font-weight-bold mb-2">
-          Purchase Requisition {{ pr.pr_number }}
+          Purchase Requisition: {{ pr.pr_number }}
         </h2>
 
         <!-- Meta row -->
         <div class="d-flex align-center flex-wrap gap-2 text-body-2 mb-4">
           <span>Requested by <strong>{{ pr.requester_name ?? '—' }}</strong></span>
           <span>&nbsp; - &nbsp;</span>
-          <span>{{ formatDate(pr.created_at) }}</span>
-          <span>·</span>
+          <span>{{ formatDatePR_ISO(pr.created_at) }}</span>
+          <span>&nbsp; ● &nbsp;<strong>Status:</strong> </span>
           <span
             class="status-chip text-caption font-weight-bold"
             :class="`status-chip--${pr.status}`"
@@ -61,11 +42,10 @@ const marginPercent = computed(() => {
             {{ statusConfig(pr.status).label }}
           </span>
           <template v-if="pr.reviewed_by">
-            <span>·</span>
+            <div class="w-100" />
             <span>
               {{ pr.status === 'approved' ? 'Approved' : 'Rejected' }} by
-              <strong>{{ pr.reviewer_name ?? '—' }}</strong>
-              on {{ formatDate(pr.reviewed_at) }}
+              <strong>{{ pr.reviewer_name ?? '—' }}</strong>&nbsp; - &nbsp;{{ formatDatePR_ISO(pr.reviewed_at) }}
             </span>
           </template>
         </div>
