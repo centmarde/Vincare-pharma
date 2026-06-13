@@ -89,7 +89,7 @@ const formatDate = (dateString: string) => {
         <v-row>
           <!-- Existing Roles -->
           <v-col v-for="role in filteredRoles" :key="role.id" cols="12" sm="6" md="4" lg="3">
-            <v-card class="mx-auto" elevation="2" :loading="loading">
+            <v-card class="mx-auto" elevation="2" :loading="loading" height="100%">
               <v-card-text class="pa-4">
                 <div class="d-flex align-center justify-space-between mb-3">
                   <v-avatar size="40" color="primary">
@@ -113,6 +113,7 @@ const formatDate = (dateString: string) => {
                       color="error"
                       @click="openDeleteDialog(role)"
                       :loading="loading"
+                      :disabled="role.id === 1 || role.id === 2"
                     >
                       <v-icon>mdi-delete</v-icon>
                     </v-btn>
@@ -126,6 +127,15 @@ const formatDate = (dateString: string) => {
                 <div class="d-flex align-center text-body-2 text-grey-darken-1">
                   <v-icon size="16" class="mr-1">mdi-calendar</v-icon>
                   {{ formatDate(role.created_at) }}
+                </div>
+
+                <!-- Protected role indicator -->
+                <div v-if="role.id === 1 || role.id === 2" class="d-flex align-center mt-2">
+                  <v-icon icon="mdi-shield-lock" size="small" color="warning" class="mr-1"></v-icon>
+                  <span class="text-caption text-warning">System Role</span>
+                  <v-tooltip activator="parent" location="top">
+                    This is a system role and cannot be deleted.
+                  </v-tooltip>
                 </div>
 
                 <div class="d-flex align-center text-body-2 text-grey-darken-1 my-3"></div>
@@ -142,8 +152,9 @@ const formatDate = (dateString: string) => {
               @click="openCreateDialog"
               :loading="loading"
               style="cursor: pointer; border-style: dashed"
+              height="100%"
             >
-              <v-card-text class="pa-4">
+              <v-card-text class="pa-4 my-3">
                 <div class="d-flex align-center justify-space-between mb-3">
                   <v-avatar size="40" color="primary" variant="outlined">
                     <v-icon color="primary">mdi-plus</v-icon>

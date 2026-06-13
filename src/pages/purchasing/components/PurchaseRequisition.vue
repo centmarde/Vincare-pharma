@@ -1,13 +1,9 @@
 <script setup lang="ts">
-import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisition'
-import { useSuppliersDataStore } from '@/stores/suppliersDataStore'
-import { storeToRefs } from 'pinia'
+import { usePurchaseRequisition, unitOptions } from '../composables/usePurchaseRequisition'
 import { formatCurrency } from '@/utils/helpers'
 
-const supplierStore = useSuppliersDataStore()
-const { activeSuppliers } = storeToRefs(supplierStore)
-const store = usePurchaseRequisitionStore()
 const {
+  activeSuppliers,
   currentPR,
   items,
   loading,
@@ -17,32 +13,10 @@ const {
   isProfitable,
   offerCostRatio,
   marginPercent,
-} = storeToRefs(store)
-
-const unitOptions = ['Box', 'Pcs', 'Set', 'Unit', 'Kg', 'M']
-
-const addItem = () => {
-  items.value.push({
-    no: items.value.length + 1,
-    unit: 'Box',
-    item_description: '',
-    qty: 0,
-    offer_per_unit: 0,
-    cost_per_unit: 0,
-  })
-}
-
-const removeItem = (index: number) => {
-  items.value.splice(index, 1)
-  items.value.forEach((item, i) => (item.no = i + 1))
-}
-
-const handleSubmit = async () => {
-  const result = await store.savePurchaseRequisition()
-}
-
-if (items.value.length === 0) addItem()
-onMounted(() => supplierStore.fetchSuppliers({ activeOnly: true }))
+  addItem,
+  removeItem,
+  handleSubmit,
+} = usePurchaseRequisition()
 </script>
 
 <template>

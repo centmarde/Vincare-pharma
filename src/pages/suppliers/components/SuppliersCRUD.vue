@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useSuppliers } from '../composables/useSuppliers'
-import { formatDatePR } from '@/utils/helpers'
+import { formatDatePR_ISO } from '@/utils/helpers'
 
 const {
   suppliers, loading, error,
@@ -96,7 +96,7 @@ onMounted(fetchSuppliers)
         </template>
 
         <template #item.phone="{ item }">
-          {{ item.phone ?? '—' }}
+          {{ item.contact_no ?? '—' }}
         </template>
 
         <template #item.email="{ item }">
@@ -118,7 +118,7 @@ onMounted(fetchSuppliers)
         </template>
 
         <template #item.created_at="{ item }">
-          <span class="text-body-2 text-medium-emphasis">{{ formatDatePR(item.created_at) }}</span>
+          <span class="text-body-2 text-medium-emphasis">{{ formatDatePR_ISO(item.created_at) }}</span>
         </template>
 
         <template #item.actions="{ item }">
