@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { usePurchaseRequisition, unitOptions, formatCurrency } from '../composables/usePurchaseRequisition'
+import { usePurchaseRequisition, unitOptions } from '../composables/usePurchaseRequisition'
+import { formatCurrency } from '@/utils/helpers'
 
 const {
   activeSuppliers,

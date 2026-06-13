@@ -1,13 +1,9 @@
 import { computed, ref, nextTick } from 'vue'
 import { useToast } from 'vue-toastification'
 import { useSuppliersDataStore } from '@/stores/suppliersDataStore'
-import { formatCurrency, formatDatePR } from '@/utils/helpers'
 import html2pdf from 'html2pdf.js'
 import type { PurchaseOrder } from '@/stores/purchaseOrderData'
 import type { PR } from '@/stores/purchaseRequisition'
-
-// Re-export for convenience so the component doesn't need to import separately
-export { formatCurrency, formatDatePR }
 
 export const company = {
   name:    'VINCARE PHARMA',

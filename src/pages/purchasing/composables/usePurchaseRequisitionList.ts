@@ -4,9 +4,6 @@ import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisition'
 import { useSuppliersDataStore } from '@/stores/suppliersDataStore'
 import type { PR } from '@/stores/purchaseRequisition'
 
-// Re-export for convenience
-export { formatCurrency, formatDatePR } from '@/utils/helpers'
-
 export const headers = [
   { title: 'PR #',         key: 'pr_number',     sortable: true,  align: 'center' as const },
   { title: 'ITEMS',        key: 'items',          sortable: false, align: 'center' as const },

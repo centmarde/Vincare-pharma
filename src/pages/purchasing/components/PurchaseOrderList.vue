@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import ViewPODetailModal from './PODetailModal.vue'
-import { usePurchaseOrderList, headers, formatCurrency } from '../composables/usePurchaseOrderList'
+import { usePurchaseOrderList, headers } from '../composables/usePurchaseOrderList'
 import { usePurchaseOrderStore } from '@/stores/purchaseOrderData'
+import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const poStore = usePurchaseOrderStore()
 const {
@@ -13,7 +14,6 @@ const {
   confirmDialog,
   statusOptions,
   filteredPOs,
-  formatDate,
   resolveSupplier,
   statusLabel,
   openDetail,
@@ -93,7 +93,7 @@ const {
         </template>
 
         <template #item.issued_at="{ item }">
-          <span class="text-body-2">{{ item.issued_at ? formatDate(item.issued_at) : '—' }}</span>
+          <span class="text-body-2">{{ item.issued_at ? formatDatePR_ISO(item.issued_at) : '—' }}</span>
         </template>
 
         <template #item.status="{ item }">

@@ -2,9 +2,6 @@ import { computed } from 'vue'
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisition'
 import type { PR } from '@/stores/purchaseRequisition'
 
-// Re-export for convenience so the component doesn't need to import separately
-export { formatCurrency, formatDate } from '@/utils/helpers'
-
 export function usePRDetailModal(props: { pr: PR }) {
   const store = usePurchaseRequisitionStore()
   const { statusConfig } = store

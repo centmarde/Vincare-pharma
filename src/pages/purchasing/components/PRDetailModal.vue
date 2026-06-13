@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { PR } from '@/stores/purchaseRequisition'
-import { usePRDetailModal, formatCurrency, formatDate } from '../composables/usePRDetailModal'
+import { usePRDetailModal } from '../composables/usePRDetailModal'
+import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const props = defineProps<{ pr: PR }>()
 const model = defineModel<boolean>()
@@ -24,14 +25,14 @@ const {
 
         <!-- Header -->
         <h2 class="text-h6 font-weight-bold mb-2">
-          Purchase Requisition {{ pr.pr_number }}
+          Purchase Requisition: {{ pr.pr_number }}
         </h2>
 
         <!-- Meta row -->
         <div class="d-flex align-center flex-wrap gap-2 text-body-2 mb-4">
           <span>Requested by <strong>{{ pr.requester_name ?? '—' }}</strong></span>
           <span>&nbsp; - &nbsp;</span>
-          <span>{{ formatDate(pr.created_at) }}</span>
+          <span>{{ formatDatePR_ISO(pr.created_at) }}</span>
           <span>&nbsp; ● &nbsp;<strong>Status:</strong> </span>
           <span
             class="status-chip text-caption font-weight-bold"
@@ -44,7 +45,7 @@ const {
             <div class="w-100" />
             <span>
               {{ pr.status === 'approved' ? 'Approved' : 'Rejected' }} by
-              <strong>{{ pr.reviewer_name ?? '—' }}</strong>&nbsp; - &nbsp;{{ formatDate(pr.reviewed_at) }}
+              <strong>{{ pr.reviewer_name ?? '—' }}</strong>&nbsp; - &nbsp;{{ formatDatePR_ISO(pr.reviewed_at) }}
             </span>
           </template>
         </div>

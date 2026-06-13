@@ -2,7 +2,8 @@
 import { usePurchaseOrderStore } from '@/stores/purchaseOrderData'
 import type { PurchaseOrder } from '@/stores/purchaseOrderData'
 import type { PR } from '@/stores/purchaseRequisition'
-import { usePODetailModal, company, formatCurrency, formatDatePR } from '../composables/usePODetailModal'
+import { usePODetailModal, company } from '../composables/usePODetailModal'
+import { formatCurrency, formatDatePO_Written } from '@/utils/helpers'
 
 const props = defineProps<{
   modelValue: boolean
@@ -48,7 +49,7 @@ const { printArea, poNumber, emptyRows, resolvedSupplier, handlePrint } = usePOD
           </v-col>
           <v-col class="text-right">
             <div class="text-h6 font-weight-bold mb-2 text-medium">PURCHASE ORDER</div>
-            <div class="text-body-2 text-medium-emphasis">DATE: {{ formatDatePR(po?.issued_at ?? '—') }}</div>
+            <div class="text-body-2 text-medium-emphasis">DATE: {{ formatDatePO_Written(po?.issued_at ?? '—') }}</div>
             <div class="text-body-2 text-medium-emphasis">PR #: {{ pr?.pr_number ?? '—' }}</div>
             <div class="text-body-2 text-medium-emphasis">PO #: <span class="font-weight-bold text-primary">{{ po?.po_number }}</span></div>
           </v-col>

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import PRDetailModal from './PRDetailModal.vue'
 import IssuePOModal from './IssuePOModal.vue'
-import { usePurchaseRequisitionList, headers, formatCurrency, formatDatePR } from '../composables/usePurchaseRequisitionList'
+import { usePurchaseRequisitionList, headers } from '../composables/usePurchaseRequisitionList'
+import { formatCurrency,formatDatePR_ISO } from '@/utils/helpers'
 
 const {
   loading,
@@ -118,7 +119,7 @@ const {
 
           <!-- Created Date -->
           <template #item.created_at="{ item }">
-            <span class="text-body-2">{{ formatDatePR(item.created_at) }}</span>
+            <span class="text-body-2">{{ formatDatePR_ISO(item.created_at) }}</span>
           </template>
 
           <!-- Status -->
@@ -139,7 +140,7 @@ const {
 
           <!-- Reviewed Date -->
           <template #item.reviewed_at="{ item }">
-            <span class="text-body-2">{{ item.reviewed_by ? formatDatePR(item.reviewed_at) : '' }}</span>
+            <span class="text-body-2">{{ item.reviewed_by ? formatDatePR_ISO(item.reviewed_at) : '' }}</span>
           </template>
 
           <!-- Actions -->
