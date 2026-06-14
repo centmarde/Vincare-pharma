@@ -209,7 +209,6 @@ const { printArea, poNumber, emptyRows, resolvedSupplier, handlePrint } = usePOD
 .sku-text {
   font-family: 'Courier New', monospace;
   font-weight: 500;
-  color: rgba(0, 0, 0, 0.87);
 }
 
 /* @media print {
