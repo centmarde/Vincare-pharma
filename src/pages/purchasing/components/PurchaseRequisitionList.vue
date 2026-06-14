@@ -13,6 +13,8 @@ const {
   totalCost,
   itemSummary,
   statusConfig,
+  page,
+  itemsPerPage,
   statusOptions,
   showModal,
   search,
@@ -74,17 +76,19 @@ const {
         <v-divider />
 
         <!-- Table -->
-        <v-data-table
+        <v-data-table-server
+          v-model:page="page"
+          v-model:items-per-page="itemsPerPage"
           :headers="headers"
           :items="filteredPRs"
+          :items-length="filteredPRs.length"
           :search="search"
           :loading="loading"
-          fixed-header
           hover
           loading-text="Loading purchase requisitions..."
           no-data-text="No purchase requisitions found."
+          @update:options="() => {}"
         >
-
           <!-- PR # -->
           <template #item.pr_number="{ item }">
             <span class="text-body-2 font-weight-bold" style="white-space: nowrap;">
@@ -124,10 +128,7 @@ const {
 
           <!-- Status -->
           <template #item.status="{ item }">
-            <span
-              class="status-chip text-caption font-weight-bold"
-              :class="`status-chip--${item.status}`"
-            >
+            <span class="status-chip text-caption font-weight-bold" :class="`status-chip--${item.status}`">
               <span class="status-dot" />
               {{ statusConfig(item.status).label }}
             </span>
@@ -145,47 +146,27 @@ const {
 
           <!-- Actions -->
           <template #item.actions="{ item }">
-            <div class="d-flex actions-gap ml-4" style="white-space: nowrap;">
+            <div class="d-flex actions-gap" style="white-space: nowrap;">
               <v-btn variant="outlined" size="small" class="text-none" @click="openDetail(item)">
                 View
               </v-btn>
-
               <template v-if="item.status === 'pending_approval'">
-                <v-btn
-                  color="green-darken-2"
-                  size="small"
-                  class="text-none"
-                  elevation="0"
-                  @click="openConfirm('APPROVE', item)"
-                >
+                <v-btn color="green-darken-2" size="small" class="text-none" elevation="0" @click="openConfirm('APPROVE', item)">
                   Approve
                 </v-btn>
-                <v-btn
-                  variant="outlined"
-                  size="small"
-                  color="red-darken-2"
-                  class="text-none"
-                  @click="openConfirm('REJECT', item)"
-                >
+                <v-btn variant="outlined" size="small" color="red-darken-2" class="text-none" @click="openConfirm('REJECT', item)">
                   Reject
                 </v-btn>
               </template>
-
               <template v-if="item.status === 'approved'">
-                <v-btn
-                  variant="outlined"
-                  size="small"
-                  class="text-none"
-                  prepend-icon="mdi-printer-outline"
-                  @click="openPurchaseOrder(item)"
-                >
+                <v-btn variant="outlined" size="small" class="text-none" prepend-icon="mdi-printer-outline" @click="openPurchaseOrder(item)">
                   Issue PO
                 </v-btn>
               </template>
             </div>
           </template>
 
-        </v-data-table>
+        </v-data-table-server>
       </v-card>
 
       <!-- 3. Add the Modal Component -->

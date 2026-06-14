@@ -26,14 +26,7 @@ const {
         <!-- Header -->
         <h2 class="text-h6 font-weight-bold mb-2">
           Purchase Requisition: {{ pr.pr_number }}
-        </h2>
-
-        <!-- Meta row -->
-        <div class="d-flex align-center flex-wrap gap-2 text-body-2 mb-4">
-          <span>Requested by <strong>{{ pr.requester_name ?? '—' }}</strong></span>
-          <span>&nbsp; - &nbsp;</span>
-          <span>{{ formatDatePR_ISO(pr.created_at) }}</span>
-          <span>&nbsp; ● &nbsp;<strong>Status:</strong> </span>
+          <span>&nbsp; - &nbsp;Status: </span>
           <span
             class="status-chip text-caption font-weight-bold"
             :class="`status-chip--${pr.status}`"
@@ -41,6 +34,21 @@ const {
             <span class="status-dot" />
             {{ statusConfig(pr.status).label }}
           </span>
+        </h2>
+
+        <!-- Meta row -->
+        <div class="d-flex align-center flex-wrap gap-2 text-body-2 mb-4">
+          <span>Requested by <strong>{{ pr.requester_name ?? '—' }}</strong></span>
+          <span>&nbsp; - &nbsp;</span>
+          <span>{{ formatDatePR_ISO(pr.created_at) }}</span>
+          <!-- <span>&nbsp; ● &nbsp;<strong>Status:</strong> </span>
+          <span
+            class="status-chip text-caption font-weight-bold"
+            :class="`status-chip--${pr.status}`"
+          >
+            <span class="status-dot" />
+            {{ statusConfig(pr.status).label }}
+          </span> -->
           <template v-if="pr.reviewed_by">
             <div class="w-100" />
             <span>

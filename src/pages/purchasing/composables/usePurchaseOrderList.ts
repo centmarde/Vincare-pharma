@@ -1,4 +1,5 @@
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { supabase } from '@/lib/supabase'
 import { usePurchaseOrderStore } from '@/stores/purchaseOrderData'
 import { useSuppliersDataStore } from '@/stores/suppliersDataStore'
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisition'
@@ -6,14 +7,14 @@ import type { PurchaseOrder } from '@/stores/purchaseOrderData'
 import type { PR } from '@/stores/purchaseRequisition'
 
 export const headers = [
-  { title: 'PO #',           key: 'po_number',      sortable: true,  align: 'start' as const },
-  { title: 'SUPPLIER',       key: 'supplier_id',    sortable: false, align: 'start' as const },
-  { title: 'DECLARED VALUE', key: 'declared_value', sortable: true,  align: 'start' as const },
-  { title: 'SHIP VIA',       key: 'ship_via',       sortable: true,  align: 'start' as const },
-  { title: 'SHIP METHOD',    key: 'ship_method',    sortable: true,  align: 'start' as const },
-  { title: 'ISSUED AT',      key: 'issued_at',      sortable: true,  align: 'start' as const },
-  { title: 'STATUS',         key: 'status',         sortable: true,  align: 'start' as const },
-  { title: 'ACTIONS',        key: 'actions',        sortable: false, align: 'start' as const },
+  { title: 'PO #',           key: 'po_number',      sortable: true,  align: 'center' as const },
+  { title: 'SUPPLIER',       key: 'supplier_id',    sortable: false, align: 'center' as const },
+  { title: 'DECLARED VALUE', key: 'declared_value', sortable: false,  align: 'center' as const },
+  { title: 'SHIP VIA',       key: 'ship_via',       sortable: true,  align: 'center' as const },
+  { title: 'SHIP METHOD',    key: 'ship_method',    sortable: true,  align: 'center' as const },
+  { title: 'ISSUED AT',      key: 'issued_at',      sortable: true,  align: 'center' as const },
+  { title: 'STATUS',         key: 'status',         sortable: true,  align: 'center' as const },
+  { title: 'ACTIONS',        key: 'actions',        sortable: false, align: 'center' as const },
 ] as const
 
 export function usePurchaseOrderList() {
@@ -27,6 +28,10 @@ export function usePurchaseOrderList() {
   const showDetailModal = ref(false)
   const selectedPO      = ref<PurchaseOrder | null>(null)
   const selectedPR      = ref<PR | null>(null)
+  const serverItems     = ref<PurchaseOrder[]>([])
+  const totalItems      = ref(0)
+  const page            = ref(1)
+  const itemsPerPage    = ref(10)
 
   const confirmDialog = ref({
     show: false,
@@ -36,16 +41,45 @@ export function usePurchaseOrderList() {
 
   // ─── Computed ───────────────────────────────────────────────────
   const statusOptions = computed(() => {
-    const unique = [...new Set(poStore.purchaseOrders.map(po => po.status).filter(Boolean))]
+    const unique = [...new Set(serverItems.value.map(po => po.status).filter(Boolean))]
     const mapped = unique.map(s => ({ title: s.charAt(0).toUpperCase() + s.slice(1), value: s }))
     return [{ title: 'All', value: null }, ...mapped]
   })
 
-  const filteredPOs = computed(() =>
-    filterStatus.value
-      ? poStore.purchaseOrders.filter(po => po.status === filterStatus.value)
-      : poStore.purchaseOrders,
-  )
+  // ─── Server Load ────────────────────────────────────────────────
+  async function loadItems({ page, itemsPerPage, sortBy }: {
+    page: number
+    itemsPerPage: number
+    sortBy: { key: string; order: string }[]
+  }) {
+    poStore.loading = true
+
+    let query = supabase
+      .from('purchase_orders')
+      .select('*', { count: 'exact' })
+
+    if (filterStatus.value) {
+      query = query.eq('status', filterStatus.value)
+    }
+
+    if (search.value.trim()) {
+      query = query.ilike('po_number', `%${search.value.trim()}%`)
+    }
+
+    if (sortBy.length) {
+      query = query.order(sortBy[0].key, { ascending: sortBy[0].order === 'asc' })
+    } else {
+      query = query.order('created_at', { ascending: false })
+    }
+
+    const from = (page - 1) * itemsPerPage
+    query = query.range(from, from + itemsPerPage - 1)
+
+    const { data, count } = await query
+    serverItems.value = (data ?? []) as PurchaseOrder[]
+    totalItems.value  = count ?? 0
+    poStore.loading   = false
+  }
 
   // ─── Helpers ────────────────────────────────────────────────────
   const formatDate = (val: string) =>
@@ -77,15 +111,22 @@ export function usePurchaseOrderList() {
       is_delivered: true,
     } as any)
     confirmDialog.value.show = false
+    // Refresh current page after update
+    await loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
   }
 
-  onMounted(async () => {
+  // Re-fetch when search or filter changes
+  watch([search, filterStatus], () =>
+    loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
+  )
+
+  // Still need suppliers + PRs for resolving names
+  async function init() {
     await Promise.all([
-      poStore.fetchPurchaseOrders(),
       supplierStore.fetchSuppliers(),
       prStore.fetchPurchaseRequisition(),
     ])
-  })
+  }
 
   return {
     // state
@@ -95,16 +136,21 @@ export function usePurchaseOrderList() {
     selectedPO,
     selectedPR,
     confirmDialog,
+    serverItems,
+    totalItems,
+    page,
+    itemsPerPage,
     // computed
     statusOptions,
-    filteredPOs,
     // helpers
     formatDate,
     resolveSupplier,
     statusLabel,
     // actions
+    loadItems,
     openDetail,
     openConfirm,
     handleMarkReceived,
+    init,
   }
 }

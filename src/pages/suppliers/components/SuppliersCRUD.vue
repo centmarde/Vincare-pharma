@@ -95,7 +95,7 @@ onMounted(fetchSuppliers)
           {{ item.contact_person ?? '—' }}
         </template>
 
-        <template #item.phone="{ item }">
+        <template #item.contact_no="{ item }">
           {{ item.contact_no ?? '—' }}
         </template>
 
@@ -183,7 +183,7 @@ onMounted(fetchSuppliers)
               <v-col cols="12" md="6">
                 <label class="field-label">Phone</label>
                 <v-text-field
-                  v-model="form.phone"
+                  v-model="form.contact_no"
                   placeholder="e.g. 09123456789"
                   variant="outlined"
                   density="compact"

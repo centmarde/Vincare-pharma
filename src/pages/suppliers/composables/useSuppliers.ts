@@ -15,7 +15,7 @@ export function useSuppliers() {
   const form = ref({
     name: '',
     contact_person: null as string | null,
-    phone: null as string | null,
+    contact_no: null as string | null,
     email: null as string | null,
     city: null as string | null,
     address: null as string | null,
@@ -26,8 +26,8 @@ export function useSuppliers() {
   const headers = [
     { title: 'NAME',           key: 'name',           sortable: true,  align: 'center' as const },
     { title: 'CONTACT PERSON', key: 'contact_person', sortable: true,  align: 'center' as const },
-    { title: 'PHONE',          key: 'phone',          sortable: false, align: 'center' as const },
-    { title: 'EMAIL',          key: 'email',          sortable: false, align: 'center' as const },
+    { title: 'PHONE',          key: 'contact_no',     sortable: true,  align: 'center' as const },
+    { title: 'EMAIL',          key: 'email',          sortable: true,  align: 'center' as const },
     { title: 'CITY',           key: 'city',           sortable: true,  align: 'center' as const },
     { title: 'STATUS',         key: 'is_active',      sortable: true,  align: 'center' as const },
     { title: 'DATE ADDED',     key: 'created_at',     sortable: true,  align: 'center' as const },
@@ -45,7 +45,7 @@ export function useSuppliers() {
     form.value = {
       name: '',
       contact_person: null,
-      phone: null,
+      contact_no: null,
       email: null,
       city: null,
       address: null,
@@ -64,7 +64,7 @@ export function useSuppliers() {
     form.value = {
       name: supplier.name,
       contact_person: supplier.contact_person,
-      phone: supplier.contact_no,
+      contact_no: supplier.contact_no,
       email: supplier.email,
       city: supplier.city,
       address: supplier.address,

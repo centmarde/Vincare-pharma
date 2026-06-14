@@ -1,4 +1,4 @@
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisition'
 import { useSuppliersDataStore } from '@/stores/suppliersDataStore'
@@ -18,53 +18,35 @@ export const headers = [
 ]
 
 export function usePurchaseRequisitionList() {
+  const store         = usePurchaseRequisitionStore()
   const supplierStore = useSuppliersDataStore()
-  const store = usePurchaseRequisitionStore()
 
-  const {
-    loading,
-    selectedPR,
-    filterStatus,
-    filteredPRs,
-  } = storeToRefs(store)
-
-  const {
-    fetchPurchaseRequisition,
-    approvePR,
-    rejectPR,
-    totalQty,
-    totalCost,
-    itemSummary,
-    statusConfig,
-    statusOptions,
-  } = store
+  const { loading, selectedPR, filterStatus, filteredPRs } = storeToRefs(store)
+  const { fetchPurchaseRequisition, approvePR, rejectPR, totalQty, totalCost, itemSummary, statusConfig, statusOptions } = store
 
   // ─── Local UI State ─────────────────────────────────────────────
-  const showModal        = ref(false)
-  const search           = ref('')
-  const showPOModal      = ref(false)
-  const selectedPRForPO  = ref<PR | null>(null)
+  const search          = ref('')
+  const showModal       = ref(false)
+  const showPOModal     = ref(false)
+  const selectedPRForPO = ref<PR | null>(null)
+  const page            = ref(1)
+  const itemsPerPage    = ref(10)
 
   const confirmDialog = ref({
-    show: false,
-    action: '' as 'APPROVE' | 'REJECT',
-    prId: 0 as number,
+    show:     false,
+    action:   '' as 'APPROVE' | 'REJECT',
+    prId:     0 as number,
     prNumber: '' as string,
   })
 
   // ─── Actions ────────────────────────────────────────────────────
   function openDetail(pr: typeof selectedPR.value) {
     selectedPR.value = pr
-    showModal.value = true
+    showModal.value  = true
   }
 
   function openConfirm(action: 'APPROVE' | 'REJECT', pr: { id: number; pr_number: string }) {
-    confirmDialog.value = {
-      show: true,
-      action,
-      prId: pr.id,
-      prNumber: pr.pr_number,
-    }
+    confirmDialog.value = { show: true, action, prId: pr.id, prNumber: pr.pr_number }
   }
 
   function closeConfirm() {
@@ -73,47 +55,48 @@ export function usePurchaseRequisitionList() {
 
   async function handleConfirm() {
     const { action, prId } = confirmDialog.value
-    if (action === 'APPROVE') {
-      await approvePR(prId)
-    } else {
-      await rejectPR(prId)
-    }
+    action === 'APPROVE' ? await approvePR(prId) : await rejectPR(prId)
     closeConfirm()
   }
 
   function openPurchaseOrder(pr: PR) {
     selectedPRForPO.value = pr
-    showPOModal.value = true
+    showPOModal.value     = true
   }
 
-  onMounted(async () => {
-    await fetchPurchaseRequisition()
-    await supplierStore.fetchSuppliers()
-  })
+  async function init() {
+    await Promise.all([
+      fetchPurchaseRequisition(),
+      supplierStore.fetchSuppliers(),
+    ])
+  }
 
   return {
     // store refs
-    loading,
-    selectedPR,
-    filterStatus,
+    loading, 
+    selectedPR, 
+    filterStatus, 
     filteredPRs,
     // store methods
-    totalQty,
-    totalCost,
-    itemSummary,
+    totalQty, 
+    totalCost, 
+    itemSummary, 
     statusConfig,
+    page,
+    itemsPerPage, 
     statusOptions,
     // local state
-    showModal,
-    search,
-    showPOModal,
-    selectedPRForPO,
+    search, 
+    showModal, 
+    showPOModal, 
+    selectedPRForPO, 
     confirmDialog,
     // actions
-    openDetail,
-    openConfirm,
-    closeConfirm,
-    handleConfirm,
-    openPurchaseOrder,
+    openDetail, 
+    openConfirm, 
+    closeConfirm, 
+    handleConfirm, 
+    openPurchaseOrder, 
+    init,
   }
 }

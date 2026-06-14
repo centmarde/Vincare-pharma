@@ -52,6 +52,11 @@ const { printArea, poNumber, emptyRows, resolvedSupplier, handlePrint } = usePOD
             <div class="text-body-2 text-medium-emphasis">DATE: {{ formatDatePO_Written(po?.issued_at ?? '—') }}</div>
             <div class="text-body-2 text-medium-emphasis">PR #: {{ pr?.pr_number ?? '—' }}</div>
             <div class="text-body-2 text-medium-emphasis">PO #: <span class="font-weight-bold text-primary">{{ po?.po_number }}</span></div>
+            <!-- I want this to have to appear only if the status is delivered -->
+            <div v-if="po?.is_delivered" class="text-body-2 text-green font-weight-bold mt-1">
+              <v-icon start size="14">mdi-check-circle</v-icon>
+              Delivered
+            </div>
           </v-col>
         </v-row>
 

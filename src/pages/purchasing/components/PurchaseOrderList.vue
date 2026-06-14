@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import ViewPODetailModal from './PODetailModal.vue'
 import { usePurchaseOrderList, headers } from '../composables/usePurchaseOrderList'
 import { usePurchaseOrderStore } from '@/stores/purchaseOrderData'
@@ -13,17 +14,22 @@ const {
   selectedPR,
   confirmDialog,
   statusOptions,
-  filteredPOs,
+  serverItems,
+  itemsPerPage,
+  totalItems,
+  loadItems,
   resolveSupplier,
   statusLabel,
   openDetail,
   openConfirm,
   handleMarkReceived,
+  init,
 } = usePurchaseOrderList()
+onMounted(init)
 </script>
 <template>
   <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
-    <v-card class="mx-auto w-100" max-width="1400" rounded="lg" elevation="1">
+    <v-card class="mx-auto w-100 pa-0" max-width="1400" rounded="lg" elevation="1">
 
       <!-- Header -->
       <v-card-title class="d-flex justify-space-between align-center pa-5">
@@ -60,82 +66,73 @@ const {
       </v-card-title>
 
       <v-divider />
+    
+      <v-data-table-server
+          v-model:items-per-page="itemsPerPage"
+          :headers="headers"
+          :items="serverItems"
+          :items-length="totalItems"
+          :loading="poStore.loading"
+          :search="search"
+          hover
+          loading-text="Loading purchase orders..."
+          no-data-text="No purchase orders found."
+          @update:options="loadItems"
+        >
+          <template #item.po_number="{ item }">
+            <span class="text-body-2 font-weight-bold" style="white-space: nowrap;">{{ item.po_number }}</span>
+          </template>
 
-      <v-data-table
-        :headers="headers"
-        :items="filteredPOs"
-        :search="search"
-        :loading="poStore.loading"
-        fixed-header
-        hover
-        loading-text="Loading purchase orders..."
-        no-data-text="No purchase orders found."
-      >
+          <template #item.supplier_id="{ item }">
+            <span class="text-body-2">{{ resolveSupplier(item.supplier_id) }}</span>
+          </template>
 
-        <template #item.po_number="{ item }">
-          <span class="text-body-2 font-weight-bold" style="white-space: nowrap;">{{ item.po_number }}</span>
-        </template>
+          <template #item.declared_value="{ item }">
+            <span class="text-body-2">{{ formatCurrency(item.declared_value) }}</span>
+          </template>
 
-        <template #item.supplier_id="{ item }">
-          <span class="text-body-2">{{ resolveSupplier(item.supplier_id) }}</span>
-        </template>
+          <template #item.ship_via="{ item }">
+            <span class="text-body-2">{{ item.ship_via ?? '—' }}</span>
+          </template>
 
-        <template #item.declared_value="{ item }">
-          <span class="text-body-2">{{ formatCurrency(item.declared_value) }}</span>
-        </template>
+          <template #item.ship_method="{ item }">
+            <span class="text-body-2">{{ item.ship_method ?? '—' }}</span>
+          </template>
 
-        <template #item.ship_via="{ item }">
-          <span class="text-body-2">{{ item.ship_via ?? '—' }}</span>
-        </template>
+          <template #item.issued_at="{ item }">
+            <span class="text-body-2">{{ item.issued_at ? formatDatePR_ISO(item.issued_at) : '—' }}</span>
+          </template>
 
-        <template #item.ship_method="{ item }">
-          <span class="text-body-2">{{ item.ship_method ?? '—' }}</span>
-        </template>
+          <template #item.status="{ item }">
+            <span class="status-chip text-caption font-weight-bold" :class="`status-chip--${item.status}`">
+              <span class="status-dot" />
+              {{ statusLabel(item.status) }}
+            </span>
+          </template>
 
-        <template #item.issued_at="{ item }">
-          <span class="text-body-2">{{ item.issued_at ? formatDatePR_ISO(item.issued_at) : '—' }}</span>
-        </template>
-
-        <template #item.status="{ item }">
-          <span class="status-chip text-caption font-weight-bold" :class="`status-chip--${item.status}`">
-            <span class="status-dot" />
-            {{ statusLabel(item.status) }}
-          </span>
-        </template>
-
-        <template #item.actions="{ item }">
-          <div class="d-flex align-center" style="gap: 6px; white-space: nowrap;">
-            <v-btn variant="outlined" size="small" class="text-none" @click="openDetail(item)">
-              View
-            </v-btn>
-            <v-btn
-              v-if="item.status === 'issued'"
-              variant="flat"
-              size="small"
-              color="success"
-              class="text-none"
-              :loading="poStore.loading"
-              @click="openConfirm(item)"
-            >
-              Mark Received
-            </v-btn>
-            <v-chip v-if="item.is_delivered" color="success" size="small" variant="tonal" label>
-              <v-icon start size="14">mdi-check-circle</v-icon>
-              Delivered
-            </v-chip>
-            <!-- <v-btn
-              variant="outlined"
-              size="small"
-              class="text-none"
-              prepend-icon="mdi-printer-outline"
-              @click="openDetail(item)"
-            >
-              Print
-            </v-btn> -->
-          </div>
-        </template>
-
-      </v-data-table>
+          <template #item.actions="{ item }">
+            <div class="d-flex align-center" style="gap: 6px; white-space: nowrap;">
+              <v-btn variant="outlined" size="small" class="text-none" @click="openDetail(item)">
+                View
+              </v-btn>
+              <v-btn
+                v-if="item.status === 'issued'"
+                variant="flat"
+                size="small"
+                color="success"
+                class="text-none"
+                :loading="poStore.loading"
+                @click="openConfirm(item)"
+              >
+                Mark Received
+              </v-btn>
+              <v-chip v-if="item.is_delivered" color="green" size="small" variant="tonal" label>
+                <v-icon start size="14">mdi-check-circle</v-icon>
+                Delivered
+              </v-chip>
+            </div>
+          </template>
+      </v-data-table-server>
     </v-card>
 
     <!-- Opened when clicking 'View' or 'Print' inside your table rows -->
