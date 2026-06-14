@@ -38,7 +38,7 @@ export type PRItem = {
   qty: number
   offer_per_unit: number
   cost_per_unit: number
-  SKU: string | null
+  SKU: number | null
   cost_price: number | null
   sell_price: number | null
   val_cost: number | null

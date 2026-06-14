@@ -29,16 +29,21 @@ const headers = computed(() => [
   { title: 'PR Number', key: 'pr_number', sortable: true },
 ])
 
-// Filtered products based on search query
+// Filtered products based on search query and exclude null SKUs
 const filteredProducts = computed(() => {
+  // First filter out items with null or "null" SKU
+  const validProducts = products.value.filter(
+    (item) => item.SKU != null && item.SKU !== 'null' && item.SKU !== '',
+  )
+
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase()
-    return products.value.filter(
+    return validProducts.filter(
       (item) =>
         item.name.toLowerCase().includes(query) || item.pr_number.toLowerCase().includes(query),
     )
   }
-  return products.value
+  return validProducts
 })
 
 const totalProducts = computed(() => filteredProducts.value.length)

@@ -17,7 +17,12 @@ export const headers = [
   { title: 'ACTIONS',        key: 'actions',        sortable: false, align: 'center' as const },
 ] as const
 
-export function usePurchaseOrderList() {
+export interface UsePurchaseOrderListOptions {
+  excludePRStatuses?: string[]
+}
+
+export function usePurchaseOrderList(options: UsePurchaseOrderListOptions = {}) {
+  const { excludePRStatuses = [] } = options
   const poStore       = usePurchaseOrderStore()
   const supplierStore = useSuppliersDataStore()
   const prStore       = usePurchaseRequisitionStore()
@@ -56,7 +61,15 @@ export function usePurchaseOrderList() {
 
     let query = supabase
       .from('purchase_orders')
-      .select('*', { count: 'exact' })
+      .select(`
+        *,
+        purchase_requisition (
+          id,
+          pr_number,
+          status,
+          created_at
+        )
+      `, { count: 'exact' })
 
     if (filterStatus.value) {
       query = query.eq('status', filterStatus.value)
@@ -76,7 +89,17 @@ export function usePurchaseOrderList() {
     query = query.range(from, from + itemsPerPage - 1)
 
     const { data, count } = await query
-    serverItems.value = (data ?? []) as PurchaseOrder[]
+
+    // Filter out POs where the PR status is in the excluded list
+    let filteredData = data ?? []
+    if (excludePRStatuses.length > 0) {
+      filteredData = filteredData.filter(po => {
+        const prStatus = po.purchase_requisition?.status
+        return !prStatus || !excludePRStatuses.includes(prStatus)
+      })
+    }
+
+    serverItems.value = filteredData as PurchaseOrder[]
     totalItems.value  = count ?? 0
     poStore.loading   = false
   }
