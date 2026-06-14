@@ -72,6 +72,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisition', ()
   const selectedPR = ref<PR | null>(null)
   const filterStatus = ref<string | null>(null)
   const items = ref<RequisitionItemType[]>([])
+  const subscriptionChannel = ref<any>(null)
 
   const currentPR = ref<PurchaseRequisitionType>({
     justification: null,
@@ -327,6 +328,34 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisition', ()
     loading.value = false
   }
 
+  // Real-time subscription for purchase_requisition table
+  function subscribeToPurchaseRequisitions() {
+    subscriptionChannel.value = supabase
+      .channel('purchase_requisition_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'purchase_requisition'
+        },
+        async (payload) => {
+          console.log('Real-time change detected in purchase_requisition:', payload)
+          // Refetch data when changes occur - this updates the reactive prs.value
+          await fetchPurchaseRequisition()
+        }
+      )
+      .subscribe()
+  }
+
+  // Unsubscribe from real-time updates
+  function unsubscribeFromPurchaseRequisitions() {
+    if (subscriptionChannel.value) {
+      supabase.removeChannel(subscriptionChannel.value)
+      subscriptionChannel.value = null
+    }
+  }
+
   // ─── Expose ───────────────────────────────────────────────────────
   return {
     // State
@@ -358,5 +387,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisition', ()
     fetchPurchaseRequisition,
     approvePR,
     rejectPR,
+    subscribeToPurchaseRequisitions,
+    unsubscribeFromPurchaseRequisitions,
   }
 })

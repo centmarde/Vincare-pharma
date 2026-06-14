@@ -1,16 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisition'
-import { usePurchaseOrderStore } from '@/stores/purchaseOrderData'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useAuthUserStore } from '@/stores/authUser'
+import { useProductsRealtime } from '@/composables/useProductsRealtime'
 import { formatCurrency } from '@/utils/helpers'
 
-const purchaseRequisitionStore = usePurchaseRequisitionStore()
-const purchaseOrderStore = usePurchaseOrderStore()
 const authUserStore = useAuthUserStore()
-
-// Use canViewValuation from authUser store (role_id 1 or 2)
 const { canViewValuation } = authUserStore
+
+// Use the real-time composable
+const { products, loading, init, cleanup, refresh } = useProductsRealtime()
 
 // Search and filter state
 const searchQuery = ref('')
@@ -31,44 +29,32 @@ const headers = computed(() => [
   { title: 'PR Number', key: 'pr_number', sortable: true },
 ])
 
-// Computed properties
-const loading = computed(() => purchaseRequisitionStore.loading)
-
-// Get products using the purchaseOrderStore's filter function
-const products = computed(() => {
-  const prs = purchaseRequisitionStore.prs
-  const allItems = purchaseOrderStore.getProductsFromDeliveredPRs(prs)
-
-  // Apply search filter
+// Filtered products based on search query
+const filteredProducts = computed(() => {
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase()
-    return allItems.filter(
+    return products.value.filter(
       (item) =>
         item.name.toLowerCase().includes(query) || item.pr_number.toLowerCase().includes(query),
     )
   }
-
-  return allItems
+  return products.value
 })
 
-const totalProducts = computed(() => products.value.length)
+const totalProducts = computed(() => filteredProducts.value.length)
 
 // Methods
 const handleSearch = () => {
-  fetchProducts()
-}
-
-const fetchProducts = async () => {
-  // Fetch purchase requisition items as products and purchase orders
-  await Promise.all([
-    purchaseRequisitionStore.fetchPurchaseRequisition(),
-    purchaseOrderStore.fetchPurchaseOrders()
-  ])
+  // Search is reactive, no need to refetch
 }
 
 // Lifecycle
 onMounted(() => {
-  fetchProducts()
+  init()
+})
+
+onUnmounted(() => {
+  cleanup()
 })
 </script>
 
@@ -99,7 +85,7 @@ onMounted(() => {
         v-model:sort-by="sortBy"
         v-model:expanded="expanded"
         :headers="headers"
-        :items="products"
+        :items="filteredProducts"
         :loading="loading"
         loading-text="Loading products..."
         hover

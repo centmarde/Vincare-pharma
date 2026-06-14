@@ -80,6 +80,7 @@ export const usePurchaseOrderStore = defineStore('purchaseOrder', () => {
   const currentPurchaseOrder: Ref<PurchaseOrder | null> = ref(null)
   const supplierDetails: Ref<SupplierDetails | null> = ref(null)
   const requisitionItems: Ref<PurchaseRequisitionItems[]> = ref([])
+  const subscriptionChannel = ref<any>(null)
   
   //Computed
   const purchaseOrdersCount = computed(() => purchaseOrders.value.length)
@@ -150,15 +151,31 @@ export const usePurchaseOrderStore = defineStore('purchaseOrder', () => {
       }
 
       if (data) {
+        console.log('[PurchaseOrderStore] Fetched POs:', data.map(po => ({
+          id: po.id,
+          po_number: po.po_number,
+          is_delivered: po.is_delivered,
+          pr_id: po.purchase_requisition?.id,
+          pr_status: po.purchase_requisition?.status,
+          requisition_id: po.requisition_id
+        })))
+
         // Second filter: Only keep purchase orders where is_delivered=true and related PR is approved
         const deliveredPOsWithApprovedPR = data.filter(po => {
           // Check if the related PR exists and is approved
           if (po.purchase_requisition) {
-            return po.is_delivered === true && po.purchase_requisition.status === 'approved'
+            // Use truthy check for is_delivered to handle different data types (boolean, string, number)
+            return po.is_delivered && po.purchase_requisition.status === 'approved'
           }
           // If no relationship data, exclude this PO
           return false
         })
+
+        console.log('[PurchaseOrderStore] Delivered POs with approved PR:', deliveredPOsWithApprovedPR.map(po => ({
+          id: po.id,
+          po_number: po.po_number,
+          pr_number: po.purchase_requisition?.pr_number
+        })))
 
         purchaseOrders.value = deliveredPOsWithApprovedPR as PurchaseOrder[]
       }
@@ -427,6 +444,34 @@ export const usePurchaseOrderStore = defineStore('purchaseOrder', () => {
   }
    
 
+  // Real-time subscription for purchase_orders table
+  function subscribeToPurchaseOrders() {
+    subscriptionChannel.value = supabase
+      .channel('purchase_orders_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'purchase_orders'
+        },
+        async (payload) => {
+          console.log('Real-time change detected in purchase_orders:', payload)
+          // Refetch data when changes occur - this updates the reactive purchaseOrders.value
+          await fetchPurchaseOrders()
+        }
+      )
+      .subscribe()
+  }
+
+  // Unsubscribe from real-time updates
+  function unsubscribeFromPurchaseOrders() {
+    if (subscriptionChannel.value) {
+      supabase.removeChannel(subscriptionChannel.value)
+      subscriptionChannel.value = null
+    }
+  }
+
   return {
     // State
     loading,
@@ -450,5 +495,7 @@ export const usePurchaseOrderStore = defineStore('purchaseOrder', () => {
     deletePurchaseOrder,
     receivePurchaseOrder,
     getProductsFromDeliveredPRs,
+    subscribeToPurchaseOrders,
+    unsubscribeFromPurchaseOrders,
     }
 })
