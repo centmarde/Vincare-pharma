@@ -19,6 +19,19 @@ export type PurchaseOrder = {
   issued_at: string
   status: 'issued' | 'received'
   is_delivered: boolean
+  purchase_requisition?: {
+    id: number
+    pr_number: string
+    status: string
+    created_at: string
+  } | null
+}
+
+export type PR = {
+  id: number
+  pr_number: string
+  status: string
+  items: any[]
 }
 
 export type PurchaseRequisitionItems = {
@@ -103,11 +116,9 @@ export const usePurchaseOrderStore = defineStore('purchaseOrder', () => {
         if(data){
           requisitionItems.value = data as PurchaseRequisitionItems[]
         }
-        console.log('Fetched requisition items:', requisitionItems.value)
 
     } catch (err) {
       handleError(err, 'Failed to fetch requisition items.')
-      console.log('Error fetching requisition items:', err)
     } finally {
       loading.value = false
     }
@@ -119,10 +130,18 @@ export const usePurchaseOrderStore = defineStore('purchaseOrder', () => {
     clearError()
 
     try {
-
+      // First fetch: Get all purchase orders with their related purchase_requisition data
       const { data, error: fetchError } = await supabase
         .from('purchase_orders')
-        .select('*')
+        .select(`
+          *,
+          purchase_requisition (
+            id,
+            pr_number,
+            status,
+            created_at
+          )
+        `)
         .order('created_at', { ascending: false })
 
       if (fetchError) {
@@ -130,19 +149,69 @@ export const usePurchaseOrderStore = defineStore('purchaseOrder', () => {
         throw fetchError
       }
 
-      if(data){
-        purchaseOrders.value = data as PurchaseOrder[]
+      if (data) {
+        // Second filter: Only keep purchase orders where is_delivered=true and related PR is approved
+        const deliveredPOsWithApprovedPR = data.filter(po => {
+          // Check if the related PR exists and is approved
+          if (po.purchase_requisition) {
+            return po.is_delivered === true && po.purchase_requisition.status === 'approved'
+          }
+          // If no relationship data, exclude this PO
+          return false
+        })
+
+        purchaseOrders.value = deliveredPOsWithApprovedPR as PurchaseOrder[]
       }
-      console.log('Fetched purchase orders:', purchaseOrders.value)
 
-
-    }catch (err) {
+    } catch (err) {
       handleError(err, 'Failed to fetch purchase orders.')
-      console.log('Error fetching purchase orders:', err)
       toast.error('Failed to fetch purchase orders.')
     } finally {
       loading.value = false
     }
+  }
+
+  // Get products from PRs that have delivered POs
+  // This function accepts PR data and uses the already-filtered purchaseOrders
+  const getProductsFromDeliveredPRs = (prs: PR[]) => {
+    // Get unique PR IDs from delivered POs
+    const prIdsWithDeliveredPOs = purchaseOrders.value
+      .map(po => po.purchase_requisition?.id?.toString() || po.requisition_id)
+      .filter(Boolean)
+
+    // Find PRs that have delivered POs
+    const filteredPRs = prs.filter((pr) => prIdsWithDeliveredPOs.includes(String(pr.id)))
+
+    // Map to product-like format
+    const allItems: any[] = []
+    filteredPRs.forEach((pr) => {
+      pr.items.forEach((item) => {
+        allItems.push({
+          SKU: item.SKU,
+          name: item.item_description,
+          quantity: item.qty,
+          unit_cost: item.cost_per_unit,
+          pr_number: pr.pr_number,
+          id: item.id,
+          requisition_id: pr.id,
+          unit: item.unit,
+          offer_per_unit: item.offer_per_unit,
+          no: item.no,
+          cost_price: item.cost_price,
+          sell_price: item.sell_price,
+          val_cost: item.val_cost,
+          val_sell: item.val_sell,
+          total_sold: item.total_sold,
+          transfered: item.transfered,
+          adjusted: item.adjusted,
+          expiry_date: item.expiry_date,
+          reorder_pt: item.reorder_pt,
+          supplier_name: '',
+        })
+      })
+    })
+
+    return allItems
   }
 
 
@@ -166,11 +235,9 @@ export const usePurchaseOrderStore = defineStore('purchaseOrder', () => {
       if(data){
         currentPurchaseOrder.value = data
       }
-      console.log('Fetched purchase order:', currentPurchaseOrder.value)
 
     } catch (err) {
       handleError(err, 'Failed to fetch purchase order.')
-      console.log('Error fetching purchase order:', err)
       toast.error('Failed to fetch purchase order.')
     } finally {
       loading.value = false
@@ -198,11 +265,9 @@ export const usePurchaseOrderStore = defineStore('purchaseOrder', () => {
         if(data){
           supplierDetails.value = data as SupplierDetails
         }
-        console.log('Fetched supplier details:', supplierDetails.value)
 
     } catch (err) {
       handleError(err, 'Failed to fetch supplier details.')
-      console.log('Error fetching supplier details:', err)
       toast.error('Failed to fetch supplier details.')
     } finally {
       loading.value = false
@@ -231,11 +296,9 @@ export const usePurchaseOrderStore = defineStore('purchaseOrder', () => {
           currentPurchaseOrder.value = createdOrder
         }
         toast.success('Purchase order created successfully.')
-        console.log('Created purchase order:', currentPurchaseOrder.value)
     
     } catch (err) {
       handleError(err, 'Failed to create purchase order.')
-      console.log('Error creating purchase order:', err)
       toast.error('Failed to create purchase order.')
     } finally {
       loading.value = false
@@ -284,11 +347,9 @@ export const usePurchaseOrderStore = defineStore('purchaseOrder', () => {
           }
         }
         toast.success('Purchase order updated successfully.')
-        console.log('Updated purchase order:', currentPurchaseOrder.value)
 
     } catch (err) {
       handleError(err, 'Failed to update purchase order.')
-      console.log('Error updating purchase order:', err)
       toast.error('Failed to update purchase order.')
     }
       finally {
@@ -318,11 +379,9 @@ export const usePurchaseOrderStore = defineStore('purchaseOrder', () => {
         }
 
         toast.success('Purchase order deleted successfully.')
-        console.log('Deleted purchase order with ID:', id)
 
     } catch (err) {
       handleError(err, 'Failed to delete purchase order.')
-      console.log('Error deleting purchase order:', err)
       toast.error('Failed to delete purchase order.')
     } finally {
       loading.value = false
@@ -356,12 +415,10 @@ export const usePurchaseOrderStore = defineStore('purchaseOrder', () => {
           }
         }
         toast.success('Purchase order received successfully.')
-        console.log('Received purchase order:', currentPurchaseOrder.value)
 
 
     } catch (err) {
       handleError(err, 'Failed to receive purchase order.')
-      console.log('Error receiving purchase order:', err)
       toast.error('Failed to receive purchase order.')
     } finally {
       loading.value = false
@@ -392,5 +449,6 @@ export const usePurchaseOrderStore = defineStore('purchaseOrder', () => {
     updatePurchaseOrder,
     deletePurchaseOrder,
     receivePurchaseOrder,
+    getProductsFromDeliveredPRs,
     }
 })

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisition'
+import { usePurchaseOrderStore } from '@/stores/purchaseOrderData'
 import { useAuthUserStore } from '@/stores/authUser'
 import { formatCurrency } from '@/utils/helpers'
 
 const purchaseRequisitionStore = usePurchaseRequisitionStore()
+const purchaseOrderStore = usePurchaseOrderStore()
 const authUserStore = useAuthUserStore()
 
 // Use canViewValuation from authUser store (role_id 1 or 2)
@@ -32,41 +34,10 @@ const headers = computed(() => [
 // Computed properties
 const loading = computed(() => purchaseRequisitionStore.loading)
 
-// Map purchase requisition items to product-like format (only approved PRs)
+// Get products using the purchaseOrderStore's filter function
 const products = computed(() => {
   const prs = purchaseRequisitionStore.prs
-  const allItems: any[] = []
-
-  prs
-    .filter((pr) => pr.status === 'approved')
-    .forEach((pr) => {
-      pr.items.forEach((item) => {
-        allItems.push({
-          SKU: item.SKU,
-          name: item.item_description,
-          quantity: item.qty,
-          unit_cost: item.cost_per_unit,
-          pr_number: pr.pr_number,
-          // Additional PR-related info
-          id: item.id,
-          requisition_id: pr.id,
-          unit: item.unit,
-          offer_per_unit: item.offer_per_unit,
-          no: item.no,
-          // New fields
-          cost_price: item.cost_price,
-          sell_price: item.sell_price,
-          val_cost: item.val_cost,
-          val_sell: item.val_sell,
-          total_sold: item.total_sold,
-          transfered: item.transfered,
-          adjusted: item.adjusted,
-          expiry_date: item.expiry_date,
-          reorder_pt: item.reorder_pt,
-          supplier_name: '',
-        })
-      })
-    })
+  const allItems = purchaseOrderStore.getProductsFromDeliveredPRs(prs)
 
   // Apply search filter
   if (searchQuery.value) {
@@ -88,8 +59,11 @@ const handleSearch = () => {
 }
 
 const fetchProducts = async () => {
-  // Fetch purchase requisition items as products
-  await purchaseRequisitionStore.fetchPurchaseRequisition()
+  // Fetch purchase requisition items as products and purchase orders
+  await Promise.all([
+    purchaseRequisitionStore.fetchPurchaseRequisition(),
+    purchaseOrderStore.fetchPurchaseOrders()
+  ])
 }
 
 // Lifecycle
@@ -119,20 +93,18 @@ onMounted(() => {
     <v-divider></v-divider>
 
     <v-card-text class="pa-0">
-      <v-data-table-server
+      <v-data-table
         v-model:items-per-page="itemsPerPage"
         v-model:page="page"
         v-model:sort-by="sortBy"
         v-model:expanded="expanded"
         :headers="headers"
         :items="products"
-        :items-length="totalProducts"
         :loading="loading"
         loading-text="Loading products..."
         hover
         density="comfortable"
         show-expand
-        @update:options="fetchProducts"
       >
         <template #[`item.unit_cost`]="{ value }">
           <span v-if="value != null">{{ formatCurrency(Number(value)) }}</span>
@@ -177,7 +149,9 @@ onMounted(() => {
                         <div class="text-caption text-grey-darken-1">Cost Price</div>
                         <div class="text-body-1 font-weight-medium">
                           {{
-                            item.cost_price != null ? formatCurrency(Number(item.cost_price)) : 'N/A'
+                            item.cost_price != null
+                              ? formatCurrency(Number(item.cost_price))
+                              : 'N/A'
                           }}
                         </div>
                       </div>
@@ -195,15 +169,15 @@ onMounted(() => {
                     </div>
                   </v-col>
                   <template v-if="canViewValuation">
-                  <v-col cols="12" md="3" class="d-flex align-center py-2">
-                    <v-icon icon="mdi-store" color="primary" class="mr-3"></v-icon>
-                    <div>
-                      <div class="text-caption text-grey-darken-1">Supplier</div>
-                      <div class="text-body-1 font-weight-medium">
-                        {{ item.supplier_name || 'N/A' }}
+                    <v-col cols="12" md="3" class="d-flex align-center py-2">
+                      <v-icon icon="mdi-store" color="primary" class="mr-3"></v-icon>
+                      <div>
+                        <div class="text-caption text-grey-darken-1">Supplier</div>
+                        <div class="text-body-1 font-weight-medium">
+                          {{ item.supplier_name || 'N/A' }}
+                        </div>
                       </div>
-                    </div>
-                  </v-col>
+                    </v-col>
                   </template>
                   <!-- Row 2 -->
                   <template v-if="canViewValuation">
@@ -212,7 +186,9 @@ onMounted(() => {
                       <div>
                         <div class="text-caption text-grey-darken-1">Val Cost</div>
                         <div class="text-body-1 font-weight-medium">
-                          {{ item.val_cost != null ? formatCurrency(Number(item.val_cost)) : 'N/A' }}
+                          {{
+                            item.val_cost != null ? formatCurrency(Number(item.val_cost)) : 'N/A'
+                          }}
                         </div>
                       </div>
                     </v-col>
@@ -221,7 +197,9 @@ onMounted(() => {
                       <div>
                         <div class="text-caption text-grey-darken-1">Val Sell</div>
                         <div class="text-body-1 font-weight-medium">
-                          {{ item.val_sell != null ? formatCurrency(Number(item.val_sell)) : 'N/A' }}
+                          {{
+                            item.val_sell != null ? formatCurrency(Number(item.val_sell)) : 'N/A'
+                          }}
                         </div>
                       </div>
                     </v-col>
@@ -284,7 +262,7 @@ onMounted(() => {
             <p class="text-grey mt-2">No products found</p>
           </div>
         </template>
-      </v-data-table-server>
+      </v-data-table>
     </v-card-text>
   </v-card>
 </template>
