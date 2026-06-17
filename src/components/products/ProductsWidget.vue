@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useToast } from 'vue-toastification'
+import { supabase } from '@/lib/supabase'
 import { useProductsDataStore, type ProductType, type CreateProductData, type UpdateProductData } from '@/stores/productsData'
+import { useTransactionsDataStore } from '@/stores/transactionsData'
+import { useTransactionItemsDataStore } from '@/stores/transactionsItemsData'
 
 const toast = useToast()
 const productsStore = useProductsDataStore()
+const transactionsStore = useTransactionsDataStore()
+const transactionItemsStore = useTransactionItemsDataStore()
 
 // Dialog states
 const showDialog = ref(false)
@@ -46,6 +51,9 @@ const sortBy = ref([{ key: 'created_at', order: 'desc' as 'asc' | 'desc' }])
 // Expanded rows state - store expanded item keys
 const expanded = ref<string[]>([])
 
+// Track eligible product IDs (those in stock_in transactions)
+const eligibleProductIds = ref<Set<number>>(new Set())
+
 // Headers for the data table
 const headers = computed(() => [
   { title: '', key: 'data-table-expand', sortable: false },
@@ -60,8 +68,14 @@ const headers = computed(() => [
   { title: 'Actions', key: 'actions', sortable: false },
 ])
 
-// Computed properties
-const products = computed(() => productsStore.products)
+// Computed properties — only show products linked to stock_in transactions with valid SKUs
+const products = computed(() =>
+  productsStore.products.filter(p =>
+    p.sku != null &&
+    p.sku !== 'null' &&
+    eligibleProductIds.value.has(p.id)
+  )
+)
 const loading = computed(() => productsStore.loading)
 const totalProducts = computed(() => productsStore.productsCount)
 
@@ -69,6 +83,38 @@ const totalProducts = computed(() => productsStore.productsCount)
 const rules = {
   required: (value: any) => !!value || 'Field is required',
   positiveNumber: (value: number | null) => value === null || value >= 0 || 'Must be a positive number',
+}
+
+// Fetch product IDs that appear in stock_in transactions
+async function fetchEligibleProductIds() {
+  try {
+    // Fetch all stock_in transactions
+    const stockInTxs = await transactionsStore.fetchTransactions({
+      transaction_type: 'stock_in',
+    })
+
+    if (!stockInTxs || stockInTxs.length === 0) {
+      eligibleProductIds.value = new Set()
+      return
+    }
+
+    // Get all transaction_items for these transactions
+    const productIds = new Set<number>()
+    for (const tx of stockInTxs) {
+      const items = await transactionItemsStore.fetchTransactionItems({ transaction_id: tx.id })
+      if (items) {
+        items.forEach(item => {
+          if (item.product_id) productIds.add(item.product_id)
+        })
+      }
+    }
+
+    eligibleProductIds.value = productIds
+    console.log('[ProductsWidget] Eligible product IDs from stock_in transactions:', [...productIds])
+  } catch (err) {
+    console.error('[ProductsWidget] Failed to fetch eligible product IDs:', err)
+    eligibleProductIds.value = new Set()
+  }
 }
 
 // Methods
@@ -146,21 +192,27 @@ const handleSubmit = async () => {
   const { valid } = await form.value.validate()
   if (!valid) return
 
+  // Clean empty strings to null to avoid DB constraint issues
+  const cleaned: Record<string, any> = {}
+  for (const [key, value] of Object.entries(productForm.value)) {
+    cleaned[key] = value === '' ? null : value
+  }
+
   if (dialogMode.value === 'create') {
-    const result = await productsStore.createProduct(productForm.value as CreateProductData)
+    const result = await productsStore.createProduct(cleaned as CreateProductData)
     if (result) {
       toast.success('Product created successfully')
       closeDialog()
     } else {
-      toast.error('Failed to create product')
+      toast.error('Failed to create product: ' + (productsStore.error || 'Unknown error'))
     }
   } else if (dialogMode.value === 'edit' && currentProduct.value) {
-    const result = await productsStore.updateProduct(currentProduct.value.id, productForm.value as UpdateProductData)
+    const result = await productsStore.updateProduct(currentProduct.value.id, cleaned as UpdateProductData)
     if (result) {
       toast.success('Product updated successfully')
       closeDialog()
     } else {
-      toast.error('Failed to update product')
+      toast.error('Failed to update product: ' + (productsStore.error || 'Unknown error'))
     }
   }
 }
@@ -189,11 +241,15 @@ const fetchProducts = async () => {
     limit: itemsPerPage.value,
     offset: (page.value - 1) * itemsPerPage.value,
   })
+
+  console.log('[ProductsWidget] Fetch result — all products:', productsStore.products)
+  console.log('[ProductsWidget] Eligible product IDs from stock_in:', [...eligibleProductIds.value])
 }
 
 // Lifecycle
-onMounted(() => {
-  fetchProducts()
+onMounted(async () => {
+  await fetchEligibleProductIds()
+  await fetchProducts()
   productsStore.startRealtime()
 })
 

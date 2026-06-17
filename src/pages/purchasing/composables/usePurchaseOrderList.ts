@@ -1,8 +1,10 @@
 import { ref, computed, watch } from 'vue'
 import { useToast } from 'vue-toastification'
+import { useSuppliersDataStore } from '@/stores/suppliersData'
+import { useTransactionsDataStore } from '@/stores/transactionsData'
+import { useTransactionItemsDataStore } from '@/stores/transactionsItemsData'
 import type { PurchaseOrder } from './usePODetailModal'
-import type { PR } from './usePurchaseRequisitionList'
-import { staticSuppliers } from './usePODetailModal'
+import type { PR, PRItem } from './usePurchaseRequisitionList'
 
 export const headers = [
   { title: 'PO #',           key: 'po_number',      sortable: true,  align: 'center' as const },
@@ -19,9 +21,43 @@ export interface UsePurchaseOrderListOptions {
   excludePRStatuses?: string[]
 }
 
+/**
+ * Maps a transaction of type 'purchase_order' into a shape that the PO list
+ * templates can consume (mimicking PurchaseOrder + inline purchase_requisition).
+ */
+function txToPO(tx: any): any {
+  // Parse ship_via / ship_method from remarks if stored as "SHIP_VIA|SHIP_METHOD"
+  let ship_via: string | null = null
+  let ship_method: string | null = null
+  if (tx.remarks) {
+    const parts = tx.remarks.split('|')
+    ship_via = parts[0]?.trim() || null
+    ship_method = parts[1]?.trim() || null
+  }
+
+  return {
+    id:               tx.id,
+    created_at:       tx.created_at,
+    po_number:        tx.reference_no ?? `PO-${tx.id}`,
+    requisition_id:   null,
+    supplier_id:      tx.supplier_id,
+    ship_via,
+    ship_method,
+    declared_value:   tx.total_amount,
+    issued_by:        tx.created_by,
+    issued_at:        tx.created_at,
+    status:           tx.status ?? 'issued',
+    is_delivered:     tx.status === 'received',
+    received_at:      tx.status === 'received' ? tx.updated_at ?? tx.created_at : null,
+  }
+}
+
 export function usePurchaseOrderList(options: UsePurchaseOrderListOptions = {}) {
   const { excludePRStatuses = [] } = options
-  const toast           = useToast()
+  const toast              = useToast()
+  const supplierStore      = useSuppliersDataStore()
+  const transactionsStore  = useTransactionsDataStore()
+  const transactionItemsStore = useTransactionItemsDataStore()
 
   // ─── State ──────────────────────────────────────────────────────
   const search          = ref('')
@@ -41,79 +77,55 @@ export function usePurchaseOrderList(options: UsePurchaseOrderListOptions = {}) 
     poNumber: '',
   })
 
-  // ─── Static Data ────────────────────────────────────────────────
-  const staticPOs: (PurchaseOrder & { purchase_requisition?: PR })[] = [
-    {
-      id: 1,
-      created_at: new Date().toISOString(),
-      po_number: 'PO-001',
-      requisition_id: 1,
-      supplier_id: 1,
-      ship_via: 'Truck',
-      ship_method: 'Ground',
-      declared_value: 12500,
-      issued_by: 'Warehouse Staff',
-      issued_at: new Date().toISOString(),
-      status: 'issued',
-      is_delivered: false,
-      received_at: null,
-      purchase_requisition: {
-        id: 1,
-        created_at: new Date().toISOString(),
-        pr_number: 'PR-001',
-        status: 'approved',
-        supplier_id: 1,
-        requester_name: 'Juan Dela Cruz',
-        reviewer_name: 'Maria Santos',
-        reviewed_at: new Date().toISOString(),
-        reviewed_by: 'Maria Santos',
-        justification: 'Monthly stock replenishment',
-        total_amount: 12500,
-        items: [
-          { id: 1, no: 1, unit: 'box', item_description: 'Paracetamol 500mg', qty: 10, offer_per_unit: 120, cost_per_unit: 100, product_id: 1 },
-          { id: 2, no: 2, unit: 'box', item_description: 'Ibuprofen 400mg', qty: 5, offer_per_unit: 180, cost_per_unit: 150, product_id: 2 },
-        ],
-      },
-    },
-    {
-      id: 2,
-      created_at: new Date().toISOString(),
-      po_number: 'PO-002',
-      requisition_id: 2,
-      supplier_id: 1,
-      ship_via: 'Courier',
-      ship_method: 'Express',
-      declared_value: 8750,
-      issued_by: 'Warehouse Staff',
-      issued_at: new Date().toISOString(),
-      status: 'received',
-      is_delivered: true,
-      received_at: new Date().toISOString(),
-      purchase_requisition: {
-        id: 2,
-        created_at: new Date().toISOString(),
-        pr_number: 'PR-002',
-        status: 'approved',
-        supplier_id: 1,
-        requester_name: 'Juan Dela Cruz',
-        reviewer_name: 'Maria Santos',
-        reviewed_at: new Date().toISOString(),
-        reviewed_by: 'Maria Santos',
-        justification: 'Emergency restock',
-        total_amount: 8750,
-        items: [
-          { id: 3, no: 1, unit: 'bottle', item_description: 'Amoxicillin 250mg', qty: 20, offer_per_unit: 50, cost_per_unit: 45, product_id: 3 },
-        ],
-      },
-    },
-  ]
-
   // ─── Computed ───────────────────────────────────────────────────
   const statusOptions = computed(() => {
     const unique = [...new Set(serverItems.value.map(po => po.status).filter(Boolean))]
     const mapped = unique.map(s => ({ title: s.charAt(0).toUpperCase() + s.slice(1), value: s }))
     return [{ title: 'All', value: null }, ...mapped]
   })
+
+  // ─── Helpers ────────────────────────────────────────────────────
+  async function buildPRFromTx(tx: any): Promise<PR | null> {
+    try {
+      const itemsData = await transactionItemsStore.fetchTransactionItems({ transaction_id: tx.id })
+      const items: PRItem[] = (itemsData || []).map((ti) => {
+        const p = ti.product
+        return {
+          id: ti.id,
+          no: p?.no ?? 0,
+          unit: '',
+          item_description: p?.product_name ?? p?.item_decription ?? '(no description)',
+          qty: 0,
+          offer_per_unit: p?.offer_per_unit ?? 0,
+          cost_per_unit: p?.cost_per_unit ?? 0,
+          product_id: p?.id ?? 0,
+        }
+      })
+
+      let justification: string | null = null
+      if (tx.remarks) {
+        const match = tx.remarks.match(/Justification:\s*(.+?)(?:\n|$)/)
+        justification = match ? match[1].trim() : tx.remarks
+      }
+
+      return {
+        id: tx.id,
+        created_at: tx.created_at,
+        pr_number: tx.reference_no,
+        status: tx.status,
+        supplier_id: tx.supplier_id,
+        requester_name: tx.created_by,
+        reviewer_name: tx.approved_by,
+        reviewed_at: tx.updated_at,
+        reviewed_by: tx.approved_by,
+        justification,
+        total_amount: tx.total_amount,
+        items,
+      } as PR
+    } catch {
+      return null
+    }
+  }
 
   // ─── Server Load ────────────────────────────────────────────────
   async function loadItems({ page, itemsPerPage, sortBy }: {
@@ -124,42 +136,67 @@ export function usePurchaseOrderList(options: UsePurchaseOrderListOptions = {}) 
     loading.value = true
 
     try {
-      let result = [...staticPOs]
+      // Fetch transactions where transaction_type == 'purchase_order'
+      const data = await transactionsStore.fetchTransactions({
+        transaction_type: 'purchase_order',
+      })
 
-      if (filterStatus.value) {
-        result = result.filter(po => po.status === filterStatus.value)
+      if (!data) {
+        serverItems.value = []
+        totalItems.value = 0
+        return
       }
 
+      // Map all transactions to PO shape
+      let allPos = data.map(txToPO)
+
+      // Apply status filter
+      if (filterStatus.value) {
+        allPos = allPos.filter(po => po.status === filterStatus.value)
+      }
+
+      // Apply search filter
       if (search.value.trim()) {
         const s = search.value.trim().toLowerCase()
-        result = result.filter(po => po.po_number.toLowerCase().includes(s))
+        allPos = allPos.filter(po => po.po_number.toLowerCase().includes(s))
       }
 
+      // Apply sorting
       const key = sortBy[0]?.key ?? 'created_at'
       const asc = sortBy[0]?.order === 'asc'
-      result.sort((a, b) => {
+      allPos.sort((a, b) => {
         const aVal = (a as any)[key] ?? ''
         const bVal = (b as any)[key] ?? ''
         if (aVal < bVal) return asc ? -1 : 1
-        if (aVal >
-           bVal) return asc ? 1 : -1
+        if (aVal > bVal) return asc ? 1 : -1
         return 0
       })
 
+      // Paginate
       const from = (page - 1) * itemsPerPage
-      const paginated = result.slice(from, from + itemsPerPage)
+      const paginated = allPos.slice(from, from + itemsPerPage)
 
-      // Filter out POs where the PR status is in the excluded list
-      let filteredData = paginated
-      if (excludePRStatuses.length > 0) {
-        filteredData = filteredData.filter(po => {
-          const prStatus = po.purchase_requisition?.status
-          return !prStatus || !excludePRStatuses.includes(prStatus)
-        })
+      // Load suppliers if not already loaded
+      if (supplierStore.suppliers.length === 0) {
+        await supplierStore.fetchSuppliers()
       }
 
-      serverItems.value = filteredData
-      totalItems.value  = result.length
+      // Build result with PR data joined
+      const result: any[] = []
+      for (const po of paginated) {
+        const tx = data.find((t: any) => t.id === po.id)
+        const pr = tx ? await buildPRFromTx(tx) : null
+
+        // Filter out POs where the PR status is in the excluded list
+        if (excludePRStatuses.length > 0 && pr?.status && excludePRStatuses.includes(pr.status)) {
+          continue
+        }
+
+        result.push({ ...po, purchase_requisition: pr ?? undefined })
+      }
+
+      serverItems.value = result
+      totalItems.value  = allPos.length
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load purchase orders')
     } finally {
@@ -170,7 +207,7 @@ export function usePurchaseOrderList(options: UsePurchaseOrderListOptions = {}) 
   // ─── Helpers ────────────────────────────────────────────────────
   const resolveSupplier = (id: number | null) => {
     if (id == null) return '—'
-    return staticSuppliers.find(s => Number(s.id) === Number(id))?.name ?? '—'
+    return supplierStore.suppliers.find(s => Number(s.id) === Number(id))?.name ?? '—'
   }
 
   const statusLabel = (status: string) => {
@@ -218,12 +255,13 @@ export function usePurchaseOrderList(options: UsePurchaseOrderListOptions = {}) 
     loading.value = true
 
     try {
-      const po = staticPOs.find(p => p.id === confirmDialog.value.poId)
-      if (po) {
-        po.status = 'received'
-        po.is_delivered = true
-        po.received_at = new Date().toISOString()
-      }
+      const updated = await transactionsStore.updateTransaction(confirmDialog.value.poId, {
+        status: 'received',
+        transaction_type: 'stock_in',
+        updated_at: new Date().toISOString(),
+      })
+
+      if (!updated) throw new Error('Failed to update purchase order')
 
       toast.success('Purchase order marked as received')
       confirmDialog.value.show = false
@@ -241,7 +279,11 @@ export function usePurchaseOrderList(options: UsePurchaseOrderListOptions = {}) 
   )
 
   async function init() {
-    // No store fetch needed; static data is already loaded
+    // Fetch suppliers first for supplier name resolution
+    if (supplierStore.suppliers.length === 0) {
+      await supplierStore.fetchSuppliers()
+    }
+    // Initial load will be triggered by the first data-table update event
   }
 
   return {

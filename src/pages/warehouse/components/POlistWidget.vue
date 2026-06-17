@@ -1,13 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import ViewPODetailModal from '@/pages/warehouse/dialogs/PODetailViewModal.vue'
-import EditPODetailModal from '@/pages/warehouse/dialogs/PODetailModal.vue'
 import { usePurchaseOrderList, headers } from '@/pages/purchasing/composables/usePurchaseOrderList'
-import type { PR } from '@/pages/purchasing/composables/usePurchaseRequisitionList'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
-import { useToast } from 'vue-toastification'
 
-const toast = useToast()
 const {
   search,
   filterStatus,
@@ -29,83 +25,22 @@ const {
   init,
 } = usePurchaseOrderList({ excludePRStatuses: ['rejected'] })
 
-// State for editable modal (shown when clicking "Mark Received")
-const showEditModal = ref(false)
+// State for SKU edit modal (shown when clicking "Mark Received")
+const showSkuEditModal = ref(false)
 const pendingMarkReceivedPO = ref<any>(null)
 
-// Check if all items have SKU filled
-const missingSkuCount = computed(() => {
-  if (!selectedPR?.value?.items) return 0
-  return selectedPR.value.items.filter(item => !item.SKU).length
-})
-
-// Override openConfirm to show editable modal first
-function openConfirmWithSkuCheck(item: any) {
+// Open the view modal in SKU edit mode for marking as received
+function openForMarkReceived(item: any) {
   pendingMarkReceivedPO.value = item
-  // Set the selected PO and PR directly without opening the view modal
   selectedPO.value = item
-  const req = item.purchase_requisition
-  selectedPR.value = req
-    ? {
-        id: req.id,
-        created_at: req.created_at,
-        pr_number: req.pr_number,
-        status: req.status,
-        supplier_id: item.supplier_id,
-        requester_name: null,
-        reviewer_name: null,
-        reviewed_at: null,
-        reviewed_by: null,
-        justification: null,
-        total_amount: null,
-        items: req.items ?? [],
-      } as PR
-    : null
-  // Open the editable modal so user can fill in SKUs
-  showEditModal.value = true
+  selectedPR.value = null
+  showSkuEditModal.value = true
 }
 
-// Validate SKUs before marking as received
-function validateAndMarkReceived() {
-  if (missingSkuCount.value > 0) {
-    toast.error(`Please fill in SKU for all ${missingSkuCount.value} item(s) before marking as received.`)
-    return
-  }
-
-  // Close edit modal and show confirm dialog
-  showEditModal.value = false
-  if (pendingMarkReceivedPO.value) {
-    openConfirm(pendingMarkReceivedPO.value)
-  }
-}
-
-// Handle validate, save all SKUs, and then proceed to confirm
-async function handleValidateAndSaveAll() {
-  if (missingSkuCount.value > 0) {
-    toast.error(`Please fill in SKU for all ${missingSkuCount.value} item(s) before marking as received.`)
-    return
-  }
-
-  // Save all SKU changes locally
-  const items = selectedPR.value?.items || []
-  items.forEach((item) => {
-    if (item.SKU !== null && item.SKU !== undefined) {
-      // Static save: SKU is already bound to item.SKU via v-model
-    }
-  })
-  toast.success('All SKUs saved successfully.')
-
-  // Close edit modal and show confirm dialog
-  showEditModal.value = false
-  if (pendingMarkReceivedPO.value) {
-    openConfirm(pendingMarkReceivedPO.value)
-  }
-}
-
-// Handle closing the edit modal
-function closeEditModal() {
-  showEditModal.value = false
-  pendingMarkReceivedPO.value = null
+// Handle the mark-received event from the modal
+function onMarkReceived(poId: number) {
+  showSkuEditModal.value = false
+  openConfirm({ id: poId, po_number: pendingMarkReceivedPO.value?.po_number ?? '' })
 }
 
 onMounted(init)
@@ -216,9 +151,9 @@ onMounted(init)
               size="small"
               color="success"
               class="text-none"
-              :loading="loading"
-              @click="openConfirmWithSkuCheck(item)"
+              @click="openForMarkReceived(item)"
             >
+              <v-icon start size="16">mdi-check-circle</v-icon>
               Mark Received
             </v-btn>
             <v-chip v-if="item.is_delivered" color="green" size="small" variant="tonal" label>
@@ -230,17 +165,16 @@ onMounted(init)
       </v-data-table-server>
     </v-card>
 
-    <!-- Opened when clicking 'View' or 'Print' inside your table rows -->
+    <!-- View modal (read-only, opened by clicking 'View') -->
     <ViewPODetailModal v-model="showDetailModal" :po="selectedPO" :pr="selectedPR" />
 
-    <!-- Editable modal for entering SKUs before marking as received -->
-    <EditPODetailModal
-      v-model="showEditModal"
+    <!-- SKU edit modal (opened by clicking 'Mark Received') -->
+    <ViewPODetailModal
+      v-model="showSkuEditModal"
       :po="selectedPO"
       :pr="selectedPR"
-      sku-validation-mode
-      @update:model-value="showEditModal = $event"
-      @validate-and-continue="handleValidateAndSaveAll"
+      sku-edit-mode
+      @mark-received="onMarkReceived"
     />
 
     <!-- Confirm Mark as Received -->
@@ -255,7 +189,7 @@ onMounted(init)
           delivered? This will update the status to <strong>Received</strong>.
         </v-card-text>
         <v-card-actions class="px-5 pb-5 pt-3 justify-end ga-2">
-            <v-btn
+          <v-btn
             variant="outlined"
             class="text-none"
             :disabled="loading"

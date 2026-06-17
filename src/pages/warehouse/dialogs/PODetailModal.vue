@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
+import { useToast } from 'vue-toastification'
+import { supabase } from '@/lib/supabase'
 import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
 import type { PR } from '@/pages/purchasing/composables/usePurchaseRequisitionList'
 import { usePODetailModal, company } from '@/pages/purchasing/composables/usePODetailModal'
@@ -23,6 +25,8 @@ const missingSkuCount = computed(() => {
   if (!props.pr?.items) return 0
   return props.pr.items.filter((item) => !item.SKU).length
 })
+
+const toast = useToast()
 
 const { printArea, poNumber, emptyRows, resolvedSupplier, handlePrint } = usePODetailModal(
   props,
@@ -48,7 +52,7 @@ watch(
   { immediate: true },
 )
 
-// Save SKU for a specific item (static stub)
+// Save SKU for a specific item to the database
 async function saveSku(itemId: number) {
   const item = props.pr?.items.find((i) => i.id === itemId)
   if (!item) return
@@ -61,10 +65,19 @@ async function saveSku(itemId: number) {
   savingItems.value[itemId] = true
 
   try {
-    // Static save: update local original value after successful save
+    // Update the product's SKU in the database
+    const { error: updateError } = await supabase
+      .from('products')
+      .update({ sku: String(newSku) })
+      .eq('id', item.product_id)
+
+    if (updateError) throw updateError
+
+    // Update local original value after successful save
     originalSkuValues.value[itemId] = newSku
   } catch (err: any) {
     console.error('Error saving SKU:', err)
+    toast.error('Failed to save SKU')
     if (item) item.SKU = originalSku
   } finally {
     savingItems.value[itemId] = false
