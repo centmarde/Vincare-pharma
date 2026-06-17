@@ -33,7 +33,7 @@ export function useIssuePOModal(
   const loading = ref(false)
 
   // ─── Computed ───────────────────────────────────────────────────
-  const declaredValue    = computed(() => props.pr?.items.reduce((sum, i) => sum + i.qty * i.cost_per_unit, 0) ?? 0)
+  const declaredValue    = computed(() => props.pr?.items.reduce((sum, i) => sum + i.qty * (i.cost_per_unit ?? 0), 0) ?? 0)
   const emptyRows        = computed(() => Math.max(0, 7 - (props.pr?.items.length ?? 0)))
 
   // Supplier lookup — uses id which may be string or number

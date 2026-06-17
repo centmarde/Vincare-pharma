@@ -74,14 +74,14 @@ const {
           </thead>
           <tbody>
             <tr v-for="item in pr.items" :key="item.id">
-              <td class="text-body-2">{{ item.no }}</td>
+              <td class="text-body-2">{{ item.no ?? 0 }}</td>
               <td class="text-body-2">{{ item.unit }}</td>
               <td class="text-body-2">{{ item.item_description }}</td>
               <td class="text-body-2">{{ item.qty.toLocaleString() }}</td>
-              <td class="text-body-2">{{ formatCurrency(item.offer_per_unit) }}</td>
-              <td class="text-body-2">{{ formatCurrency(item.qty * item.offer_per_unit) }}</td>
-              <td class="text-body-2">{{ formatCurrency(item.cost_per_unit) }}</td>
-              <td class="text-body-2">{{ formatCurrency(item.qty * item.cost_per_unit) }}</td>
+              <td class="text-body-2">{{ formatCurrency(item.offer_per_unit ?? 0) }}</td>
+              <td class="text-body-2">{{ formatCurrency(item.qty * (item.offer_per_unit ?? 0)) }}</td>
+              <td class="text-body-2">{{ formatCurrency(item.cost_per_unit ?? 0) }}</td>
+              <td class="text-body-2">{{ formatCurrency(item.qty * (item.cost_per_unit ?? 0)) }}</td>
             </tr>
           </tbody>
         </v-table>

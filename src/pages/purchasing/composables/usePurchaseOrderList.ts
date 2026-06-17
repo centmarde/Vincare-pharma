@@ -141,6 +141,7 @@ export function usePurchaseOrderList(options: UsePurchaseOrderListOptions = {}) 
         reviewed_at: null,
         reviewed_by: null,
         justification: null,
+        total_amount: null,
         items: [],
       } as PR
     } else {
