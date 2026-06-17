@@ -17,10 +17,7 @@ export type TransactionType = {
   created_by: string | null
   approved_by: string | null
   updated_at: string | null
-  supplier_id: string | null
-  // Joined FK data
-  created_by_user?: { id: string; email?: string } | null
-  approved_by_user?: { id: string; email?: string } | null
+  supplier_id: number | null
 }
 
 export type CreateTransactionData = {
@@ -33,7 +30,7 @@ export type CreateTransactionData = {
   created_by?: string | null
   approved_by?: string | null
   updated_at?: string | null
-  supplier_id?: string | null
+  supplier_id?: number | null
 }
 
 export type UpdateTransactionData = Partial<CreateTransactionData>
@@ -137,7 +134,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
 
       let q = supabase
         .from('transactions')
-        .select('*, created_by_user:created_by(id, email), approved_by_user:approved_by(id, email)')
+        .select('*')
 
       if (transaction_type) {
         q = q.eq('transaction_type', transaction_type)
@@ -181,7 +178,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
     try {
       const { data, error: fetchError } = await supabase
         .from('transactions')
-        .select('*, created_by_user:created_by(id, email), approved_by_user:approved_by(id, email)')
+        .select('*')
         .eq('id', id)
         .single()
 
@@ -205,7 +202,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       const { data, error: createError } = await supabase
         .from('transactions')
         .insert([transactionData])
-        .select('*, created_by_user:created_by(id, email), approved_by_user:approved_by(id, email)')
+        .select('*')
         .single()
 
       if (createError) throw createError
@@ -231,7 +228,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
         .from('transactions')
         .update(updateData)
         .eq('id', id)
-        .select('*, created_by_user:created_by(id, email), approved_by_user:approved_by(id, email)')
+        .select('*')
         .single()
 
       if (updateError) throw updateError
