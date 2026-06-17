@@ -1,6 +1,5 @@
 import { computed, ref, nextTick } from 'vue'
 import { useToast } from 'vue-toastification'
-import { useSuppliersDataStore } from '@/stores/suppliersData'
 import html2pdf from 'html2pdf.js'
 import type { PR } from './usePurchaseRequisitionList'
 
@@ -21,6 +20,15 @@ export type PurchaseOrder = {
   received_at: string | null
 }
 
+export type StaticSupplier = {
+  id: number
+  name: string
+  address: string
+  city: string
+  contact_no: string
+  email: string
+}
+
 export const company = {
   name:    'VINCARE PHARMA',
   address: '2F N.B. BLDG., Ochua Avenue',
@@ -29,13 +37,23 @@ export const company = {
   contact: '0968-879-5589',
 } as const
 
+export const staticSuppliers: StaticSupplier[] = [
+  {
+    id: 1,
+    name: 'VINCARE PHARMA',
+    address: '2F N.B. BLDG., Ochua Avenue',
+    city: 'Butuan City',
+    contact_no: '0968-879-5589',
+    email: 'vincare001@gmail.com',
+  },
+]
+
 export function usePODetailModal(
   props: { po: PurchaseOrder | null; pr: PR | null },
   emit: (e: 'update:modelValue', value: boolean) => void,
 ) {
   const toast         = useToast()
   const printArea     = ref<HTMLElement | null>(null)
-  const supplierStore = useSuppliersDataStore()
 
   const poNumber = computed(
     () => props.po?.po_number ?? props.pr?.pr_number ?? 'PurchaseOrder',
@@ -43,10 +61,10 @@ export function usePODetailModal(
 
   const emptyRows = computed(() => Math.max(0, 7 - (props.pr?.items.length ?? 0)))
 
-  const resolvedSupplier = computed(() => {
+  const resolvedSupplier = computed((): StaticSupplier | null => {
     const sid = props.po?.supplier_id ?? props.pr?.supplier_id
     if (sid == null) return null
-    return supplierStore.suppliers.find(s => Number(s.id) === Number(sid)) ?? null
+    return staticSuppliers.find(s => Number(s.id) === Number(sid)) ?? null
   })
 
   async function handlePrint() {

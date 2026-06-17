@@ -13,6 +13,7 @@ export type PRItem = {
   offer_per_unit: number
   cost_per_unit: number
   product_id: number
+  SKU?: number | null
 }
 
 export type PR = {

@@ -68,22 +68,26 @@ export const useTransactionItemsDataStore = defineStore('transactionItemsData', 
 
     const channel = supabase
       .channel('transaction-items-channel')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'transaction_items' }, (payload) => {
-        console.log('Transaction item change received!', payload)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'transaction_items' },
+        (payload) => {
+          console.log('Transaction item change received!', payload)
 
-        const eventType = payload.eventType
+          const eventType = payload.eventType
 
-        if (eventType === 'INSERT' || eventType === 'UPDATE') {
-          const row = payload.new as TransactionItemType
-          if (row?.id != null) upsertTransactionItemLocal(row)
-        }
+          if (eventType === 'INSERT' || eventType === 'UPDATE') {
+            const row = payload.new as TransactionItemType
+            if (row?.id != null) upsertTransactionItemLocal(row)
+          }
 
-        if (eventType === 'DELETE') {
-          const row = payload.old as Partial<TransactionItemType> | null
-          const id = row?.id
-          if (typeof id === 'number') removeTransactionItemLocal(id)
-        }
-      })
+          if (eventType === 'DELETE') {
+            const row = payload.old as Partial<TransactionItemType> | null
+            const id = row?.id
+            if (typeof id === 'number') removeTransactionItemLocal(id)
+          }
+        },
+      )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') realtimeStatus.value = 'subscribed'
         else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
@@ -119,9 +123,9 @@ export const useTransactionItemsDataStore = defineStore('transactionItemsData', 
         offset,
       } = options
 
-      let q = supabase
-        .from('transaction_items')
-        .select('*, transaction:transaction_id(*), product:product_id(*)')
+      const selectQuery = '*, transaction:transaction_id(*), product:product_id(*)'
+
+      let q = supabase.from('transaction_items').select(selectQuery)
 
       if (typeof transaction_id === 'number') {
         q = q.eq('transaction_id', transaction_id)
@@ -157,9 +161,10 @@ export const useTransactionItemsDataStore = defineStore('transactionItemsData', 
     clearError()
 
     try {
+      const selectQuery = '*, transaction:transaction_id(*), product:product_id(*)'
       const { data, error: fetchError } = await supabase
         .from('transaction_items')
-        .select('*, transaction:transaction_id(*), product:product_id(*)')
+        .select(selectQuery)
         .eq('id', id)
         .single()
 
@@ -180,10 +185,11 @@ export const useTransactionItemsDataStore = defineStore('transactionItemsData', 
     clearError()
 
     try {
+      const selectQuery = '*, transaction:transaction_id(*), product:product_id(*)'
       const { data, error: createError } = await supabase
         .from('transaction_items')
         .insert([itemData])
-        .select('*, transaction:transaction_id(*), product:product_id(*)')
+        .select(selectQuery)
         .single()
 
       if (createError) throw createError
@@ -205,11 +211,12 @@ export const useTransactionItemsDataStore = defineStore('transactionItemsData', 
     clearError()
 
     try {
+      const selectQuery = '*, transaction:transaction_id(*), product:product_id(*)'
       const { data, error: updateError } = await supabase
         .from('transaction_items')
         .update(updateData)
         .eq('id', id)
-        .select('*, transaction:transaction_id(*), product:product_id(*)')
+        .select(selectQuery)
         .single()
 
       if (updateError) throw updateError

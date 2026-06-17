@@ -1,9 +1,8 @@
 import { ref, computed, watch } from 'vue'
-import { supabase } from '@/lib/supabase'
-import { useSuppliersDataStore } from '@/stores/suppliersData'
 import { useToast } from 'vue-toastification'
 import type { PurchaseOrder } from './usePODetailModal'
 import type { PR } from './usePurchaseRequisitionList'
+import { staticSuppliers } from './usePODetailModal'
 
 export const headers = [
   { title: 'PO #',           key: 'po_number',      sortable: true,  align: 'center' as const },
@@ -23,7 +22,6 @@ export interface UsePurchaseOrderListOptions {
 export function usePurchaseOrderList(options: UsePurchaseOrderListOptions = {}) {
   const { excludePRStatuses = [] } = options
   const toast           = useToast()
-  const supplierStore   = useSuppliersDataStore()
 
   // ─── State ──────────────────────────────────────────────────────
   const search          = ref('')
@@ -43,6 +41,73 @@ export function usePurchaseOrderList(options: UsePurchaseOrderListOptions = {}) 
     poNumber: '',
   })
 
+  // ─── Static Data ────────────────────────────────────────────────
+  const staticPOs: (PurchaseOrder & { purchase_requisition?: PR })[] = [
+    {
+      id: 1,
+      created_at: new Date().toISOString(),
+      po_number: 'PO-001',
+      requisition_id: 1,
+      supplier_id: 1,
+      ship_via: 'Truck',
+      ship_method: 'Ground',
+      declared_value: 12500,
+      issued_by: 'Warehouse Staff',
+      issued_at: new Date().toISOString(),
+      status: 'issued',
+      is_delivered: false,
+      received_at: null,
+      purchase_requisition: {
+        id: 1,
+        created_at: new Date().toISOString(),
+        pr_number: 'PR-001',
+        status: 'approved',
+        supplier_id: 1,
+        requester_name: 'Juan Dela Cruz',
+        reviewer_name: 'Maria Santos',
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: 'Maria Santos',
+        justification: 'Monthly stock replenishment',
+        total_amount: 12500,
+        items: [
+          { id: 1, no: 1, unit: 'box', item_description: 'Paracetamol 500mg', qty: 10, offer_per_unit: 120, cost_per_unit: 100, product_id: 1 },
+          { id: 2, no: 2, unit: 'box', item_description: 'Ibuprofen 400mg', qty: 5, offer_per_unit: 180, cost_per_unit: 150, product_id: 2 },
+        ],
+      },
+    },
+    {
+      id: 2,
+      created_at: new Date().toISOString(),
+      po_number: 'PO-002',
+      requisition_id: 2,
+      supplier_id: 1,
+      ship_via: 'Courier',
+      ship_method: 'Express',
+      declared_value: 8750,
+      issued_by: 'Warehouse Staff',
+      issued_at: new Date().toISOString(),
+      status: 'received',
+      is_delivered: true,
+      received_at: new Date().toISOString(),
+      purchase_requisition: {
+        id: 2,
+        created_at: new Date().toISOString(),
+        pr_number: 'PR-002',
+        status: 'approved',
+        supplier_id: 1,
+        requester_name: 'Juan Dela Cruz',
+        reviewer_name: 'Maria Santos',
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: 'Maria Santos',
+        justification: 'Emergency restock',
+        total_amount: 8750,
+        items: [
+          { id: 3, no: 1, unit: 'bottle', item_description: 'Amoxicillin 250mg', qty: 20, offer_per_unit: 50, cost_per_unit: 45, product_id: 3 },
+        ],
+      },
+    },
+  ]
+
   // ─── Computed ───────────────────────────────────────────────────
   const statusOptions = computed(() => {
     const unique = [...new Set(serverItems.value.map(po => po.status).filter(Boolean))]
@@ -59,39 +124,33 @@ export function usePurchaseOrderList(options: UsePurchaseOrderListOptions = {}) 
     loading.value = true
 
     try {
-      let query = supabase
-        .from('purchase_orders')
-        .select(`
-          *,
-          purchase_requisition:requisition_id (
-            id,
-            pr_number,
-            status,
-            created_at
-          )
-        `, { count: 'exact' })
+      let result = [...staticPOs]
 
       if (filterStatus.value) {
-        query = query.eq('status', filterStatus.value)
+        result = result.filter(po => po.status === filterStatus.value)
       }
 
       if (search.value.trim()) {
-        query = query.ilike('po_number', `%${search.value.trim()}%`)
+        const s = search.value.trim().toLowerCase()
+        result = result.filter(po => po.po_number.toLowerCase().includes(s))
       }
 
-      if (sortBy.length) {
-        query = query.order(sortBy[0].key, { ascending: sortBy[0].order === 'asc' })
-      } else {
-        query = query.order('created_at', { ascending: false })
-      }
+      const key = sortBy[0]?.key ?? 'created_at'
+      const asc = sortBy[0]?.order === 'asc'
+      result.sort((a, b) => {
+        const aVal = (a as any)[key] ?? ''
+        const bVal = (b as any)[key] ?? ''
+        if (aVal < bVal) return asc ? -1 : 1
+        if (aVal >
+           bVal) return asc ? 1 : -1
+        return 0
+      })
 
       const from = (page - 1) * itemsPerPage
-      query = query.range(from, from + itemsPerPage - 1)
-
-      const { data, count } = await query
+      const paginated = result.slice(from, from + itemsPerPage)
 
       // Filter out POs where the PR status is in the excluded list
-      let filteredData = data ?? []
+      let filteredData = paginated
       if (excludePRStatuses.length > 0) {
         filteredData = filteredData.filter(po => {
           const prStatus = po.purchase_requisition?.status
@@ -100,7 +159,7 @@ export function usePurchaseOrderList(options: UsePurchaseOrderListOptions = {}) 
       }
 
       serverItems.value = filteredData
-      totalItems.value  = count ?? 0
+      totalItems.value  = result.length
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load purchase orders')
     } finally {
@@ -111,7 +170,7 @@ export function usePurchaseOrderList(options: UsePurchaseOrderListOptions = {}) 
   // ─── Helpers ────────────────────────────────────────────────────
   const resolveSupplier = (id: number | null) => {
     if (id == null) return '—'
-    return supplierStore.suppliers.find(s => Number(s.id) === Number(id))?.name ?? '—'
+    return staticSuppliers.find(s => Number(s.id) === Number(id))?.name ?? '—'
   }
 
   const statusLabel = (status: string) => {
@@ -159,16 +218,12 @@ export function usePurchaseOrderList(options: UsePurchaseOrderListOptions = {}) 
     loading.value = true
 
     try {
-      const { error: updateError } = await supabase
-        .from('purchase_orders')
-        .update({
-          status: 'received',
-          is_delivered: true,
-          received_at: new Date().toISOString(),
-        })
-        .eq('id', confirmDialog.value.poId)
-
-      if (updateError) throw updateError
+      const po = staticPOs.find(p => p.id === confirmDialog.value.poId)
+      if (po) {
+        po.status = 'received'
+        po.is_delivered = true
+        po.received_at = new Date().toISOString()
+      }
 
       toast.success('Purchase order marked as received')
       confirmDialog.value.show = false
@@ -186,7 +241,7 @@ export function usePurchaseOrderList(options: UsePurchaseOrderListOptions = {}) 
   )
 
   async function init() {
-    await supplierStore.fetchSuppliers()
+    // No store fetch needed; static data is already loaded
   }
 
   return {
