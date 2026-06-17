@@ -1,9 +1,10 @@
 import { ref, computed, watch } from 'vue'
-import { supabase } from '@/lib/supabase'
-import { useSuppliersDataStore } from '@/stores/suppliersData'
 import { useToast } from 'vue-toastification'
+import { useSuppliersDataStore } from '@/stores/suppliersData'
+import { useTransactionsDataStore } from '@/stores/transactionsData'
+import { useTransactionItemsDataStore } from '@/stores/transactionsItemsData'
 import type { PurchaseOrder } from './usePODetailModal'
-import type { PR } from './usePurchaseRequisitionList'
+import type { PR, PRItem } from './usePurchaseRequisitionList'
 
 export const headers = [
   { title: 'PO #',           key: 'po_number',      sortable: true,  align: 'center' as const },
@@ -20,10 +21,43 @@ export interface UsePurchaseOrderListOptions {
   excludePRStatuses?: string[]
 }
 
+/**
+ * Maps a transaction of type 'purchase_order' into a shape that the PO list
+ * templates can consume (mimicking PurchaseOrder + inline purchase_requisition).
+ */
+function txToPO(tx: any): any {
+  // Parse ship_via / ship_method from remarks if stored as "SHIP_VIA|SHIP_METHOD"
+  let ship_via: string | null = null
+  let ship_method: string | null = null
+  if (tx.remarks) {
+    const parts = tx.remarks.split('|')
+    ship_via = parts[0]?.trim() || null
+    ship_method = parts[1]?.trim() || null
+  }
+
+  return {
+    id:               tx.id,
+    created_at:       tx.created_at,
+    po_number:        tx.reference_no ?? `PO-${tx.id}`,
+    requisition_id:   null,
+    supplier_id:      tx.supplier_id,
+    ship_via,
+    ship_method,
+    declared_value:   tx.total_amount,
+    issued_by:        tx.created_by,
+    issued_at:        tx.created_at,
+    status:           tx.status ?? 'issued',
+    is_delivered:     tx.status === 'received',
+    received_at:      tx.status === 'received' ? tx.updated_at ?? tx.created_at : null,
+  }
+}
+
 export function usePurchaseOrderList(options: UsePurchaseOrderListOptions = {}) {
   const { excludePRStatuses = [] } = options
-  const toast           = useToast()
-  const supplierStore   = useSuppliersDataStore()
+  const toast              = useToast()
+  const supplierStore      = useSuppliersDataStore()
+  const transactionsStore  = useTransactionsDataStore()
+  const transactionItemsStore = useTransactionItemsDataStore()
 
   // ─── State ──────────────────────────────────────────────────────
   const search          = ref('')
@@ -50,6 +84,49 @@ export function usePurchaseOrderList(options: UsePurchaseOrderListOptions = {}) 
     return [{ title: 'All', value: null }, ...mapped]
   })
 
+  // ─── Helpers ────────────────────────────────────────────────────
+  async function buildPRFromTx(tx: any): Promise<PR | null> {
+    try {
+      const itemsData = await transactionItemsStore.fetchTransactionItems({ transaction_id: tx.id })
+      const items: PRItem[] = (itemsData || []).map((ti) => {
+        const p = ti.product
+        return {
+          id: ti.id,
+          no: p?.no ?? 0,
+          unit: '',
+          item_description: p?.product_name ?? p?.item_decription ?? '(no description)',
+          qty: 0,
+          offer_per_unit: p?.offer_per_unit ?? 0,
+          cost_per_unit: p?.cost_per_unit ?? 0,
+          product_id: p?.id ?? 0,
+        }
+      })
+
+      let justification: string | null = null
+      if (tx.remarks) {
+        const match = tx.remarks.match(/Justification:\s*(.+?)(?:\n|$)/)
+        justification = match ? match[1].trim() : tx.remarks
+      }
+
+      return {
+        id: tx.id,
+        created_at: tx.created_at,
+        pr_number: tx.reference_no,
+        status: tx.status,
+        supplier_id: tx.supplier_id,
+        requester_name: tx.created_by,
+        reviewer_name: tx.approved_by,
+        reviewed_at: tx.updated_at,
+        reviewed_by: tx.approved_by,
+        justification,
+        total_amount: tx.total_amount,
+        items,
+      } as PR
+    } catch {
+      return null
+    }
+  }
+
   // ─── Server Load ────────────────────────────────────────────────
   async function loadItems({ page, itemsPerPage, sortBy }: {
     page: number
@@ -59,48 +136,67 @@ export function usePurchaseOrderList(options: UsePurchaseOrderListOptions = {}) 
     loading.value = true
 
     try {
-      let query = supabase
-        .from('purchase_orders')
-        .select(`
-          *,
-          purchase_requisition:requisition_id (
-            id,
-            pr_number,
-            status,
-            created_at
-          )
-        `, { count: 'exact' })
+      // Fetch transactions where transaction_type == 'purchase_order'
+      const data = await transactionsStore.fetchTransactions({
+        transaction_type: 'purchase_order',
+      })
 
+      if (!data) {
+        serverItems.value = []
+        totalItems.value = 0
+        return
+      }
+
+      // Map all transactions to PO shape
+      let allPos = data.map(txToPO)
+
+      // Apply status filter
       if (filterStatus.value) {
-        query = query.eq('status', filterStatus.value)
+        allPos = allPos.filter(po => po.status === filterStatus.value)
       }
 
+      // Apply search filter
       if (search.value.trim()) {
-        query = query.ilike('po_number', `%${search.value.trim()}%`)
+        const s = search.value.trim().toLowerCase()
+        allPos = allPos.filter(po => po.po_number.toLowerCase().includes(s))
       }
 
-      if (sortBy.length) {
-        query = query.order(sortBy[0].key, { ascending: sortBy[0].order === 'asc' })
-      } else {
-        query = query.order('created_at', { ascending: false })
-      }
+      // Apply sorting
+      const key = sortBy[0]?.key ?? 'created_at'
+      const asc = sortBy[0]?.order === 'asc'
+      allPos.sort((a, b) => {
+        const aVal = (a as any)[key] ?? ''
+        const bVal = (b as any)[key] ?? ''
+        if (aVal < bVal) return asc ? -1 : 1
+        if (aVal > bVal) return asc ? 1 : -1
+        return 0
+      })
 
+      // Paginate
       const from = (page - 1) * itemsPerPage
-      query = query.range(from, from + itemsPerPage - 1)
+      const paginated = allPos.slice(from, from + itemsPerPage)
 
-      const { data, count } = await query
-
-      // Filter out POs where the PR status is in the excluded list
-      let filteredData = data ?? []
-      if (excludePRStatuses.length > 0) {
-        filteredData = filteredData.filter(po => {
-          const prStatus = po.purchase_requisition?.status
-          return !prStatus || !excludePRStatuses.includes(prStatus)
-        })
+      // Load suppliers if not already loaded
+      if (supplierStore.suppliers.length === 0) {
+        await supplierStore.fetchSuppliers()
       }
 
-      serverItems.value = filteredData
-      totalItems.value  = count ?? 0
+      // Build result with PR data joined
+      const result: any[] = []
+      for (const po of paginated) {
+        const tx = data.find((t: any) => t.id === po.id)
+        const pr = tx ? await buildPRFromTx(tx) : null
+
+        // Filter out POs where the PR status is in the excluded list
+        if (excludePRStatuses.length > 0 && pr?.status && excludePRStatuses.includes(pr.status)) {
+          continue
+        }
+
+        result.push({ ...po, purchase_requisition: pr ?? undefined })
+      }
+
+      serverItems.value = result
+      totalItems.value  = allPos.length
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load purchase orders')
     } finally {
@@ -159,16 +255,13 @@ export function usePurchaseOrderList(options: UsePurchaseOrderListOptions = {}) 
     loading.value = true
 
     try {
-      const { error: updateError } = await supabase
-        .from('purchase_orders')
-        .update({
-          status: 'received',
-          is_delivered: true,
-          received_at: new Date().toISOString(),
-        })
-        .eq('id', confirmDialog.value.poId)
+      const updated = await transactionsStore.updateTransaction(confirmDialog.value.poId, {
+        status: 'received',
+        transaction_type: 'stock_in',
+        updated_at: new Date().toISOString(),
+      })
 
-      if (updateError) throw updateError
+      if (!updated) throw new Error('Failed to update purchase order')
 
       toast.success('Purchase order marked as received')
       confirmDialog.value.show = false
@@ -186,7 +279,11 @@ export function usePurchaseOrderList(options: UsePurchaseOrderListOptions = {}) 
   )
 
   async function init() {
-    await supplierStore.fetchSuppliers()
+    // Fetch suppliers first for supplier name resolution
+    if (supplierStore.suppliers.length === 0) {
+      await supplierStore.fetchSuppliers()
+    }
+    // Initial load will be triggered by the first data-table update event
   }
 
   return {
