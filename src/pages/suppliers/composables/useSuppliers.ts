@@ -1,7 +1,8 @@
 import { ref } from 'vue'
+import { emailValidator } from '@/lib/validator'
 import { storeToRefs } from 'pinia'
-import { useSuppliersDataStore } from '@/stores/suppliersDataStore'
-import type { SupplierType } from '@/stores/suppliersDataStore'
+import { useSuppliersDataStore } from '@/stores/suppliersData'
+import type { SupplierType } from '@/stores/suppliersData'
 
 export function useSuppliers() {
   const store = useSuppliersDataStore()
@@ -17,8 +18,8 @@ export function useSuppliers() {
     contact_person: null as string | null,
     contact_no: null as string | null,
     email: null as string | null,
-    city: null as string | null,
     address: null as string | null,
+    balance: null as number | null,
     is_active: true,
   })
 
@@ -28,7 +29,8 @@ export function useSuppliers() {
     { title: 'CONTACT PERSON', key: 'contact_person', sortable: true,  align: 'center' as const },
     { title: 'PHONE',          key: 'contact_no',     sortable: true,  align: 'center' as const },
     { title: 'EMAIL',          key: 'email',          sortable: true,  align: 'center' as const },
-    { title: 'CITY',           key: 'city',           sortable: true,  align: 'center' as const },
+    { title: 'ADDRESS',        key: 'address',        sortable: true,  align: 'center' as const },
+    { title: 'BALANCE',        key: 'balance',        sortable: true,  align: 'center' as const },
     { title: 'STATUS',         key: 'is_active',      sortable: true,  align: 'center' as const },
     { title: 'DATE ADDED',     key: 'created_at',     sortable: true,  align: 'center' as const },
     { title: 'ACTIONS',        key: 'actions',        sortable: false, align: 'center' as const },
@@ -37,7 +39,7 @@ export function useSuppliers() {
   // ─── Validation Rules ───────────────────────────────────────────
   const rules = {
     required: (v: string) => !!v?.trim() || 'This field is required.',
-    email: (v: string) => !v || /.+@.+\..+/.test(v) || 'Enter a valid email address.',
+    email: (v: string) => emailValidator(v) as string | boolean,
   }
 
   // ─── Helpers ────────────────────────────────────────────────────
@@ -47,8 +49,8 @@ export function useSuppliers() {
       contact_person: null,
       contact_no: null,
       email: null,
-      city: null,
       address: null,
+      balance: null,
       is_active: true,
     }
   }
@@ -62,13 +64,13 @@ export function useSuppliers() {
   function openEdit(supplier: SupplierType) {
     editingSupplier.value = supplier
     form.value = {
-      name: supplier.name,
+      name: supplier.name ?? '',
       contact_person: supplier.contact_person,
       contact_no: supplier.contact_no,
       email: supplier.email,
-      city: supplier.city,
       address: supplier.address,
-      is_active: supplier.is_active,
+      balance: supplier.balance,
+      is_active: supplier.is_active ?? true,
     }
     clearError()
   }

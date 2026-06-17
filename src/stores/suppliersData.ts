@@ -7,27 +7,27 @@ import { useToast } from 'vue-toastification'
 
 const toast = useToast()
 
-// Matches `public.vendors` schema
+// Matches `public.suppliers` schema
 export type SupplierType = {
-  id: string
-  name: string
+  id: number
+  created_at: string
+  name: string | null
   address: string | null
-  city: string | null
   contact_no: string | null
   email: string | null
   contact_person: string | null
-  is_active: boolean
-  created_at: string
+  is_active: boolean | null
+  balance: number | null
 }
 
 export type CreateSupplierData = {
-  name: string
+  name?: string | null
   address?: string | null
-  city?: string | null
   contact_no?: string | null
   email?: string | null
   contact_person?: string | null
-  is_active?: boolean
+  is_active?: boolean | null
+  balance?: number | null
 }
 
 export type UpdateSupplierData = Partial<CreateSupplierData>
@@ -96,7 +96,7 @@ export const useSuppliersDataStore = defineStore('suppliersData', () => {
 
         if (eventType === 'DELETE') {
           const id = (payload.old as Partial<SupplierType>)?.id
-          if (id) removeSupplierLocal(id)
+          if (typeof id === 'number') removeSupplierLocal(id)
         }
       })
       .subscribe((status) => {
@@ -170,7 +170,7 @@ export const useSuppliersDataStore = defineStore('suppliersData', () => {
     }
   }
 
-  const fetchSupplierById = async (id: string) => {
+  const fetchSupplierById = async (id: number) => {
     loading.value = true
     clearError()
 
@@ -221,7 +221,7 @@ export const useSuppliersDataStore = defineStore('suppliersData', () => {
     }
   }
 
-  const updateSupplier = async (id: string, updateData: UpdateSupplierData) => {
+  const updateSupplier = async (id: number, updateData: UpdateSupplierData) => {
     loading.value = true
     clearError()
 
@@ -250,7 +250,7 @@ export const useSuppliersDataStore = defineStore('suppliersData', () => {
     }
   }
 
-  const deleteSupplier = async (id: string) => {
+  const deleteSupplier = async (id: number) => {
     loading.value = true
     clearError()
 
@@ -284,7 +284,7 @@ export const useSuppliersDataStore = defineStore('suppliersData', () => {
     if (currentSupplier.value?.id === supplier.id) currentSupplier.value = supplier
   }
 
-  const removeSupplierLocal = (id: string) => {
+  const removeSupplierLocal = (id: number) => {
     suppliers.value = suppliers.value.filter(s => s.id !== id)
     if (currentSupplier.value?.id === id) currentSupplier.value = undefined
   }

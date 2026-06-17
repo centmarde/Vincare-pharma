@@ -3,39 +3,65 @@ import type { Ref } from 'vue'
 import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import type { RealtimeChannel } from '@supabase/supabase-js'
+import type { SupplierType } from '@/stores/suppliersData'
 
-// Matches `public.products` schema
+// Matches `public.products` schema (with FK join to suppliers)
 export type ProductType = {
   id: number
   created_at: string
-  name: string | null
-  brand: string | null
-  quantity: number | null
-  category: number | null
-  supplier_name: string | null
-  unit_cost: number | null
-  lot_number: string | null
-  exp_number: string | null
+  barcode: string | null
+  sku: string | null
+  product_name: string | null
+  generic_name: string | null
+  category: string | null
+  unit: number | null
+  cost_price: number | null
+  selling_price: number | null
+  current_stock: number | null
+  reorder_level: number | null
+  supplier_id: number | null
+  batch_no: number | null
+  expiry_date: string | null
+  status: string | null
+  item_decription: string | null
+  offer_per_unit: number | null
+  cost_per_unit: number | null
+  no: number | null
+  // Joined supplier data (via FK)
+  suppliers: SupplierType | null
 }
 
 export type CreateProductData = {
-  name?: string | null
-  brand?: string | null
-  quantity?: number | null
-  category?: number | null
-  supplier_name?: string | null
-  unit_cost?: number | null
-  lot_number?: string | null
-  exp_number?: string | null
+  barcode?: string | null
+  sku?: string | null
+  product_name?: string | null
+  generic_name?: string | null
+  category?: string | null
+  unit?: number | null
+  cost_price?: number | null
+  selling_price?: number | null
+  current_stock?: number | null
+  reorder_level?: number | null
+  supplier_id?: number | null
+  batch_no?: number | null
+  expiry_date?: string | null
+  status?: string | null
+  item_decription?: string | null
+  offer_per_unit?: number | null
+  cost_per_unit?: number | null
+  no?: number | null
 }
 
 export type UpdateProductData = CreateProductData
 
 type FetchProductsOptions = {
   search?: string
-  category?: number | null
-  supplier_name?: string | null
-  orderBy?: keyof Pick<ProductType, 'created_at' | 'name' | 'brand' | 'quantity' | 'unit_cost'>
+  category?: string | null
+  supplier_id?: number | null
+  orderBy?: keyof Pick<
+    ProductType,
+    'created_at' | 'product_name' | 'current_stock' | 'selling_price' | 'cost_price'
+  >
   ascending?: boolean
   limit?: number
   offset?: number
@@ -125,26 +151,26 @@ export const useProductsDataStore = defineStore('productsData', () => {
       const {
         search,
         category,
-        supplier_name,
+        supplier_id,
         orderBy = 'created_at',
         ascending = false,
         limit,
         offset,
       } = options
 
-      let q = supabase.from('products').select('*')
+      let q = supabase.from('products').select('*, suppliers(*)')
 
-      if (typeof category === 'number') {
+      if (category) {
         q = q.eq('category', category)
       }
-      if (supplier_name && supplier_name.trim()) {
-        q = q.eq('supplier_name', supplier_name.trim())
+      if (typeof supplier_id === 'number') {
+        q = q.eq('supplier_id', supplier_id)
       }
       if (search && search.trim()) {
         // Supabase: use `or` for simple multi-column search
         const s = search.trim().replace(/,/g, '')
         q = q.or(
-          `name.ilike.%${s}%,brand.ilike.%${s}%,lot_number.ilike.%${s}%,exp_number.ilike.%${s}%,supplier_name.ilike.%${s}%`,
+          `product_name.ilike.%${s}%,generic_name.ilike.%${s}%,barcode.ilike.%${s}%,sku.ilike.%${s}%`,
         )
       }
 
@@ -177,7 +203,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     try {
       const { data, error: fetchError } = await supabase
         .from('products')
-        .select('*')
+        .select('*, suppliers(*)')
         .eq('id', id)
         .single()
 
@@ -201,7 +227,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
       const { data, error: createError } = await supabase
         .from('products')
         .insert([productData])
-        .select()
+        .select('*, suppliers(*)')
         .single()
 
       if (createError) throw createError
@@ -227,7 +253,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
         .from('products')
         .update(updateData)
         .eq('id', id)
-        .select()
+        .select('*, suppliers(*)')
         .single()
 
       if (updateError) throw updateError

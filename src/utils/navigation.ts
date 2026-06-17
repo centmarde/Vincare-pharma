@@ -80,6 +80,18 @@ export const navigationConfig: NavigationGroup[] = [
         route: '/purchasing/list-of-purchases',
         permission: 'purchasing.dashboard.view',
       },
+      {
+        title: 'Purchase Requisitions',
+        icon: 'mdi-file-document-edit-outline',
+        route: '/purchasing/purchase-requisitions',
+        permission: 'purchasing.requisitions.view',
+      },
+      {
+        title: 'Purchase Orders',
+        icon: 'mdi-file-document-outline',
+        route: '/purchasing/purchase-orders',
+        permission: 'purchasing.orders.view',
+      },
     ],
   },
   {

@@ -462,7 +462,7 @@ export const formatCurrency = (value: number): string =>
     maximumFractionDigits: 2,
   }).format(value).replace('PHP', '₱')
 
-export const formatDatePR_ISO = (dateString: string) => {
+export const formatDatePR_ISO = (dateString: string | null | undefined) => {
   if (!dateString) return ''
   const date = new Date(dateString)
   
@@ -483,7 +483,7 @@ export const formatDatePR_ISO = (dateString: string) => {
 }
 
 //This is for Exporting PDF PO
-export const formatDatePO_Written = (dateString: string) => {
+export const formatDatePO_Written = (dateString: string | null | undefined) => {
   if (!dateString) return ''
   const date = new Date(dateString)
   
