@@ -103,8 +103,10 @@ onMounted(fetchSuppliers)
           {{ item.email ?? '—' }}
         </template>
 
-        <template #item.city="{ item }">
-          {{ item.city ?? '—' }}
+        <template #item.balance="{ item }">
+          <span :class="item.balance != null && item.balance < 0 ? 'text-error' : ''">
+            {{ item.balance != null ? `₱${Number(item.balance).toLocaleString()}` : '—' }}
+          </span>
         </template>
 
         <template #item.is_active="{ item }">
@@ -204,13 +206,15 @@ onMounted(fetchSuppliers)
               </v-col>
 
               <v-col cols="12" md="6">
-                <label class="field-label">City</label>
+                <label class="field-label">Balance (₱)</label>
                 <v-text-field
-                  v-model="form.city"
-                  placeholder="e.g. Butuan City"
+                  v-model.number="form.balance"
+                  placeholder="e.g. 0.00"
                   variant="outlined"
                   density="compact"
                   hide-details
+                  type="number"
+                  prefix="₱"
                 />
               </v-col>
 

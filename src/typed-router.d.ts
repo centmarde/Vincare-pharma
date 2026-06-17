@@ -44,6 +44,8 @@ declare module 'vue-router/auto-routes' {
     '/otherTab/Page1View': RouteRecordInfo<'/otherTab/Page1View', '/otherTab/Page1View', Record<never, never>, Record<never, never>>,
     '/purchasing/PurchasingView': RouteRecordInfo<'/purchasing/PurchasingView', '/purchasing/PurchasingView', Record<never, never>, Record<never, never>>,
     '/sales/SalesView': RouteRecordInfo<'/sales/SalesView', '/sales/SalesView', Record<never, never>, Record<never, never>>,
+    '/suppliers/components/SuppliersCRUD': RouteRecordInfo<'/suppliers/components/SuppliersCRUD', '/suppliers/components/SuppliersCRUD', Record<never, never>, Record<never, never>>,
+    '/suppliers/SuppliersView': RouteRecordInfo<'/suppliers/SuppliersView', '/suppliers/SuppliersView', Record<never, never>, Record<never, never>>,
     '/warehouse/ProductsListView': RouteRecordInfo<'/warehouse/ProductsListView', '/warehouse/ProductsListView', Record<never, never>, Record<never, never>>,
     '/warehouse/WareHouseView': RouteRecordInfo<'/warehouse/WareHouseView', '/warehouse/WareHouseView', Record<never, never>, Record<never, never>>,
   }
