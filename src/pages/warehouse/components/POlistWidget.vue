@@ -45,7 +45,7 @@ function onMarkReceived(poId: number) {
     <v-card class="mx-auto w-100 pa-0" max-width="1400" rounded="lg" elevation="1">
       <!-- Header -->
       <v-card-title class="d-flex justify-space-between align-center pa-5">
-        <span class="text-h6 font-weight-bold">Purchase Orders</span>
+        <span class="text-h6 font-weight-bold">Warehouse Dashboard</span>
         <div class="d-flex align-center" style="gap: 12px">
           <v-text-field
             v-model="search"
