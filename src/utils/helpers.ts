@@ -470,13 +470,15 @@ export const formatDatePR_ISO = (dateString: string | null | undefined) => {
   const datePart = new Intl.DateTimeFormat('en-CA', {
     year: 'numeric',
     month: '2-digit',
-    day: '2-digit'
+    day: '2-digit',
+    timeZone: 'Asia/Manila', // Ensures correct timezone handling
   }).format(date)
 
   const timePart = new Intl.DateTimeFormat('en-US', {
     hour: '2-digit',
     minute: '2-digit',
-    hour12: true // Enforces strict 24-hour business format
+    hour12: true, // Enforces strict 24-hour business format
+    timeZone: 'Asia/Manila', // Ensures correct timezone handling
   }).format(date)
 
   return `${datePart} ${timePart}` // Output: "2026-06-13 21:30"
