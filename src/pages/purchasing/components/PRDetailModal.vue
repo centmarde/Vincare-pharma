@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { PR } from '../composables/usePurchaseRequisitionList'
+import type { PR } from '@/stores/purchaseRequisitionStore'
 import { usePRDetailModal } from '../composables/usePRDetailModal'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
@@ -25,7 +25,7 @@ const {
 
         <!-- Header -->
         <h2 class="text-h6 font-weight-bold mb-2">
-          Purchase Requisition: {{ pr.pr_number }}
+          Purchase Requisition: {{ pr.reference_no }}
           <span>&nbsp; - &nbsp;Status: </span>
           <span
             class="status-chip text-caption font-weight-bold"
@@ -41,19 +41,11 @@ const {
           <span>Requested by <strong>{{ pr.requester_name ?? '—' }}</strong></span>
           <span>&nbsp; - &nbsp;</span>
           <span>{{ formatDatePR_ISO(pr.created_at) }}</span>
-          <!-- <span>&nbsp; ● &nbsp;<strong>Status:</strong> </span>
-          <span
-            class="status-chip text-caption font-weight-bold"
-            :class="`status-chip--${pr.status}`"
-          >
-            <span class="status-dot" />
-            {{ statusConfig(pr.status).label }}
-          </span> -->
-          <template v-if="pr.reviewed_by">
+          <template v-if="pr.status === 'approved' || pr.status === 'rejected'">
             <div class="w-100" />
             <span>
               {{ pr.status === 'approved' ? 'Approved' : 'Rejected' }} by
-              <strong>{{ pr.reviewer_name ?? '—' }}</strong>&nbsp; - &nbsp;{{ formatDatePR_ISO(pr.reviewed_at) }}
+              <strong>{{ pr.reviewer_name ?? '—' }}</strong>&nbsp; - &nbsp;{{ formatDatePR_ISO(pr.updated_at) }}
             </span>
           </template>
         </div>
@@ -136,8 +128,8 @@ const {
         </div>
 
         <!-- Justification -->
-        <div v-if="pr.justification" class="text-body-2 text-medium-emphasis">
-          <strong>Justification:</strong> {{ pr.justification }}
+        <div v-if="pr.remarks" class="text-body-2 text-medium-emphasis">
+          <strong>Justification:</strong> {{ pr.remarks }}
         </div>
 
       </v-card-text>

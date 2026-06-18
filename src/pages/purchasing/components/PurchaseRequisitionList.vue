@@ -10,7 +10,8 @@ const {
   loading,
   selectedPR,
   filterStatus,
-  filteredPRs,
+  sortedFilteredPRs,
+  loadItems,
   totalQty,
   totalCost,
   itemSummary,
@@ -83,19 +84,19 @@ onMounted(() => init())
         v-model:page="page"
         v-model:items-per-page="itemsPerPage"
         :headers="headers"
-        :items="filteredPRs"
-        :items-length="filteredPRs.length"
+        :items="sortedFilteredPRs"
+        :items-length="sortedFilteredPRs.length"
         :search="search"
         :loading="loading"
         hover
         loading-text="Loading purchase requisitions..."
         no-data-text="No purchase requisitions found."
-        @update:options="() => {}"
+        @update:options="loadItems"
       >
         <!-- PR # -->
         <template #item.pr_number="{ item }">
           <span class="text-body-2 font-weight-bold" style="white-space: nowrap">
-            {{ item.pr_number }}
+            {{ item.reference_no }}
           </span>
         </template>
 
