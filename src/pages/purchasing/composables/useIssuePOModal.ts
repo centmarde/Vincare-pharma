@@ -1,55 +1,82 @@
 import { ref, computed, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
 import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
-
-import type { PR } from './usePurchaseRequisitionList'
+import type { PR } from '@/stores/purchaseRequisitionStore'
 
 export function useIssuePOModal(
   props: { modelValue: boolean; pr: PR | null },
   emit: (e: 'update:modelValue', value: boolean) => void,
 ) {
-  const toast = useToast()
+  const toast         = useToast()
   const supplierStore = useSuppliersDataStore()
+  const { suppliers } = storeToRefs(supplierStore)
 
-  // ─── Constants ──────────────────────────────────────────────────
+  // ─── Company Header ───────────────────────────────────────────────
   const company = ref({
     name:    'VINCARE PHARMA',
-    address: '2F N.B. BLDG., Ochua Avenue',
+    address: '2F N.B. BLDG., Ochua Avenue, Butuan City',
     city:    'Butuan City, 8600',
     contact: '0968-879-5589',
   })
 
   const shipViaOptions    = ['Ground', 'Air', 'Sea', 'Courier']
   const shipMethodOptions = ['Pick-up', 'Delivery', 'Door-to-door']
-  const today = new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })
+  const today = new Date().toLocaleDateString('en-PH', {
+    month: 'short', day: '2-digit', year: 'numeric',
+    timeZone: 'Asia/Manila',
+  })
 
-  // ─── Form ───────────────────────────────────────────────────────
-  const form = ref({ ship_via: '', ship_method: '' })
-  watch(() => props.modelValue, (val) => { if (val) form.value = { ship_via: '', ship_method: '' } })
-
-  // ─── Confirmation Dialog State ───────────────────────────────────
+  // ─── Form ─────────────────────────────────────────────────────────
+  const form        = ref({ ship_via: '', ship_method: '' })
   const showConfirm = ref(false)
-  const loading = ref(false)
+  const loading     = ref(false)
 
-  // ─── Computed ───────────────────────────────────────────────────
-  const declaredValue    = computed(() => props.pr?.items.reduce((sum, i) => sum + i.qty * (i.cost_per_unit ?? 0), 0) ?? 0)
-  const emptyRows        = computed(() => Math.max(0, 7 - (props.pr?.items.length ?? 0)))
+  watch(() => props.modelValue, val => {
+    if (val) form.value = { ship_via: '', ship_method: '' }
+  })
 
-  // Supplier lookup — uses id which may be string or number
+  // ─── Computed ─────────────────────────────────────────────────────
+  const declaredValue = computed(() =>
+    props.pr?.items.reduce((sum, i) => sum + i.qty * (i.cost_per_unit ?? 0), 0) ?? 0
+  )
+
+  const emptyRows = computed(() =>
+    Math.max(0, 7 - (props.pr?.items.length ?? 0))
+  )
+
   const resolvedSupplier = computed(() => {
     const sid = props.pr?.supplier_id
     if (sid == null) return null
-    return supplierStore.suppliers.find(s => Number(s.id) === Number(sid)) ?? null
+    return suppliers.value.find(s => Number(s.id) === Number(sid)) ?? null
   })
 
-  // ─── Helpers ────────────────────────────────────────────────────
-  function updateCompany(field: 'name' | 'address' | 'city' | 'contact', event: Event) {
-    const target = event.target as HTMLElement
-    company.value[field] = target.innerText
+  // ─── PO Number Generator ──────────────────────────────────────────
+  async function generatePONumber(): Promise<string> {
+    const year   = new Date().getFullYear()
+    const prefix = `PO-${year}-`
+
+    const { data } = await supabase
+      .from('transactions')
+      .select('reference_no')
+      .ilike('reference_no', `${prefix}%`)
+      .order('reference_no', { ascending: false })
+      .limit(1)
+
+    const latest  = data?.[0]?.reference_no
+    const lastNum = latest ? parseInt(latest.split('-')[2], 10) : 0
+    const next    = String(lastNum + 1).padStart(3, '0')
+
+    return `${prefix}${next}`
   }
 
-  // ─── Actions ────────────────────────────────────────────────────
+  // ─── Helpers ──────────────────────────────────────────────────────
+  function updateCompany(field: keyof typeof company.value, event: Event) {
+    company.value[field] = (event.target as HTMLElement).innerText
+  }
+
+  // ─── Actions ──────────────────────────────────────────────────────
   function promptIssuePO() {
     showConfirm.value = true
   }
@@ -64,26 +91,31 @@ export function useIssuePOModal(
 
     try {
       const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('User not authenticated.')
+
+      const poNumber = await generatePONumber()
 
       const { error: createError } = await supabase
-        .from('purchase_orders')
-        .insert([{
-          requisition_id: props.pr.id,
-          supplier_id:    props.pr.supplier_id,
-          ship_via:       form.value.ship_via,
-          ship_method:    form.value.ship_method,
-          declared_value: declaredValue.value,
-          issued_by:      user?.id ?? null,
-          po_number:      `PO-${Date.now()}`,
-          status:         'issued',
-          is_delivered:   false,
-        }])
+        .from('transactions')
+        .insert({
+          reference_no:     poNumber,
+          transaction_type: 'purchase_order',
+          status:           'issued',
+          supplier_id:      props.pr.supplier_id,
+          total_amount:     declaredValue.value,
+          remarks:          props.pr.remarks ?? '',
+          created_by:       user.id,
+          ship_via:         form.value.ship_via,
+          ship_method:      form.value.ship_method,
+          requisition_id:   props.pr.id,
+        })
 
       if (createError) throw createError
 
       toast.success('Purchase order issued successfully!')
       showConfirm.value = false
       emit('update:modelValue', false)
+
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to issue purchase order')
     } finally {
@@ -92,19 +124,9 @@ export function useIssuePOModal(
   }
 
   return {
-    company,
-    shipViaOptions,
-    shipMethodOptions,
-    today,
-    form,
-    showConfirm,
-    loading,
-    declaredValue,
-    emptyRows,
-    resolvedSupplier,
-    updateCompany,
-    promptIssuePO,
-    closeConfirm,
-    handleConfirmIssue,
+    company, shipViaOptions, shipMethodOptions, today,
+    form, showConfirm, loading,
+    declaredValue, emptyRows, resolvedSupplier,
+    updateCompany, promptIssuePO, closeConfirm, handleConfirmIssue,
   }
 }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatCurrency } from '@/utils/helpers'
 import { useIssuePOModal } from '../composables/useIssuePOModal'
-import type { PR } from '../composables/usePurchaseRequisitionList'
+import type { PR } from '@/stores/purchaseRequisitionStore'
 
 const props = defineProps<{
   modelValue: boolean
@@ -75,7 +75,7 @@ const {
           <v-col class="text-right">
             <div class="text-h6 font-weight-bold mb-2">PURCHASE ORDER</div>
             <div class="text-body-2 text-medium-emphasis">DATE: {{ today }}</div>
-            <div class="text-body-2 text-medium-emphasis">PR #: {{ pr?.pr_number }}</div>
+            <div class="text-body-2 text-medium-emphasis">PR #: {{ pr?.reference_no }}</div>
             <div class="text-body-2 text-medium-emphasis">
               PO #: <span class="font-weight-medium">Auto-generated</span>
             </div>
@@ -99,7 +99,6 @@ const {
             <v-card flat border rounded="lg" class="pa-4">
               <div class="text-body-1 font-weight-medium mb-1">{{ company.name }}</div>
               <div class="text-body-2 text-medium-emphasis">{{ company.address }}</div>
-              <div class="text-body-2 text-medium-emphasis">{{ company.city }}</div>
               <div class="text-body-2 text-medium-emphasis">{{ company.contact }}</div>
             </v-card>
           </v-col>
@@ -221,7 +220,7 @@ const {
 
         <v-card-text class="px-5 pb-2 text-body-2 text-medium-emphasis">
           Are you sure you want to issue a Purchase Order for Requisition 
-          <strong>({{ pr?.pr_number ?? '—' }})</strong>?
+          <strong>({{ pr?.reference_no ?? '—' }})</strong>?
           This action cannot be undone.
         </v-card-text>
 
