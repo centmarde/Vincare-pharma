@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import ViewPODetailModal from '@/pages/warehouse/dialogs/PODetailViewModal.vue'
+import { onMounted } from 'vue'
+import PODetailViewModal from '../dialogs/PODetailModal.vue'
+import PODetailSkuModal from '../dialogs/PODetailViewModal.vue'
 import { usePurchaseOrderList, headers } from '@/pages/purchasing/composables/usePurchaseOrderList'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
@@ -11,6 +12,7 @@ const {
   selectedPO,
   selectedPR,
   confirmDialog,
+  showSkuEditModal,
   statusOptions,
   serverItems,
   itemsPerPage,
@@ -20,30 +22,23 @@ const {
   resolveSupplier,
   statusLabel,
   openDetail,
-  openConfirm,
   handleMarkReceived,
+  openDetailForSku,
+  openConfirm,
   init,
-} = usePurchaseOrderList({ excludePRStatuses: ['rejected'] })
+} = usePurchaseOrderList()
+onMounted(init)
 
-// State for SKU edit modal (shown when clicking "Mark Received")
-const showSkuEditModal = ref(false)
-const pendingMarkReceivedPO = ref<any>(null)
-
-// Open the view modal in SKU edit mode for marking as received
-function openForMarkReceived(item: any) {
-  pendingMarkReceivedPO.value = item
-  selectedPO.value = item
-  selectedPR.value = null
-  showSkuEditModal.value = true
+function openMarkReceivedDialog(item: any) {
+  openDetailForSku(item)   // opens SKU modal, sets selectedPO + selectedPR
 }
 
-// Handle the mark-received event from the modal
 function onMarkReceived(poId: number) {
   showSkuEditModal.value = false
-  openConfirm({ id: poId, po_number: pendingMarkReceivedPO.value?.po_number ?? '' })
+  const po = serverItems.value.find(item => item.id === poId)
+  if (po) openConfirm(po)
 }
 
-onMounted(init)
 </script>
 <template>
   <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
@@ -104,7 +99,7 @@ onMounted(init)
       >
         <template #item.po_number="{ item }">
           <span class="text-body-2 font-weight-bold" style="white-space: nowrap">{{
-            item.po_number
+            item.reference_no
           }}</span>
         </template>
 
@@ -113,7 +108,7 @@ onMounted(init)
         </template>
 
         <template #item.declared_value="{ item }">
-          <span class="text-body-2">{{ formatCurrency(item.declared_value) }}</span>
+          <span class="text-body-2">{{ formatCurrency(item.total_amount) }}</span>
         </template>
 
         <template #item.ship_via="{ item }">
@@ -124,9 +119,9 @@ onMounted(init)
           <span class="text-body-2">{{ item.ship_method ?? '—' }}</span>
         </template>
 
-        <template #item.issued_at="{ item }">
+        <template #item.created_at="{ item }">
           <span class="text-body-2">{{
-            item.issued_at ? formatDatePR_ISO(item.issued_at) : '—'
+            item.created_at ? formatDatePR_ISO(item.created_at) : '—'
           }}</span>
         </template>
 
@@ -145,17 +140,10 @@ onMounted(init)
             <v-btn variant="outlined" size="small" class="text-none" @click="openDetail(item)">
               View
             </v-btn>
-            <v-btn
-              v-if="item.status === 'issued'"
-              variant="flat"
-              size="small"
-              color="success"
-              class="text-none"
-              @click="openForMarkReceived(item)"
-            >
-              <v-icon start size="16">mdi-check-circle</v-icon>
-              Mark Received
+            <v-btn size="small" color="primary" @click="openMarkReceivedDialog(item)">
+              Mark as Received
             </v-btn>
+
             <v-chip v-if="item.is_delivered" color="green" size="small" variant="tonal" label>
               <v-icon start size="14">mdi-check-circle</v-icon>
               Delivered
@@ -165,17 +153,10 @@ onMounted(init)
       </v-data-table-server>
     </v-card>
 
-    <!-- View modal (read-only, opened by clicking 'View') -->
-    <ViewPODetailModal v-model="showDetailModal" :po="selectedPO" :pr="selectedPR" />
+    <!-- Opened when clicking 'View' or 'Print' inside your table rows -->
+    <PODetailViewModal v-model="showDetailModal" :po="selectedPO" :pr="selectedPR" />
 
-    <!-- SKU edit modal (opened by clicking 'Mark Received') -->
-    <ViewPODetailModal
-      v-model="showSkuEditModal"
-      :po="selectedPO"
-      :pr="selectedPR"
-      sku-edit-mode
-      @mark-received="onMarkReceived"
-    />
+    <PODetailSkuModal v-model="showSkuEditModal" :po="selectedPO" :pr="selectedPR" :sku-edit-mode="true" @mark-received="onMarkReceived" />
 
     <!-- Confirm Mark as Received -->
     <v-dialog v-model="confirmDialog.show" max-width="420" persistent>

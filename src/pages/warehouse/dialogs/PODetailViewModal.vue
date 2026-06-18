@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { useToast } from 'vue-toastification'
 import { supabase } from '@/lib/supabase'
 import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
-import type { PR } from '@/pages/purchasing/composables/usePurchaseRequisitionList'
+import type { PR } from '@/stores/purchaseRequisitionStore'
 import { usePODetailModal, company } from '@/pages/purchasing/composables/usePODetailModal'
-import { useTransactionItemsDataStore } from '@/stores/transactionsItemsData'
 import { formatCurrency, formatDatePO_Written } from '@/utils/helpers'
 
 const props = defineProps<{
@@ -21,55 +20,27 @@ const emit = defineEmits<{
 }>()
 
 const toast = useToast()
-const transactionItemsStore = useTransactionItemsDataStore()
-const transactionItems = ref<any[]>([])
-const loadingItems = ref(false)
 const savingAll = ref(false)
 
-const { printArea, poNumber, resolvedSupplier, handlePrint } = usePODetailModal(
+const { printArea, resolvedSupplier, handlePrint } = usePODetailModal(
   props as any,
   emit as any,
 )
 
-// Override emptyRows to use real transaction items data
-const effectiveEmptyRows = computed(() => Math.max(0, 7 - (transactionItems.value.length ?? 0)))
+// ── Derive items directly from pr.items — no fetch needed ────────────
+const transactionItems = computed(() => props.pr?.items ?? [])
 
-// Check if all items have SKU filled
-const missingSkuCount = computed(() => {
-  return transactionItems.value.filter(item => !item.product?.sku?.toString().trim()).length
-})
+const effectiveEmptyRows = computed(() => Math.max(0, 7 - transactionItems.value.length))
 
-// Fetch transaction items when the dialog opens
-watch(
-  () => props.modelValue,
-  async (val) => {
-    if (val && props.po?.id) {
-      loadingItems.value = true
-      try {
-        const items = await transactionItemsStore.fetchTransactionItems({
-          transaction_id: props.po.id,
-        })
-        transactionItems.value = items || []
-      } catch {
-        transactionItems.value = []
-      } finally {
-        loadingItems.value = false
-      }
-    }
-  },
+const missingSkuCount = computed(() =>
+  transactionItems.value.filter(item => !item.sku?.toString().trim()).length
 )
 
-// Save all SKUs to the database at once
-async function saveAllSkus() {
-  const updates: { id: number; sku: string }[] = []
-
-  for (const item of transactionItems.value) {
-    const productId = item.product?.id
-    const skuValue = item.product?.sku?.toString().trim()
-    if (productId && skuValue) {
-      updates.push({ id: productId, sku: skuValue })
-    }
-  }
+// ── Save all SKUs ─────────────────────────────────────────────────────
+async function saveAllSkus(): Promise<boolean> {
+  const updates = transactionItems.value
+    .filter(item => item.id && item.sku?.toString().trim())
+    .map(item => ({ id: item.id, sku: item.sku!.toString().trim() }))
 
   if (updates.length === 0) return true
 
@@ -85,7 +56,7 @@ async function saveAllSkus() {
     }
     return true
   } catch (err: any) {
-    toast.error('Failed to save some SKUs')
+    toast.error('Failed to save some SKUs.')
     console.error('SKU save error:', err)
     return false
   } finally {
@@ -93,7 +64,7 @@ async function saveAllSkus() {
   }
 }
 
-// Mark as received — saves all SKUs first, then emits
+// ── Mark as received ──────────────────────────────────────────────────
 async function handleMarkAsReceived() {
   if (missingSkuCount.value > 0) {
     toast.error(`Please fill in SKU for all ${missingSkuCount.value} item(s) before marking as received.`)
@@ -104,7 +75,6 @@ async function handleMarkAsReceived() {
     return
   }
 
-  // Save all SKUs first
   const saved = await saveAllSkus()
   if (!saved) return
 
@@ -123,26 +93,30 @@ async function handleMarkAsReceived() {
     <v-card flat rounded="lg" class="print-area">
       <v-card-text class="pa-8 pb-0">
         <div ref="printArea">
-          <!-- ── Company + PO Title ──────────────────────────────── -->
+
+          <!-- ── Company + PO Title ─────────────────────────────── -->
           <v-row class="mb-4" align="start">
             <v-col>
               <div class="d-flex align-center ga-3 mb-2">
                 <v-img src="/vincare.png" max-width="48" max-height="48" contain />
-                <div class="text-h6 font-weight-bold mb-1 text-medium">{{ company.name }}</div>
+                <div class="text-h6 font-weight-bold mb-1">{{ company.name }}</div>
               </div>
               <div class="text-body-2 text-medium-emphasis">{{ company.address }}</div>
-              <div class="text-body-2 text-medium-emphasis">{{ company.city }}</div>
+              <div class="text-body-2 text-medium-emphasis">Butuan City</div>
               <div class="text-body-2 text-medium-emphasis">{{ company.contact }}</div>
               <div class="text-body-2 text-medium-emphasis">{{ company.email }}</div>
             </v-col>
             <v-col class="text-right">
-              <div class="text-h6 font-weight-bold mb-2 text-medium">PURCHASE ORDER</div>
+              <div class="text-h6 font-weight-bold mb-2">PURCHASE ORDER</div>
               <div class="text-body-2 text-medium-emphasis">
-                DATE: {{ formatDatePO_Written(po?.issued_at ?? '—') }}
+                DATE: {{ formatDatePO_Written(po?.created_at ?? '—') }}
               </div>
-              <div class="text-body-2 text-medium-emphasis">PR #: {{ pr?.pr_number ?? '—' }}</div>
               <div class="text-body-2 text-medium-emphasis">
-                PO #: <span class="font-weight-bold text-primary">{{ po?.po_number }}</span>
+                PR #: {{ pr?.reference_no ?? '—' }}
+              </div>
+              <div class="text-body-2 text-medium-emphasis">
+                PO #:
+                <span class="font-weight-bold text-primary">{{ po?.reference_no }}</span>
               </div>
               <div v-if="po?.is_delivered" class="text-body-2 text-green font-weight-bold mt-1">
                 <v-icon start size="14">mdi-check-circle</v-icon>
@@ -153,70 +127,59 @@ async function handleMarkAsReceived() {
 
           <v-divider class="mb-6" />
 
-          <!-- ── Supplier + Ship To ───────────────────────────────── -->
+          <!-- ── Supplier + Ship To ──────────────────────────────── -->
           <v-row class="mb-4">
             <v-col cols="6">
               <div class="text-caption font-weight-bold text-medium-emphasis mb-2">SUPPLIER</div>
-              <v-card flat border rounded="lg" class="pa-4 bg-white">
+              <v-card flat border rounded="lg" class="pa-4">
                 <div class="text-body-1 font-weight-medium mb-1">
                   {{ resolvedSupplier?.name ?? '—' }}
                 </div>
-                <div class="text-body-2 text-medium text-black">
-                  {{ resolvedSupplier?.address ?? '—' }}
-                </div>
-                <div class="text-body-2 text-medium text-black">
-                  {{ resolvedSupplier?.city ?? '—' }}
-                </div>
-                <div class="text-body-2 text-medium text-black">
-                  {{ resolvedSupplier?.contact_no ?? '—' }}
-                </div>
-                <div class="text-body-2 text-medium text-black">
-                  {{ resolvedSupplier?.email ?? '—' }}
-                </div>
+                <div class="text-body-2 text-medium-emphasis">{{ resolvedSupplier?.address ?? '—' }}</div>
+                <div class="text-body-2 text-medium-emphasis">{{ resolvedSupplier?.contact_no ?? '—' }}</div>
+                <div class="text-body-2 text-medium-emphasis">{{ resolvedSupplier?.email ?? '—' }}</div>
               </v-card>
             </v-col>
             <v-col cols="6">
               <div class="text-caption font-weight-bold text-medium-emphasis mb-2">SHIP TO</div>
-              <v-card flat border rounded="lg" class="pa-4 bg-white">
+              <v-card flat border rounded="lg" class="pa-4">
                 <div class="text-body-1 font-weight-medium mb-1">{{ company.name }}</div>
-                <div class="text-body-2 text-medium text-black">{{ company.address }}</div>
-                <div class="text-body-2 text-medium text-black">{{ company.city }}</div>
-                <div class="text-body-2 text-medium text-black">{{ company.contact }}</div>
-                <div class="text-body-2 text-medium text-black">{{ company.email }}</div>
+                <div class="text-body-2 text-medium-emphasis">{{ company.address }}</div>
+                <div class="text-body-2 text-medium-emphasis">Butuan City</div>
+                <div class="text-body-2 text-medium-emphasis">{{ company.contact }}</div>
+                <div class="text-body-2 text-medium-emphasis">{{ company.email }}</div>
               </v-card>
             </v-col>
           </v-row>
 
-          <!-- ── Ship Via / Method / Declared Value ────────────── -->
+          <!-- ── Ship Via / Method / Declared Value ─────────────── -->
           <v-row class="mb-4">
             <v-col cols="4">
               <div class="text-caption font-weight-bold text-medium-emphasis mb-2">SHIP VIA</div>
-              <v-card flat border rounded="lg" class="pa-3 bg-white">
+              <v-card flat border rounded="lg" class="pa-3">
                 <div class="text-body-2 font-weight-medium">{{ po?.ship_via ?? '—' }}</div>
               </v-card>
             </v-col>
             <v-col cols="4">
               <div class="text-caption font-weight-bold text-medium-emphasis mb-2">SHIP METHOD</div>
-              <v-card flat border rounded="lg" class="pa-3 bg-white">
+              <v-card flat border rounded="lg" class="pa-3">
                 <div class="text-body-2 font-weight-medium">{{ po?.ship_method ?? '—' }}</div>
               </v-card>
             </v-col>
             <v-col cols="4">
-              <div class="text-caption font-weight-bold text-medium-emphasis mb-2">
-                DECLARED VALUE
-              </div>
-              <v-card flat border rounded="lg" class="pa-3 bg-white">
-                <div class="text-body-1 font-weight-bold text-black">
-                  {{ formatCurrency(po?.declared_value ?? 0) }}
+              <div class="text-caption font-weight-bold text-medium-emphasis mb-2">DECLARED VALUE</div>
+              <v-card flat border rounded="lg" class="pa-3">
+                <div class="text-body-1 font-weight-bold">
+                  {{ formatCurrency(po?.total_amount ?? 0) }}
                 </div>
               </v-card>
             </v-col>
           </v-row>
 
-          <!-- ── Items Table ────────────────────────────────────── -->
+          <!-- ── Items Table ─────────────────────────────────────── -->
           <v-table density="compact" class="po-table mb-6 border rounded-lg">
             <thead>
-              <tr class="po-table-header bg-blue-darken-3">
+              <tr class="bg-blue-darken-3">
                 <th class="text-left text-white font-weight-bold">ITEM #</th>
                 <th class="text-left text-white font-weight-bold">DESCRIPTION</th>
                 <th class="text-left text-white font-weight-bold">SKU</th>
@@ -225,28 +188,19 @@ async function handleMarkAsReceived() {
               </tr>
             </thead>
             <tbody>
-              <tr v-if="loadingItems">
-                <td colspan="5" class="text-center text-body-2 text-medium-emphasis pa-4">
-                  <v-progress-circular indeterminate size="20" width="2" class="mr-2" />
-                  Loading items...
-                </td>
-              </tr>
-              <tr v-else-if="transactionItems.length === 0">
+              <tr v-if="transactionItems.length === 0">
                 <td colspan="5" class="text-center text-body-2 text-medium-emphasis pa-4">
                   No items found for this purchase order.
                 </td>
               </tr>
-              <tr
-                v-for="(item, index) in transactionItems"
-                :key="item.id"
-              >
+              <tr v-for="(item, index) in transactionItems" :key="item.id">
                 <td>{{ index + 1 }}</td>
-                <td>{{ item.product?.product_name ?? item.product?.item_decription ?? '—' }}</td>
+                <td>{{ item.item_description ?? '—' }}</td>
                 <td>
                   <template v-if="skuEditMode">
                     <div class="d-flex align-center ga-2">
                       <v-text-field
-                        v-model="item.product.sku"
+                        v-model="item.sku"
                         density="compact"
                         variant="outlined"
                         hide-details
@@ -261,67 +215,61 @@ async function handleMarkAsReceived() {
                             size="small"
                             variant="text"
                             color="primary"
-                            title="Scan barcode"
                           />
                         </template>
                       </v-tooltip>
                     </div>
                   </template>
                   <template v-else>
-                    <span class="sku-text">
-                      {{ item.product?.sku ?? item.product?.barcode ?? '—' }}
-                    </span>
+                    <span class="sku-text">{{ item.sku ?? '—' }}</span>
                   </template>
                 </td>
-                <td class="text-right">
-                  {{ formatCurrency(item.product?.cost_per_unit ?? 0) }}
-                </td>
-                <td class="text-right">
-                  {{ formatCurrency(item.product?.cost_per_unit ?? 0) }}
-                </td>
+                <td class="text-right">{{ formatCurrency(item.cost_per_unit ?? 0) }}</td>
+                <td class="text-right">{{ formatCurrency(item.cost_per_unit ?? 0) }}</td>
               </tr>
               <tr v-for="n in effectiveEmptyRows" :key="`empty-${n}`" class="empty-row">
                 <td colspan="5">&nbsp;</td>
               </tr>
             </tbody>
             <tfoot>
-              <tr class="po-table-total bg-grey-lighten-3">
+              <tr class="bg-grey-lighten-3">
                 <td colspan="4" class="text-right font-weight-bold">TOTAL</td>
                 <td class="text-right font-weight-bold text-subtitle-1">
-                  {{ formatCurrency(po?.declared_value ?? 0) }}
+                  {{ formatCurrency(po?.total_amount ?? 0) }}
                 </td>
               </tr>
             </tfoot>
           </v-table>
 
-          <!-- ── Signatures ─────────────────────────────────────── -->
+          <!-- ── Signatures ──────────────────────────────────────── -->
           <v-row class="mb-6">
             <v-col cols="6">
-              <div class="text-caption font-weight-bold text-medium-emphasis mb-6">
-                REQUESTED BY:
-              </div>
+              <div class="text-caption font-weight-bold text-medium-emphasis mb-6">REQUESTED BY:</div>
               <div class="text-body-2 font-weight-medium">{{ pr?.requester_name ?? '—' }}</div>
               <v-divider style="width: 200px" class="mb-1" />
               <div class="text-caption text-medium-emphasis">REQUESTER</div>
             </v-col>
             <v-col cols="6">
-              <div class="text-caption font-weight-bold text-medium-emphasis mb-6">
-                APPROVED BY:
-              </div>
+              <div class="text-caption font-weight-bold text-medium-emphasis mb-6">APPROVED BY:</div>
               <div class="text-body-2 font-weight-medium">{{ pr?.reviewer_name ?? '—' }}</div>
               <v-divider style="width: 200px" class="mb-1" />
               <div class="text-caption text-medium-emphasis">APPROVER</div>
             </v-col>
           </v-row>
+
         </div>
       </v-card-text>
 
       <v-divider class="d-print-none" />
 
-      <!-- ── Actions ───────────────────────────────────────────── -->
+      <!-- ── Actions ────────────────────────────────────────────── -->
       <v-card-actions class="pa-4 ga-2 justify-end d-print-none">
         <template v-if="skuEditMode">
-          <v-btn variant="outlined" class="text-none" @click="emit('update:modelValue', false)">
+          <v-btn
+            variant="outlined"
+            class="text-none"
+            @click="emit('update:modelValue', false)"
+          >
             Cancel
           </v-btn>
           <v-btn
@@ -337,14 +285,25 @@ async function handleMarkAsReceived() {
           </v-btn>
         </template>
         <template v-else>
-          <v-btn variant="outlined" class="text-none" @click="emit('update:modelValue', false)">
+          <v-btn
+            variant="outlined"
+            class="text-none"
+            @click="emit('update:modelValue', false)"
+          >
             Close
           </v-btn>
-          <v-btn variant="text" color="error" prepend-icon="mdi-printer" @click="handlePrint">
+          <v-btn
+            variant="text"
+            color="error"
+            prepend-icon="mdi-printer"
+            class="text-none"
+            @click="handlePrint"
+          >
             Print Document
           </v-btn>
         </template>
       </v-card-actions>
+
     </v-card>
   </v-dialog>
 </template>
@@ -353,25 +312,20 @@ async function handleMarkAsReceived() {
 .po-table th {
   height: 38px !important;
 }
-
 .empty-row td {
   height: 32px !important;
   border-bottom: 1px solid rgba(0, 0, 0, 0.05) !important;
 }
-
 .sku-text {
   font-family: 'Courier New', monospace;
   font-weight: 500;
 }
-
 .sku-input {
   max-width: 140px;
 }
-
 .sku-input :deep(.v-field) {
   padding: 0;
 }
-
 .sku-input :deep(.v-field__field) input {
   padding: 4px 8px;
   font-size: 0.875rem;
