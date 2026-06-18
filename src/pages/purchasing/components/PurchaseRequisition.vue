@@ -187,7 +187,7 @@ onMounted(() => {
         <!-- Justification -->
         <label class="text-subtitle-2 font-weight-bold d-block mb-2">Justification / Notes</label>
         <v-textarea
-          v-model="currentPR.justification"
+          v-model="currentPR.remarks"
           placeholder="Reason for requisition..."
           variant="outlined"
           rows="3"
