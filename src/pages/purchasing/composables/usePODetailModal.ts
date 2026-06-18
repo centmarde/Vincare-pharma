@@ -1,52 +1,31 @@
 import { computed, ref, nextTick } from 'vue'
 import { useToast } from 'vue-toastification'
 import html2pdf from 'html2pdf.js'
-import type { PR } from './usePurchaseRequisitionList'
+import { useSuppliersDataStore } from '@/stores/suppliersData'
+import { storeToRefs } from 'pinia'
+import type { PR } from '@/stores/purchaseRequisitionStore'
 
-// Local PO type (mirrors schema, no separate store)
+// ✅ Updated to match new transactions schema
 export type PurchaseOrder = {
-  id: number
-  created_at: string
-  po_number: string
-  requisition_id: number | null
-  supplier_id: number | null
-  ship_via: string | null
-  ship_method: string | null
-  declared_value: number | null
-  issued_by: string | null
-  issued_at: string | null
-  status: string
+  id:           number
+  reference_no: string
+  status:       string
+  supplier_id:  string | null
+  total_amount: number
+  ship_via:     string | null
+  ship_method:  string | null
+  created_at:   string
+  created_by:   string | null
   is_delivered: boolean
-  received_at: string | null
-}
-
-export type StaticSupplier = {
-  id: number
-  name: string
-  address: string
-  city: string
-  contact_no: string
-  email: string
+  requisition_id: number | null
 }
 
 export const company = {
   name:    'VINCARE PHARMA',
-  address: '2F N.B. BLDG., Ochua Avenue',
-  city:    'Butuan City',
+  address: '2F N.B. BLDG., Ochua Avenue, Butuan City',
   email:   'vincare001@gmail.com',
   contact: '0968-879-5589',
 } as const
-
-export const staticSuppliers: StaticSupplier[] = [
-  {
-    id: 1,
-    name: 'VINCARE PHARMA',
-    address: '2F N.B. BLDG., Ochua Avenue',
-    city: 'Butuan City',
-    contact_no: '0968-879-5589',
-    email: 'vincare001@gmail.com',
-  },
-]
 
 export function usePODetailModal(
   props: { po: PurchaseOrder | null; pr: PR | null },
@@ -54,17 +33,21 @@ export function usePODetailModal(
 ) {
   const toast         = useToast()
   const printArea     = ref<HTMLElement | null>(null)
+  const supplierStore = useSuppliersDataStore()
+  const { suppliers } = storeToRefs(supplierStore)
 
-  const poNumber = computed(
-    () => props.po?.po_number ?? props.pr?.pr_number ?? 'PurchaseOrder',
+  const poNumber = computed(() =>
+    props.po?.reference_no ?? props.pr?.reference_no ?? 'PurchaseOrder'
   )
 
-  const emptyRows = computed(() => Math.max(0, 7 - (props.pr?.items.length ?? 0)))
+  const emptyRows = computed(() =>
+    Math.max(0, 7 - (props.pr?.items.length ?? 0))
+  )
 
-  const resolvedSupplier = computed((): StaticSupplier | null => {
+  const resolvedSupplier = computed(() => {
     const sid = props.po?.supplier_id ?? props.pr?.supplier_id
     if (sid == null) return null
-    return staticSuppliers.find(s => Number(s.id) === Number(sid)) ?? null
+    return suppliers.value.find(s => Number(s.id) === Number(sid)) ?? null
   })
 
   async function handlePrint() {
@@ -72,53 +55,43 @@ export function usePODetailModal(
     const el = printArea.value
     if (!el) return
 
-    // Swap to light theme
     el.classList.add('v-theme--light')
     el.classList.remove('v-theme--dark')
     el.querySelectorAll('.v-theme--dark').forEach(child => {
       child.classList.replace('v-theme--dark', 'v-theme--light')
     })
 
-    // Force black text on all text elements
     el.querySelectorAll('div, td, th, span, p').forEach(child => {
       ;(child as HTMLElement).style.color = '#000000'
     })
 
-    // Keep table header white text
     el.querySelectorAll('.po-table thead th').forEach(th => {
       ;(th as HTMLElement).style.color = '#ffffff'
     })
 
-    // Keep PO number blue/primary
     el.querySelectorAll('.text-primary').forEach(el => {
       ;(el as HTMLElement).style.color = '#1565c0'
     })
 
-    // Force img src to absolute URL for html2canvas
     el.querySelectorAll('img').forEach(img => {
-      img.src = img.src
+      img.src        = img.src
       img.crossOrigin = 'anonymous'
     })
 
     await html2pdf()
       .set({
-        margin: 10,
-        filename: `${poNumber.value}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-        },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        margin:      10,
+        filename:    `${poNumber.value}.pdf`,
+        image:       { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false },
+        jsPDF:       { unit: 'mm', format: 'a4', orientation: 'portrait' },
       })
       .from(el)
       .save()
 
     emit('update:modelValue', false)
     await nextTick()
-    toast.success(`${poNumber.value} Purchase Order PDF generated successfully!`)
+    toast.success(`${poNumber.value} PDF generated successfully!`)
   }
 
   return {
@@ -127,5 +100,6 @@ export function usePODetailModal(
     emptyRows,
     resolvedSupplier,
     handlePrint,
+    company,
   }
 }

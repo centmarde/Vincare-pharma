@@ -20,7 +20,6 @@ const {
   resolveSupplier,
   statusLabel,
   openDetail,
-  openConfirm,
   handleMarkReceived,
   init,
 } = usePurchaseOrderList()
@@ -85,7 +84,7 @@ onMounted(init)
       >
         <template #item.po_number="{ item }">
           <span class="text-body-2 font-weight-bold" style="white-space: nowrap">{{
-            item.po_number
+            item.reference_no
           }}</span>
         </template>
 
@@ -94,7 +93,7 @@ onMounted(init)
         </template>
 
         <template #item.declared_value="{ item }">
-          <span class="text-body-2">{{ formatCurrency(item.declared_value) }}</span>
+          <span class="text-body-2">{{ formatCurrency(item.total_amount) }}</span>
         </template>
 
         <template #item.ship_via="{ item }">
@@ -105,9 +104,9 @@ onMounted(init)
           <span class="text-body-2">{{ item.ship_method ?? '—' }}</span>
         </template>
 
-        <template #item.issued_at="{ item }">
+        <template #item.created_at="{ item }">
           <span class="text-body-2">{{
-            item.issued_at ? formatDatePR_ISO(item.issued_at) : '—'
+            item.created_at ? formatDatePR_ISO(item.created_at) : '—'
           }}</span>
         </template>
 
@@ -126,17 +125,6 @@ onMounted(init)
             <v-btn variant="outlined" size="small" class="text-none" @click="openDetail(item)">
               View
             </v-btn>
-            <!-- <v-btn
-                v-if="item.status === 'issued'"
-                variant="flat"
-                size="small"
-                color="success"
-                class="text-none"
-                :loading="loading"
-                @click="openConfirm(item)"
-              >
-                Mark Received
-              </v-btn> -->
             <v-chip v-if="item.is_delivered" color="green" size="small" variant="tonal" label>
               <v-icon start size="14">mdi-check-circle</v-icon>
               Delivered
