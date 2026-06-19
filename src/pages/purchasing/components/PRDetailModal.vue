@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { PR } from '@/stores/purchaseRequisitionStore'
+import type { PR } from '@/stores/transactionsData'
 import { usePRDetailModal } from '../composables/usePRDetailModal'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 

@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import { useToast } from 'vue-toastification'
-import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionStore'
+import { useTransactionsDataStore } from '@/stores/transactionsData'
 
 export const unitOptions = ['Box', 'Pcs', 'Set', 'Unit', 'Kg', 'M']
 
@@ -15,7 +15,7 @@ type PRFormItem = {
 
 export function usePurchaseRequisition() {
   const toast = useToast()
-  const prStore = usePurchaseRequisitionStore()
+  const prStore = useTransactionsDataStore()
 
   // ─── State ────────────────────────────────────────────────────────
   const loading = ref(false)

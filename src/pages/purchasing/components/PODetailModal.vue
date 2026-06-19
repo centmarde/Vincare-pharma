@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { PurchaseOrder } from '../composables/usePODetailModal'
-import type { PR } from '@/stores/purchaseRequisitionStore'
+import type { PR } from '@/stores/transactionsData'
 import { usePODetailModal, company } from '../composables/usePODetailModal'
 import { formatCurrency, formatDatePO_Written } from '@/utils/helpers'
 
@@ -46,9 +46,13 @@ const { printArea, poNumber, emptyRows, resolvedSupplier, handlePrint } = usePOD
               <div class="text-body-2 text-medium-emphasis">
                 PO #: <span class="font-weight-bold text-primary">{{ poNumber }}</span>
               </div>
-              <div v-if="po?.is_delivered" class="text-body-2 text-green font-weight-bold mt-1">
+              <div v-if="po?.status === 'complete'" class="text-body-2 text-green font-weight-bold mt-1">
                 <v-icon start size="14">mdi-check-circle</v-icon>
                 Delivered
+              </div>
+              <!-- I want also to display if the status complete the update_date will display -->
+              <div v-if="po?.status === 'complete'" class="text-body-2 text-medium-emphasis mt-1">
+                DELIVERED DATE: {{ po?.updated_at ? formatDatePO_Written(po.updated_at) : '—' }}
               </div>
             </v-col>
           </v-row>

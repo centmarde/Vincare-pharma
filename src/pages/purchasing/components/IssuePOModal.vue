@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatCurrency } from '@/utils/helpers'
 import { useIssuePOModal } from '../composables/useIssuePOModal'
-import type { PR } from '@/stores/purchaseRequisitionStore'
+import type { PR } from '@/stores/transactionsData'
 
 const props = defineProps<{
   modelValue: boolean

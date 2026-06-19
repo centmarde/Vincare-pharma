@@ -140,11 +140,12 @@ function onMarkReceived(poId: number) {
             <v-btn variant="outlined" size="small" class="text-none" @click="openDetail(item)">
               View
             </v-btn>
-            <v-btn size="small" color="primary" @click="openMarkReceivedDialog(item)">
+            <!-- I want this button to be visible only when the item is not complete -->
+            <v-btn v-if="item.status !== 'complete'" size="small" color="primary" @click="openMarkReceivedDialog(item)">
               Mark as Received
             </v-btn>
 
-            <v-chip v-if="item.is_delivered" color="green" size="small" variant="tonal" label>
+            <v-chip v-if="item.status === 'complete'" color="green" size="small" variant="tonal" label>
               <v-icon start size="14">mdi-check-circle</v-icon>
               Delivered
             </v-chip>
@@ -222,12 +223,12 @@ function onMarkReceived(poId: number) {
 .status-chip--issued .status-dot {
   background: #1565c0;
 }
-.status-chip--received {
+.status-chip--complete {
   color: #2e7d32;
   background: rgba(46, 125, 50, 0.12);
 }
-.status-chip--received .status-dot {
-  background: #4caf50;
+.status-chip--complete .status-dot {
+  background: #2e7d32;
 }
 
 :deep(.v-table thead tr th) {

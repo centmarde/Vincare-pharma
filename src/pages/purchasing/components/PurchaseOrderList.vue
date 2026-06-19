@@ -125,7 +125,7 @@ onMounted(init)
             <v-btn variant="outlined" size="small" class="text-none" @click="openDetail(item)">
               View
             </v-btn>
-            <v-chip v-if="item.is_delivered" color="green" size="small" variant="tonal" label>
+            <v-chip v-if="item.status === 'complete'" color="green" size="small" variant="tonal" label>
               <v-icon start size="14">mdi-check-circle</v-icon>
               Delivered
             </v-chip>
@@ -136,39 +136,6 @@ onMounted(init)
 
     <!-- Opened when clicking 'View' or 'Print' inside your table rows -->
     <ViewPODetailModal v-model="showDetailModal" :po="selectedPO" :pr="selectedPR" />
-
-    <!-- Confirm Mark as Received -->
-    <v-dialog v-model="confirmDialog.show" max-width="420" persistent>
-      <v-card rounded="lg">
-        <v-card-title class="d-flex align-center ga-2 pt-5 px-5">
-          <v-icon color="success" size="22">mdi-check-circle-outline</v-icon>
-          <span class="text-body-1 font-weight-bold">Mark as Received</span>
-        </v-card-title>
-        <v-card-text class="px-5 pb-2 text-body-2 text-medium-emphasis">
-          Confirm that <strong>{{ confirmDialog.poNumber }}</strong> has been received and
-          delivered? This will update the status to <strong>Received</strong>.
-        </v-card-text>
-        <v-card-actions class="px-5 pb-5 pt-3 justify-end ga-2">
-          <v-btn
-            variant="outlined"
-            class="text-none"
-            :disabled="loading"
-            @click="confirmDialog.show = false"
-          >
-            Cancel
-          </v-btn>
-          <v-btn
-            variant="flat"
-            color="success"
-            class="text-none"
-            :loading="loading"
-            @click="handleMarkReceived"
-          >
-            Yes, Mark Received
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
   </v-container>
 </template>
 
@@ -201,12 +168,12 @@ onMounted(init)
 .status-chip--issued .status-dot {
   background: #1565c0;
 }
-.status-chip--received {
+.status-chip--complete {
   color: #2e7d32;
   background: rgba(46, 125, 50, 0.12);
 }
-.status-chip--received .status-dot {
-  background: #4caf50;
+.status-chip--complete .status-dot {
+  background: #2e7d32;
 }
 
 :deep(.v-table thead tr th) {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
-import type { PR } from '@/stores/purchaseRequisitionStore'
+import type { PR } from '@/stores/transactionsData'
 import { usePODetailModal, company } from '@/pages/purchasing/composables/usePODetailModal'
 import { formatCurrency, formatDatePO_Written } from '@/utils/helpers'
 
@@ -14,7 +14,7 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
 }>()
 
-const { printArea, poNumber, emptyRows, resolvedSupplier, handlePrint } = usePODetailModal(props, emit)
+const { poNumber, emptyRows, resolvedSupplier } = usePODetailModal(props, emit)
 </script>
 
 <template>
@@ -24,10 +24,8 @@ const { printArea, poNumber, emptyRows, resolvedSupplier, handlePrint } = usePOD
     scrollable
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <v-card flat rounded="lg" class="print-area">
+    <v-card flat rounded="lg">
       <v-card-text class="pa-8 pb-0">
-        <div ref="printArea">
-
           <!-- Company + PO Title -->
           <v-row class="mb-4" align="start">
             <v-col>
@@ -149,8 +147,6 @@ const { printArea, poNumber, emptyRows, resolvedSupplier, handlePrint } = usePOD
               <div class="text-caption text-medium-emphasis">APPROVER</div>
             </v-col>
           </v-row>
-
-        </div>
       </v-card-text>
 
       <v-divider />
@@ -158,9 +154,6 @@ const { printArea, poNumber, emptyRows, resolvedSupplier, handlePrint } = usePOD
       <v-card-actions class="pa-4 ga-2 justify-end">
         <v-btn variant="outlined" class="text-none" @click="emit('update:modelValue', false)">
           Close
-        </v-btn>
-        <v-btn variant="text" color="error" prepend-icon="mdi-printer" @click="handlePrint">
-          Print Document
         </v-btn>
       </v-card-actions>
     </v-card>

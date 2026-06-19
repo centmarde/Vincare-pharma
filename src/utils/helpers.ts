@@ -7,6 +7,8 @@
  * @param error - The error object to extract message from
  * @returns A human-readable error message string
  */
+
+import { supabase } from '@/lib/supabase'
 export function getErrorMessage(error: any): string {
   if (typeof error === 'string') {
     return error
@@ -502,4 +504,20 @@ export const formatDatePO_Written = (dateString: string | null | undefined) => {
   }).format(date)
 
   return `${datePart} at ${timePart}` // Output: "13 June 2026 at 09:30 PM"
+}
+
+export async function generateReferenceNumber(prefix: 'PR' | 'PO'): Promise<string> {
+  const year        = new Date().getFullYear()
+  const fullPrefix  = `${prefix}-${year}-`
+
+  const { data } = await supabase
+    .from('transactions')
+    .select('reference_no')
+    .ilike('reference_no', `${fullPrefix}%`)
+    .order('reference_no', { ascending: false })
+    .limit(1)
+
+  const latest  = data?.[0]?.reference_no
+  const lastNum = latest ? parseInt(latest.split('-')[2], 10) : 0
+  return `${fullPrefix}${String(lastNum + 1).padStart(3, '0')}`
 }

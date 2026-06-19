@@ -1,8 +1,8 @@
 import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionStore'
+import { useTransactionsDataStore } from '@/stores/transactionsData'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
-import type { PR } from '@/stores/purchaseRequisitionStore'
+import type { PR } from '@/stores/transactionsData'
 
 export const headers = [
   { title: 'PR #',         key: 'reference_no',  sortable: true,  align: 'center' as const },
@@ -17,7 +17,7 @@ export const headers = [
 ]
 
 export function usePurchaseRequisitionList() {
-  const store         = usePurchaseRequisitionStore()
+  const store         = useTransactionsDataStore()
   const supplierStore = useSuppliersDataStore()
 
   const { loading, prs, filterStatus } = storeToRefs(store)

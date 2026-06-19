@@ -3,7 +3,7 @@ import { useToast } from 'vue-toastification'
 import html2pdf from 'html2pdf.js'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
 import { storeToRefs } from 'pinia'
-import type { PR } from '@/stores/purchaseRequisitionStore'
+import type { PR } from '@/stores/transactionsData'
 
 // ✅ Updated to match new transactions schema
 export type PurchaseOrder = {
@@ -18,6 +18,7 @@ export type PurchaseOrder = {
   created_by:   string | null
   is_delivered: boolean
   requisition_id: number | null
+  updated_at:   string | null
 }
 
 export const company = {

@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { useToast } from 'vue-toastification'
 import { supabase } from '@/lib/supabase'
 import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
-import type { PR } from '@/stores/purchaseRequisitionStore'
+import type { PR } from '@/stores/transactionsData'
 import { usePODetailModal, company } from '@/pages/purchasing/composables/usePODetailModal'
 import { formatCurrency, formatDatePO_Written } from '@/utils/helpers'
 
