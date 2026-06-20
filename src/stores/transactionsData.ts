@@ -60,6 +60,7 @@ export type PRItem = {
   cost_per_unit:    number
   product_id?:      number
   sku?:             string | null
+  supplier_name?:    string | null
 }
 
 export type RequisitionItemType = {
@@ -69,6 +70,7 @@ export type RequisitionItemType = {
   qty:              number
   offer_per_unit:   number
   cost_per_unit:    number
+  supplier_id:      string | null
 }
 
 export type PR = {
@@ -78,6 +80,7 @@ export type PR = {
   remarks:        string | null
   total_amount:   number
   supplier_id:    string | null
+  supplier_name?: string | null
   created_at:     string
   created_by:     string
   approved_by:    string | null
@@ -358,7 +361,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
         status:           'pending_approval',
         remarks:          currentPR.value.remarks ?? '',
         total_amount:     companyCostTotal.value,
-        supplier_id:      currentPR.value.supplier_id,
+        supplier_id:      null,  // PR itself doesn't have a supplier, it's determined at item level
         created_by:       user.id,
       })
       .select('id, reference_no')
@@ -377,7 +380,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       cost_price:    item.cost_per_unit,
       selling_price: item.offer_per_unit,
       current_stock: item.qty,
-      supplier_id:   currentPR.value.supplier_id ? Number(currentPR.value.supplier_id) : null,
+      supplier_id:   item.supplier_id ? Number(item.supplier_id) : null,  // ✅ per-item supplier
       status:        'active',
     }))
 
@@ -421,7 +424,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
         *,
         transaction_items (
           id, product_id,
-          products ( id, product_name, unit, cost_price, selling_price, current_stock )
+          products ( id, product_name, unit, cost_price, selling_price, current_stock, supplier_id, suppliers (name) )
         )
       `)
       .eq('transaction_type', 'purchase_requisition')
@@ -449,6 +452,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
           offer_per_unit:   ti.products?.selling_price  ?? 0,
           cost_per_unit:    ti.products?.cost_price     ?? 0,
           product_id:       ti.product_id,
+          supplier_name:    ti.products?.suppliers?.name ?? '—',
         }))
 
         return {
@@ -570,7 +574,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
         *,
         transaction_items (
           id, product_id,
-          products ( id, product_name, unit, cost_price, selling_price, current_stock )
+          products ( id, product_name, unit, cost_price, selling_price, current_stock, supplier_id, suppliers (name) )
         )
       `)
       .eq('transaction_type', 'purchase_requisition')
@@ -597,6 +601,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
             cost_per_unit:    ti.products?.cost_price     ?? 0,
             product_id:       ti.product_id,
             sku:              ti.products?.sku ?? null,
+            supplier_name:    ti.products?.suppliers?.name ?? '—',
         }))  
       return {
             id:             data.id,

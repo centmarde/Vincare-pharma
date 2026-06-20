@@ -18,7 +18,7 @@ const {
 </script>
 
 <template>
-  <v-dialog v-model="model" max-width="760" scrollable>
+  <v-dialog v-model="model" max-width="900" scrollable>
     <v-card rounded="lg">
 
       <v-card-text class="pa-6 pb-2">
@@ -58,6 +58,7 @@ const {
               <th class="table-header text-caption">UNIT</th>
               <th class="table-header text-caption">ITEM DESCRIPTION</th>
               <th class="table-header text-caption">QTY</th>
+              <th class="table-header text-caption">SUPPLIER</th>
               <th class="table-header text-caption">OFFER/UNIT</th>
               <th class="table-header text-caption">OFFER TOTAL</th>
               <th class="table-header text-caption">COST/UNIT</th>
@@ -70,6 +71,8 @@ const {
               <td class="text-body-2">{{ item.unit }}</td>
               <td class="text-body-2">{{ item.item_description }}</td>
               <td class="text-body-2">{{ item.qty.toLocaleString() }}</td>
+              <!-- Display the supplier name -->
+              <td class="text-body-2">{{ item.supplier_name ?? '—' }}</td>
               <td class="text-body-2">{{ formatCurrency(item.offer_per_unit ?? 0) }}</td>
               <td class="text-body-2">{{ formatCurrency(item.qty * (item.offer_per_unit ?? 0)) }}</td>
               <td class="text-body-2">{{ formatCurrency(item.cost_per_unit ?? 0) }}</td>

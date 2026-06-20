@@ -8,6 +8,7 @@ type PRFormItem = {
   no: number
   unit: string
   item_description: string
+  supplier_id: string | null
   qty: number
   offer_per_unit: number
   cost_per_unit: number
@@ -21,8 +22,7 @@ export function usePurchaseRequisition() {
   const loading = ref(false)
 
   const currentPR = ref({
-    supplier_id:  null as number | null,
-    remarks:      '',
+    remarks: '',
   })
 
   const items = ref<PRFormItem[]>([])
@@ -60,6 +60,7 @@ export function usePurchaseRequisition() {
       qty:              0,
       offer_per_unit:   0,
       cost_per_unit:    0,
+      supplier_id:      null ,
     })
   }
 
@@ -70,22 +71,24 @@ export function usePurchaseRequisition() {
 
   // ─── Submit ───────────────────────────────────────────────────────
   async function handleSubmit() {
-    if (!currentPR.value.supplier_id) {
-      toast.warning('Please select a supplier.')
-      return
-    }
 
     const validItems = items.value.filter(i => i.item_description.trim())
     if (!validItems.length) {
       toast.warning('Please add at least one item.')
       return
     }
+    
+    const missingSupplier = validItems.some(i => !i.supplier_id)
+    if (missingSupplier) {
+      toast.warning('Please select a supplier for each item.')
+      return
+    }
 
     loading.value = true
 
     // Sync to store state so savePurchaseRequisition can read it
-    prStore.currentPR.supplier_id = String(currentPR.value.supplier_id)
     prStore.currentPR.remarks     = currentPR.value.remarks || null
+    prStore.currentPR.supplier_id = null
     prStore.items                 = validItems
 
     const result = await prStore.savePurchaseRequisition()
@@ -99,7 +102,7 @@ export function usePurchaseRequisition() {
 
   // ─── Reset ────────────────────────────────────────────────────────
   function reset() {
-    currentPR.value = { supplier_id: null, remarks: '' }
+    currentPR.value = { remarks: '' }
     items.value     = []
     addItem()
   }
