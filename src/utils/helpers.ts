@@ -506,7 +506,7 @@ export const formatDatePO_Written = (dateString: string | null | undefined) => {
   return `${datePart} at ${timePart}` // Output: "13 June 2026 at 09:30 PM"
 }
 
-export async function generateReferenceNumber(prefix: 'PR' | 'PO'): Promise<string> {
+export async function generateReferenceNumber(prefix: 'PR' | 'PO' | 'SI'): Promise<string> {
   const year        = new Date().getFullYear()
   const fullPrefix  = `${prefix}-${year}-`
 

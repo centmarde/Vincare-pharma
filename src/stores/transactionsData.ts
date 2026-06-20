@@ -617,25 +617,81 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
 
   async function markPOAsReceived(poId: number) {
     loading.value = true
-    const query = { status: 'complete', updated_at: new Date().toISOString() }
-        try {
-            const { error } = await supabase
-            .from('transactions')
-            .update(query)
-            .eq('id', poId)
+    try {
+      // ── 1. Fetch the PO ───────────────────────────────────────────
+      const { data: poData, error: poFetchError } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('id', poId)
+        .single()
 
-            if (error) throw error
-            toast.success('Purchase order marked as received')
-            return true
+      if (poFetchError || !poData) throw poFetchError ?? new Error('PO not found')
 
-        } catch (err) {
-            handleError(err, 'Failed to mark as received.')
-            toast.error('Failed to mark purchase order as received.')
-            return false
-        } finally {
-            loading.value = false
-        }
+      // ── 2. Fetch the PR's transaction_items using requisition_id ──
+      // CHANGED: was .eq('transaction_id', poId) — PO has no items linked
+      // NOW: reads from the PR's items via poData.requisition_id instead
+      const { data: prItems, error: prItemsError } = await supabase
+        .from('transaction_items')
+        .select('product_id')
+        .eq('transaction_id', poData.requisition_id)
 
+      if (prItemsError) throw prItemsError
+
+      // ── 3. Mark the PO as complete ────────────────────────────────
+      const { error: updateError } = await supabase
+        .from('transactions')
+        .update({ status: 'complete', updated_at: new Date().toISOString() })
+        .eq('id', poId)
+
+      if (updateError) throw updateError
+
+      // ── 4. Insert the stock_in transaction ────────────────────────
+      const stockInReference = await generateReferenceNumber('SI')
+
+      const { data: stockInData, error: stockInError } = await supabase
+        .from('transactions')
+        .insert({
+          reference_no:     stockInReference,
+          transaction_type: 'stock_in',
+          status:           'complete',
+          supplier_id:      poData.supplier_id,
+          total_amount:     poData.total_amount,
+          remarks:          poData.remarks ?? '',
+          created_by:       poData.created_by,
+          warehouse_id:     poData.warehouse_id ?? null,
+          requisition_id:   poData.requisition_id, // ← PR id inherited from PO
+        })
+        .select('id')
+        .single()
+
+      if (stockInError || !stockInData) throw stockInError ?? new Error('Failed to retrieve stock_in id')
+
+      // ── 5. Insert transaction_items linked to stock_in ────────────
+      // CHANGED: was using poItems (PO's items) — PO has no items
+      // NOW: uses prItems (PR's items) mapped to the new stock_in id
+      if (prItems && prItems.length > 0) {
+        const stockInItems = prItems.map(item => ({
+          transaction_id: stockInData.id, // ← stock_in transaction id (e.g. SI-2026-005)
+          product_id:     item.product_id, // ← same product_ids from the PR
+        }))
+
+        const { error: itemsError } = await supabase
+          .from('transaction_items')
+          .insert(stockInItems)
+
+        if (itemsError) throw itemsError
+      }
+
+      toast.success('Purchase order marked as received')
+      return true
+
+    } catch (err) {
+      handleError(err, 'Failed to mark as received.')
+      toast.error('Failed to mark purchase order as received.')
+      return false
+    } finally {
+      loading.value = false
+    }
   }
 
   // ─── Realtime ─────────────────────────────────────────────────────
