@@ -27,6 +27,7 @@ export type ProductType = {
   offer_per_unit: number | null
   cost_per_unit: number | null
   no: number | null
+  actual_count: number | null
   // Joined supplier data (via FK)
   suppliers: SupplierType | null
 }
@@ -50,6 +51,7 @@ export type CreateProductData = {
   offer_per_unit?: number | null
   cost_per_unit?: number | null
   no?: number | null
+  actual_count?: number | null
 }
 
 export type UpdateProductData = CreateProductData

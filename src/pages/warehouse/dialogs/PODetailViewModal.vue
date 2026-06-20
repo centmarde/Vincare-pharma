@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useToast } from 'vue-toastification'
-import { supabase } from '@/lib/supabase'
 import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
 import type { PR } from '@/pages/purchasing/composables/usePurchaseRequisitionList'
 import { usePODetailModal, company } from '@/pages/purchasing/composables/usePODetailModal'
 import { useTransactionItemsDataStore } from '@/stores/transactionsItemsData'
+import { useProductsDataStore } from '@/stores/productsData'
 import { formatCurrency, formatDatePO_Written } from '@/utils/helpers'
 
 const props = defineProps<{
@@ -22,6 +22,7 @@ const emit = defineEmits<{
 
 const toast = useToast()
 const transactionItemsStore = useTransactionItemsDataStore()
+const productsStore = useProductsDataStore()
 const transactionItems = ref<any[]>([])
 const loadingItems = ref(false)
 const savingAll = ref(false)
@@ -37,6 +38,14 @@ const effectiveEmptyRows = computed(() => Math.max(0, 7 - (transactionItems.valu
 // Check if all items have SKU filled
 const missingSkuCount = computed(() => {
   return transactionItems.value.filter(item => !item.product?.sku?.toString().trim()).length
+})
+
+// Check if all items have actual_count filled
+const missingActualCount = computed(() => {
+  return transactionItems.value.filter(item => {
+    const val = item.product?.actual_count
+    return val == null || val === '' || Number(val) <= 0
+  }).length
 })
 
 // Fetch transaction items when the dialog opens
@@ -59,15 +68,16 @@ watch(
   },
 )
 
-// Save all SKUs to the database at once
+// Save all SKUs and actual_count to the database at once
 async function saveAllSkus() {
-  const updates: { id: number; sku: string }[] = []
+  const updates: { id: number; sku: string; actual_count: number }[] = []
 
   for (const item of transactionItems.value) {
     const productId = item.product?.id
     const skuValue = item.product?.sku?.toString().trim()
-    if (productId && skuValue) {
-      updates.push({ id: productId, sku: skuValue })
+    const actualCountValue = Number(item.product?.actual_count)
+    if (productId && skuValue && actualCountValue > 0) {
+      updates.push({ id: productId, sku: skuValue, actual_count: actualCountValue })
     }
   }
 
@@ -76,12 +86,11 @@ async function saveAllSkus() {
   savingAll.value = true
   try {
     for (const update of updates) {
-      const { error } = await supabase
-        .from('products')
-        .update({ sku: update.sku })
-        .eq('id', update.id)
-
-      if (error) throw error
+      const result = await productsStore.updateProduct(update.id, {
+        sku: update.sku,
+        actual_count: update.actual_count,
+      })
+      if (!result) throw new Error(`Failed to update product ID ${update.id}`)
     }
     return true
   } catch (err: any) {
@@ -97,6 +106,10 @@ async function saveAllSkus() {
 async function handleMarkAsReceived() {
   if (missingSkuCount.value > 0) {
     toast.error(`Please fill in SKU for all ${missingSkuCount.value} item(s) before marking as received.`)
+    return
+  }
+  if (missingActualCount.value > 0) {
+    toast.error(`Please fill in Actual Count for all ${missingActualCount.value} item(s) before marking as received.`)
     return
   }
   if (props.po?.id == null) {
@@ -219,20 +232,21 @@ async function handleMarkAsReceived() {
               <tr class="po-table-header bg-blue-darken-3">
                 <th class="text-left text-white font-weight-bold">ITEM #</th>
                 <th class="text-left text-white font-weight-bold">DESCRIPTION</th>
-                <th class="text-left text-white font-weight-bold">SKU</th>
                 <th class="text-right text-white font-weight-bold">UNIT PRICE</th>
                 <th class="text-right text-white font-weight-bold">TOTAL</th>
+                <th class="text-center text-white font-weight-bold" style="min-width: 140px;">ACTUAL COUNT</th>
+                <th class="text-center text-white font-weight-bold" style="min-width: 150px;">SKU</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="loadingItems">
-                <td colspan="5" class="text-center text-body-2 text-medium-emphasis pa-4">
+                <td colspan="6" class="text-center text-body-2 text-medium-emphasis pa-4">
                   <v-progress-circular indeterminate size="20" width="2" class="mr-2" />
                   Loading items...
                 </td>
               </tr>
               <tr v-else-if="transactionItems.length === 0">
-                <td colspan="5" class="text-center text-body-2 text-medium-emphasis pa-4">
+                <td colspan="6" class="text-center text-body-2 text-medium-emphasis pa-4">
                   No items found for this purchase order.
                 </td>
               </tr>
@@ -242,15 +256,38 @@ async function handleMarkAsReceived() {
               >
                 <td>{{ index + 1 }}</td>
                 <td>{{ item.product?.product_name ?? item.product?.item_decription ?? '—' }}</td>
-                <td>
+                <td class="text-right">
+                  {{ formatCurrency(item.product?.cost_per_unit ?? 0) }}
+                </td>
+                <td class="text-right">
+                  {{ formatCurrency(item.product?.cost_per_unit ?? 0) }}
+                </td>
+                <td class="text-center">
                   <template v-if="skuEditMode">
-                    <div class="d-flex align-center ga-2">
+                    <v-text-field
+                      v-model.number="item.product.actual_count"
+                      type="number"
+                      density="compact"
+                      variant="outlined"
+                      hide-details
+                      class="editor-input"
+                      placeholder="Enter qty"
+                      min="1"
+                    />
+                  </template>
+                  <template v-else>
+                    <span>{{ item.product?.actual_count ?? '—' }}</span>
+                  </template>
+                </td>
+                <td class="text-center">
+                  <template v-if="skuEditMode">
+                    <div class="d-flex align-center ga-2 justify-center">
                       <v-text-field
                         v-model="item.product.sku"
                         density="compact"
                         variant="outlined"
                         hide-details
-                        class="sku-input"
+                        class="editor-input"
                         placeholder="Enter SKU"
                       />
                       <v-tooltip text="Scan barcode" location="top">
@@ -273,21 +310,15 @@ async function handleMarkAsReceived() {
                     </span>
                   </template>
                 </td>
-                <td class="text-right">
-                  {{ formatCurrency(item.product?.cost_per_unit ?? 0) }}
-                </td>
-                <td class="text-right">
-                  {{ formatCurrency(item.product?.cost_per_unit ?? 0) }}
-                </td>
               </tr>
               <tr v-for="n in effectiveEmptyRows" :key="`empty-${n}`" class="empty-row">
-                <td colspan="5">&nbsp;</td>
+                <td colspan="6">&nbsp;</td>
               </tr>
             </tbody>
             <tfoot>
               <tr class="po-table-total bg-grey-lighten-3">
-                <td colspan="4" class="text-right font-weight-bold">TOTAL</td>
-                <td class="text-right font-weight-bold text-subtitle-1">
+                <td colspan="3" class="text-right font-weight-bold">TOTAL</td>
+                <td colspan="3" class="text-center font-weight-bold text-subtitle-1">
                   {{ formatCurrency(po?.declared_value ?? 0) }}
                 </td>
               </tr>
@@ -328,12 +359,18 @@ async function handleMarkAsReceived() {
             variant="flat"
             color="success"
             class="text-none font-weight-bold"
-            :disabled="missingSkuCount > 0 || savingAll"
+            :disabled="missingSkuCount > 0 || missingActualCount > 0 || savingAll"
             :loading="savingAll"
             @click="handleMarkAsReceived"
           >
             <v-icon start size="16">mdi-check-circle</v-icon>
-            {{ missingSkuCount > 0 ? `Fill ${missingSkuCount} SKU(s) First` : 'Mark as Received' }}
+            {{
+              missingSkuCount > 0
+                ? `Fill ${missingSkuCount} SKU(s) First`
+                : missingActualCount > 0
+                  ? `Fill ${missingActualCount} Actual Count(s) First`
+                  : 'Mark as Received'
+            }}
           </v-btn>
         </template>
         <template v-else>
@@ -364,15 +401,16 @@ async function handleMarkAsReceived() {
   font-weight: 500;
 }
 
-.sku-input {
-  max-width: 140px;
+.editor-input {
+  max-width: 130px;
+  width: 130px;
 }
 
-.sku-input :deep(.v-field) {
+.editor-input :deep(.v-field) {
   padding: 0;
 }
 
-.sku-input :deep(.v-field__field) input {
+.editor-input :deep(.v-field__field) input {
   padding: 4px 8px;
   font-size: 0.875rem;
 }
