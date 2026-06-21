@@ -1,6 +1,6 @@
 import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useSuppliersDataStore } from '@/stores/suppliersData'
+import { useSuppliersDataStore, type SupplierType } from '@/stores/suppliersData'
 import { useTransactionsDataStore } from '@/stores/transactionsData'
 import { supabase } from '@/lib/supabase'
 import type { PR } from '@/stores/transactionsData'
@@ -47,10 +47,12 @@ export function useIssuePOModal(
     Math.max(0, 7 - (props.pr?.items.length ?? 0))
   )
 
-  const resolvedSupplier = computed(() => {
-    const sid = props.pr?.supplier_id
-    if (sid == null) return null
-    return suppliers.value.find(s => Number(s.id) === Number(sid)) ?? null
+  const uniqueSuppliers = computed(() => {
+  if (!props.pr?.items?.length) return []
+  const names = [...new Set(props.pr.items.map(i => i.supplier_name).filter(Boolean))]
+  return names
+    .map(name => suppliers.value.find(s => s.name === name))
+    .filter(Boolean) as SupplierType[]
   })
 
   // ─── Helpers ──────────────────────────────────────────────────────
@@ -84,7 +86,7 @@ export function useIssuePOModal(
   return {
     company, shipViaOptions, shipMethodOptions, today,
     form, showConfirm, loading,
-    declaredValue, emptyRows, resolvedSupplier,
+    declaredValue, emptyRows, uniqueSuppliers,
     updateCompany, promptIssuePO, closeConfirm, handleConfirmIssue,
   }
 }

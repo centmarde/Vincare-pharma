@@ -14,7 +14,7 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
 }>()
 
-const { poNumber, emptyRows, resolvedSupplier } = usePODetailModal(props, emit)
+const { poNumber, emptyRows, uniqueSuppliers } = usePODetailModal(props, emit)
 </script>
 
 <template>
@@ -40,7 +40,7 @@ const { poNumber, emptyRows, resolvedSupplier } = usePODetailModal(props, emit)
             <v-col class="text-right">
               <div class="text-h6 font-weight-bold mb-2">PURCHASE ORDER</div>
               <div class="text-body-2 text-medium-emphasis">DATE: {{ po?.created_at ? formatDatePO_Written(po.created_at) : '—' }}</div>
-              <div class="text-body-2 text-medium-emphasis">PR #: {{ pr?.reference_no ?? '—' }}</div>
+              <div class="text-body-2 text-medium-emphasis">PR #: {{ pr?.requisition_no ?? '—' }}</div>
               <div class="text-body-2 text-medium-emphasis">
                 PO #: <span class="font-weight-bold text-primary">{{ poNumber }}</span>
               </div>
@@ -57,12 +57,14 @@ const { poNumber, emptyRows, resolvedSupplier } = usePODetailModal(props, emit)
           <v-row class="mb-4">
             <v-col cols="6">
               <div class="text-caption font-weight-bold text-medium-emphasis mb-2">SUPPLIER</div>
-              <v-card flat border rounded="lg" class="pa-4">
-                <div class="text-body-1 font-weight-medium mb-1">{{ resolvedSupplier?.name ?? '—' }}</div>
-                <div class="text-body-2">{{ resolvedSupplier?.address ?? '—' }}</div>
-                <div class="text-body-2">{{ resolvedSupplier?.contact_no ?? '—' }}</div>
-                <div class="text-body-2">{{ resolvedSupplier?.email ?? '—' }}</div>
-              </v-card>
+                <v-card flat border rounded="lg" class="pa-4" v-if="uniqueSuppliers.length">
+                  <div v-for="supplier in uniqueSuppliers" :key="supplier.id" class="mb-2">
+                    <div class="text-body-1 font-weight-medium">{{ supplier.name }}</div>
+                    <div class="text-body-2 text-medium-emphasis">{{ supplier.address ?? '—' }}</div>
+                    <div class="text-body-2 text-medium-emphasis">{{ supplier.contact_no ?? '—' }}</div>
+                  </div>
+                </v-card>
+              <div v-else class="text-body-2 text-medium-emphasis">—</div>
             </v-col>
             <v-col cols="6">
               <div class="text-caption font-weight-bold text-medium-emphasis mb-2">SHIP TO</div>

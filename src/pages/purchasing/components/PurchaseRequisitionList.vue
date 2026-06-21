@@ -39,7 +39,10 @@ onMounted(() => init())
     <v-card class="mx-auto w-100" max-width="1400" rounded="lg" elevation="1">
       <!-- Header -->
       <v-card-title class="d-flex justify-space-between align-center pa-5">
-        <span class="text-h6 font-weight-bold">Purchase Requisitions</span>
+        <div class="d-flex align-center">
+          <v-icon icon="mdi-file-clock-outline" size="36" class="mr-1 text-primary"></v-icon>
+            <span class="text-h6 font-weight-bold">Purchase Requisition</span>
+        </div>
         <div class="d-flex align-center" style="gap: 12px">
           <v-text-field
             v-model="search"
@@ -96,7 +99,7 @@ onMounted(() => init())
         <!-- PR # -->
         <template #item.pr_number="{ item }">
           <span class="text-body-2 font-weight-bold" style="white-space: nowrap">
-            {{ item.reference_no }}
+            {{ item.requisition_no }}
           </span>
         </template>
 

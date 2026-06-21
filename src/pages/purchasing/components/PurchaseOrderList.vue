@@ -10,17 +10,15 @@ const {
   showDetailModal,
   selectedPO,
   selectedPR,
-  confirmDialog,
   statusOptions,
   serverItems,
   itemsPerPage,
   totalItems,
   loading,
   loadItems,
-  resolveSupplier,
   statusLabel,
   openDetail,
-  handleMarkReceived,
+  getSupplierSummary,
   init,
 } = usePurchaseOrderList()
 onMounted(init)
@@ -30,7 +28,10 @@ onMounted(init)
     <v-card class="mx-auto w-100 pa-0" max-width="1400" rounded="lg" elevation="1">
       <!-- Header -->
       <v-card-title class="d-flex justify-space-between align-center pa-5">
-        <span class="text-h6 font-weight-bold">Purchase Orders</span>
+        <div class="d-flex align-center">
+          <v-icon icon="mdi-clipboard-check-outline" size="36" class="mr-1 text-primary"></v-icon>
+            <span class="text-h6 font-weight-bold">Purchase Order</span>
+        </div>
         <div class="d-flex align-center" style="gap: 12px">
           <v-text-field
             v-model="search"
@@ -84,12 +85,25 @@ onMounted(init)
       >
         <template #item.po_number="{ item }">
           <span class="text-body-2 font-weight-bold" style="white-space: nowrap">{{
-            item.reference_no
+            item.po_no
           }}</span>
         </template>
-
+        
+        <!-- Display if the items has more than one supplier -->
         <template #item.supplier_id="{ item }">
-          <span class="text-body-2">{{ resolveSupplier(item.supplier_id) }}</span>
+          <div>
+            <span class="text-body-2">{{ getSupplierSummary(item.id).display }}</span>
+            <v-tooltip v-if="getSupplierSummary(item.id).isMultiple" location="top">
+              <template #activator="{ props }">
+                <v-icon v-bind="props" size="14" class="ml-1 text-medium-emphasis">
+                  mdi-information-outline
+                </v-icon>
+              </template>
+              <div v-for="name in getSupplierSummary(item.id).names" :key="name">
+                {{ name }}
+              </div>
+            </v-tooltip>
+          </div>
         </template>
 
         <template #item.declared_value="{ item }">

@@ -1,11 +1,11 @@
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useTransactionsDataStore } from '@/stores/transactionsData'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
 import type { PR } from '@/stores/transactionsData'
 
 export const headers = [
-  { title: 'PR #',         key: 'reference_no',  sortable: true,  align: 'center' as const },
+  { title: 'PR #',         key: 'requisition_no',  sortable: true,  align: 'center' as const },
   { title: 'ITEMS',        key: 'items',          sortable: false, align: 'center' as const },
   { title: 'TOTAL QTY',    key: 'total_qty',      sortable: false, align: 'center' as const },
   { title: 'TOTAL COST',   key: 'total_amount',   sortable: true,  align: 'center' as const },
@@ -50,7 +50,7 @@ export function usePurchaseRequisitionList() {
     if (search.value.trim()) {
       const q = search.value.toLowerCase()
       result = result.filter(pr =>
-        pr.reference_no?.toLowerCase().includes(q) ||
+        pr.requisition_no?.toLowerCase().includes(q) ||
         pr.requester_name?.toLowerCase().includes(q)
       )
     }
@@ -71,8 +71,8 @@ export function usePurchaseRequisitionList() {
     showModal.value  = true
   }
 
-  function openConfirm(action: 'APPROVE' | 'REJECT', pr: { id: number; reference_no: string }) {
-    confirmDialog.value = { show: true, action, prId: pr.id, prNumber: pr.reference_no }
+  function openConfirm(action: 'APPROVE' | 'REJECT', pr: { id: number; requisition_no: string }) {
+    confirmDialog.value = { show: true, action, prId: pr.id, prNumber: pr.requisition_no }
   }
 
   function closeConfirm() {

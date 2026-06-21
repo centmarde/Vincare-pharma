@@ -35,8 +35,8 @@ onMounted(() => {
       <!-- Header -->
       <v-card-title class="d-flex justify-space-between align-center pa-5">
         <div class="d-flex align-center">
-        <v-icon icon="mdi-file-document-edit-outline" size="36" class="mr-1 text-primary"></v-icon>
-        <span class="text-h6 font-weight-bold">Raise Purchase Requisition</span>
+          <v-icon icon="mdi-file-document-edit-outline" size="36" class="mr-1 text-primary"></v-icon>
+            <span class="text-h6 font-weight-bold">Raise Purchase Requisition</span>
         </div>
         <span class="text-caption">Customer offer vs. company cost</span>
       </v-card-title>

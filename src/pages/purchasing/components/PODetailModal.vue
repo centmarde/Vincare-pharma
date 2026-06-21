@@ -14,7 +14,7 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
 }>()
 
-const { printArea, poNumber, emptyRows, resolvedSupplier, handlePrint } = usePODetailModal(props, emit)
+const { printArea, poNumber, emptyRows, uniqueSuppliers, handlePrint } = usePODetailModal(props, emit)
 </script>
 
 <template>
@@ -42,7 +42,7 @@ const { printArea, poNumber, emptyRows, resolvedSupplier, handlePrint } = usePOD
             <v-col class="text-right">
               <div class="text-h6 font-weight-bold mb-2">PURCHASE ORDER</div>
               <div class="text-body-2 text-medium-emphasis">DATE: {{ po?.created_at ? formatDatePO_Written(po.created_at) : '—' }}</div>
-              <div class="text-body-2 text-medium-emphasis">PR #: {{ pr?.reference_no ?? '—' }}</div>
+              <div class="text-body-2 text-medium-emphasis">PR #: {{ pr?.requisition_no ?? '—' }}</div>
               <div class="text-body-2 text-medium-emphasis">
                 PO #: <span class="font-weight-bold text-primary">{{ poNumber }}</span>
               </div>
@@ -63,12 +63,14 @@ const { printArea, poNumber, emptyRows, resolvedSupplier, handlePrint } = usePOD
           <v-row class="mb-4">
             <v-col cols="6">
               <div class="text-caption font-weight-bold text-medium-emphasis mb-2">SUPPLIER</div>
-              <v-card flat border rounded="lg" class="pa-4">
-                <div class="text-body-1 font-weight-medium mb-1">{{ resolvedSupplier?.name ?? '—' }}</div>
-                <div class="text-body-2">{{ resolvedSupplier?.address ?? '—' }}</div>
-                <div class="text-body-2">{{ resolvedSupplier?.contact_no ?? '—' }}</div>
-                <div class="text-body-2">{{ resolvedSupplier?.email ?? '—' }}</div>
-              </v-card>
+                <v-card flat border rounded="lg" class="pa-4" v-if="uniqueSuppliers.length">
+                  <div v-for="supplier in uniqueSuppliers" :key="supplier.id" class="mb-2">
+                    <div class="text-body-1 font-weight-medium">{{ supplier.name }}</div>
+                    <div class="text-body-2 text-medium-emphasis">{{ supplier.address ?? '—' }}</div>
+                    <div class="text-body-2 text-medium-emphasis">{{ supplier.contact_no ?? '—' }}</div>
+                  </div>
+                </v-card>
+              <div v-else class="text-body-2 text-medium-emphasis">—</div>
             </v-col>
             <v-col cols="6">
               <div class="text-caption font-weight-bold text-medium-emphasis mb-2">SHIP TO</div>
@@ -112,6 +114,7 @@ const { printArea, poNumber, emptyRows, resolvedSupplier, handlePrint } = usePOD
                 <th style="color:#fff; font-weight:600; padding: 10px 12px;">ITEM #</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px;">DESCRIPTION</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">QTY</th>
+                <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">SUPPLIER</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">UNIT PRICE</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">TOTAL</th>
               </tr>
@@ -121,6 +124,7 @@ const { printArea, poNumber, emptyRows, resolvedSupplier, handlePrint } = usePOD
                 <td>{{ item.no }}</td>
                 <td>{{ item.item_description }}</td>
                 <td class="text-right">{{ item.qty }}</td>
+                <td class="text-right">{{ item.supplier_name }}</td>
                 <td class="text-right">{{ formatCurrency(item.cost_per_unit) }}</td>
                 <td class="text-right">{{ formatCurrency(item.qty * item.cost_per_unit) }}</td>
               </tr>
@@ -130,7 +134,7 @@ const { printArea, poNumber, emptyRows, resolvedSupplier, handlePrint } = usePOD
             </tbody>
             <tfoot>
               <tr style="background-color: #f5f5f5;">
-                <td colspan="4" style="text-align:right; font-weight:700; padding: 10px 12px;">TOTAL</td>
+                <td colspan="5" style="text-align:right; font-weight:700; padding: 10px 12px;">TOTAL</td>
                 <td style="text-align:right; font-weight:700; padding: 10px 12px;">
                   {{ formatCurrency(po?.total_amount ?? 0) }}
                 </td>

@@ -1,28 +1,36 @@
 import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
 import { useTransactionsDataStore } from '@/stores/transactionsData'
 import type { PR } from '@/stores/transactionsData'
 import type { PurchaseOrder } from './usePODetailModal'
 
+const toast = useToast()
+
 export const headers = [
-  { title: 'PO #',           key: 'reference_no',  sortable: true,  align: 'center' as const },
-  { title: 'SUPPLIER',       key: 'supplier_id',   sortable: false, align: 'center' as const },
-  { title: 'DECLARED VALUE', key: 'total_amount',  sortable: false, align: 'center' as const },
-  { title: 'SHIP VIA',       key: 'ship_via',      sortable: true,  align: 'center' as const },
-  { title: 'SHIP METHOD',    key: 'ship_method',   sortable: true,  align: 'center' as const },
-  { title: 'ISSUED AT',      key: 'created_at',    sortable: true,  align: 'center' as const },
-  { title: 'STATUS',         key: 'status',        sortable: true,  align: 'center' as const },
-  { title: 'ACTIONS',        key: 'actions',       sortable: false, align: 'center' as const },
+  { title: 'PO #',      key: 'po_no',        sortable: true,  align: 'center' as const },
+  { title: 'SUPPLIER',  key: 'supplier_id',   sortable: false, align: 'center' as const },
+  { title: 'TOTAL',     key: 'total_amount',  sortable: false, align: 'center' as const },
+  { title: 'SHIP VIA',  key: 'ship_via',      sortable: true,  align: 'center' as const },
+  { title: 'SHIP METHOD', key: 'ship_method', sortable: true,  align: 'center' as const },
+  { title: 'ISSUED AT', key: 'created_at',    sortable: true,  align: 'center' as const },
+  { title: 'STATUS',    key: 'status',        sortable: true,  align: 'center' as const },
+  { title: 'ACTIONS',   key: 'actions',       sortable: false, align: 'center' as const },
 ] as const
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+export type SupplierSummary = {
+  names:    string[]    // all unique supplier names from items
+  display:  string      // e.g. "IZZIE COMP. +2 more" or "IZZIE COMP."
+  isMultiple: boolean
+}
+
 export function usePurchaseOrderList() {
-  const supplierStore      = useSuppliersDataStore()
-  const txStore            = useTransactionsDataStore()
-  const { suppliers }      = storeToRefs(supplierStore)
-  const { loading }        = storeToRefs(txStore)
+  const supplierStore = useSuppliersDataStore()
+  const txStore       = useTransactionsDataStore()
+  const { suppliers } = storeToRefs(supplierStore)
+  const { loading }   = storeToRefs(txStore)
 
   // ─── State ────────────────────────────────────────────────────────
   const search           = ref('')
@@ -37,6 +45,9 @@ export function usePurchaseOrderList() {
   const itemsPerPage     = ref(10)
   const sortKey          = ref('created_at')
   const sortOrder        = ref<'asc' | 'desc'>('desc')
+
+  // Cache of PR items per transaction id — avoids re-fetching on every render
+  const prItemsCache = ref<Record<number, PR>>({})
 
   const confirmDialog = ref({ show: false, poId: 0, poNumber: '' })
 
@@ -53,30 +64,55 @@ export function usePurchaseOrderList() {
 
   const statusLabel = (status: string) => {
     const labels: Record<string, string> = {
-      issued: 'Issued', complete: 'Complete', pending: 'Pending',
+      issued:   'Issued',
+      complete: 'Complete',
+      received: 'Received',
+      pending:  'Pending',
     }
     return labels[status] ?? status
   }
 
+  // Resolve supplier summary from cached PR items
+  function getSupplierSummary(poId: number): SupplierSummary {
+    const pr = prItemsCache.value[poId]
+    if (!pr?.items?.length) return { names: [], display: '—', isMultiple: false }
+
+    const unique = [...new Set(
+      pr.items
+        .map(i => i.supplier_name)
+        .filter((n): n is string => !!n && n !== '—')
+    )]
+
+    if (!unique.length) return { names: [], display: '—', isMultiple: false }
+
+    const display = unique.length > 1
+      ? `${unique[0]} +${unique.length - 1} more`
+      : unique[0]
+
+    return { names: unique, display, isMultiple: unique.length > 1 }
+  }
+
   // ─── Server Load ──────────────────────────────────────────────────
   async function loadItems({ page, itemsPerPage, sortBy }: {
-    page: number
-    itemsPerPage: number
-    sortBy: { key: string; order: string }[]
+    page:          number
+    itemsPerPage:  number
+    sortBy:        { key: string; order: string }[]
   }) {
     const data = await txStore.fetchTransactions({
       transaction_type: 'purchase_order',
       status:           filterStatus.value ?? undefined,
       search:           search.value.trim() || undefined,
       orderBy:          (sortBy[0]?.key ?? sortKey.value) as any,
-      ascending: sortBy[0] != null ? sortBy[0].order === 'asc' : sortOrder.value === 'asc',
+      ascending:        sortBy[0] != null ? sortBy[0].order === 'asc' : sortOrder.value === 'asc',
       limit:            itemsPerPage,
       offset:           (page - 1) * itemsPerPage,
     })
 
     serverItems.value = data.map((tx: any) => ({
       id:             tx.id,
-      reference_no:   tx.reference_no,
+      reference_no:   tx.po_no,
+      requisition_no: tx.requisition_no,
+      po_no:          tx.po_no,
       status:         tx.status ?? 'issued',
       supplier_id:    tx.supplier_id,
       total_amount:   tx.total_amount,
@@ -85,32 +121,40 @@ export function usePurchaseOrderList() {
       is_delivered:   tx.status === 'complete',
       ship_via:       tx.ship_via    ?? null,
       ship_method:    tx.ship_method ?? null,
-      requisition_id: tx.requisition_id ?? null,
-      updated_at:     tx.updated_at ?? null,
+      requisition_id: tx.id,
+      updated_at:     tx.updated_at  ?? null,
     }))
 
     totalItems.value = data.length
+
+    // Pre-fetch PR items for supplier summary display
+    await Promise.all(
+      serverItems.value.map(async po => {
+        if (!prItemsCache.value[po.id]) {
+          const pr = await txStore.fetchPRByRequisitionId(po.id)
+          if (pr) prItemsCache.value[po.id] = pr
+        }
+      })
+    )
   }
 
   // ─── Actions ──────────────────────────────────────────────────────
   async function openDetail(po: PurchaseOrder) {
-    selectedPO.value = po
-    selectedPR.value = po.requisition_id
-      ? await txStore.fetchPRByRequisitionId(po.requisition_id)
-      : null
+    selectedPO.value      = po
+    selectedPR.value      = prItemsCache.value[po.id]
+      ?? await txStore.fetchPRByRequisitionId(po.id)
     showDetailModal.value = true
   }
 
   async function openDetailForSku(po: PurchaseOrder) {
-    selectedPO.value = po
-    selectedPR.value = po.requisition_id
-      ? await txStore.fetchPRByRequisitionId(po.requisition_id)
-      : null
+    selectedPO.value       = po
+    selectedPR.value       = prItemsCache.value[po.id]
+      ?? await txStore.fetchPRByRequisitionId(po.id)
     showSkuEditModal.value = true
   }
 
   function openConfirm(po: PurchaseOrder) {
-    confirmDialog.value = { show: true, poId: po.id, poNumber: po.reference_no }
+    confirmDialog.value = { show: true, poId: po.id, poNumber: po.po_no ?? po.reference_no }
   }
 
   async function handleMarkReceived() {
@@ -135,7 +179,7 @@ export function usePurchaseOrderList() {
     selectedPO, selectedPR,
     confirmDialog, serverItems, totalItems,
     page, itemsPerPage, statusOptions,
-    resolveSupplier, statusLabel,
+    resolveSupplier, statusLabel, getSupplierSummary,
     loadItems, openDetail, openDetailForSku,
     openConfirm, handleMarkReceived, init,
   }

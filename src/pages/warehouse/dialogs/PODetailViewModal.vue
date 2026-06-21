@@ -22,7 +22,7 @@ const emit = defineEmits<{
 const toast = useToast()
 const savingAll = ref(false)
 
-const { printArea, resolvedSupplier, handlePrint } = usePODetailModal(
+const { printArea, uniqueSuppliers, handlePrint } = usePODetailModal(
   props as any,
   emit as any,
 )
@@ -112,7 +112,7 @@ async function handleMarkAsReceived() {
                 DATE: {{ formatDatePO_Written(po?.created_at ?? '—') }}
               </div>
               <div class="text-body-2 text-medium-emphasis">
-                PR #: {{ pr?.reference_no ?? '—' }}
+                PR #: {{ pr?.requisition_no ?? '—' }}
               </div>
               <div class="text-body-2 text-medium-emphasis">
                 PO #:
@@ -131,14 +131,14 @@ async function handleMarkAsReceived() {
           <v-row class="mb-4">
             <v-col cols="6">
               <div class="text-caption font-weight-bold text-medium-emphasis mb-2">SUPPLIER</div>
-              <v-card flat border rounded="lg" class="pa-4">
-                <div class="text-body-1 font-weight-medium mb-1">
-                  {{ resolvedSupplier?.name ?? '—' }}
-                </div>
-                <div class="text-body-2 text-medium-emphasis">{{ resolvedSupplier?.address ?? '—' }}</div>
-                <div class="text-body-2 text-medium-emphasis">{{ resolvedSupplier?.contact_no ?? '—' }}</div>
-                <div class="text-body-2 text-medium-emphasis">{{ resolvedSupplier?.email ?? '—' }}</div>
-              </v-card>
+                <v-card flat border rounded="lg" class="pa-4" v-if="uniqueSuppliers.length">
+                  <div v-for="supplier in uniqueSuppliers" :key="supplier.id" class="mb-2">
+                    <div class="text-body-1 font-weight-medium">{{ supplier.name }}</div>
+                    <div class="text-body-2 text-medium-emphasis">{{ supplier.address ?? '—' }}</div>
+                    <div class="text-body-2 text-medium-emphasis">{{ supplier.contact_no ?? '—' }}</div>
+                  </div>
+                </v-card>
+              <div v-else class="text-body-2 text-medium-emphasis">—</div>
             </v-col>
             <v-col cols="6">
               <div class="text-caption font-weight-bold text-medium-emphasis mb-2">SHIP TO</div>

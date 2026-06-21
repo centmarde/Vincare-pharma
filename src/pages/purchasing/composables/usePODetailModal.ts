@@ -1,7 +1,7 @@
 import { computed, ref, nextTick } from 'vue'
 import { useToast } from 'vue-toastification'
 import html2pdf from 'html2pdf.js'
-import { useSuppliersDataStore } from '@/stores/suppliersData'
+import { useSuppliersDataStore, type SupplierType } from '@/stores/suppliersData'
 import { storeToRefs } from 'pinia'
 import type { PR } from '@/stores/transactionsData'
 
@@ -9,6 +9,8 @@ import type { PR } from '@/stores/transactionsData'
 export type PurchaseOrder = {
   id:           number
   reference_no: string
+  po_no:        string
+  requisition_no: string
   status:       string
   supplier_id:  string | null
   total_amount: number
@@ -38,18 +40,20 @@ export function usePODetailModal(
   const { suppliers } = storeToRefs(supplierStore)
 
   const poNumber = computed(() =>
-    props.po?.reference_no ?? props.pr?.reference_no ?? 'PurchaseOrder'
+    props.po?.reference_no ?? props.pr?.po_no ?? 'PurchaseOrder'
   )
 
   const emptyRows = computed(() =>
     Math.max(0, 7 - (props.pr?.items.length ?? 0))
   )
 
-  const resolvedSupplier = computed(() => {
-    const sid = props.po?.supplier_id ?? props.pr?.supplier_id
-    if (sid == null) return null
-    return suppliers.value.find(s => Number(s.id) === Number(sid)) ?? null
-  })
+    const uniqueSuppliers = computed(() => {
+    if (!props.pr?.items?.length) return []
+    const names = [...new Set(props.pr.items.map(i => i.supplier_name).filter(Boolean))]
+    return names
+      .map(name => suppliers.value.find(s => s.name === name))
+      .filter(Boolean) as SupplierType[]
+    })
 
   async function handlePrint() {
     await nextTick()
@@ -99,7 +103,7 @@ export function usePODetailModal(
     printArea,
     poNumber,
     emptyRows,
-    resolvedSupplier,
+    uniqueSuppliers,
     handlePrint,
     company,
   }

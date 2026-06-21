@@ -25,7 +25,7 @@ const {
 
         <!-- Header -->
         <h2 class="text-h6 font-weight-bold mb-2">
-          Purchase Requisition: {{ pr.reference_no }}
+          Purchase Requisition: {{ pr.requisition_no }}
           <span>&nbsp; - &nbsp;Status: </span>
           <span
             class="status-chip text-caption font-weight-bold"
