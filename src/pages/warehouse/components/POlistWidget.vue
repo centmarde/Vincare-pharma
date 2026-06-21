@@ -19,7 +19,7 @@ const {
   totalItems,
   loading,
   loadItems,
-  resolveSupplier,
+  getSupplierSummary,
   statusLabel,
   openDetail,
   handleMarkReceived,
@@ -104,7 +104,19 @@ function onMarkReceived(poId: number) {
         </template>
 
         <template #item.supplier_id="{ item }">
-          <span class="text-body-2">{{ resolveSupplier(item.supplier_id) }}</span>
+          <div>
+            <span class="text-body-2">{{ getSupplierSummary(item.id).display }}</span>
+            <v-tooltip v-if="getSupplierSummary(item.id).isMultiple" location="top">
+              <template #activator="{ props }">
+                <v-icon v-bind="props" size="14" class="ml-1 text-medium-emphasis">
+                  mdi-information-outline
+                </v-icon>
+              </template>
+              <div v-for="name in getSupplierSummary(item.id).names" :key="name">
+                {{ name }}
+              </div>
+            </v-tooltip>
+          </div>
         </template>
 
         <template #item.declared_value="{ item }">

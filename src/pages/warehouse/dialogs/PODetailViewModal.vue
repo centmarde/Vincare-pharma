@@ -39,18 +39,19 @@ const missingSkuCount = computed(() =>
 // ── Save all SKUs ─────────────────────────────────────────────────────
 async function saveAllSkus(): Promise<boolean> {
   const updates = transactionItems.value
-    .filter(item => item.id && item.sku?.toString().trim())
-    .map(item => ({ id: item.id, sku: item.sku!.toString().trim() }))
+    .filter(item => item.product_id && item.sku?.toString().trim())
+    .map(item => ({ product_id: item.product_id!, sku: item.sku!.toString().trim() }))
 
   if (updates.length === 0) return true
 
   savingAll.value = true
   try {
+
     for (const update of updates) {
       const { error } = await supabase
         .from('products')
         .update({ sku: update.sku })
-        .eq('id', update.id)
+        .eq('id', update.product_id)
 
       if (error) throw error
     }
@@ -75,6 +76,8 @@ async function handleMarkAsReceived() {
     return
   }
 
+  // I want to update the rows transaction_type when the PO is marked as received. This is needed for the inventory report to distinguish between stock in from purchase orders vs stock in from adjustments.
+  
   const saved = await saveAllSkus()
   if (!saved) return
 
@@ -225,7 +228,7 @@ async function handleMarkAsReceived() {
                   </template>
                 </td>
                 <td class="text-right">{{ formatCurrency(item.cost_per_unit ?? 0) }}</td>
-                <td class="text-right">{{ formatCurrency(item.cost_per_unit ?? 0) }}</td>
+                <td class="text-right">{{ formatCurrency((item.qty ?? 0) * (item.cost_per_unit ?? 0)) }}</td>
               </tr>
               <tr v-for="n in effectiveEmptyRows" :key="`empty-${n}`" class="empty-row">
                 <td colspan="5">&nbsp;</td>

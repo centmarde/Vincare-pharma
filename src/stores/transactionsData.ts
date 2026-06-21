@@ -12,7 +12,6 @@ const toast = useToast()
 export type TransactionType = {
   id:               number
   created_at:       string
-  // reference_no:     string | null
   requisition_no:   string
   po_no:            string | null
   transaction_type: string | null
@@ -57,7 +56,6 @@ export type RequisitionItemType = {
 
 export type PR = {
   id:              number
-  // reference_no:    string
   requisition_no:  string
   po_no:           string | null
   status:          string
@@ -193,7 +191,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
   // helpers.ts provides: generateReferenceNumber(prefix, queryFn)
   // but the actual Supabase lookups live here so the store owns the data layer
 
-  async function getLatestReferenceNo(column: 'requisition_no' | 'po_no', prefix: string): Promise<number> {
+  async function getLatestReferenceNo(column: 'requisition_no' | 'po_no' | 'reference_no', prefix: string): Promise<number> {
     const { data } = await supabase
       .from('transactions')
       .select(column)
@@ -218,6 +216,13 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
     const year   = new Date().getFullYear()
     const prefix = `PO-${year}-`
     const last   = await getLatestReferenceNo('po_no', prefix)
+    return `${prefix}${String(last + 1).padStart(3, '0')}`
+  }
+
+  async function generateSINumber(): Promise<string> {
+    const year   = new Date().getFullYear()
+    const prefix = `SI-${year}-`
+    const last   = await getLatestReferenceNo('reference_no', prefix)
     return `${prefix}${String(last + 1).padStart(3, '0')}`
   }
 
@@ -609,9 +614,12 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
   async function markPOAsReceived(poId: number): Promise<boolean> {
     loading.value = true
     try {
+
+      const siNumber = await generateSINumber()
+
       const { error } = await supabase
         .from('transactions')
-        .update({ status: 'received', updated_at: new Date().toISOString() })
+        .update({ reference_no: siNumber, transaction_type: 'stock_in', status: 'complete', updated_at: new Date().toISOString() })
         .eq('id', poId)
 
       if (error) throw error

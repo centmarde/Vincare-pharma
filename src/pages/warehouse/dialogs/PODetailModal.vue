@@ -107,7 +107,7 @@ const { poNumber, emptyRows, uniqueSuppliers } = usePODetailModal(props, emit)
               <tr style="background-color: #1565c0;">
                 <th style="color:#fff; font-weight:600; padding: 10px 12px;">ITEM #</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px;">DESCRIPTION</th>
-                <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">QTY</th>
+                <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">SUPPLIER</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">UNIT PRICE</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">TOTAL</th>
               </tr>
@@ -116,7 +116,7 @@ const { poNumber, emptyRows, uniqueSuppliers } = usePODetailModal(props, emit)
               <tr v-for="item in pr?.items" :key="item.id">
                 <td>{{ item.no }}</td>
                 <td>{{ item.item_description }}</td>
-                <td class="text-right">{{ item.qty }}</td>
+                <td class="text-right">{{ item.supplier_name ?? '—' }}</td>
                 <td class="text-right">{{ formatCurrency(item.cost_per_unit) }}</td>
                 <td class="text-right">{{ formatCurrency(item.qty * item.cost_per_unit) }}</td>
               </tr>
