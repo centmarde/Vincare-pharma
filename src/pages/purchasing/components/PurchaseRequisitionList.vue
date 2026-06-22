@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import PRDetailModal from './PRDetailModal.vue'
-import IssuePOModal from './IssuePOModal.vue'
 import { usePurchaseRequisitionList, headers } from '../composables/usePurchaseRequisitionList'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import PRDetailModal from './PRDetailModal.vue'
+import IssuePOModal from './IssuePOModal.vue'
+import { onMounted } from 'vue'
 
 const {
   init,
@@ -97,7 +97,7 @@ onMounted(() => init())
         @update:options="loadItems"
       >
         <!-- PR # -->
-        <template #item.pr_number="{ item }">
+        <template #item.requisition_no="{ item }">
           <span class="text-body-2 font-weight-bold" style="white-space: nowrap">
             {{ item.requisition_no }}
           </span>
@@ -119,7 +119,7 @@ onMounted(() => init())
         </template>
 
         <!-- Total Cost -->
-        <template #item.total_cost="{ item }">
+        <template #item.total_amount="{ item }">
           <span class="text-body-2">{{ formatCurrency(totalCost(item.items)) }}</span>
         </template>
 
@@ -130,7 +130,9 @@ onMounted(() => init())
 
         <!-- Created Date -->
         <template #item.created_at="{ item }">
-          <span class="text-body-2">{{ formatDatePR_ISO(item.created_at) }}</span>
+          <span class="text-body-2" style="white-space: nowrap">
+            {{ formatDatePR_ISO(item.created_at) }}
+          </span>
         </template>
 
         <!-- Status -->

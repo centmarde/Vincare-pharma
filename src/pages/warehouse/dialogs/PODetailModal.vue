@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
-import type { PR } from '@/stores/transactionsData'
 import { usePODetailModal, company } from '@/pages/purchasing/composables/usePODetailModal'
+import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
 import { formatCurrency, formatDatePO_Written } from '@/utils/helpers'
+import type { PR } from '@/stores/transactionsData'
 
 const props = defineProps<{
   modelValue: boolean
@@ -108,6 +108,7 @@ const { poNumber, emptyRows, uniqueSuppliers } = usePODetailModal(props, emit)
                 <th style="color:#fff; font-weight:600; padding: 10px 12px;">ITEM #</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px;">DESCRIPTION</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">SUPPLIER</th>
+                <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">QTY</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">UNIT PRICE</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">TOTAL</th>
               </tr>
@@ -117,6 +118,7 @@ const { poNumber, emptyRows, uniqueSuppliers } = usePODetailModal(props, emit)
                 <td>{{ item.no }}</td>
                 <td>{{ item.item_description }}</td>
                 <td class="text-right">{{ item.supplier_name ?? '—' }}</td>
+                <td class="text-right">{{ item.actual_count ?? '—' }}</td>
                 <td class="text-right">{{ formatCurrency(item.cost_per_unit) }}</td>
                 <td class="text-right">{{ formatCurrency(item.qty * item.cost_per_unit) }}</td>
               </tr>

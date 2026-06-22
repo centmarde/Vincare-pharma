@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { PurchaseOrder } from '../composables/usePODetailModal'
-import type { PR } from '@/stores/transactionsData'
 import { usePODetailModal, company } from '../composables/usePODetailModal'
 import { formatCurrency, formatDatePO_Written } from '@/utils/helpers'
+import type { PurchaseOrder } from '../composables/usePODetailModal'
+import type { PR } from '@/stores/transactionsData'
 
 const props = defineProps<{
   modelValue: boolean
@@ -114,6 +114,7 @@ const { printArea, poNumber, emptyRows, uniqueSuppliers, handlePrint } = usePODe
                 <th style="color:#fff; font-weight:600; padding: 10px 12px;">ITEM #</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px;">DESCRIPTION</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">QTY</th>
+                <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">ACTUAL COUNT</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">SUPPLIER</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">UNIT PRICE</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">TOTAL</th>
@@ -124,17 +125,18 @@ const { printArea, poNumber, emptyRows, uniqueSuppliers, handlePrint } = usePODe
                 <td>{{ item.no }}</td>
                 <td>{{ item.item_description }}</td>
                 <td class="text-right">{{ item.qty }}</td>
+                <td class="text-right">{{ item.actual_count ?? '—' }}</td>
                 <td class="text-right">{{ item.supplier_name }}</td>
                 <td class="text-right">{{ formatCurrency(item.cost_per_unit) }}</td>
                 <td class="text-right">{{ formatCurrency(item.qty * item.cost_per_unit) }}</td>
               </tr>
               <tr v-for="n in emptyRows" :key="`empty-${n}`" class="empty-row">
-                <td colspan="5">&nbsp;</td>
+                <td colspan="6">&nbsp;</td>
               </tr>
             </tbody>
             <tfoot>
               <tr style="background-color: #f5f5f5;">
-                <td colspan="5" style="text-align:right; font-weight:700; padding: 10px 12px;">TOTAL</td>
+                <td colspan="6" style="text-align:right; font-weight:700; padding: 10px 12px;">TOTAL</td>
                 <td style="text-align:right; font-weight:700; padding: 10px 12px;">
                   {{ formatCurrency(po?.total_amount ?? 0) }}
                 </td>

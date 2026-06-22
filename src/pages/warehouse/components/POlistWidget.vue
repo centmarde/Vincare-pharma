@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import PODetailViewModal from '../dialogs/PODetailModal.vue'
-import PODetailSkuModal from '../dialogs/PODetailViewModal.vue'
 import { usePurchaseOrderList, headers } from '@/pages/purchasing/composables/usePurchaseOrderList'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import PODetailSkuModal from '../dialogs/PODetailViewModal.vue'
+import PODetailViewModal from '../dialogs/PODetailModal.vue'
+import { onMounted } from 'vue'
 
 const {
   search,
@@ -119,7 +119,7 @@ function onMarkReceived(poId: number) {
           </div>
         </template>
 
-        <template #item.declared_value="{ item }">
+        <template #item.total_amount="{ item }">
           <span class="text-body-2">{{ formatCurrency(item.total_amount) }}</span>
         </template>
 

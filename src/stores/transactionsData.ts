@@ -1,10 +1,10 @@
 import type { RealtimeChannel } from '@supabase/supabase-js'
+import { useAuthUserStore } from './authUser'
 import { useToast } from 'vue-toastification'
 import { supabase } from '@/lib/supabase'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { Ref } from 'vue'
-import { useAuthUserStore } from './authUser'
 
 
 const toast = useToast()
@@ -43,6 +43,7 @@ export type PRItem = {
   product_id?:      number
   sku?:             string | null
   supplier_name?:   string | null
+  actual_count?:    number | null   // ← add this
 }
 
 export type RequisitionItemType = {
@@ -53,6 +54,7 @@ export type RequisitionItemType = {
   offer_per_unit:   number
   cost_per_unit:    number
   supplier_id:      string | null
+  actual_count?:    number
 }
 
 export type PR = {
@@ -70,6 +72,7 @@ export type PR = {
   updated_at:      string | null
   requester_name?: string
   reviewer_name?:  string
+  actual_count?:   number | null
   items:           PRItem[]
 }
 
@@ -185,6 +188,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       product_id:       ti.product_id,
       sku:              ti.products?.sku            ?? null,
       supplier_name:    ti.products?.suppliers?.name ?? '—',
+      actual_count:     ti.products?.actual_count  ?? 0,
     }))
   }
   
@@ -214,6 +218,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       updated_at:     tx.updated_at,
       requester_name: names.requester_name,
       reviewer_name:  names.reviewer_name,
+      actual_count:   tx.actual_count,
       items:          prItems,
     }
   }
@@ -524,7 +529,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
         *,
         transaction_items (
           id, product_id,
-          products ( id, product_name, unit, cost_price, selling_price, current_stock, sku, supplier_id, suppliers ( name ) )
+          products ( id, product_name, unit, cost_price, selling_price, current_stock, sku, supplier_id, actual_count, suppliers ( name ) )
         )
       `)
       .not('requisition_no', 'is', null)   // ← replaces .eq('transaction_type', 'purchase_requisition')
@@ -554,7 +559,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
         *,
         transaction_items (
           id, product_id,
-          products ( id, product_name, unit, cost_price, selling_price, current_stock, sku, supplier_id, suppliers ( name ) )
+          products ( id, product_name, unit, cost_price, selling_price, current_stock, sku, supplier_id, actual_count, suppliers ( name ) )
         )
       `)
       .eq('id', requisitionId)

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import ViewPODetailModal from './PODetailModal.vue'
 import { usePurchaseOrderList, headers } from '../composables/usePurchaseOrderList'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import ViewPODetailModal from './PODetailModal.vue'
+import { onMounted } from 'vue'
 
 const {
   search,
@@ -83,7 +83,7 @@ onMounted(init)
         no-data-text="No purchase orders found."
         @update:options="loadItems"
       >
-        <template #item.po_number="{ item }">
+        <template #item.po_no="{ item }">
           <span class="text-body-2 font-weight-bold" style="white-space: nowrap">{{
             item.po_no
           }}</span>
@@ -106,7 +106,7 @@ onMounted(init)
           </div>
         </template>
 
-        <template #item.declared_value="{ item }">
+        <template #item.total_amount="{ item }">
           <span class="text-body-2">{{ formatCurrency(item.total_amount) }}</span>
         </template>
 
@@ -119,9 +119,9 @@ onMounted(init)
         </template>
 
         <template #item.created_at="{ item }">
-          <span class="text-body-2">{{
-            item.created_at ? formatDatePR_ISO(item.created_at) : '—'
-          }}</span>
+          <span class="text-body-2" style="white-space: nowrap">
+            {{ item.created_at ? formatDatePR_ISO(item.created_at) : '—' }}
+          </span>
         </template>
 
         <template #item.status="{ item }">
