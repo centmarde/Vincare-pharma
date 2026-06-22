@@ -1,16 +1,17 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import PRDetailModal from './PRDetailModal.vue'
-import IssuePOModal from './IssuePOModal.vue'
 import { usePurchaseRequisitionList, headers } from '../composables/usePurchaseRequisitionList'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import PRDetailModal from './PRDetailModal.vue'
+import IssuePOModal from './IssuePOModal.vue'
+import { onMounted } from 'vue'
 
 const {
   init,
   loading,
   selectedPR,
   filterStatus,
-  filteredPRs,
+  sortedFilteredPRs,
+  loadItems,
   totalQty,
   totalCost,
   itemSummary,
@@ -38,7 +39,10 @@ onMounted(() => init())
     <v-card class="mx-auto w-100" max-width="1400" rounded="lg" elevation="1">
       <!-- Header -->
       <v-card-title class="d-flex justify-space-between align-center pa-5">
-        <span class="text-h6 font-weight-bold">Purchase Requisitions</span>
+        <div class="d-flex align-center">
+          <v-icon icon="mdi-file-clock-outline" size="36" class="mr-1 text-primary"></v-icon>
+            <span class="text-h6 font-weight-bold">Purchase Requisition</span>
+        </div>
         <div class="d-flex align-center" style="gap: 12px">
           <v-text-field
             v-model="search"
@@ -83,19 +87,19 @@ onMounted(() => init())
         v-model:page="page"
         v-model:items-per-page="itemsPerPage"
         :headers="headers"
-        :items="filteredPRs"
-        :items-length="filteredPRs.length"
+        :items="sortedFilteredPRs"
+        :items-length="sortedFilteredPRs.length"
         :search="search"
         :loading="loading"
         hover
         loading-text="Loading purchase requisitions..."
         no-data-text="No purchase requisitions found."
-        @update:options="() => {}"
+        @update:options="loadItems"
       >
         <!-- PR # -->
-        <template #item.pr_number="{ item }">
+        <template #item.requisition_no="{ item }">
           <span class="text-body-2 font-weight-bold" style="white-space: nowrap">
-            {{ item.pr_number }}
+            {{ item.requisition_no }}
           </span>
         </template>
 
@@ -115,7 +119,7 @@ onMounted(() => init())
         </template>
 
         <!-- Total Cost -->
-        <template #item.total_cost="{ item }">
+        <template #item.total_amount="{ item }">
           <span class="text-body-2">{{ formatCurrency(totalCost(item.items)) }}</span>
         </template>
 
@@ -126,7 +130,9 @@ onMounted(() => init())
 
         <!-- Created Date -->
         <template #item.created_at="{ item }">
-          <span class="text-body-2">{{ formatDatePR_ISO(item.created_at) }}</span>
+          <span class="text-body-2" style="white-space: nowrap">
+            {{ formatDatePR_ISO(item.created_at) }}
+          </span>
         </template>
 
         <!-- Status -->
@@ -249,36 +255,21 @@ onMounted(() => init())
   border-radius: 20px;
   white-space: nowrap;
 }
+
 .status-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
+  background: currentColor;
 }
 
-.status-chip--pending_approval {
-  color: #c2922e;
-  background: rgba(194, 146, 46, 0.12);
-}
-.status-chip--pending_approval .status-dot {
-  background: #c2922e;
-}
-
-.status-chip--approved {
-  color: #2e7d32;
-  background: rgba(46, 125, 50, 0.12);
-}
-.status-chip--approved .status-dot {
-  background: #4caf50;
-}
-
-.status-chip--rejected {
-  color: #c62828;
-  background: rgba(198, 40, 40, 0.12);
-}
-.status-chip--rejected .status-dot {
-  background: #ef5350;
-}
+.status-chip--pending_approval { color: #c2922e; background: rgba(194, 146, 46, 0.12); }
+.status-chip--pending          { color: #c2922e; background: rgba(194, 146, 46, 0.12); }
+.status-chip--approved         { color: #2e7d32; background: rgba(46, 125, 50,  0.12); }
+.status-chip--complete         { color: #2e7d32; background: rgba(46, 125, 50,  0.12); }
+.status-chip--rejected         { color: #c62828; background: rgba(198, 40, 40,  0.12); }
+.status-chip--issued           { color: #1565c0; background: rgba(21, 101, 192, 0.12); }
 
 /* ─── Table ───────────────────────────────────────────────────── */
 .actions-gap {

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import ViewPODetailModal from '@/pages/warehouse/dialogs/PODetailViewModal.vue'
 import { usePurchaseOrderList, headers } from '@/pages/purchasing/composables/usePurchaseOrderList'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import PODetailSkuModal from '../dialogs/PODetailViewModal.vue'
+import PODetailViewModal from '../dialogs/PODetailModal.vue'
+import { onMounted } from 'vue'
 
 const {
   search,
@@ -11,46 +12,40 @@ const {
   selectedPO,
   selectedPR,
   confirmDialog,
+  showSkuEditModal,
   statusOptions,
   serverItems,
   itemsPerPage,
   totalItems,
   loading,
   loadItems,
-  resolveSupplier,
+  getSupplierSummary,
   statusLabel,
   openDetail,
-  openConfirm,
   handleMarkReceived,
+  openDetailForSku,
+  openConfirm,
   init,
-} = usePurchaseOrderList({ excludePRStatuses: ['rejected'] })
+} = usePurchaseOrderList()
+onMounted(init)
 
-// State for SKU edit modal (shown when clicking "Mark Received")
-const showSkuEditModal = ref(false)
-const pendingMarkReceivedPO = ref<any>(null)
-
-// Open the view modal in SKU edit mode for marking as received
-function openForMarkReceived(item: any) {
-  pendingMarkReceivedPO.value = item
-  selectedPO.value = item
-  selectedPR.value = null
-  showSkuEditModal.value = true
+function openMarkReceivedDialog(item: any) {
+  openDetailForSku(item)   // opens SKU modal, sets selectedPO + selectedPR
 }
 
-// Handle the mark-received event from the modal
 function onMarkReceived(poId: number) {
   showSkuEditModal.value = false
-  openConfirm({ id: poId, po_number: pendingMarkReceivedPO.value?.po_number ?? '' })
+  const po = serverItems.value.find(item => item.id === poId)
+  if (po) openConfirm(po)
 }
 
-onMounted(init)
 </script>
 <template>
   <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
     <v-card class="mx-auto w-100 pa-0" max-width="1400" rounded="lg" elevation="1">
       <!-- Header -->
       <v-card-title class="d-flex justify-space-between align-center pa-5">
-        <span class="text-h6 font-weight-bold">Purchase Orders</span>
+        <span class="text-h6 font-weight-bold">Warehouse Dashboard</span>
         <div class="d-flex align-center" style="gap: 12px">
           <v-text-field
             v-model="search"
@@ -104,16 +99,28 @@ onMounted(init)
       >
         <template #item.po_number="{ item }">
           <span class="text-body-2 font-weight-bold" style="white-space: nowrap">{{
-            item.po_number
+            item.reference_no
           }}</span>
         </template>
 
         <template #item.supplier_id="{ item }">
-          <span class="text-body-2">{{ resolveSupplier(item.supplier_id) }}</span>
+          <div>
+            <span class="text-body-2">{{ getSupplierSummary(item.id).display }}</span>
+            <v-tooltip v-if="getSupplierSummary(item.id).isMultiple" location="top">
+              <template #activator="{ props }">
+                <v-icon v-bind="props" size="14" class="ml-1 text-medium-emphasis">
+                  mdi-information-outline
+                </v-icon>
+              </template>
+              <div v-for="name in getSupplierSummary(item.id).names" :key="name">
+                {{ name }}
+              </div>
+            </v-tooltip>
+          </div>
         </template>
 
-        <template #item.declared_value="{ item }">
-          <span class="text-body-2">{{ formatCurrency(item.declared_value) }}</span>
+        <template #item.total_amount="{ item }">
+          <span class="text-body-2">{{ formatCurrency(item.total_amount) }}</span>
         </template>
 
         <template #item.ship_via="{ item }">
@@ -124,9 +131,9 @@ onMounted(init)
           <span class="text-body-2">{{ item.ship_method ?? '—' }}</span>
         </template>
 
-        <template #item.issued_at="{ item }">
+        <template #item.created_at="{ item }">
           <span class="text-body-2">{{
-            item.issued_at ? formatDatePR_ISO(item.issued_at) : '—'
+            item.created_at ? formatDatePR_ISO(item.created_at) : '—'
           }}</span>
         </template>
 
@@ -145,18 +152,12 @@ onMounted(init)
             <v-btn variant="outlined" size="small" class="text-none" @click="openDetail(item)">
               View
             </v-btn>
-            <v-btn
-              v-if="item.status === 'issued'"
-              variant="flat"
-              size="small"
-              color="success"
-              class="text-none"
-              @click="openForMarkReceived(item)"
-            >
-              <v-icon start size="16">mdi-check-circle</v-icon>
-              Mark Received
+            <!-- I want this button to be visible only when the item is not complete -->
+            <v-btn v-if="item.status !== 'complete'" size="small" color="primary" @click="openMarkReceivedDialog(item)">
+              Mark as Received
             </v-btn>
-            <v-chip v-if="item.is_delivered" color="green" size="small" variant="tonal" label>
+
+            <v-chip v-if="item.status === 'complete'" color="green" size="small" variant="tonal" label>
               <v-icon start size="14">mdi-check-circle</v-icon>
               Delivered
             </v-chip>
@@ -165,17 +166,10 @@ onMounted(init)
       </v-data-table-server>
     </v-card>
 
-    <!-- View modal (read-only, opened by clicking 'View') -->
-    <ViewPODetailModal v-model="showDetailModal" :po="selectedPO" :pr="selectedPR" />
+    <!-- Opened when clicking 'View' or 'Print' inside your table rows -->
+    <PODetailViewModal v-model="showDetailModal" :po="selectedPO" :pr="selectedPR" />
 
-    <!-- SKU edit modal (opened by clicking 'Mark Received') -->
-    <ViewPODetailModal
-      v-model="showSkuEditModal"
-      :po="selectedPO"
-      :pr="selectedPR"
-      sku-edit-mode
-      @mark-received="onMarkReceived"
-    />
+    <PODetailSkuModal v-model="showSkuEditModal" :po="selectedPO" :pr="selectedPR" :sku-edit-mode="true" @mark-received="onMarkReceived" />
 
     <!-- Confirm Mark as Received -->
     <v-dialog v-model="confirmDialog.show" max-width="420" persistent>
@@ -241,12 +235,12 @@ onMounted(init)
 .status-chip--issued .status-dot {
   background: #1565c0;
 }
-.status-chip--received {
+.status-chip--complete {
   color: #2e7d32;
   background: rgba(46, 125, 50, 0.12);
 }
-.status-chip--received .status-dot {
-  background: #4caf50;
+.status-chip--complete .status-dot {
+  background: #2e7d32;
 }
 
 :deep(.v-table thead tr th) {

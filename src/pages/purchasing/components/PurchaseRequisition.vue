@@ -30,29 +30,16 @@ onMounted(() => {
 
 <template>
   <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
-    <v-card class="mx-auto w-100" max-width="1400" rounded="lg" elevation="1">
+    <v-card class="mx-auto w-100" max-width="1500" rounded="lg" elevation="1">
 
       <!-- Header -->
       <v-card-title class="d-flex justify-space-between align-center pa-5">
-        <span class="text-h6 font-weight-bold">Raise Purchase Requisition</span>
+        <div class="d-flex align-center">
+          <v-icon icon="mdi-file-document-edit-outline" size="36" class="mr-1 text-primary"></v-icon>
+            <span class="text-h6 font-weight-bold">Raise Purchase Requisition</span>
+        </div>
         <span class="text-caption">Customer offer vs. company cost</span>
       </v-card-title>
-
-      <div class="mb-4 ml-5">
-        <label class="text-subtitle-2 font-weight-bold d-block mb-2">Supplier</label>
-        <v-select
-          v-model="currentPR.supplier_id"
-          :items="activeSuppliers"
-          item-title="name"
-          item-value="id"
-          placeholder="Select a supplier..."
-          variant="outlined"
-          density="compact"
-          hide-details
-          clearable
-          style="max-width: 250px"
-        />
-      </div>
 
       <v-divider />
 
@@ -62,7 +49,8 @@ onMounted(() => {
         <v-row class="text-caption font-weight-bold mb-1 px-1" no-gutters>
           <v-col cols="auto" style="width: 40px" class="text-center">NO.</v-col>
           <v-col cols="2" class="pl-2">UNIT</v-col>
-          <v-col cols="3" class="pl-2">PRODUCT</v-col>
+          <v-col cols="2.5" class="pl-2">PRODUCT</v-col>
+          <v-col cols="2" class="pl-2">Supplier</v-col>
           <v-col cols="1" class="pl-2">QTY</v-col>
           <v-col cols="1" class="pl-2">OFFER/UNIT</v-col>
           <v-col cols="1" class="text-right pr-4">OFFER TOTAL</v-col>
@@ -95,13 +83,28 @@ onMounted(() => {
           </v-col>
 
           <!-- ITEM DESCRIPTION -->
-          <v-col cols="3" class="pl-2">
+          <v-col cols="2.5" class="pl-2">
             <v-text-field
               v-model="item.item_description"
               placeholder="Item description"
               variant="outlined"
               density="compact"
               hide-details
+            />
+          </v-col>
+
+          <!-- I want to transfer the supplier selection to each line item -->
+          <v-col cols="2" class="pl-2">
+             <v-select
+              v-model="item.supplier_id"
+              :items="activeSuppliers"
+              item-title="name"
+              item-value="id"
+              placeholder="Select a supplier..."
+              variant="outlined"
+              density="compact"
+              hide-details
+              clearable
             />
           </v-col>
 
@@ -187,7 +190,7 @@ onMounted(() => {
         <!-- Justification -->
         <label class="text-subtitle-2 font-weight-bold d-block mb-2">Justification / Notes</label>
         <v-textarea
-          v-model="currentPR.justification"
+          v-model="currentPR.remarks"
           placeholder="Reason for requisition..."
           variant="outlined"
           rows="3"

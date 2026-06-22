@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import ViewPODetailModal from './PODetailModal.vue'
 import { usePurchaseOrderList, headers } from '../composables/usePurchaseOrderList'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import ViewPODetailModal from './PODetailModal.vue'
+import { onMounted } from 'vue'
 
 const {
   search,
@@ -10,18 +10,15 @@ const {
   showDetailModal,
   selectedPO,
   selectedPR,
-  confirmDialog,
   statusOptions,
   serverItems,
   itemsPerPage,
   totalItems,
   loading,
   loadItems,
-  resolveSupplier,
   statusLabel,
   openDetail,
-  openConfirm,
-  handleMarkReceived,
+  getSupplierSummary,
   init,
 } = usePurchaseOrderList()
 onMounted(init)
@@ -31,7 +28,10 @@ onMounted(init)
     <v-card class="mx-auto w-100 pa-0" max-width="1400" rounded="lg" elevation="1">
       <!-- Header -->
       <v-card-title class="d-flex justify-space-between align-center pa-5">
-        <span class="text-h6 font-weight-bold">Purchase Orders</span>
+        <div class="d-flex align-center">
+          <v-icon icon="mdi-clipboard-check-outline" size="36" class="mr-1 text-primary"></v-icon>
+            <span class="text-h6 font-weight-bold">Purchase Order</span>
+        </div>
         <div class="d-flex align-center" style="gap: 12px">
           <v-text-field
             v-model="search"
@@ -83,18 +83,31 @@ onMounted(init)
         no-data-text="No purchase orders found."
         @update:options="loadItems"
       >
-        <template #item.po_number="{ item }">
+        <template #item.po_no="{ item }">
           <span class="text-body-2 font-weight-bold" style="white-space: nowrap">{{
-            item.po_number
+            item.po_no
           }}</span>
         </template>
-
+        
+        <!-- Display if the items has more than one supplier -->
         <template #item.supplier_id="{ item }">
-          <span class="text-body-2">{{ resolveSupplier(item.supplier_id) }}</span>
+          <div>
+            <span class="text-body-2">{{ getSupplierSummary(item.id).display }}</span>
+            <v-tooltip v-if="getSupplierSummary(item.id).isMultiple" location="top">
+              <template #activator="{ props }">
+                <v-icon v-bind="props" size="14" class="ml-1 text-medium-emphasis">
+                  mdi-information-outline
+                </v-icon>
+              </template>
+              <div v-for="name in getSupplierSummary(item.id).names" :key="name">
+                {{ name }}
+              </div>
+            </v-tooltip>
+          </div>
         </template>
 
-        <template #item.declared_value="{ item }">
-          <span class="text-body-2">{{ formatCurrency(item.declared_value) }}</span>
+        <template #item.total_amount="{ item }">
+          <span class="text-body-2">{{ formatCurrency(item.total_amount) }}</span>
         </template>
 
         <template #item.ship_via="{ item }">
@@ -105,10 +118,10 @@ onMounted(init)
           <span class="text-body-2">{{ item.ship_method ?? '—' }}</span>
         </template>
 
-        <template #item.issued_at="{ item }">
-          <span class="text-body-2">{{
-            item.issued_at ? formatDatePR_ISO(item.issued_at) : '—'
-          }}</span>
+        <template #item.created_at="{ item }">
+          <span class="text-body-2" style="white-space: nowrap">
+            {{ item.created_at ? formatDatePR_ISO(item.created_at) : '—' }}
+          </span>
         </template>
 
         <template #item.status="{ item }">
@@ -126,18 +139,7 @@ onMounted(init)
             <v-btn variant="outlined" size="small" class="text-none" @click="openDetail(item)">
               View
             </v-btn>
-            <!-- <v-btn
-                v-if="item.status === 'issued'"
-                variant="flat"
-                size="small"
-                color="success"
-                class="text-none"
-                :loading="loading"
-                @click="openConfirm(item)"
-              >
-                Mark Received
-              </v-btn> -->
-            <v-chip v-if="item.is_delivered" color="green" size="small" variant="tonal" label>
+            <v-chip v-if="item.status === 'complete'" color="green" size="small" variant="tonal" label>
               <v-icon start size="14">mdi-check-circle</v-icon>
               Delivered
             </v-chip>
@@ -148,39 +150,6 @@ onMounted(init)
 
     <!-- Opened when clicking 'View' or 'Print' inside your table rows -->
     <ViewPODetailModal v-model="showDetailModal" :po="selectedPO" :pr="selectedPR" />
-
-    <!-- Confirm Mark as Received -->
-    <v-dialog v-model="confirmDialog.show" max-width="420" persistent>
-      <v-card rounded="lg">
-        <v-card-title class="d-flex align-center ga-2 pt-5 px-5">
-          <v-icon color="success" size="22">mdi-check-circle-outline</v-icon>
-          <span class="text-body-1 font-weight-bold">Mark as Received</span>
-        </v-card-title>
-        <v-card-text class="px-5 pb-2 text-body-2 text-medium-emphasis">
-          Confirm that <strong>{{ confirmDialog.poNumber }}</strong> has been received and
-          delivered? This will update the status to <strong>Received</strong>.
-        </v-card-text>
-        <v-card-actions class="px-5 pb-5 pt-3 justify-end ga-2">
-          <v-btn
-            variant="outlined"
-            class="text-none"
-            :disabled="loading"
-            @click="confirmDialog.show = false"
-          >
-            Cancel
-          </v-btn>
-          <v-btn
-            variant="flat"
-            color="success"
-            class="text-none"
-            :loading="loading"
-            @click="handleMarkReceived"
-          >
-            Yes, Mark Received
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
   </v-container>
 </template>
 
@@ -213,12 +182,12 @@ onMounted(init)
 .status-chip--issued .status-dot {
   background: #1565c0;
 }
-.status-chip--received {
+.status-chip--complete {
   color: #2e7d32;
   background: rgba(46, 125, 50, 0.12);
 }
-.status-chip--received .status-dot {
-  background: #4caf50;
+.status-chip--complete .status-dot {
+  background: #2e7d32;
 }
 
 :deep(.v-table thead tr th) {
