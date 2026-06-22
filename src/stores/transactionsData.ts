@@ -4,6 +4,8 @@ import { supabase } from '@/lib/supabase'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { Ref } from 'vue'
+import { useAuthUserStore } from './authUser'
+
 
 const toast = useToast()
 
@@ -25,7 +27,6 @@ export type TransactionType = {
   supplier_id:      number | null
   ship_via:         string | null
   ship_method:      string | null
-  requisition_id:   number | null
 }
 
 export type CreateTransactionData = Partial<Omit<TransactionType, 'id' | 'created_at'>>
@@ -95,6 +96,7 @@ type FetchTransactionsOptions = {
 export const useTransactionsDataStore = defineStore('transactionsData', () => {
 
   // ─── State ────────────────────────────────────────────────────────
+  const authStore = useAuthUserStore()   
   const loading:            Ref<boolean>                          = ref(false)
   const error:              Ref<string>                           = ref('')
   const transactions:       Ref<TransactionType[]>               = ref([])
@@ -185,15 +187,15 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       supplier_name:    ti.products?.suppliers?.name ?? '—',
     }))
   }
+  
+  function resolveUserNames(createdBy: string | null, approvedBy: string | null) {
+    const authStore = useAuthUserStore()
+    const findName = (id: string | null) => 
+      authStore.users.find(u => u.id === id)?.full_name?.toUpperCase() ?? '—'
 
-  async function resolveUserNames(createdBy: string | null, approvedBy: string | null) {
-    const [requesterRes, reviewerRes] = await Promise.all([
-      createdBy  ? supabase.rpc('get_user_full_name', { user_id: createdBy })  : Promise.resolve({ data: null }),
-      approvedBy ? supabase.rpc('get_user_full_name', { user_id: approvedBy }) : Promise.resolve({ data: null }),
-    ])
-    return {
-      requester_name: requesterRes.data?.toUpperCase() ?? '—',
-      reviewer_name:  reviewerRes.data?.toUpperCase()  ?? '—',
+    return{
+      requester_name: findName(createdBy),
+      reviewer_name:  findName(approvedBy),
     }
   }
 
@@ -350,9 +352,8 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
     loading.value = true
     error.value   = ''
 
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) {
       toast.error('User not authenticated.')
       loading.value = false
       return { success: false }
@@ -371,7 +372,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
         remarks:          currentPR.value.remarks ?? '',
         total_amount:     companyCostTotal,
         supplier_id:      null,
-        created_by:       user.id,
+        created_by:   user.id,
       })
       .select('id, requisition_no')
       .single()
@@ -426,12 +427,11 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
   async function approvePR(prId: number) {
     loading.value = true
 
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) {
       toast.error('User not authenticated.')
       loading.value = false
-      return
+      return { success: false }
     }
 
     const { error: updateError } = await supabase
@@ -453,12 +453,11 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
   async function rejectPR(prId: number) {
     loading.value = true
 
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) {
       toast.error('User not authenticated.')
       loading.value = false
-      return
+      return { success: false }
     }
 
     const { error: updateError } = await supabase
@@ -482,7 +481,6 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
     pr:          PR
     ship_via:    string
     ship_method: string
-    userId:      string
   }) {
     loading.value = true
     clearError()
@@ -518,6 +516,8 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
     loading.value = true
     error.value   = ''
 
+    if (!authStore.users.length) await authStore.getAllUsers()
+
     const { data, error: fetchError } = await supabase
       .from('transactions')
       .select(`
@@ -536,17 +536,18 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       return
     }
 
-    prs.value = await Promise.all(
-      (data || []).map(async (tx: any) => {
-        const names = await resolveUserNames(tx.created_by, tx.approved_by)
-        return mapToPR(tx, mapTransactionItems(tx.transaction_items || []), names)
-      })
-    )
+    prs.value =  (data || []).map((tx: any) => {
+      const names = resolveUserNames(tx.created_by, tx.approved_by)
+      return mapToPR(tx, mapTransactionItems(tx.transaction_items || []), names)
+    })
 
     loading.value = false
   }
 
   async function fetchPRByRequisitionId(requisitionId: number): Promise<PR | null> {
+    
+    if (!authStore.users.length) await authStore.getAllUsers()
+
     const { data } = await supabase
       .from('transactions')
       .select(`
@@ -561,7 +562,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
 
     if (!data) return null
 
-    const names = await resolveUserNames(data.created_by, data.approved_by)
+    const names = resolveUserNames(data.created_by, data.approved_by)  // ← sync now
     return mapToPR(data, mapTransactionItems(data.transaction_items || []), names)
   }
 

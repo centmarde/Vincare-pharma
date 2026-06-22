@@ -74,7 +74,7 @@ export function useIssuePOModal(
       pr:         props.pr,
       ship_via:   form.value.ship_via,
       ship_method: form.value.ship_method,
-      userId:     user.id,
+      
     })
 
     if (result.success) {
