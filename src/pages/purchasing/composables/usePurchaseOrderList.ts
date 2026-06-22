@@ -9,20 +9,20 @@ import type { PurchaseOrder } from './usePODetailModal'
 const toast = useToast()
 
 export const headers = [
-  { title: 'PO #',      key: 'po_no',        sortable: true,  align: 'center' as const },
-  { title: 'SUPPLIER',  key: 'supplier_id',   sortable: false, align: 'center' as const },
-  { title: 'TOTAL',     key: 'total_amount',  sortable: false, align: 'center' as const },
-  { title: 'SHIP VIA',  key: 'ship_via',      sortable: true,  align: 'center' as const },
-  { title: 'SHIP METHOD', key: 'ship_method', sortable: true,  align: 'center' as const },
-  { title: 'ISSUED AT', key: 'created_at',    sortable: true,  align: 'center' as const },
-  { title: 'STATUS',    key: 'status',        sortable: true,  align: 'center' as const },
-  { title: 'ACTIONS',   key: 'actions',       sortable: false, align: 'center' as const },
+  { title: 'PO #',        key: 'po_no',        sortable: true,  align: 'center' as const },
+  { title: 'SUPPLIER',    key: 'supplier_id',   sortable: false, align: 'center' as const },
+  { title: 'TOTAL',       key: 'total_amount',  sortable: false, align: 'center' as const },
+  { title: 'SHIP VIA',    key: 'ship_via',      sortable: true,  align: 'center' as const },
+  { title: 'SHIP METHOD', key: 'ship_method',   sortable: true,  align: 'center' as const },
+  { title: 'ISSUED AT',   key: 'created_at',    sortable: true,  align: 'center' as const },
+  { title: 'STATUS',      key: 'status',        sortable: true,  align: 'center' as const },
+  { title: 'ACTIONS',     key: 'actions',       sortable: false, align: 'center' as const },
 ] as const
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type SupplierSummary = {
-  names:    string[]    // all unique supplier names from items
-  display:  string      // e.g. "IZZIE COMP. +2 more" or "IZZIE COMP."
+  names:      string[]
+  display:    string
   isMultiple: boolean
 }
 
@@ -46,9 +46,7 @@ export function usePurchaseOrderList() {
   const sortKey          = ref('created_at')
   const sortOrder        = ref<'asc' | 'desc'>('desc')
 
-  // Cache of PR items per transaction id — avoids re-fetching on every render
-  const prItemsCache = ref<Record<number, PR>>({})
-
+  const prItemsCache  = ref<Record<number, PR>>({})
   const confirmDialog = ref({ show: false, poId: 0, poNumber: '' })
 
   // ─── Computed ─────────────────────────────────────────────────────
@@ -72,7 +70,6 @@ export function usePurchaseOrderList() {
     return labels[status] ?? status
   }
 
-  // Resolve supplier summary from cached PR items
   function getSupplierSummary(poId: number): SupplierSummary {
     const pr = prItemsCache.value[poId]
     if (!pr?.items?.length) return { names: [], display: '—', isMultiple: false }
@@ -94,18 +91,18 @@ export function usePurchaseOrderList() {
 
   // ─── Server Load ──────────────────────────────────────────────────
   async function loadItems({ page, itemsPerPage, sortBy }: {
-    page:          number
-    itemsPerPage:  number
-    sortBy:        { key: string; order: string }[]
+    page:         number
+    itemsPerPage: number
+    sortBy:       { key: string; order: string }[]
   }) {
     const data = await txStore.fetchTransactions({
-      transaction_type: 'purchase_order',
-      status:           filterStatus.value ?? undefined,
-      search:           search.value.trim() || undefined,
-      orderBy:          (sortBy[0]?.key ?? sortKey.value) as any,
-      ascending:        sortBy[0] != null ? sortBy[0].order === 'asc' : sortOrder.value === 'asc',
-      limit:            itemsPerPage,
-      offset:           (page - 1) * itemsPerPage,
+      po_no_not_null: true,                                          // ← only change from before
+      status:         filterStatus.value ?? undefined,
+      search:         search.value.trim() || undefined,
+      orderBy:        (sortBy[0]?.key ?? sortKey.value) as any,
+      ascending:      sortBy[0] != null ? sortBy[0].order === 'asc' : sortOrder.value === 'asc',
+      limit:          itemsPerPage,
+      offset:         (page - 1) * itemsPerPage,
     })
 
     serverItems.value = data.map((tx: any) => ({
@@ -127,7 +124,7 @@ export function usePurchaseOrderList() {
 
     totalItems.value = data.length
 
-    // Pre-fetch PR items for supplier summary display
+    // Pre-fetch linked PRs for supplier summary + PODetailModal
     await Promise.all(
       serverItems.value.map(async po => {
         if (!prItemsCache.value[po.id]) {

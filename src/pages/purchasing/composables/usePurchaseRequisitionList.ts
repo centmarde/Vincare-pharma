@@ -1,8 +1,7 @@
-import { ref, computed } from 'vue'
-import { storeToRefs } from 'pinia'
-import { useTransactionsDataStore } from '@/stores/transactionsData'
+import { useTransactionsData } from '@/composables/useTransactionsData'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
 import type { PR } from '@/stores/transactionsData'
+import { ref, computed } from 'vue'
 
 export const headers = [
   { title: 'PR #',         key: 'requisition_no',  sortable: true,  align: 'center' as const },
@@ -17,11 +16,18 @@ export const headers = [
 ]
 
 export function usePurchaseRequisitionList() {
-  const store         = useTransactionsDataStore()
   const supplierStore = useSuppliersDataStore()
 
-  const { loading, prs, filterStatus } = storeToRefs(store)
-  const { fetchPurchaseRequisition, approvePR, rejectPR, totalQty, totalCost, itemSummary, statusConfig, statusOptions } = store
+  const { 
+    // state
+    loading, filterStatus,
+    // computed
+    filteredPRs,
+    // utilities
+    totalQty, totalCost, itemSummary, statusConfig, statusOptions,
+    // actions
+    fetchPurchaseRequisition, approvePR, rejectPR,
+  } =  useTransactionsData()
 
   // ─── Local State ──────────────────────────────────────────────────
   const search          = ref('')
@@ -43,9 +49,7 @@ export function usePurchaseRequisitionList() {
 
   // ─── Computed ─────────────────────────────────────────────────────
   const sortedFilteredPRs = computed(() => {
-    let result = filterStatus.value
-      ? prs.value.filter(pr => pr.status === filterStatus.value)
-      : prs.value
+    let result = filteredPRs.value
 
     if (search.value.trim()) {
       const q = search.value.toLowerCase()
