@@ -3,7 +3,10 @@ import { usePurchaseOrderList, headers } from '@/pages/purchasing/composables/us
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import PODetailSkuModal from '../dialogs/PODetailViewModal.vue'
 import PODetailViewModal from '../dialogs/PODetailModal.vue'
-import { onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { useDisplay } from 'vuetify'
+
+const { mobile } = useDisplay()
 
 const {
   search,
@@ -25,12 +28,19 @@ const {
   handleMarkReceived,
   openDetailForSku,
   openConfirm,
+  page,
   init,
 } = usePurchaseOrderList()
-onMounted(init)
+
+const totalPages = computed(() => Math.max(1, Math.ceil(totalItems.value / itemsPerPage.value)))
+
+onMounted(() => {
+  init()
+  loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
+})
 
 function openMarkReceivedDialog(item: any) {
-  openDetailForSku(item)   // opens SKU modal, sets selectedPO + selectedPR
+  openDetailForSku(item)
 }
 
 function onMarkReceived(poId: number) {
@@ -39,53 +49,63 @@ function onMarkReceived(poId: number) {
   if (po) openConfirm(po)
 }
 
+function goToPage(p: number) {
+  if (p < 1 || p > totalPages.value || p === page.value) return
+  page.value = p
+  loadItems({ page: p, itemsPerPage: itemsPerPage.value, sortBy: [] })
+}
+
 </script>
 <template>
   <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
     <v-card class="mx-auto w-100 pa-0" max-width="1400" rounded="lg" elevation="1">
       <!-- Header -->
-      <v-card-title class="d-flex justify-space-between align-center pa-5">
-        <span class="text-h6 font-weight-bold">Warehouse Dashboard</span>
-        <div class="d-flex align-center" style="gap: 12px">
-          <v-text-field
-            v-model="search"
-            placeholder="Search..."
-            prepend-inner-icon="mdi-magnify"
-            variant="outlined"
-            density="compact"
-            hide-details
-            clearable
-            style="min-width: 240px"
-          />
-          <v-menu>
-            <template #activator="{ props }">
-              <v-btn
-                v-bind="props"
-                variant="text"
-                color="primary"
-                class="text-none font-weight-bold"
-                append-icon="mdi-chevron-down"
-              >
-                Filter
-              </v-btn>
-            </template>
-            <v-list density="compact" min-width="180">
-              <v-list-item
-                v-for="opt in statusOptions"
-                :key="String(opt.value)"
-                :title="opt.title"
-                :active="filterStatus === opt.value"
-                active-color="primary"
-                @click="filterStatus = opt.value"
-              />
-            </v-list>
-          </v-menu>
+      <v-card-title class="pa-5">
+        <div class="d-flex flex-wrap align-center" :class="mobile ? 'flex-column ga-3' : 'justify-space-between'">
+          <span class="text-h6 font-weight-bold" :class="mobile ? 'w-100' : ''">Warehouse Dashboard</span>
+          <div class="d-flex align-center" :class="mobile ? 'w-100' : ''" style="gap: 12px">
+            <v-text-field
+              v-model="search"
+              placeholder="Search..."
+              prepend-inner-icon="mdi-magnify"
+              variant="outlined"
+              density="compact"
+              hide-details
+              clearable
+              :style="mobile ? 'flex: 1; min-width: 0' : 'min-width: 240px'"
+            />
+            <v-menu>
+              <template #activator="{ props }">
+                <v-btn
+                  v-bind="props"
+                  variant="text"
+                  color="primary"
+                  class="text-none font-weight-bold"
+                  append-icon="mdi-chevron-down"
+                >
+                  Filter
+                </v-btn>
+              </template>
+              <v-list density="compact" min-width="180">
+                <v-list-item
+                  v-for="opt in statusOptions"
+                  :key="String(opt.value)"
+                  :title="opt.title"
+                  :active="filterStatus === opt.value"
+                  active-color="primary"
+                  @click="filterStatus = opt.value"
+                />
+              </v-list>
+            </v-menu>
+          </div>
         </div>
       </v-card-title>
 
       <v-divider />
 
+      <!-- ── Desktop: Data Table ──────────────────────────────────── -->
       <v-data-table-server
+        v-if="!mobile"
         v-model:items-per-page="itemsPerPage"
         :headers="headers"
         :items="serverItems"
@@ -152,7 +172,6 @@ function onMarkReceived(poId: number) {
             <v-btn variant="outlined" size="small" class="text-none" @click="openDetail(item)">
               View
             </v-btn>
-            <!-- I want this button to be visible only when the item is not complete -->
             <v-btn v-if="item.status !== 'complete'" size="small" color="primary" @click="openMarkReceivedDialog(item)">
               Mark as Received
             </v-btn>
@@ -164,6 +183,110 @@ function onMarkReceived(poId: number) {
           </div>
         </template>
       </v-data-table-server>
+
+      <!-- ── Mobile: Card List ─────────────────────────────────────── -->
+      <div v-else class="pa-4">
+        <div v-if="loading" class="text-center py-6 text-medium-emphasis">
+          Loading purchase orders...
+        </div>
+        <div v-else-if="!serverItems.length" class="text-center py-6 text-medium-emphasis">
+          No purchase orders found.
+        </div>
+        <template v-else>
+          <v-card
+            v-for="item in serverItems"
+            :key="item.id"
+            class="mb-3"
+            rounded="lg"
+            variant="outlined"
+          >
+            <v-card-text class="pa-4">
+              <div class="d-flex justify-space-between align-start mb-2">
+                <div>
+                  <span class="text-body-1 font-weight-bold">{{ item.reference_no }}</span>
+                  <div class="text-body-2 text-medium-emphasis mt-1">
+                    {{ getSupplierSummary(item.id).display }}
+                  </div>
+                </div>
+                <span
+                  class="status-chip text-caption font-weight-bold flex-shrink-0"
+                  :class="`status-chip--${item.status}`"
+                >
+                  <span class="status-dot" />
+                  {{ statusLabel(item.status) }}
+                </span>
+              </div>
+
+              <v-divider class="my-2" />
+
+              <div class="d-flex flex-wrap ga-4 text-body-2">
+                <div>
+                  <span class="text-medium-emphasis">Total: </span>
+                  <span class="font-weight-medium">{{ formatCurrency(item.total_amount) }}</span>
+                </div>
+                <div>
+                  <span class="text-medium-emphasis">Ship Via: </span>
+                  <span>{{ item.ship_via ?? '—' }}</span>
+                </div>
+                <div>
+                  <span class="text-medium-emphasis">Ship Method: </span>
+                  <span>{{ item.ship_method ?? '—' }}</span>
+                </div>
+                <div>
+                  <span class="text-medium-emphasis">Issued: </span>
+                  <span>{{ item.created_at ? formatDatePR_ISO(item.created_at) : '—' }}</span>
+                </div>
+              </div>
+            </v-card-text>
+
+            <v-card-actions class="pa-4 pt-0">
+              <v-btn variant="outlined" size="small" class="text-none" @click="openDetail(item)">
+                View
+              </v-btn>
+              <v-btn
+                v-if="item.status !== 'complete'"
+                size="small"
+                color="primary"
+                class="text-none"
+                @click="openMarkReceivedDialog(item)"
+              >
+                Mark as Received
+              </v-btn>
+              <v-chip
+                v-if="item.status === 'complete'"
+                color="green"
+                size="small"
+                variant="tonal"
+                label
+              >
+                <v-icon start size="14">mdi-check-circle</v-icon>
+                Delivered
+              </v-chip>
+            </v-card-actions>
+          </v-card>
+
+          <!-- Mobile Pagination -->
+          <div class="d-flex align-center justify-center ga-2 py-4">
+            <v-btn
+              icon="mdi-chevron-left"
+              variant="text"
+              size="small"
+              :disabled="page <= 1 || loading"
+              @click="goToPage(page - 1)"
+            />
+            <span class="text-body-2 text-medium-emphasis mx-2" style="min-width: 80px; text-align: center">
+              Page {{ page }} of {{ totalPages }}
+            </span>
+            <v-btn
+              icon="mdi-chevron-right"
+              variant="text"
+              size="small"
+              :disabled="page >= totalPages || loading"
+              @click="goToPage(page + 1)"
+            />
+          </div>
+        </template>
+      </div>
     </v-card>
 
     <!-- Opened when clicking 'View' or 'Print' inside your table rows -->
