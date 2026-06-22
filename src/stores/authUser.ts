@@ -229,6 +229,7 @@ export const useAuthUserStore = defineStore('authUser', () => {
       const roleId = user.user_metadata?.role
       console.log('getCurrentUser - User Role ID from metadata:', roleId)
       console.log('getCurrentUser - Full user metadata:', user.user_metadata)
+      console.log('getCurrentUser - Full user name:', user.user_metadata.full_name)
 
       return { user: userData }
     } catch (error) {

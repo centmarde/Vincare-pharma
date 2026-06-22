@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useToast } from 'vue-toastification'
+import { supabase } from '@/lib/supabase'
 import { useProductsDataStore, type ProductType, type CreateProductData, type UpdateProductData } from '@/stores/productsData'
+import { useTransactionsDataStore } from '@/stores/transactionsData'
+import { useTransactionItemsDataStore } from '@/stores/transactionsItemsData'
 
 const toast = useToast()
 const productsStore = useProductsDataStore()
+const transactionsStore = useTransactionsDataStore()
+const transactionItemsStore = useTransactionItemsDataStore()
 
 // Dialog states
 const showDialog = ref(false)
@@ -14,14 +19,24 @@ const dialogMode = ref<'create' | 'edit'>('create')
 // Form state
 const form = ref<any>(null)
 const productForm = ref<CreateProductData & UpdateProductData>({
-  name: '',
-  brand: '',
-  quantity: null,
-  category: null,
-  supplier_name: '',
-  unit_cost: null,
-  lot_number: '',
-  exp_number: '',
+  barcode: '',
+  sku: '',
+  product_name: '',
+  generic_name: '',
+  category: '',
+  unit: null,
+  cost_price: null,
+  selling_price: null,
+  current_stock: null,
+  reorder_level: null,
+  supplier_id: null,
+  batch_no: null,
+  expiry_date: '',
+  status: '',
+  item_decription: '',
+  offer_per_unit: null,
+  cost_per_unit: null,
+  no: null,
 })
 
 // Current product being edited/deleted
@@ -36,21 +51,31 @@ const sortBy = ref([{ key: 'created_at', order: 'desc' as 'asc' | 'desc' }])
 // Expanded rows state - store expanded item keys
 const expanded = ref<string[]>([])
 
-// Headers for the data table (Brand and Supplier moved to expanded row)
+// Track eligible product IDs (those in stock_in transactions)
+const eligibleProductIds = ref<Set<number>>(new Set())
+
+// Headers for the data table
 const headers = computed(() => [
   { title: '', key: 'data-table-expand', sortable: false },
   { title: 'ID', key: 'id', sortable: true },
-  { title: 'Name', key: 'name', sortable: true },
-  { title: 'Quantity', key: 'quantity', sortable: true },
-  { title: 'Category', key: 'category', sortable: true },
-  { title: 'Unit Cost', key: 'unit_cost', sortable: true },
-  { title: 'Lot Number', key: 'lot_number' },
-  { title: 'Exp Number', key: 'exp_number' },
+  { title: 'Product Name', key: 'product_name', sortable: true },
+  { title: 'SKU', key: 'sku', sortable: true },
+  { title: 'Stock', key: 'current_stock', sortable: true },
+  { title: 'Selling Price', key: 'selling_price', sortable: true },
+  { title: 'Cost Price', key: 'cost_price', sortable: true },
+  { title: 'Batch No.', key: 'batch_no' },
+  { title: 'Expiry Date', key: 'expiry_date' },
   { title: 'Actions', key: 'actions', sortable: false },
 ])
 
-// Computed properties
-const products = computed(() => productsStore.products)
+// Computed properties — only show products linked to stock_in transactions with valid SKUs
+const products = computed(() =>
+  productsStore.products.filter(p =>
+    p.sku != null &&
+    p.sku !== 'null' &&
+    eligibleProductIds.value.has(p.id)
+  )
+)
 const loading = computed(() => productsStore.loading)
 const totalProducts = computed(() => productsStore.productsCount)
 
@@ -60,18 +85,60 @@ const rules = {
   positiveNumber: (value: number | null) => value === null || value >= 0 || 'Must be a positive number',
 }
 
+// Fetch product IDs that appear in stock_in transactions
+async function fetchEligibleProductIds() {
+  try {
+    // Fetch all stock_in transactions
+    const stockInTxs = await transactionsStore.fetchTransactions({
+      transaction_type: 'stock_in',
+    })
+
+    if (!stockInTxs || stockInTxs.length === 0) {
+      eligibleProductIds.value = new Set()
+      return
+    }
+
+    // Get all transaction_items for these transactions
+    const productIds = new Set<number>()
+    for (const tx of stockInTxs) {
+      const items = await transactionItemsStore.fetchTransactionItems({ transaction_id: tx.id })
+      if (items) {
+        items.forEach(item => {
+          if (item.product_id) productIds.add(item.product_id)
+        })
+      }
+    }
+
+    eligibleProductIds.value = productIds
+    console.log('[ProductsWidget] Eligible product IDs from stock_in transactions:', [...productIds])
+  } catch (err) {
+    console.error('[ProductsWidget] Failed to fetch eligible product IDs:', err)
+    eligibleProductIds.value = new Set()
+  }
+}
+
 // Methods
 const openCreateDialog = () => {
   dialogMode.value = 'create'
   productForm.value = {
-    name: '',
-    brand: '',
-    quantity: null,
-    category: null,
-    supplier_name: '',
-    unit_cost: null,
-    lot_number: '',
-    exp_number: '',
+    barcode: '',
+    sku: '',
+    product_name: '',
+    generic_name: '',
+    category: '',
+    unit: null,
+    cost_price: null,
+    selling_price: null,
+    current_stock: null,
+    reorder_level: null,
+    supplier_id: null,
+    batch_no: null,
+    expiry_date: '',
+    status: '',
+    item_decription: '',
+    offer_per_unit: null,
+    cost_per_unit: null,
+    no: null,
   }
   currentProduct.value = null
   if (form.value) form.value.resetValidation()
@@ -82,14 +149,24 @@ const openEditDialog = (product: ProductType) => {
   dialogMode.value = 'edit'
   currentProduct.value = product
   productForm.value = {
-    name: product.name,
-    brand: product.brand,
-    quantity: product.quantity,
+    barcode: product.barcode,
+    sku: product.sku,
+    product_name: product.product_name,
+    generic_name: product.generic_name,
     category: product.category,
-    supplier_name: product.supplier_name,
-    unit_cost: product.unit_cost,
-    lot_number: product.lot_number,
-    exp_number: product.exp_number,
+    unit: product.unit,
+    cost_price: product.cost_price,
+    selling_price: product.selling_price,
+    current_stock: product.current_stock,
+    reorder_level: product.reorder_level,
+    supplier_id: product.supplier_id,
+    batch_no: product.batch_no,
+    expiry_date: product.expiry_date,
+    status: product.status,
+    item_decription: product.item_decription,
+    offer_per_unit: product.offer_per_unit,
+    cost_per_unit: product.cost_per_unit,
+    no: product.no,
   }
   if (form.value) form.value.resetValidation()
   showDialog.value = true
@@ -115,21 +192,27 @@ const handleSubmit = async () => {
   const { valid } = await form.value.validate()
   if (!valid) return
 
+  // Clean empty strings to null to avoid DB constraint issues
+  const cleaned: Record<string, any> = {}
+  for (const [key, value] of Object.entries(productForm.value)) {
+    cleaned[key] = value === '' ? null : value
+  }
+
   if (dialogMode.value === 'create') {
-    const result = await productsStore.createProduct(productForm.value as CreateProductData)
+    const result = await productsStore.createProduct(cleaned as CreateProductData)
     if (result) {
       toast.success('Product created successfully')
       closeDialog()
     } else {
-      toast.error('Failed to create product')
+      toast.error('Failed to create product: ' + (productsStore.error || 'Unknown error'))
     }
   } else if (dialogMode.value === 'edit' && currentProduct.value) {
-    const result = await productsStore.updateProduct(currentProduct.value.id, productForm.value as UpdateProductData)
+    const result = await productsStore.updateProduct(currentProduct.value.id, cleaned as UpdateProductData)
     if (result) {
       toast.success('Product updated successfully')
       closeDialog()
     } else {
-      toast.error('Failed to update product')
+      toast.error('Failed to update product: ' + (productsStore.error || 'Unknown error'))
     }
   }
 }
@@ -158,11 +241,15 @@ const fetchProducts = async () => {
     limit: itemsPerPage.value,
     offset: (page.value - 1) * itemsPerPage.value,
   })
+
+  console.log('[ProductsWidget] Fetch result — all products:', productsStore.products)
+  console.log('[ProductsWidget] Eligible product IDs from stock_in:', [...eligibleProductIds.value])
 }
 
 // Lifecycle
-onMounted(() => {
-  fetchProducts()
+onMounted(async () => {
+  await fetchEligibleProductIds()
+  await fetchProducts()
   productsStore.startRealtime()
 })
 
@@ -208,12 +295,17 @@ onMounted(() => {
         show-expand
         @update:options="fetchProducts"
       >
-        <template #[`item.unit_cost`]="{ value }">
+        <template #[`item.selling_price`]="{ value }">
           <span v-if="value != null">${{ Number(value).toFixed(2) }}</span>
           <span v-else class="text-grey">-</span>
         </template>
 
-        <template #[`item.quantity`]="{ value }">
+        <template #[`item.cost_price`]="{ value }">
+          <span v-if="value != null">${{ Number(value).toFixed(2) }}</span>
+          <span v-else class="text-grey">-</span>
+        </template>
+
+        <template #[`item.current_stock`]="{ value }">
           <v-chip
             :color="value && value > 10 ? 'success' : value && value > 0 ? 'warning' : 'error'"
             size="small"
@@ -231,9 +323,18 @@ onMounted(() => {
                   <v-col cols="12" md="6" class="d-flex align-center py-2">
                     <v-icon icon="mdi-label" color="primary" class="mr-3"></v-icon>
                     <div>
-                      <div class="text-caption text-grey-darken-1">Brand</div>
+                      <div class="text-caption text-grey-darken-1">Generic Name</div>
                       <div class="text-body-1 font-weight-medium">
-                        {{ item.brand || 'N/A' }}
+                        {{ item.generic_name || 'N/A' }}
+                      </div>
+                    </div>
+                  </v-col>
+                  <v-col cols="12" md="6" class="d-flex align-center py-2">
+                    <v-icon icon="mdi-barcode" color="primary" class="mr-3"></v-icon>
+                    <div>
+                      <div class="text-caption text-grey-darken-1">Barcode</div>
+                      <div class="text-body-1 font-weight-medium">
+                        {{ item.barcode || 'N/A' }}
                       </div>
                     </div>
                   </v-col>
@@ -242,7 +343,16 @@ onMounted(() => {
                     <div>
                       <div class="text-caption text-grey-darken-1">Supplier</div>
                       <div class="text-body-1 font-weight-medium">
-                        {{ item.supplier_name || 'N/A' }}
+                        {{ item.suppliers?.name || 'N/A' }}
+                      </div>
+                    </div>
+                  </v-col>
+                  <v-col cols="12" md="6" class="d-flex align-center py-2">
+                    <v-icon icon="mdi-calendar-clock" color="primary" class="mr-3"></v-icon>
+                    <div>
+                      <div class="text-caption text-grey-darken-1">Status</div>
+                      <div class="text-body-1 font-weight-medium">
+                        {{ item.status || 'N/A' }}
                       </div>
                     </div>
                   </v-col>
@@ -282,7 +392,7 @@ onMounted(() => {
   </v-card>
 
   <!-- Create/Edit Dialog -->
-  <v-dialog v-model="showDialog" max-width="700px" persistent>
+  <v-dialog v-model="showDialog" max-width="800px" persistent>
     <v-card>
       <v-card-title class="d-flex align-center">
         <v-icon :icon="dialogMode === 'create' ? 'mdi-plus-circle' : 'mdi-pencil-circle'" class="mr-2" color="primary"></v-icon>
@@ -296,7 +406,7 @@ onMounted(() => {
           <v-row>
             <v-col cols="12" sm="6">
               <v-text-field
-                v-model="productForm.name"
+                v-model="productForm.product_name"
                 label="Product Name"
                 prepend-inner-icon="mdi-package-variant"
                 variant="outlined"
@@ -307,8 +417,8 @@ onMounted(() => {
             </v-col>
             <v-col cols="12" sm="6">
               <v-text-field
-                v-model="productForm.brand"
-                label="Brand"
+                v-model="productForm.generic_name"
+                label="Generic Name"
                 prepend-inner-icon="mdi-label"
                 variant="outlined"
                 density="comfortable"
@@ -316,8 +426,26 @@ onMounted(() => {
             </v-col>
             <v-col cols="12" sm="6">
               <v-text-field
-                v-model.number="productForm.quantity"
-                label="Quantity"
+                v-model="productForm.barcode"
+                label="Barcode"
+                prepend-inner-icon="mdi-barcode"
+                variant="outlined"
+                density="comfortable"
+              ></v-text-field>
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field
+                v-model="productForm.sku"
+                label="SKU"
+                prepend-inner-icon="mdi-tag"
+                variant="outlined"
+                density="comfortable"
+              ></v-text-field>
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field
+                v-model.number="productForm.current_stock"
+                label="Current Stock"
                 type="number"
                 prepend-inner-icon="mdi-numeric"
                 variant="outlined"
@@ -328,8 +456,8 @@ onMounted(() => {
             </v-col>
             <v-col cols="12" sm="6">
               <v-text-field
-                v-model.number="productForm.unit_cost"
-                label="Unit Cost"
+                v-model.number="productForm.cost_price"
+                label="Cost Price"
                 type="number"
                 step="0.01"
                 prepend-inner-icon="mdi-currency-usd"
@@ -341,10 +469,32 @@ onMounted(() => {
             </v-col>
             <v-col cols="12" sm="6">
               <v-text-field
-                v-model.number="productForm.category"
-                label="Category ID"
+                v-model.number="productForm.selling_price"
+                label="Selling Price"
                 type="number"
+                step="0.01"
+                prepend-inner-icon="mdi-currency-usd"
+                variant="outlined"
+                density="comfortable"
+                :rules="[rules.positiveNumber]"
+                min="0"
+              ></v-text-field>
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field
+                v-model="productForm.category"
+                label="Category"
                 prepend-inner-icon="mdi-category"
+                variant="outlined"
+                density="comfortable"
+              ></v-text-field>
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field
+                v-model.number="productForm.supplier_id"
+                label="Supplier ID"
+                type="number"
+                prepend-inner-icon="mdi-truck-delivery"
                 variant="outlined"
                 density="comfortable"
                 min="0"
@@ -352,17 +502,9 @@ onMounted(() => {
             </v-col>
             <v-col cols="12" sm="6">
               <v-text-field
-                v-model="productForm.supplier_name"
-                label="Supplier Name"
-                prepend-inner-icon="mdi-truck-delivery"
-                variant="outlined"
-                density="comfortable"
-              ></v-text-field>
-            </v-col>
-            <v-col cols="12" sm="6">
-              <v-text-field
-                v-model="productForm.lot_number"
-                label="Lot Number"
+                v-model.number="productForm.batch_no"
+                label="Batch No."
+                type="number"
                 prepend-inner-icon="mdi-numeric"
                 variant="outlined"
                 density="comfortable"
@@ -370,11 +512,92 @@ onMounted(() => {
             </v-col>
             <v-col cols="12" sm="6">
               <v-text-field
-                v-model="productForm.exp_number"
-                label="Expiration Number"
+                v-model="productForm.expiry_date"
+                label="Expiry Date"
+                type="date"
                 prepend-inner-icon="mdi-calendar-clock"
                 variant="outlined"
                 density="comfortable"
+              ></v-text-field>
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field
+                v-model.number="productForm.reorder_level"
+                label="Reorder Level"
+                type="number"
+                step="0.01"
+                prepend-inner-icon="mdi-alert"
+                variant="outlined"
+                density="comfortable"
+                :rules="[rules.positiveNumber]"
+                min="0"
+              ></v-text-field>
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field
+                v-model="productForm.status"
+                label="Status"
+                prepend-inner-icon="mdi-information"
+                variant="outlined"
+                density="comfortable"
+              ></v-text-field>
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field
+                v-model="productForm.item_decription"
+                label="Item Description"
+                prepend-inner-icon="mdi-text"
+                variant="outlined"
+                density="comfortable"
+              ></v-text-field>
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field
+                v-model.number="productForm.offer_per_unit"
+                label="Offer Per Unit"
+                type="number"
+                step="0.01"
+                prepend-inner-icon="mdi-percent"
+                variant="outlined"
+                density="comfortable"
+                :rules="[rules.positiveNumber]"
+                min="0"
+              ></v-text-field>
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field
+                v-model.number="productForm.cost_per_unit"
+                label="Cost Per Unit"
+                type="number"
+                step="0.01"
+                prepend-inner-icon="mdi-currency-usd"
+                variant="outlined"
+                density="comfortable"
+                :rules="[rules.positiveNumber]"
+                min="0"
+              ></v-text-field>
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field
+                v-model.number="productForm.unit"
+                label="Unit"
+                type="number"
+                prepend-inner-icon="mdi-counter"
+                variant="outlined"
+                density="comfortable"
+                :rules="[rules.positiveNumber]"
+                min="0"
+              ></v-text-field>
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field
+                v-model.number="productForm.no"
+                label="No."
+                type="number"
+                prepend-inner-icon="mdi-numeric"
+                variant="outlined"
+                density="comfortable"
+                min="0"
               ></v-text-field>
             </v-col>
           </v-row>
@@ -404,7 +627,7 @@ onMounted(() => {
       <v-card-text>
         <p>Are you sure you want to delete this product?</p>
         <p v-if="currentProduct" class="font-weight-bold mt-2">
-          {{ currentProduct.name }} (ID: {{ currentProduct.id }})
+          {{ currentProduct.product_name }} (ID: {{ currentProduct.id }})
         </p>
         <p class="text-caption text-grey mt-2">This action cannot be undone.</p>
       </v-card-text>

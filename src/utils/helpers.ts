@@ -453,3 +453,58 @@ export const organizationsTableHeaders = [
 export const organizationValidationRules = {
   title: [(v: string) => !!v || 'Organization name is required'],
 }
+
+export const formatCurrency = (value: number): string =>
+  new Intl.NumberFormat('en-PH', {
+    style: 'currency',
+    currency: 'PHP',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value).replace('PHP', '₱')
+
+export const formatDatePR_ISO = (dateString: string | null | undefined) => {
+  if (!dateString) return ''
+  const date = new Date(dateString)
+  
+  //This is for displaying in the PR list and PO list
+  const datePart = new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: 'Asia/Manila', // Ensures correct timezone handling
+  }).format(date)
+
+  const timePart = new Intl.DateTimeFormat('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true, // Enforces strict 24-hour business format
+    timeZone: 'Asia/Manila', // Ensures correct timezone handling
+  }).format(date)
+
+  return `${datePart} ${timePart}` // Output: "2026-06-13 21:30"
+}
+
+//This is for Exporting PDF PO
+export const formatDatePO_Written = (dateString: string | null | undefined) => {
+  if (!dateString) return ''
+  const date = new Date(dateString)
+  
+  const datePart = new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  }).format(date)
+
+  const timePart = new Intl.DateTimeFormat('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true 
+  }).format(date)
+
+  return `${datePart} at ${timePart}` // Output: "13 June 2026 at 09:30 PM"
+}
+
+export function buildReferenceNumber(prefix: 'PR' | 'PO'| 'SI', lastNum: number): string {
+  const year = new Date().getFullYear()
+  return `${prefix}-${year}-${String(lastNum + 1).padStart(3, '0')}`
+}
