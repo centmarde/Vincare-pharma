@@ -23,6 +23,7 @@ declare module 'vue-router/auto-routes' {
     '/account/SettingsView': RouteRecordInfo<'/account/SettingsView', '/account/SettingsView', Record<never, never>, Record<never, never>>,
     '/admin/AdminUserRolesView': RouteRecordInfo<'/admin/AdminUserRolesView', '/admin/AdminUserRolesView', Record<never, never>, Record<never, never>>,
     '/admin/AnnouncementsView': RouteRecordInfo<'/admin/AnnouncementsView', '/admin/AnnouncementsView', Record<never, never>, Record<never, never>>,
+    '/admin/components/barcode/BarcodeWidget': RouteRecordInfo<'/admin/components/barcode/BarcodeWidget', '/admin/components/barcode/BarcodeWidget', Record<never, never>, Record<never, never>>,
     '/admin/components/dialogs/DeleteUserDialog': RouteRecordInfo<'/admin/components/dialogs/DeleteUserDialog', '/admin/components/dialogs/DeleteUserDialog', Record<never, never>, Record<never, never>>,
     '/admin/components/dialogs/EditUserDialog': RouteRecordInfo<'/admin/components/dialogs/EditUserDialog', '/admin/components/dialogs/EditUserDialog', Record<never, never>, Record<never, never>>,
     '/admin/components/dialogs/UserDetailsDialog': RouteRecordInfo<'/admin/components/dialogs/UserDetailsDialog', '/admin/components/dialogs/UserDetailsDialog', Record<never, never>, Record<never, never>>,

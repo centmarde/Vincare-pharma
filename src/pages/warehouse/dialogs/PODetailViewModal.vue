@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useToast } from 'vue-toastification'
 import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
 import type { PR } from '@/pages/purchasing/composables/usePurchaseRequisitionList'
@@ -7,6 +7,7 @@ import { usePODetailModal, company } from '@/pages/purchasing/composables/usePOD
 import { useTransactionItemsDataStore } from '@/stores/transactionsItemsData'
 import { useProductsDataStore } from '@/stores/productsData'
 import { formatCurrency, formatDatePO_Written } from '@/utils/helpers'
+import { useBarcodeScanner } from '@/pages/admin/components/barcode/composables/barcodeLogic'
 
 const props = defineProps<{
   modelValue: boolean
@@ -26,6 +27,47 @@ const productsStore = useProductsDataStore()
 const transactionItems = ref<any[]>([])
 const loadingItems = ref(false)
 const savingAll = ref(false)
+
+// ── Barcode Scanner ──────────────────────────────────────────
+const scannerVideoRef = ref<HTMLVideoElement | null>(null)
+const showScannerDialog = ref(false)
+const scanningForItemIndex = ref<number | null>(null)
+
+const {
+  isScanning,
+  isCameraReady,
+  cameraError,
+  lastScannedCode,
+  initializeCamera,
+  stopScanning,
+} = useBarcodeScanner()
+
+// Watch for scanned barcode and update the corresponding item
+watch(lastScannedCode, (scanned) => {
+  if (scanned && scanningForItemIndex.value !== null) {
+    const index = scanningForItemIndex.value
+    const item = transactionItems.value[index]
+    if (item?.product) {
+      item.product.sku = scanned.code
+      toast.success(`Scanned: ${scanned.code}`)
+    }
+    closeScanner()
+  }
+})
+
+function openScanner(itemIndex: number) {
+  scanningForItemIndex.value = itemIndex
+  showScannerDialog.value = true
+  nextTick(async () => {
+    await initializeCamera(scannerVideoRef)
+  })
+}
+
+function closeScanner() {
+  showScannerDialog.value = false
+  scanningForItemIndex.value = null
+  stopScanning()
+}
 
 const { printArea, poNumber, resolvedSupplier, handlePrint } = usePODetailModal(
   props as any,
@@ -299,6 +341,7 @@ async function handleMarkAsReceived() {
                             variant="text"
                             color="primary"
                             title="Scan barcode"
+                            @click="openScanner(index)"
                           />
                         </template>
                       </v-tooltip>
@@ -383,6 +426,78 @@ async function handleMarkAsReceived() {
         </template>
       </v-card-actions>
     </v-card>
+
+    <!-- ── Barcode Scanner Dialog ─────────────────────────────── -->
+    <v-dialog
+      v-model="showScannerDialog"
+      max-width="480"
+      persistent
+      @click:outside="closeScanner"
+    >
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          <v-icon class="mr-2">mdi-barcode-scan</v-icon>
+          Scan Barcode
+          <v-spacer />
+          <v-btn
+            icon="mdi-close"
+            size="small"
+            variant="text"
+            @click="closeScanner"
+          />
+        </v-card-title>
+
+        <v-card-text>
+          <!-- Camera Error -->
+          <v-alert
+            v-if="cameraError"
+            type="error"
+            variant="tonal"
+            class="mb-3"
+            :text="cameraError"
+          />
+
+          <!-- Scanner Feed -->
+          <div class="scanner-dialog-container">
+            <video
+              ref="scannerVideoRef"
+              class="scanner-dialog-video"
+              :class="{ 'scanner-dialog-video--hidden': !isCameraReady }"
+              playsinline
+              muted
+            />
+
+            <!-- Overlay -->
+            <div v-if="isScanning && isCameraReady" class="scanner-dialog-overlay">
+              <div class="scanner-dialog-region">
+                <div class="scanner-dialog-line" />
+                <div class="scan-corner scan-corner--tl" />
+                <div class="scan-corner scan-corner--tr" />
+                <div class="scan-corner scan-corner--bl" />
+                <div class="scan-corner scan-corner--br" />
+              </div>
+              <div class="scanner-dialog-hint">Point the camera at a barcode</div>
+            </div>
+
+            <!-- Loading -->
+            <div v-if="!isScanning && !cameraError" class="scanner-dialog-placeholder">
+              <v-progress-circular indeterminate size="32" color="primary" />
+              <p class="text-grey mt-3">Starting camera...</p>
+            </div>
+          </div>
+        </v-card-text>
+
+        <v-card-actions class="pa-4 justify-end">
+          <v-btn
+            variant="text"
+            class="text-none"
+            @click="closeScanner"
+          >
+            Cancel
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </v-dialog>
 </template>
 
@@ -413,5 +528,121 @@ async function handleMarkAsReceived() {
 .editor-input :deep(.v-field__field) input {
   padding: 4px 8px;
   font-size: 0.875rem;
+}
+
+/* ── Barcode Scanner Dialog Styles ─────────────────────────── */
+.scanner-dialog-container {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.scanner-dialog-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+
+  &--hidden {
+    opacity: 0;
+    position: absolute;
+  }
+}
+
+.scanner-dialog-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.scanner-dialog-region {
+  position: relative;
+  width: 70%;
+  height: 40%;
+}
+
+.scanner-dialog-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(var(--v-theme-primary)) 50%,
+    transparent 100%
+  );
+  animation: scanner-dialog-line-move 2s ease-in-out infinite;
+  box-shadow: 0 0 8px rgb(var(--v-theme-primary));
+}
+
+@keyframes scanner-dialog-line-move {
+  0% {
+    top: 0;
+  }
+  50% {
+    top: calc(100% - 2px);
+  }
+  100% {
+    top: 0;
+  }
+}
+
+.scan-corner {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-color: rgb(var(--v-theme-primary));
+  border-style: solid;
+
+  &--tl {
+    top: 0;
+    left: 0;
+    border-width: 3px 0 0 3px;
+  }
+
+  &--tr {
+    top: 0;
+    right: 0;
+    border-width: 3px 3px 0 0;
+  }
+
+  &--bl {
+    bottom: 0;
+    left: 0;
+    border-width: 0 0 3px 3px;
+  }
+
+  &--br {
+    bottom: 0;
+    right: 0;
+    border-width: 0 3px 3px 0;
+  }
+}
+
+.scanner-dialog-hint {
+  position: absolute;
+  bottom: 16px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.85rem;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+
+.scanner-dialog-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #999;
 }
 </style>
