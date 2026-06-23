@@ -111,6 +111,12 @@ export const navigationConfig: NavigationGroup[] = [
         route: '/warehouse/products',
         permission: 'warehouse.products.view',
       },
+      {
+        title: 'Stock Transfers',
+        icon: 'mdi-truck-fast',
+        route: '/sales/stock-transfers',
+        permission: 'warehouse.transfers.manage',
+      },
     ],
   },
   {
@@ -123,6 +129,12 @@ export const navigationConfig: NavigationGroup[] = [
         icon: 'mdi-view-dashboard',
         route: '/sales/dashboard',
         permission: 'sales.dashboard.view',
+      },
+      {
+        title: 'Stock Transfers',
+        icon: 'mdi-truck-fast',
+        route: '/sales/stock-transfers',
+        permission: 'sales.transfers.view',
       },
     ],
   },

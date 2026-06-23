@@ -22,3 +22,7 @@ pnpm-debug.log*
 *.sln
 *.sw?
 .github
+
+# Local-only docs and manually-applied SQL (not part of repo workflow)
+CLAUDE.md
+supabase/

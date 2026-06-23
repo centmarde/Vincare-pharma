@@ -12,6 +12,7 @@ export type TransactionItemType = {
   created_at: string
   transaction_id: number | null
   product_id: number | null
+  qty: number | null
   // Joined FK data
   transaction?: TransactionType | null
   product?: ProductType | null
@@ -20,6 +21,7 @@ export type TransactionItemType = {
 export type CreateTransactionItemData = {
   transaction_id?: number | null
   product_id?: number | null
+  qty?: number | null
 }
 
 export type UpdateTransactionItemData = Partial<CreateTransactionItemData>

@@ -182,7 +182,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       no:               index + 1,
       unit:             ti.products?.unit          ?? '—',
       item_description: ti.products?.product_name  ?? '—',
-      qty:              ti.products?.current_stock  ?? 0,
+      qty:              ti.qty                      ?? 0,
       offer_per_unit:   ti.products?.selling_price  ?? 0,
       cost_per_unit:    ti.products?.cost_price     ?? 0,
       product_id:       ti.product_id,
@@ -394,7 +394,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       unit:          item.unit,
       cost_price:    item.cost_per_unit,
       selling_price: item.offer_per_unit,
-      current_stock: item.qty,
+      current_stock: 0,
       supplier_id:   item.supplier_id ? Number(item.supplier_id) : null,
       status:        'active',
     }))
@@ -411,9 +411,10 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
 
     const { error: itemsError } = await supabase
       .from('transaction_items')
-      .insert(items.value.map((_, index) => ({
+      .insert(items.value.map((item, index) => ({
         transaction_id: txData.id,
         product_id:     productData[index].id,
+        qty:            item.qty,
       })))
 
     if (itemsError) {
@@ -528,7 +529,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       .select(`
         *,
         transaction_items (
-          id, product_id,
+          id, product_id, qty,
           products ( id, product_name, unit, cost_price, selling_price, current_stock, sku, supplier_id, actual_count, suppliers ( name ) )
         )
       `)
@@ -558,7 +559,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       .select(`
         *,
         transaction_items (
-          id, product_id,
+          id, product_id, qty,
           products ( id, product_name, unit, cost_price, selling_price, current_stock, sku, supplier_id, actual_count, suppliers ( name ) )
         )
       `)
