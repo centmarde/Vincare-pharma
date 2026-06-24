@@ -131,6 +131,18 @@ export const navigationConfig: NavigationGroup[] = [
         permission: 'sales.dashboard.view',
       },
       {
+        title: 'POS',
+        icon: 'mdi-cash-register',
+        route: '/sales/pos',
+        permission: 'sales.pos.use',
+      },
+      {
+        title: 'Remittance',
+        icon: 'mdi-cash-multiple',
+        route: '/sales/remittance',
+        permission: 'sales.remittance.manage',
+      },
+      {
         title: 'Stock Transfers',
         icon: 'mdi-truck-fast',
         route: '/sales/stock-transfers',

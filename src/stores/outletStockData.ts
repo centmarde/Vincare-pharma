@@ -155,6 +155,44 @@ export const useOutletStockDataStore = defineStore('outletStockData', () => {
     }
   }
 
+  // Used by the POS sale flow — the only sanctioned way to reduce outlet stock.
+  // Guards against selling more than is on hand at the outlet.
+  const decrementOutletStock = async (outletId: number, productId: number, qty: number) => {
+    clearError()
+
+    try {
+      const { data: existing, error: fetchError } = await supabase
+        .from('outlet_stock')
+        .select('id, quantity')
+        .eq('outlet_id', outletId)
+        .eq('product_id', productId)
+        .maybeSingle()
+
+      if (fetchError) throw fetchError
+
+      if (!existing || existing.quantity < qty) {
+        handleError(
+          new Error('Insufficient outlet stock'),
+          'Insufficient outlet stock for this product',
+        )
+        return false
+      }
+
+      const { error: updateError } = await supabase
+        .from('outlet_stock')
+        .update({ quantity: existing.quantity - qty, updated_at: new Date().toISOString() })
+        .eq('id', existing.id)
+
+      if (updateError) throw updateError
+
+      return true
+
+    } catch (err) {
+      handleError(err, 'Failed to update outlet stock')
+      return false
+    }
+  }
+
   const resetStore = () => {
     outletStock.value = []
     loading.value = false
@@ -177,6 +215,7 @@ export const useOutletStockDataStore = defineStore('outletStockData', () => {
     // Actions
     fetchOutletStock,
     incrementOutletStock,
+    decrementOutletStock,
     clearError,
     resetStore,
 
