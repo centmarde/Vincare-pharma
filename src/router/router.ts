@@ -15,6 +15,7 @@ import PurchasingView from '@/pages/purchasing/PurchasingView.vue'
 import PurchasingListView from '@/pages/purchasing/PurchasingListView.vue'
 import PurchaseOrdersView from '@/pages/purchasing/PurchaseOrdersView.vue'
 import WareHouseView from '@/pages/warehouse/WareHouseView.vue'
+import StockTransfersReviewView from '@/pages/warehouse/StockTransfersReviewView.vue'
 import SalesView from '@/pages/sales/SalesView.vue'
 import StockTransfersView from '@/pages/sales/StockTransfersView.vue'
 import PosView from '@/pages/sales/PosView.vue'
@@ -90,6 +91,11 @@ const routes = setupLayouts([
   {
     path: '/warehouse/products',
     component: WarehouseProductsListView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/warehouse/stock-transfers',
+    component: StockTransfersReviewView,
     meta: { requiresAuth: true },
   },
   {

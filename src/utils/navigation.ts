@@ -114,7 +114,7 @@ export const navigationConfig: NavigationGroup[] = [
       {
         title: 'Stock Transfers',
         icon: 'mdi-truck-fast',
-        route: '/sales/stock-transfers',
+        route: '/warehouse/stock-transfers',
         permission: 'warehouse.transfers.manage',
       },
     ],

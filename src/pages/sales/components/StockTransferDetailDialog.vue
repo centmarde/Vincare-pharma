@@ -3,10 +3,14 @@ import { useStockTransferDetail } from '../composables/useStockTransferDetail'
 import type { StockTransferType } from '@/stores/stockTransfersData'
 import { formatDatePR_ISO } from '@/utils/helpers'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: boolean
   transfer: StockTransferType | null
-}>()
+  // 'warehouse' reviewers approve/reject; 'outlet' requesters confirm receipt.
+  mode?: 'warehouse' | 'outlet'
+}>(), {
+  mode: 'outlet',
+})
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
@@ -84,7 +88,7 @@ async function onMarkReceived() {
               <td class="text-right">{{ item.requested_qty }}</td>
               <td class="text-right">
                 <v-text-field
-                  v-if="isApproved"
+                  v-if="isApproved && mode === 'outlet'"
                   v-model.number="receivedQtys[item.id]"
                   type="number"
                   min="0"
@@ -103,7 +107,8 @@ async function onMarkReceived() {
       <v-divider />
 
       <v-card-actions class="pa-4 justify-end" style="gap: 8px">
-        <template v-if="isPendingApproval">
+        <!-- Warehouse reviewers approve/reject a pending request. -->
+        <template v-if="mode === 'warehouse' && isPendingApproval">
           <v-btn variant="outlined" color="error" class="text-none" :loading="loading" @click="onReject">
             Reject
           </v-btn>
@@ -111,7 +116,8 @@ async function onMarkReceived() {
             Approve
           </v-btn>
         </template>
-        <template v-else-if="isApproved">
+        <!-- The outlet confirms receipt once the warehouse has approved. -->
+        <template v-else-if="mode === 'outlet' && isApproved">
           <v-btn
             color="success"
             class="text-none font-weight-bold"

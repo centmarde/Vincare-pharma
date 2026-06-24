@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import InnerLayoutWrapper from '@/layouts/InnerLayoutWrapper.vue'
-import StockTransferCRUD from './components/StockTransferCRUD.vue'
+import StockTransferCRUD from '@/pages/sales/components/StockTransferCRUD.vue'
 </script>
 
 <template>
@@ -8,7 +8,7 @@ import StockTransferCRUD from './components/StockTransferCRUD.vue'
     <template #content>
       <v-container fluid>
         <v-card>
-          <StockTransferCRUD mode="outlet" />
+          <StockTransferCRUD mode="warehouse" />
         </v-card>
       </v-container>
     </template>

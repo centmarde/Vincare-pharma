@@ -5,6 +5,10 @@ import StockTransferRequestDialog from './StockTransferRequestDialog.vue'
 import StockTransferDetailDialog from './StockTransferDetailDialog.vue'
 import { formatDatePR_ISO } from '@/utils/helpers'
 
+// 'outlet' = requesting side (create + confirm receipt);
+// 'warehouse' = reviewing side (approve/reject).
+withDefaults(defineProps<{ mode?: 'warehouse' | 'outlet' }>(), { mode: 'outlet' })
+
 const {
   loading, search, filterStatus, filterOutlet,
   statusOptions, outletOptions,
@@ -52,6 +56,7 @@ onMounted(init)
             style="min-width: 180px"
           />
           <v-btn
+            v-if="mode === 'outlet'"
             color="primary"
             class="text-none font-weight-bold"
             elevation="0"
@@ -115,6 +120,7 @@ onMounted(init)
     <StockTransferDetailDialog
       v-model="showDetailDialog"
       :transfer="selectedTransfer"
+      :mode="mode"
       @changed="handleDialogChanged"
     />
 
