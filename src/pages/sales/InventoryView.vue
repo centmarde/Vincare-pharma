@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import InnerLayoutWrapper from '@/layouts/InnerLayoutWrapper.vue'
-import SalesDashboard from './components/SalesDashboard.vue'
+import OutletInventory from './components/OutletInventory.vue'
 </script>
 
 <template>
   <InnerLayoutWrapper>
     <template #content>
       <v-container fluid class="pa-0">
-        <SalesDashboard />
+        <OutletInventory />
       </v-container>
     </template>
   </InnerLayoutWrapper>

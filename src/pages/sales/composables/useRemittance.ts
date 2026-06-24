@@ -1,7 +1,7 @@
 import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRemittancesDataStore } from '@/stores/remittancesData'
-import { useSalesDataStore } from '@/stores/salesData'
+import { EXELMED_OUTLET } from '@/stores/salesData'
 import type { ExpectedSummary } from '@/stores/remittancesData'
 
 export const headers = [
@@ -14,13 +14,11 @@ export const headers = [
 
 export function useRemittance() {
   const remitStore = useRemittancesDataStore()
-  const salesStore = useSalesDataStore()
   const { remittances, loading } = storeToRefs(remitStore)
 
   // ─── State ────────────────────────────────────────────────────────
   const showSubmitDialog = ref(false)
-  const outletId = ref<number | null>(null)
-  const expected = ref<ExpectedSummary>({ expected: 0, saleCount: 0, saleIds: [] })
+  const expected = ref<ExpectedSummary>({ expected: 0, saleCount: 0 })
   const actualAmount = ref<number | null>(null)
   const notes = ref('')
 
@@ -30,24 +28,20 @@ export function useRemittance() {
 
   // ─── Actions ──────────────────────────────────────────────────────
   async function init() {
-    outletId.value = (await salesStore.resolveExelmedOutletId()) ?? null
-    await remitStore.fetchRemittances(
-      outletId.value != null ? { outlet_id: outletId.value } : {},
-    )
+    await remitStore.fetchRemittances({ outlet: EXELMED_OUTLET })
   }
 
   async function openSubmitDialog() {
-    if (outletId.value == null) return
-    expected.value = await remitStore.computeExpected(outletId.value)
+    expected.value = await remitStore.computeExpected(EXELMED_OUTLET)
     actualAmount.value = null
     notes.value = ''
     showSubmitDialog.value = true
   }
 
   async function handleSubmit() {
-    if (outletId.value == null || !canSubmit.value) return
+    if (!canSubmit.value) return
     const result = await remitStore.submitRemittance({
-      outletId:     outletId.value,
+      outlet:       EXELMED_OUTLET,
       actualAmount: actualAmount.value ?? 0,
       notes:        notes.value || undefined,
     })

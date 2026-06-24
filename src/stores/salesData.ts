@@ -5,23 +5,34 @@ import { supabase } from '@/lib/supabase'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
-import { useOutletsDataStore } from '@/stores/outletsData'
-import { useOutletStockDataStore } from '@/stores/outletStockData'
 import type { ProductType } from '@/stores/productsData'
 
 const toast = useToast()
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// Sales now live in the `transactions` hub as transaction_type = 'sale',
+// with their lines in `transaction_items`. These types are the view-model the
+// sales UI consumes; fetch maps the hub columns onto them so the composables
+// and components are unaffected by the consolidation.
+
+export const EXELMED_OUTLET = 'EXELMED'
+
+// Outlets are constants now (the `outlets` table was folded away). Codes are
+// stored on transactions.outlet / outlet_stock.outlet; names live here.
+export const OUTLETS = [
+  { code: 'EXELMED', name: 'Exelmed Pharma Trade' },
+  { code: 'ETHICAL', name: 'Ethical Department' },
+] as const
+
+export function outletName(code: string | null | undefined): string {
+  return OUTLETS.find((o) => o.code === code)?.name ?? '—'
+}
 
 export type SaleItemType = {
   id: number
-  created_at: string
-  sale_id: number | null
   product_id: number | null
   quantity: number
   unit_price: number
   line_total: number
-  // Joined FK data
   product?: ProductType | null
 }
 
@@ -29,7 +40,7 @@ export type SaleType = {
   id: number
   created_at: string
   sale_no: string | null
-  outlet_id: number | null
+  outlet: string | null
   status: string | null
   payment_method: string | null
   subtotal: number | null
@@ -38,12 +49,14 @@ export type SaleType = {
   change_due: number | null
   cashier_id: string | null
   remittance_id: number | null
-  updated_at: string | null
-  // Joined FK data
+  customer_name: string | null
+  customer_address: string | null
+  customer_mobile: string | null
+  voided_at: string | null
+  void_reason: string | null
   sale_items?: SaleItemType[]
 }
 
-// A cart line passed into createSale (price is snapshotted from the product).
 export type SaleLineInput = {
   product_id: number
   quantity: number
@@ -51,87 +64,84 @@ export type SaleLineInput = {
 }
 
 type FetchSalesOptions = {
-  outlet_id?: number
+  outlet?: string
   unremittedOnly?: boolean
-  orderBy?: keyof Pick<SaleType, 'created_at' | 'total_amount'>
+  dateFrom?: string
+  dateTo?: string
+  orderBy?: 'created_at' | 'total_amount'
   ascending?: boolean
 }
 
-const SELECT_WITH_ITEMS = '*, sale_items(*, product:product_id(*))'
+// transactions + embedded items; mapped to SaleType in mapRowToSale().
+const SELECT_SALE = '*, transaction_items(id, product_id, qty, unit_price, line_total, product:product_id(*))'
+
+function mapRowToSale(row: any): SaleType {
+  return {
+    id:               row.id,
+    created_at:       row.created_at,
+    sale_no:          row.reference_no,
+    outlet:           row.outlet,
+    status:           row.status,
+    payment_method:   row.payment_method,
+    subtotal:         row.subtotal,
+    total_amount:     row.total_amount,
+    amount_tendered:  row.amount_tendered,
+    change_due:       row.change_due,
+    cashier_id:       row.created_by,
+    remittance_id:    row.remittance_id,
+    customer_name:    row.customer_name,
+    customer_address: row.customer_address,
+    customer_mobile:  row.customer_mobile,
+    voided_at:        row.voided_at,
+    void_reason:      row.void_reason,
+    sale_items: (row.transaction_items ?? []).map((li: any) => ({
+      id:         li.id,
+      product_id: li.product_id,
+      quantity:   li.qty,
+      unit_price: li.unit_price,
+      line_total: li.line_total,
+      product:    li.product,
+    })),
+  }
+}
 
 export const useSalesDataStore = defineStore('salesData', () => {
   const authStore = useAuthUserStore()
-  const outletsStore = useOutletsDataStore()
-  const outletStockStore = useOutletStockDataStore()
-
-  // ─── State ──────────────────────────────────────────────────────────────────
 
   const sales: Ref<SaleType[]> = ref([])
   const currentSale: Ref<SaleType | undefined> = ref(undefined)
   const loading = ref(false)
   const error: Ref<string> = ref('')
 
-  // ─── Realtime ────────────────────────────────────────────────────────────────
-
   const realtimeChannel: Ref<RealtimeChannel | null> = ref(null)
   const realtimeStatus: Ref<'idle' | 'subscribing' | 'subscribed' | 'error'> = ref('idle')
-
-  // ─── Computed ────────────────────────────────────────────────────────────────
 
   const isLoading = computed(() => loading.value)
   const hasError = computed(() => error.value !== '')
   const isRealtimeSubscribed = computed(() => realtimeStatus.value === 'subscribed')
 
-  // ─── Helpers ─────────────────────────────────────────────────────────────────
-
   const handleError = (err: unknown, defaultMessage: string) => {
     error.value = err instanceof Error ? err.message : defaultMessage
   }
+  const clearError = () => { error.value = '' }
 
-  const clearError = () => {
-    error.value = ''
+  // The POS outlet code. (No async lookup — outlets are constants now.)
+  function resolveExelmedOutlet(): string {
+    return EXELMED_OUTLET
   }
-
-  // ─── Reference Number Generator ─────────────────────────────────────────────
-
-  async function getLatestSaleNo(prefix: string): Promise<number> {
-    const { data } = await supabase
-      .from('sales')
-      .select('sale_no')
-      .ilike('sale_no', `${prefix}%`)
-      .order('sale_no', { ascending: false })
-      .limit(1)
-
-    const latest = (data as { sale_no: string }[] | null)?.[0]?.sale_no
-    return latest ? parseInt(latest.split('-')[2], 10) : 0
-  }
-
-  async function generateSaleNumber(): Promise<string> {
-    const year   = new Date().getFullYear()
-    const prefix = `SO-${year}-`
-    const last   = await getLatestSaleNo(prefix)
-    return `${prefix}${String(last + 1).padStart(3, '0')}`
-  }
-
-  // ─── Realtime ────────────────────────────────────────────────────────────────
 
   const startRealtime = () => {
     if (realtimeChannel.value) return realtimeChannel.value
-
     realtimeStatus.value = 'subscribing'
-
     const channel = supabase
       .channel('sales-channel')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, async () => {
-        await fetchSales()
-      })
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'transactions', filter: 'transaction_type=eq.sale' },
+        async () => { await fetchSales() })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') realtimeStatus.value = 'subscribed'
-        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          realtimeStatus.value = 'error'
-        }
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') realtimeStatus.value = 'error'
       })
-
     realtimeChannel.value = channel
     return channel
   }
@@ -139,34 +149,31 @@ export const useSalesDataStore = defineStore('salesData', () => {
   const stopRealtime = async () => {
     const channel = realtimeChannel.value
     if (!channel) return
-
     realtimeChannel.value = null
     realtimeStatus.value = 'idle'
     await supabase.removeChannel(channel)
   }
 
-  // ─── Actions ─────────────────────────────────────────────────────────────────
-
   const fetchSales = async (options: FetchSalesOptions = {}) => {
     loading.value = true
     clearError()
-
     try {
-      const { outlet_id, unremittedOnly, orderBy = 'created_at', ascending = false } = options
+      const { outlet, unremittedOnly, dateFrom, dateTo, orderBy = 'created_at', ascending = false } = options
 
-      let q = supabase.from('sales').select(SELECT_WITH_ITEMS)
+      let q = supabase.from('transactions').select(SELECT_SALE).eq('transaction_type', 'sale')
 
-      if (typeof outlet_id === 'number') q = q.eq('outlet_id', outlet_id)
+      if (outlet) q = q.eq('outlet', outlet)
       if (unremittedOnly) q = q.is('remittance_id', null).eq('status', 'completed')
+      if (dateFrom) q = q.gte('created_at', dateFrom)
+      if (dateTo) q = q.lte('created_at', dateTo)
 
-      q = q.order(orderBy as string, { ascending })
+      q = q.order(orderBy, { ascending })
 
       const { data, error: fetchError } = await q
       if (fetchError) throw fetchError
 
-      sales.value = (data || []) as unknown as SaleType[]
+      sales.value = (data || []).map(mapRowToSale)
       return sales.value
-
     } catch (err) {
       handleError(err, 'Failed to fetch sales')
       return []
@@ -175,17 +182,70 @@ export const useSalesDataStore = defineStore('salesData', () => {
     }
   }
 
-  // Resolve the Exelmed outlet by code so we never hardcode a magic id.
-  async function resolveExelmedOutletId(): Promise<number | undefined> {
-    if (!outletsStore.outlets.length) await outletsStore.fetchOutlets()
-    return outletsStore.outlets.find(o => o.code === 'EXELMED')?.id
-  }
-
-  const createSale = async (payload: { lines: SaleLineInput[]; amountTendered: number }) => {
+  const createSale = async (payload: {
+    lines: SaleLineInput[]
+    amountTendered: number
+    customer?: { name?: string | null; address?: string | null; mobile?: string | null }
+  }) => {
     loading.value = true
     clearError()
 
-    const { lines, amountTendered } = payload
+    const { lines, amountTendered, customer } = payload
+
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) {
+      toast.error('User not authenticated.')
+      loading.value = false
+      return { success: false }
+    }
+    if (!lines.length) {
+      toast.warning('Cart is empty.')
+      loading.value = false
+      return { success: false }
+    }
+
+    const cashierName = user.user_metadata?.full_name ?? user.email ?? '—'
+
+    // Atomic: header + items + stock decrement happen inside the DB function.
+    const { data: saleId, error: rpcError } = await supabase.rpc('pos_create_sale', {
+      p_outlet:           EXELMED_OUTLET,
+      p_lines:            lines,
+      p_tendered:         amountTendered,
+      p_customer_name:    customer?.name ?? null,
+      p_customer_address: customer?.address ?? null,
+      p_customer_mobile:  customer?.mobile ?? null,
+      p_cashier:          user.id,
+    })
+
+    if (rpcError) {
+      handleError(rpcError, 'Failed to record sale.')
+      toast.error(rpcError.message || 'Failed to record sale.')
+      loading.value = false
+      return { success: false }
+    }
+
+    // Read back the created sale for the receipt.
+    const { data: row } = await supabase
+      .from('transactions')
+      .select('reference_no, subtotal, total_amount, change_due')
+      .eq('id', saleId)
+      .single()
+
+    toast.success(`Sale ${row?.reference_no ?? ''} completed.`)
+    loading.value = false
+    return {
+      success: true,
+      saleNo:   row?.reference_no as string,
+      subtotal: (row?.subtotal ?? 0) as number,
+      total:    (row?.total_amount ?? 0) as number,
+      change:   (row?.change_due ?? 0) as number,
+      cashierName,
+    }
+  }
+
+  const voidSale = async (saleId: number, reason: string) => {
+    loading.value = true
+    clearError()
 
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) {
@@ -194,95 +254,23 @@ export const useSalesDataStore = defineStore('salesData', () => {
       return { success: false }
     }
 
-    if (!lines.length) {
-      toast.warning('Cart is empty.')
+    const { error: rpcError } = await supabase.rpc('pos_void_sale', {
+      p_sale_id: saleId,
+      p_reason:  reason,
+      p_user:    user.id,
+    })
+
+    if (rpcError) {
+      handleError(rpcError, 'Failed to void sale.')
+      toast.error(rpcError.message || 'Failed to void sale.')
       loading.value = false
       return { success: false }
     }
 
-    const outletId = await resolveExelmedOutletId()
-    if (outletId == null) {
-      handleError(new Error('Exelmed outlet not found'), 'Exelmed outlet not found.')
-      toast.error('Exelmed outlet not found.')
-      loading.value = false
-      return { success: false }
-    }
-
-    // Validate stock availability before writing anything.
-    await outletStockStore.fetchOutletStock({ outletId })
-    for (const line of lines) {
-      const onHand = outletStockStore.outletStock.find(s => s.product_id === line.product_id)?.quantity ?? 0
-      if (line.quantity > onHand) {
-        toast.error('Not enough stock for one or more items.')
-        loading.value = false
-        return { success: false }
-      }
-    }
-
-    const subtotal = lines.reduce((sum, l) => sum + l.quantity * l.unit_price, 0)
-    const total = subtotal
-    if (amountTendered < total) {
-      toast.warning('Amount tendered is less than the total.')
-      loading.value = false
-      return { success: false }
-    }
-
-    const saleNo = await generateSaleNumber()
-
-    const { data: saleData, error: saleError } = await supabase
-      .from('sales')
-      .insert({
-        sale_no:         saleNo,
-        outlet_id:       outletId,
-        status:          'completed',
-        payment_method:  'cash',
-        subtotal,
-        total_amount:    total,
-        amount_tendered: amountTendered,
-        change_due:      amountTendered - total,
-        cashier_id:      user.id,
-      })
-      .select('*')
-      .single()
-
-    if (saleError || !saleData) {
-      handleError(saleError, 'Failed to record sale.')
-      toast.error('Failed to record sale.')
-      loading.value = false
-      return { success: false }
-    }
-
-    const { error: itemsError } = await supabase
-      .from('sale_items')
-      .insert(lines.map(l => ({
-        sale_id:    saleData.id,
-        product_id: l.product_id,
-        quantity:   l.quantity,
-        unit_price: l.unit_price,
-        line_total: l.quantity * l.unit_price,
-      })))
-
-    if (itemsError) {
-      handleError(itemsError, 'Failed to save sale items.')
-      toast.error('Failed to save sale items.')
-      loading.value = false
-      return { success: false }
-    }
-
-    // Decrement outlet stock per line (point of sale → stock leaves the outlet).
-    for (const line of lines) {
-      const ok = await outletStockStore.decrementOutletStock(outletId, line.product_id, line.quantity)
-      if (!ok) {
-        toast.error('Failed to deduct outlet stock.')
-        loading.value = false
-        return { success: false }
-      }
-    }
-
-    toast.success(`Sale ${saleNo} completed.`)
-    currentSale.value = saleData as SaleType
+    toast.success('Sale voided and stock restored.')
+    await fetchSales()
     loading.value = false
-    return { success: true, sale: saleData as SaleType, saleNo, total, change: amountTendered - total }
+    return { success: true }
   }
 
   const resetStore = () => {
@@ -292,29 +280,20 @@ export const useSalesDataStore = defineStore('salesData', () => {
     error.value = ''
   }
 
-  // ─── Expose ───────────────────────────────────────────────────────────────────
-
   return {
-    // State
     sales,
     currentSale,
     loading,
     error,
-
-    // Computed
     isLoading,
     hasError,
     isRealtimeSubscribed,
-
-    // Actions
     fetchSales,
     createSale,
-    generateSaleNumber,
-    resolveExelmedOutletId,
+    voidSale,
+    resolveExelmedOutlet,
     clearError,
     resetStore,
-
-    // Realtime
     startRealtime,
     stopRealtime,
   }

@@ -137,6 +137,18 @@ export const navigationConfig: NavigationGroup[] = [
         permission: 'sales.pos.use',
       },
       {
+        title: 'Inventory',
+        icon: 'mdi-clipboard-list',
+        route: '/sales/inventory',
+        permission: 'sales.inventory.view',
+      },
+      {
+        title: 'Sales History',
+        icon: 'mdi-history',
+        route: '/sales/history',
+        permission: 'sales.history.view',
+      },
+      {
         title: 'Remittance',
         icon: 'mdi-cash-multiple',
         route: '/sales/remittance',

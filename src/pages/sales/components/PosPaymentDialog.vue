@@ -8,11 +8,17 @@ defineProps<{
   changeDue: number
   canComplete: boolean
   loading: boolean
+  customerName: string
+  customerAddress: string
+  customerMobile: string
 }>()
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
   (e: 'update:tendered', value: number | null): void
+  (e: 'update:customerName', value: string): void
+  (e: 'update:customerAddress', value: string): void
+  (e: 'update:customerMobile', value: string): void
   (e: 'confirm'): void
 }>()
 
@@ -35,6 +41,36 @@ const quickAmounts = [20, 50, 100, 200, 500, 1000]
           <span class="text-body-1 text-medium-emphasis">Total Due</span>
           <span class="text-h5 font-weight-bold">{{ formatCurrency(total) }}</span>
         </div>
+
+        <label class="field-label">Customer <span class="text-medium-emphasis">(optional)</span></label>
+        <v-text-field
+          :model-value="customerName"
+          placeholder="Customer / business name"
+          variant="outlined"
+          density="compact"
+          hide-details
+          class="mb-2"
+          @update:model-value="emit('update:customerName', $event)"
+        />
+        <v-text-field
+          :model-value="customerAddress"
+          placeholder="Address"
+          variant="outlined"
+          density="compact"
+          hide-details
+          class="mb-2"
+          @update:model-value="emit('update:customerAddress', $event)"
+        />
+        <v-text-field
+          :model-value="customerMobile"
+          placeholder="Mobile"
+          variant="outlined"
+          density="compact"
+          hide-details
+          @update:model-value="emit('update:customerMobile', $event)"
+        />
+
+        <v-divider class="my-4" />
 
         <label class="field-label">Cash Tendered <span class="text-error">*</span></label>
         <v-text-field

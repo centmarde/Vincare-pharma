@@ -17,6 +17,7 @@ const checkout = usePosCheckout(pos)
 const {
   loading: saleLoading,
   showPayment, showReceipt, amountTendered, changeDue, canComplete,
+  customerName, customerAddress, customerMobile,
   lastReceipt, openPayment, confirmPayment,
 } = checkout
 
@@ -162,7 +163,13 @@ onMounted(init)
       :change-due="changeDue"
       :can-complete="canComplete"
       :loading="saleLoading"
+      :customer-name="customerName"
+      :customer-address="customerAddress"
+      :customer-mobile="customerMobile"
       @update:tendered="amountTendered = $event"
+      @update:customer-name="customerName = $event"
+      @update:customer-address="customerAddress = $event"
+      @update:customer-mobile="customerMobile = $event"
       @confirm="confirmPayment"
     />
 

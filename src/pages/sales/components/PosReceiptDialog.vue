@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { ref, nextTick } from 'vue'
+import html2pdf from 'html2pdf.js'
+import { useToast } from 'vue-toastification'
 import type { Receipt } from '../composables/usePosCheckout'
 import { formatCurrency } from '@/utils/helpers'
 
-defineProps<{
+const props = defineProps<{
   modelValue: boolean
   receipt: Receipt | null
 }>()
@@ -10,54 +13,157 @@ defineProps<{
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
 }>()
+
+const toast = useToast()
+const printArea = ref<HTMLElement | null>(null)
+
+// Exelmed Pharma Trade — from the official delivery receipt.
+const company = {
+  name:    'EXELMED PHARMA TRADE',
+  line1:   'Ground Floor NB Building, Ochoa Avenue, Butuan City',
+  line2:   '8600 Agusan del Norte, Philippines (Tel: 085-3000-460)',
+  license: 'License Number: 3000001108883 - VAT Reg: TIN: 178-845-363-000',
+  contact: 'Mobile: 09090734525 - Email Address: exelmedshop@gmail.com',
+} as const
+
+function formatReceiptDate(iso: string): string {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+async function handlePrint() {
+  await nextTick()
+  const el = printArea.value
+  if (!el || !props.receipt) return
+
+  el.querySelectorAll('div, td, th, span, p').forEach((child) => {
+    ;(child as HTMLElement).style.color = '#000000'
+  })
+
+  await html2pdf()
+    .set({
+      margin:      10,
+      filename:    `${props.receipt.sale_no}.pdf`,
+      image:       { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false },
+      jsPDF:       { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    })
+    .from(el)
+    .save()
+
+  toast.success(`${props.receipt.sale_no} receipt generated.`)
+}
 </script>
 
 <template>
   <v-dialog
     :model-value="modelValue"
-    max-width="420"
+    max-width="800"
+    scrollable
     @update:model-value="emit('update:modelValue', $event)"
   >
     <v-card rounded="lg" v-if="receipt">
-      <v-card-text class="pa-6 text-center">
-        <v-icon color="success" size="48" class="mb-2">mdi-check-circle</v-icon>
-        <div class="text-h6 font-weight-bold mb-1">Sale Completed</div>
-        <div class="text-body-2 text-medium-emphasis mb-4">{{ receipt.sale_no }}</div>
-
-        <v-divider class="mb-3" />
-
-        <div class="text-left">
-          <div
-            v-for="(line, i) in receipt.lines"
-            :key="i"
-            class="d-flex justify-space-between text-body-2 mb-1"
-          >
-            <span>{{ line.quantity }} × {{ line.product_name }}</span>
-            <span>{{ formatCurrency(line.line_total) }}</span>
+      <v-card-text class="pa-6">
+        <div ref="printArea" class="receipt">
+          <!-- Header -->
+          <div class="text-center mb-4">
+            <div class="text-h5 font-weight-bold" style="letter-spacing: 2px;">{{ company.name }}</div>
+            <div class="text-caption text-medium-emphasis">{{ company.line1 }}</div>
+            <div class="text-caption text-medium-emphasis">{{ company.line2 }}</div>
+            <div class="text-caption text-medium-emphasis">{{ company.license }}</div>
+            <div class="text-caption text-medium-emphasis">{{ company.contact }}</div>
           </div>
-        </div>
 
-        <v-divider class="my-3" />
+          <div class="text-center text-h6 font-weight-bold mb-4" style="letter-spacing: 2px;">
+            DELIVERY RECEIPT
+          </div>
 
-        <div class="d-flex justify-space-between text-body-1 font-weight-bold mb-1">
-          <span>Total</span><span>{{ formatCurrency(receipt.total) }}</span>
-        </div>
-        <div class="d-flex justify-space-between text-body-2 text-medium-emphasis">
-          <span>Tendered</span><span>{{ formatCurrency(receipt.tendered) }}</span>
-        </div>
-        <div class="d-flex justify-space-between text-body-2 text-success font-weight-medium">
-          <span>Change</span><span>{{ formatCurrency(receipt.change) }}</span>
+          <!-- Meta: SI # + customer | date + prepared by -->
+          <v-row class="mb-2" no-gutters>
+            <v-col cols="7">
+              <div class="text-body-2"><span class="font-weight-bold">SI #</span> {{ receipt.sale_no }}</div>
+              <div class="text-caption font-weight-bold mt-2">Customer:</div>
+              <div class="text-body-2 font-weight-medium">{{ receipt.customer.name || '—' }}</div>
+              <div class="text-body-2" v-if="receipt.customer.address">{{ receipt.customer.address }}</div>
+              <div class="text-body-2" v-if="receipt.customer.mobile">Mobile: {{ receipt.customer.mobile }}</div>
+              <div class="text-body-2 mt-2">
+                <span class="font-weight-bold">Prepared By:</span> {{ receipt.cashier }}
+              </div>
+            </v-col>
+            <v-col cols="5" class="text-right">
+              <div class="text-body-2">Date {{ formatReceiptDate(receipt.date) }}</div>
+            </v-col>
+          </v-row>
+
+          <v-divider class="my-3" />
+
+          <!-- Line items -->
+          <v-table density="compact" class="receipt-table">
+            <thead>
+              <tr>
+                <th class="text-left">Product</th>
+                <th class="text-right">Quantity</th>
+                <th class="text-right">Unit Price</th>
+                <th class="text-right">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(line, i) in receipt.lines" :key="i">
+                <td>
+                  <div class="font-weight-medium">{{ line.product_name }}</div>
+                  <div class="text-caption text-medium-emphasis" v-if="line.batch_no || line.expiry_date">
+                    <span v-if="line.batch_no">Lot: {{ line.batch_no }}</span>
+                    <span v-if="line.batch_no && line.expiry_date"> , </span>
+                    <span v-if="line.expiry_date">Expiry: {{ line.expiry_date }}</span>
+                  </div>
+                </td>
+                <td class="text-right">{{ line.quantity }} {{ line.unit ?? '' }}</td>
+                <td class="text-right">{{ formatCurrency(line.unit_price) }}</td>
+                <td class="text-right">{{ formatCurrency(line.line_total) }}</td>
+              </tr>
+            </tbody>
+          </v-table>
+
+          <v-divider class="my-3" />
+
+          <!-- Totals -->
+          <v-row no-gutters>
+            <v-col cols="7" />
+            <v-col cols="5">
+              <div class="d-flex justify-space-between text-body-2 mb-1">
+                <span>Subtotal:</span><span>Php {{ formatCurrency(receipt.subtotal).replace('₱', '') }}</span>
+              </div>
+              <div class="d-flex justify-space-between text-body-1 font-weight-bold mb-1">
+                <span>Total:</span><span>Php {{ formatCurrency(receipt.total).replace('₱', '') }}</span>
+              </div>
+              <div class="d-flex justify-space-between text-body-2 mb-1">
+                <span>Cash Tendered:</span><span>Php {{ formatCurrency(receipt.tendered).replace('₱', '') }}</span>
+              </div>
+              <div class="d-flex justify-space-between text-body-2 font-weight-medium">
+                <span>Change:</span><span>Php {{ formatCurrency(receipt.change).replace('₱', '') }}</span>
+              </div>
+            </v-col>
+          </v-row>
+
+          <!-- Received by -->
+          <div class="mt-8">
+            <div style="border-bottom: 1px solid #000; width: 260px;" />
+            <div class="text-caption mt-1">Received by: Signature Over Printed Name</div>
+          </div>
         </div>
       </v-card-text>
 
       <v-divider />
 
-      <v-card-actions class="pa-4 justify-center">
+      <v-card-actions class="pa-4 justify-end" style="gap: 8px">
+        <v-btn variant="text" color="error" class="text-none" prepend-icon="mdi-printer" @click="handlePrint">
+          Print
+        </v-btn>
         <v-btn
           color="primary"
           class="text-none font-weight-bold"
           elevation="0"
-          block
           @click="emit('update:modelValue', false)"
         >
           New Sale
@@ -66,3 +172,16 @@ const emit = defineEmits<{
     </v-card>
   </v-dialog>
 </template>
+
+<style scoped>
+.receipt-table th {
+  font-size: 0.8rem !important;
+  font-weight: 700 !important;
+  border-bottom: 1px solid #ccc;
+}
+.receipt-table td {
+  vertical-align: top;
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+}
+</style>

@@ -83,8 +83,8 @@ onMounted(init)
           <span class="font-weight-medium">{{ item.transfer_no }}</span>
         </template>
 
-        <template #item.outlet_id="{ item }">
-          {{ outletName(item.outlet_id) }}
+        <template #item.outlet="{ item }">
+          {{ outletName(item.outlet) }}
         </template>
 
         <template #item.created_at="{ item }">

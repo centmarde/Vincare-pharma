@@ -52,7 +52,7 @@ export function useStockTransferDetail(
 
   async function handleMarkReceived() {
     const t = transfer()
-    if (!t || t.outlet_id == null) return
+    if (!t || !t.outlet) return
 
     if (missingReceivedQty.value > 0) {
       toast.warning('Please enter a received quantity for every item.')
@@ -63,11 +63,10 @@ export function useStockTransferDetail(
 
     const receivedItems = items.value.map(item => ({
       item_id:      item.id,
-      product_id:   item.product_id!,
       received_qty: receivedQtys.value[item.id],
     }))
 
-    const success = await transfersStore.receiveTransfer(t.id, t.outlet_id, receivedItems)
+    const success = await transfersStore.receiveTransfer(t.id, receivedItems)
 
     loading.value = false
 

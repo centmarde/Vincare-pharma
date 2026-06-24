@@ -1,7 +1,7 @@
 import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
-import { useSalesDataStore } from '@/stores/salesData'
+import { EXELMED_OUTLET } from '@/stores/salesData'
 import { useOutletStockDataStore } from '@/stores/outletStockData'
 
 const toast = useToast()
@@ -10,6 +10,9 @@ export type CartLine = {
   product_id: number
   product_name: string
   sku: string | null
+  unit: string | null
+  batch_no: number | null
+  expiry_date: string | null
   unit_price: number
   quantity: number
   available: number
@@ -19,19 +22,20 @@ export type PosProduct = {
   product_id: number
   product_name: string
   sku: string | null
+  unit: string | null
+  batch_no: number | null
+  expiry_date: string | null
   unit_price: number
   available: number
 }
 
 export function usePos() {
-  const salesStore = useSalesDataStore()
   const outletStockStore = useOutletStockDataStore()
   const { outletStock, loading } = storeToRefs(outletStockStore)
 
   // ─── State ────────────────────────────────────────────────────────
   const search = ref('')
   const cart = ref<CartLine[]>([])
-  const outletId = ref<number | null>(null)
 
   // ─── Computed ─────────────────────────────────────────────────────
   // Sellable products = Exelmed outlet_stock rows with qty on hand.
@@ -42,6 +46,9 @@ export function usePos() {
         product_id:   s.product_id,
         product_name: s.product?.product_name ?? '—',
         sku:          s.product?.sku ?? null,
+        unit:         s.product?.unit != null ? String(s.product.unit) : null,
+        batch_no:     s.product?.batch_no ?? null,
+        expiry_date:  s.product?.expiry_date ?? null,
         unit_price:   s.product?.selling_price ?? 0,
         available:    s.quantity,
       })),
@@ -75,6 +82,9 @@ export function usePos() {
       product_id:   product.product_id,
       product_name: product.product_name,
       sku:          product.sku,
+      unit:         product.unit,
+      batch_no:     product.batch_no,
+      expiry_date:  product.expiry_date,
       unit_price:   product.unit_price,
       quantity:     1,
       available:    product.available,
@@ -99,21 +109,15 @@ export function usePos() {
 
   // ─── Init ─────────────────────────────────────────────────────────
   async function init() {
-    const id = await salesStore.resolveExelmedOutletId()
-    if (id == null) {
-      toast.error('Exelmed outlet not found.')
-      return
-    }
-    outletId.value = id
-    await outletStockStore.fetchOutletStock({ outletId: id })
+    await outletStockStore.fetchOutletStock({ outlet: EXELMED_OUTLET })
   }
 
   async function refreshStock() {
-    if (outletId.value != null) await outletStockStore.fetchOutletStock({ outletId: outletId.value })
+    await outletStockStore.fetchOutletStock({ outlet: EXELMED_OUTLET })
   }
 
   return {
-    search, cart, loading, outletId,
+    search, cart, loading,
     products, filteredProducts,
     subtotal, total, itemCount, isEmpty,
     addToCart, setQty, removeFromCart, clearCart,

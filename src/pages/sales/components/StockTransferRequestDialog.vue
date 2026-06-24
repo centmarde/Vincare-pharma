@@ -12,7 +12,7 @@ const emit = defineEmits<{
 }>()
 
 const {
-  loading, outletId, remarks, items,
+  loading, outlet, remarks, items,
   outletOptions, productOptions,
   addItem, removeItem, handleSubmit, init,
 } = useStockTransferRequest(() => emit('created'))
@@ -39,7 +39,7 @@ onMounted(init)
           <v-col cols="12">
             <label class="field-label">Outlet <span class="text-error">*</span></label>
             <v-select
-              v-model="outletId"
+              v-model="outlet"
               :items="outletOptions"
               placeholder="Select destination outlet"
               variant="outlined"
