@@ -68,6 +68,8 @@ export function usePurchaseRequisitionList() {
       return sortOrder.value === 'asc' ? cmp : -cmp
     })
   })
+  // total count of filtered results (used for mobile pagination)
+  const totalItems = computed(() => sortedFilteredPRs.value.length)
 
   // ─── Actions ──────────────────────────────────────────────────────
   function openDetail(pr: PR) {
@@ -119,6 +121,25 @@ export function usePurchaseRequisitionList() {
     ])
   }
 
+  // ─── Mobile Pagination ────────────────────────────────────────────
+  function prevPage() {
+    if (page.value > 1) {
+      page.value--
+    }
+  }
+
+  function nextPage() {
+    if (page.value * itemsPerPage.value < totalItems.value) {
+      page.value++
+    }
+  }
+
+  // slice of sortedFilteredPRs for the current mobile page
+  const pagedPRs = computed(() => {
+    const start = (page.value - 1) * itemsPerPage.value
+    return sortedFilteredPRs.value.slice(start, start + itemsPerPage.value)
+  })
+
   return {
     // store refs
     loading, filterStatus,
@@ -128,11 +149,15 @@ export function usePurchaseRequisitionList() {
     confirmDialog, page, itemsPerPage,
     // computed
     sortedFilteredPRs,
+    pagedPRs,
+    totalItems,
     // store utils
     totalQty, totalCost, itemSummary, statusConfig, statusOptions,
     // actions
     openDetail, openConfirm, closeConfirm,
     handleConfirm, openPurchaseOrder,
     loadItems, init,
+    // mobile pagination
+    prevPage, nextPage,
   }
 }

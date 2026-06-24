@@ -570,6 +570,24 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
     const names = resolveUserNames(data.created_by, data.approved_by)  // ← sync now
     return mapToPR(data, mapTransactionItems(data.transaction_items || []), names)
   }
+  // For counting the total rows for transactions
+  async function fetchTransactionsCount(options: FetchTransactionsOptions = {}): Promise<number> {
+    const { po_no_not_null, status, search } = options
+
+    let q = supabase
+      .from('transactions')
+      .select('*', { count: 'exact', head: true }) // head: true = no rows returned, just count
+
+    if (po_no_not_null) q = q.not('po_no', 'is', null)
+    if (status)         q = q.eq('status', status)
+    if (search?.trim()) {
+      const s = search.trim().replace(/,/g, '')
+      q = q.or(`requisition_no.ilike.%${s}%,remarks.ilike.%${s}%,status.ilike.%${s}%`)
+    }
+
+    const { count } = await q
+    return count ?? 0
+  }
 
   async function markPOAsReceived(poId: number): Promise<boolean> {
     loading.value = true
@@ -661,7 +679,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
 
     // PR actions
     savePurchaseRequisition, resetStore,
-    fetchPurchaseRequisition, approvePR, rejectPR,
+    fetchPurchaseRequisition, approvePR, rejectPR, fetchTransactionsCount,
 
     // PO actions
     issuePurchaseOrder, fetchPRByRequisitionId, markPOAsReceived,

@@ -3,6 +3,7 @@ import { usePurchaseRequisitionList, headers } from '../composables/usePurchaseR
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import PRDetailModal from './PRDetailModal.vue'
 import IssuePOModal from './IssuePOModal.vue'
+import { useDisplay } from 'vuetify'
 import { onMounted } from 'vue'
 
 const {
@@ -17,6 +18,8 @@ const {
   itemSummary,
   statusConfig,
   page,
+  pagedPRs,      // ← use this in v-for on mobile instead of sortedFilteredPRs
+  totalItems,
   itemsPerPage,
   statusOptions,
   showModal,
@@ -24,57 +27,64 @@ const {
   showPOModal,
   selectedPRForPO,
   confirmDialog,
+  prevPage,
+  nextPage,
   openDetail,
   openConfirm,
   closeConfirm,
   handleConfirm,
   openPurchaseOrder,
 } = usePurchaseRequisitionList()
-
-onMounted(() => init())
+const { mobile } = useDisplay()
+onMounted(() => {
+  init()
+})
 </script>
 
 <template>
   <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
     <v-card class="mx-auto w-100" max-width="1400" rounded="lg" elevation="1">
       <!-- Header -->
-      <v-card-title class="d-flex justify-space-between align-center pa-5">
-        <div class="d-flex align-center">
-          <v-icon icon="mdi-file-clock-outline" size="36" class="mr-1 text-primary"></v-icon>
-            <span class="text-h6 font-weight-bold">Purchase Requisition</span>
+      <v-card-title class="pa-4 pa-sm-5">
+        <div class="d-flex justify-space-between align-center" :class="mobile ? 'mb-3' : ''">
+          <div class="d-flex align-center">
+            <v-icon icon="mdi-file-clock-outline" :size="mobile ? 28 : 36" class="mr-1 text-primary" />
+            <span :class="mobile ? 'text-subtitle-1' : 'text-h6'" class="font-weight-bold">
+              Purchase Requisition
+            </span>
+          </div>
+
+          <!-- Desktop: search + filter -->
+          <div v-if="!mobile" class="d-flex align-center" style="gap: 12px">
+            <v-text-field v-model="search" placeholder="Search..." prepend-inner-icon="mdi-magnify"
+              variant="outlined" density="compact" hide-details clearable style="min-width: 240px" />
+            <v-menu>
+              <template #activator="{ props }">
+                <v-btn v-bind="props" variant="text" class="text-none font-weight-bold"
+                  color="primary" append-icon="mdi-chevron-down">Filter</v-btn>
+              </template>
+              <v-list density="compact" min-width="180">
+                <v-list-item v-for="opt in statusOptions" :key="String(opt.value)" :title="opt.title"
+                  :active="filterStatus === opt.value" active-color="primary"
+                  @click="filterStatus = opt.value" />
+              </v-list>
+            </v-menu>
+          </div>
         </div>
-        <div class="d-flex align-center" style="gap: 12px">
-          <v-text-field
-            v-model="search"
-            placeholder="Search..."
-            prepend-inner-icon="mdi-magnify"
-            variant="outlined"
-            density="compact"
-            hide-details
-            clearable
-            style="min-width: 240px"
-          />
+
+        <!-- Mobile: search + icon filter (reuses same list) -->
+        <div v-if="mobile" class="d-flex align-center" style="gap: 8px">
+          <v-text-field v-model="search" placeholder="Search..." prepend-inner-icon="mdi-magnify"
+            variant="outlined" density="compact" hide-details clearable style="flex: 1; min-width: 0" />
           <v-menu>
             <template #activator="{ props }">
-              <v-btn
-                v-bind="props"
-                variant="text"
-                class="text-none font-weight-bold"
-                color="primary"
-                append-icon="mdi-chevron-down"
-              >
-                Filter
-              </v-btn>
+              <v-btn v-bind="props" variant="outlined" icon="mdi-filter-outline"
+                density="compact" color="primary" size="40" />
             </template>
             <v-list density="compact" min-width="180">
-              <v-list-item
-                v-for="opt in statusOptions"
-                :key="String(opt.value)"
-                :title="opt.title"
-                :active="filterStatus === opt.value"
-                active-color="primary"
-                @click="filterStatus = opt.value"
-              />
+              <v-list-item v-for="opt in statusOptions" :key="String(opt.value)" :title="opt.title"
+                :active="filterStatus === opt.value" active-color="primary"
+                @click="filterStatus = opt.value" />
             </v-list>
           </v-menu>
         </div>
@@ -83,12 +93,12 @@ onMounted(() => init())
       <v-divider />
 
       <!-- Table -->
-      <v-data-table-server
+    <template v-if="!mobile">
+      <v-data-table
         v-model:page="page"
         v-model:items-per-page="itemsPerPage"
         :headers="headers"
         :items="sortedFilteredPRs"
-        :items-length="sortedFilteredPRs.length"
         :search="search"
         :loading="loading"
         hover
@@ -96,101 +106,249 @@ onMounted(() => init())
         no-data-text="No purchase requisitions found."
         @update:options="loadItems"
       >
-        <!-- PR # -->
-        <template #item.requisition_no="{ item }">
-          <span class="text-body-2 font-weight-bold" style="white-space: nowrap">
-            {{ item.requisition_no }}
-          </span>
-        </template>
+          <!-- PR # -->
+          <template #item.requisition_no="{ item }">
+            <span class="text-body-2 font-weight-bold" style="white-space: nowrap">
+              {{ item.requisition_no }}
+            </span>
+          </template>
 
-        <!-- Items -->
-        <template #item.items="{ item }">
-          <div style="white-space: normal; word-break: break-word; min-width: 160px">
-            <div class="text-body-2">{{ itemSummary(item.items) }}</div>
-            <div class="text-caption text-medium-emphasis">
-              {{ item.items.length }} line {{ item.items.length === 1 ? 'item' : 'items' }}
+          <!-- Items -->
+          <template #item.items="{ item }">
+            <div style="white-space: normal; word-break: break-word; min-width: 160px">
+              <div class="text-body-2">{{ itemSummary(item.items) }}</div>
+              <div class="text-caption text-medium-emphasis">
+                {{ item.items.length }} line {{ item.items.length === 1 ? 'item' : 'items' }}
+              </div>
             </div>
-          </div>
-        </template>
+          </template>
 
-        <!-- Total Qty -->
-        <template #item.total_qty="{ item }">
-          <span class="text-body-2">{{ totalQty(item.items).toLocaleString() }}</span>
-        </template>
+          <!-- Total Qty -->
+          <template #item.total_qty="{ item }">
+            <span class="text-body-2">{{ totalQty(item.items).toLocaleString() }}</span>
+          </template>
 
-        <!-- Total Cost -->
-        <template #item.total_amount="{ item }">
-          <span class="text-body-2">{{ formatCurrency(totalCost(item.items)) }}</span>
-        </template>
+          <!-- Total Cost -->
+          <template #item.total_amount="{ item }">
+            <span class="text-body-2">{{ formatCurrency(totalCost(item.items)) }}</span>
+          </template>
 
-        <!-- Requested By -->
-        <template #item.requester_name="{ item }">
-          <span class="text-body-2">{{ item.requester_name }}</span>
-        </template>
+          <!-- Requested By -->
+          <template #item.requester_name="{ item }">
+            <span class="text-body-2">{{ item.requester_name }}</span>
+          </template>
 
-        <!-- Created Date -->
-        <template #item.created_at="{ item }">
-          <span class="text-body-2" style="white-space: nowrap">
-            {{ formatDatePR_ISO(item.created_at) }}
-          </span>
-        </template>
+          <!-- Created Date -->
+          <template #item.created_at="{ item }">
+            <span class="text-body-2" style="white-space: nowrap">
+              {{ formatDatePR_ISO(item.created_at) }}
+            </span>
+          </template>
 
-        <!-- Status -->
-        <template #item.status="{ item }">
-          <span
-            class="status-chip text-caption font-weight-bold"
-            :class="`status-chip--${item.status}`"
+          <!-- Status -->
+          <template #item.status="{ item }">
+            <span
+              class="status-chip text-caption font-weight-bold"
+              :class="`status-chip--${item.status}`"
+            >
+              <span class="status-dot" />
+              {{ statusConfig(item.status).label }}
+            </span>
+          </template>
+
+          <!-- Reviewed By -->
+          <template #item.reviewer_name="{ item }">
+            <span class="text-body-2">{{ item.reviewer_name }}</span>
+          </template>
+
+          <!-- Actions -->
+          <template #item.actions="{ item }">
+            <div class="d-flex actions-gap" style="white-space: nowrap">
+              <v-btn variant="outlined" size="small" class="text-none" @click="openDetail(item)">
+                View
+              </v-btn>
+              <template v-if="item.status === 'pending_approval'">
+                <v-btn
+                  color="green-darken-2"
+                  size="small"
+                  class="text-none"
+                  elevation="0"
+                  @click="openConfirm('APPROVE', item)"
+                >
+                  Approve
+                </v-btn>
+                <v-btn
+                  variant="outlined"
+                  size="small"
+                  color="red-darken-2"
+                  class="text-none"
+                  @click="openConfirm('REJECT', item)"
+                >
+                  Reject
+                </v-btn>
+              </template>
+              <template v-if="item.status === 'approved'">
+                <v-btn
+                  variant="outlined"
+                  size="small"
+                  class="text-none"
+                  prepend-icon="mdi-printer-outline"
+                  @click="openPurchaseOrder(item)"
+                >
+                  Issue PO
+                </v-btn>
+              </template>
+            </div>
+          </template>
+        </v-data-table>
+      </template> 
+    
+
+          <!-- ── MOBILE: card list ───────────────────────────────── -->
+      <template v-else>
+        <v-progress-linear v-if="loading" indeterminate color="primary" />
+        <div v-if="!loading && pagedPRs.length === 0" class="text-center pa-8 text-medium-emphasis">
+          No purchase requisitions found.
+        </div>
+ 
+        <div class="pa-3" style="display: flex; flex-direction: column; gap: 10px">
+          <v-card
+            v-for="item in pagedPRs"
+            :key="item.requisition_no"
+            rounded="lg"
+            border
+            elevation="0"
+            class="pr-mobile-card"
           >
-            <span class="status-dot" />
-            {{ statusConfig(item.status).label }}
+            <!-- Card header: PR number + status -->
+            <div class="d-flex justify-space-between align-center px-4 pt-3 pb-1">
+              <span class="text-body-2 font-weight-bold text-primary">
+                {{ item.requisition_no }}
+              </span>
+              <span
+                class="status-chip text-caption font-weight-bold"
+                :class="`status-chip--${item.status}`"
+              >
+                <span class="status-dot" />
+                {{ statusConfig(item.status).label }}
+              </span>
+            </div>
+ 
+            <v-divider class="mx-4 mb-2" />
+ 
+            <!-- Card body: key details -->
+            <div class="px-4 pb-2" style="display: flex; flex-direction: column; gap: 6px">
+              <!-- Items summary -->
+              <div class="d-flex align-start" style="gap: 8px">
+                <v-icon size="16" class="mt-1 text-medium-emphasis flex-shrink-0">mdi-pill</v-icon>
+                <div>
+                  <div class="text-body-2">{{ itemSummary(item.items) }}</div>
+                  <div class="text-caption text-medium-emphasis">
+                    {{ item.items.length }} line {{ item.items.length === 1 ? 'item' : 'items' }}
+                    &bull; Qty: {{ totalQty(item.items).toLocaleString() }}
+                  </div>
+                </div>
+              </div>
+ 
+              <!-- Amount -->
+              <div class="d-flex align-center" style="gap: 8px">
+                <v-icon size="16" class="text-medium-emphasis flex-shrink-0">mdi-currency-php</v-icon>
+                <span class="text-body-2 font-weight-medium">{{ formatCurrency(totalCost(item.items)) }}</span>
+              </div>
+ 
+              <!-- Requester + Date -->
+              <div class="d-flex align-center justify-space-between">
+                <div class="d-flex align-center" style="gap: 6px">
+                  <v-icon size="16" class="text-medium-emphasis">mdi-account-outline</v-icon>
+                  <span class="text-caption text-medium-emphasis">{{ item.requester_name }}</span>
+                </div>
+                <span class="text-caption text-medium-emphasis">
+                  {{ formatDatePR_ISO(item.created_at) }}
+                </span>
+              </div>
+ 
+              <!-- Reviewed by (only if present) -->
+              <div v-if="item.reviewer_name" class="d-flex align-center" style="gap: 6px">
+                <v-icon size="16" class="text-medium-emphasis">mdi-account-check-outline</v-icon>
+                <span class="text-caption text-medium-emphasis">Reviewed by {{ item.reviewer_name }}</span>
+              </div>
+            </div>
+ 
+            <!-- Card actions -->
+            <div class="px-4 pb-3 pt-1 d-flex flex-column" style="gap: 6px">
+              <v-btn
+                variant="outlined"
+                size="small"
+                class="text-none"
+                block
+                @click="openDetail(item)"
+              >
+                View Details
+              </v-btn>
+ 
+              <template v-if="item.status === 'pending_approval'">
+                <div class="d-flex" style="gap: 6px">
+                  <v-btn
+                    color="green-darken-2"
+                    size="small"
+                    class="text-none"
+                    elevation="0"
+                    style="flex: 1"
+                    @click="openConfirm('APPROVE', item)"
+                  >
+                    Approve
+                  </v-btn>
+                  <v-btn
+                    variant="outlined"
+                    size="small"
+                    color="red-darken-2"
+                    class="text-none"
+                    style="flex: 1"
+                    @click="openConfirm('REJECT', item)"
+                  >
+                    Reject
+                  </v-btn>
+                </div>
+              </template>
+ 
+              <template v-if="item.status === 'approved'">
+                <v-btn
+                  variant="outlined"
+                  size="small"
+                  class="text-none"
+                  prepend-icon="mdi-printer-outline"
+                  block
+                  @click="openPurchaseOrder(item)"
+                >
+                  Issue PO
+                </v-btn>
+              </template>
+            </div>
+          </v-card>
+        </div>
+ 
+        <!-- Mobile pagination -->
+        <div class="d-flex justify-center align-center pa-3" style="gap: 8px">
+          <v-btn
+            icon="mdi-chevron-left"
+            variant="text"
+            density="compact"
+            :disabled="page <= 1"
+            @click="prevPage"
+          />
+          <span class="text-caption text-medium-emphasis">
+            {{ (page - 1) * itemsPerPage + 1 }}–{{ Math.min(page * itemsPerPage, totalItems) }} of {{ totalItems }}
           </span>
-        </template>
-
-        <!-- Reviewed By -->
-        <template #item.reviewer_name="{ item }">
-          <span class="text-body-2">{{ item.reviewer_name }}</span>
-        </template>
-
-        <!-- Actions -->
-        <template #item.actions="{ item }">
-          <div class="d-flex actions-gap" style="white-space: nowrap">
-            <v-btn variant="outlined" size="small" class="text-none" @click="openDetail(item)">
-              View
-            </v-btn>
-            <template v-if="item.status === 'pending_approval'">
-              <v-btn
-                color="green-darken-2"
-                size="small"
-                class="text-none"
-                elevation="0"
-                @click="openConfirm('APPROVE', item)"
-              >
-                Approve
-              </v-btn>
-              <v-btn
-                variant="outlined"
-                size="small"
-                color="red-darken-2"
-                class="text-none"
-                @click="openConfirm('REJECT', item)"
-              >
-                Reject
-              </v-btn>
-            </template>
-            <template v-if="item.status === 'approved'">
-              <v-btn
-                variant="outlined"
-                size="small"
-                class="text-none"
-                prepend-icon="mdi-printer-outline"
-                @click="openPurchaseOrder(item)"
-              >
-                Issue PO
-              </v-btn>
-            </template>
-          </div>
-        </template>
-      </v-data-table-server>
+          <v-btn
+            icon="mdi-chevron-right"
+            variant="text"
+            density="compact"
+            :disabled="page * itemsPerPage >= totalItems"
+            @click="nextPage"
+          />
+        </div>
+      </template>
+    
     </v-card>
 
     <!-- 3. Add the Modal Component -->
@@ -200,7 +358,7 @@ onMounted(() => init())
     <PRDetailModal v-if="selectedPR" v-model="showModal" :pr="selectedPR" />
 
     <!-- Confirm Dialog -->
-    <v-dialog v-model="confirmDialog.show" max-width="420" persistent>
+    <v-dialog v-model="confirmDialog.show" :max-width="mobile ? '100%' : '400'" persistent>
       <v-card rounded="lg">
         <v-card-title class="d-flex align-center ga-2 pt-5 px-5">
           <v-icon
@@ -292,5 +450,12 @@ onMounted(() => init())
 }
 :deep(.v-table tbody tr:not(:last-child) td) {
   border-bottom: 1px solid rgba(0, 0, 0, 0.05) !important;
+}
+
+.pr-mobile-card {
+  transition: box-shadow 0.15s ease;
+}
+.pr-mobile-card:active{
+  box-shadow: 0 0 0 2px rgba(var(v-theme-primary), 0.3) !important;
 }
 </style>
