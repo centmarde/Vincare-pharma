@@ -68,7 +68,7 @@ export function useTransactionsData() {
       rejected:         { label: 'Rejected',         color: '#c62828', bg: '#fff0f0', dot: '#ef5350' },
       issued:           { label: 'Issued',           color: '#1565c0', bg: '#e3f2fd', dot: '#1565c0' },
       received:         { label: 'Received',         color: '#2e7d32', bg: '#f0f9f0', dot: '#4caf50' },
-      completed:        { label: 'Completed',        color: '#6a1b9a', bg: '#f3e5f5', dot: '#9c27b0' },
+      complete:        { label: 'Complete',        color: '#6a1b9a', bg: '#f3e5f5', dot: '#9c27b0' },
     }
     return map[status] ?? { label: status, color: '#757575', bg: '#f5f5f5', dot: '#9e9e9e' }
   }

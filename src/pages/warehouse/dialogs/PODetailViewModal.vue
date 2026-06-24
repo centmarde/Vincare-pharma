@@ -233,53 +233,62 @@ async function handleMarkAsReceived() {
               rounded="lg"
             >
               <v-card-text class="pa-3">
-                <div class="d-flex justify-space-between align-start mb-1">
-                  <div class="d-flex ga-2 align-center">
-                    <span class="text-caption font-weight-bold text-primary">#{{ index + 1 }}</span>
-                    <span class="text-caption font-weight-medium">{{ item.item_description ?? '—' }}</span>
+                <!-- Item header -->
+                <div class="d-flex align-center ga-2 mb-2">
+                  <span class="text-caption font-weight-bold text-primary">#{{ index + 1 }}</span>
+                  <span class="text-body-2 font-weight-medium">{{ item.item_description ?? '—' }}</span>
+                </div>
+
+                <v-divider class="mb-2" />
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+                  <div class="flex-1 pa-2 rounded-lg bg-grey-lighten-4">
+                    <div class="text-caption text-medium-emphasis">Price</div>
+                    <div class="text-caption font-weight-medium">{{ formatCurrency(item.cost_per_unit ?? 0) }}</div>
+                  </div>
+                  <div class="flex-1 pa-2 rounded-lg bg-grey-lighten-4">
+                    <div class="text-caption text-medium-emphasis">Total</div>
+                    <div class="text-caption font-weight-medium">
+                      {{ formatCurrency((item.qty ?? 0) * (item.cost_per_unit ?? 0)) }}
+                    </div>
                   </div>
                 </div>
-                <v-divider class="my-1" />
-                <div class="d-flex flex-wrap ga-3 text-caption">
-                  <div><span class="text-medium-emphasis">Price: </span>{{ formatCurrency(item.cost_per_unit ?? 0) }}</div>
-                  <div><span class="text-medium-emphasis">Total: </span><span class="font-weight-medium">{{ formatCurrency((item.qty ?? 0) * (item.cost_per_unit ?? 0)) }}</span></div>
-                  <div class="d-flex align-center ga-2">
-                    <span>
-                      <span class="text-medium-emphasis">Actual: </span>
-                      <template v-if="skuEditMode">
-                        <v-text-field
-                          v-model.number="item.actual_count"
-                          type="number"
-                          density="compact"
-                          variant="outlined"
-                          hide-details
-                          min="1"
-                          class="input-number"
-                          style="width: 70px; display: inline-flex; vertical-align: middle"
-                        />
-                      </template>
-                      <template v-else>
-                        <span>{{ item.actual_count ?? '—' }}</span>
-                      </template>
-                    </span>
+
+                <!-- Actual count + SKU inputs (always visible when in edit mode) -->
+                <div v-if="skuEditMode" class="d-flex ga-3">
+                  <div style="flex: 1; min-width: 0;">
+                    <div class="text-caption text-medium-emphasis mb-1">Actual count</div>
+                    <v-text-field
+                      v-model.number="item.actual_count"
+                      type="number"
+                      density="compact"
+                      variant="outlined"
+                      hide-details
+                      min="1"
+                      style="width: 100%"
+                    />
                   </div>
-                  <div class="d-flex align-center ga-2">
-                    <span>
-                      <span class="text-medium-emphasis">SKU: </span>
-                      <template v-if="skuEditMode">
-                        <v-text-field
-                          v-model="item.sku"
-                          density="compact"
-                          variant="outlined"
-                          hide-details
-                          placeholder="SKU"
-                          style="width: 80px; display: inline-flex; vertical-align: middle"
-                        />
-                      </template>
-                      <template v-else>
-                        <span>{{ item.sku ?? '—' }}</span>
-                      </template>
-                    </span>
+                  <div style="flex: 1; min-width: 0;">
+                    <div class="text-caption text-medium-emphasis mb-1">SKU</div>
+                    <v-text-field
+                      v-model="item.sku"
+                      density="compact"
+                      variant="outlined"
+                      hide-details
+                      placeholder="SKU"
+                      style="width: 100%"
+                    />
+                  </div>
+                </div>
+                <!-- Read-only display -->
+                <div v-else class="d-flex ga-3 text-caption">
+                  <div>
+                    <span class="text-medium-emphasis">Actual: </span>
+                    <span class="font-weight-medium">{{ item.actual_count ?? '—' }}</span>
+                  </div>
+                  <div>
+                    <span class="text-medium-emphasis">SKU: </span>
+                    <span class="font-weight-medium">{{ item.sku ?? '—' }}</span>
                   </div>
                 </div>
               </v-card-text>
@@ -368,6 +377,7 @@ async function handleMarkAsReceived() {
 }
 .input-number :deep(input[type="number"]) {
   -moz-appearance: textfield;
+  appearance: textfield;
 }
 .input-number :deep(input[type="number"]::-webkit-outer-spin-button),
 .input-number :deep(input[type="number"]::-webkit-inner-spin-button) {

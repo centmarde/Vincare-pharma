@@ -95,15 +95,20 @@ export function usePurchaseOrderList() {
     itemsPerPage: number
     sortBy:       { key: string; order: string }[]
   }) {
-    const data = await txStore.fetchTransactions({
-      po_no_not_null: true,                                          // ← only change from before
+    const [data, count] = await Promise.all([txStore.fetchTransactions({
+      po_no_not_null: true,
       status:         filterStatus.value ?? undefined,
       search:         search.value.trim() || undefined,
       orderBy:        (sortBy[0]?.key ?? sortKey.value) as any,
       ascending:      sortBy[0] != null ? sortBy[0].order === 'asc' : sortOrder.value === 'asc',
       limit:          itemsPerPage,
       offset:         (page - 1) * itemsPerPage,
-    })
+    }),
+    txStore.fetchTransactionsCount({ 
+      po_no_not_null: true, 
+      status: filterStatus.value ?? undefined, 
+      search: search.value.trim() || undefined})
+  ])
 
     serverItems.value = data.map((tx: any) => ({
       id:             tx.id,
@@ -122,7 +127,7 @@ export function usePurchaseOrderList() {
       updated_at:     tx.updated_at  ?? null,
     }))
 
-    totalItems.value = data.length
+    totalItems.value = count
 
     // Pre-fetch linked PRs for supplier summary + PODetailModal
     await Promise.all(
