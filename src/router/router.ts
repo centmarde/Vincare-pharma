@@ -22,6 +22,8 @@ import PosView from '@/pages/sales/PosView.vue'
 import RemittanceView from '@/pages/sales/RemittanceView.vue'
 import InventoryView from '@/pages/sales/InventoryView.vue'
 import SalesHistoryView from '@/pages/sales/SalesHistoryView.vue'
+import InhouseOrdersView from '@/pages/inhouse/InhouseOrdersView.vue'
+import CustomersView from '@/pages/inhouse/CustomersView.vue'
 import FinanceView from '@/pages/finance/FinanceView.vue'
 import SuppliersView from '@/pages/suppliers/SuppliersView.vue'
 import LogsView from '@/pages/logs/LogsView.vue'
@@ -128,6 +130,16 @@ const routes = setupLayouts([
   {
     path: '/sales/history',
     component: SalesHistoryView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/inhouse/orders',
+    component: InhouseOrdersView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/inhouse/customers',
+    component: CustomersView,
     meta: { requiresAuth: true },
   },
   {

@@ -163,6 +163,25 @@ export const navigationConfig: NavigationGroup[] = [
     ],
   },
   {
+    title: 'In-House Controls',
+    icon: 'mdi-domain',
+    permission: 'inhouse.access',
+    children: [
+      {
+        title: 'In-House Orders',
+        icon: 'mdi-file-sign',
+        route: '/inhouse/orders',
+        permission: 'inhouse.orders.view',
+      },
+      {
+        title: 'Customers',
+        icon: 'mdi-account-tie',
+        route: '/inhouse/customers',
+        permission: 'inhouse.customers.manage',
+      },
+    ],
+  },
+  {
     title: 'Finance Controls',
     icon: 'mdi-currency-usd',
     permission: 'finance.access',
