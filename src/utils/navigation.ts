@@ -182,6 +182,37 @@ export const navigationConfig: NavigationGroup[] = [
     ],
   },
   {
+    title: 'Ethical Controls',
+    icon: 'mdi-hospital-box',
+    permission: 'ethical.access',
+    children: [
+      {
+        title: 'Ethical Orders',
+        icon: 'mdi-file-document',
+        route: '/ethical/orders',
+        permission: 'ethical.orders.view',
+      },
+      {
+        title: 'Customers',
+        icon: 'mdi-account-multiple',
+        route: '/ethical/customers',
+        permission: 'ethical.customers.manage',
+      },
+      {
+        title: 'Sales Agents',
+        icon: 'mdi-account-tie',
+        route: '/ethical/agents',
+        permission: 'ethical.agents.manage',
+      },
+      {
+        title: 'Commission Tracking',
+        icon: 'mdi-percent',
+        route: '/ethical/commissions',
+        permission: 'ethical.commissions.view',
+      },
+    ],
+  },
+  {
     title: 'Finance Controls',
     icon: 'mdi-currency-usd',
     permission: 'finance.access',

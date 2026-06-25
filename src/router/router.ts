@@ -24,6 +24,10 @@ import InventoryView from '@/pages/sales/InventoryView.vue'
 import SalesHistoryView from '@/pages/sales/SalesHistoryView.vue'
 import InhouseOrdersView from '@/pages/inhouse/InhouseOrdersView.vue'
 import CustomersView from '@/pages/inhouse/CustomersView.vue'
+import EthicalOrdersView from '@/pages/ethical/EthicalOrdersView.vue'
+import EthicalCustomersView from '@/pages/ethical/CustomersView.vue'
+import EthicalAgentsView from '@/pages/ethical/AgentsView.vue'
+import EthicalCommissionsView from '@/pages/ethical/CommissionsView.vue'
 import FinanceView from '@/pages/finance/FinanceView.vue'
 import SuppliersView from '@/pages/suppliers/SuppliersView.vue'
 import LogsView from '@/pages/logs/LogsView.vue'
@@ -140,6 +144,26 @@ const routes = setupLayouts([
   {
     path: '/inhouse/customers',
     component: CustomersView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/ethical/orders',
+    component: EthicalOrdersView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/ethical/customers',
+    component: EthicalCustomersView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/ethical/agents',
+    component: EthicalAgentsView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/ethical/commissions',
+    component: EthicalCommissionsView,
     meta: { requiresAuth: true },
   },
   {

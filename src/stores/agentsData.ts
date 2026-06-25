@@ -7,43 +7,38 @@ import { useToast } from 'vue-toastification'
 
 const toast = useToast()
 
-export type CustomerType = {
+export type AgentType = {
   id: number
   created_at: string
   name: string | null
-  agency_type: string | null
-  contact_person: string | null
   contact_no: string | null
   email: string | null
-  address: string | null
+  area: string | null
+  commission_rate: number | null
   is_active: boolean | null
-  department: string | null
-  agent_id: number | null
+  notes: string | null
 }
 
-export type CreateCustomerData = {
+export type CreateAgentData = {
   name?: string | null
-  agency_type?: string | null
-  contact_person?: string | null
   contact_no?: string | null
   email?: string | null
-  address?: string | null
+  area?: string | null
+  commission_rate?: number | null
   is_active?: boolean | null
-  department?: string | null
-  agent_id?: number | null
+  notes?: string | null
 }
 
-export type UpdateCustomerData = CreateCustomerData
+export type UpdateAgentData = CreateAgentData
 
-type FetchCustomersOptions = {
+type FetchAgentsOptions = {
   search?: string
   activeOnly?: boolean
-  department?: string
 }
 
-export const useCustomersDataStore = defineStore('customersData', () => {
-  const customers: Ref<CustomerType[]> = ref([])
-  const currentCustomer: Ref<CustomerType | undefined> = ref(undefined)
+export const useAgentsDataStore = defineStore('agentsData', () => {
+  const agents: Ref<AgentType[]> = ref([])
+  const currentAgent: Ref<AgentType | undefined> = ref(undefined)
   const loading = ref(false)
   const error: Ref<string> = ref('')
 
@@ -58,25 +53,25 @@ export const useCustomersDataStore = defineStore('customersData', () => {
   }
   const clearError = () => { error.value = '' }
 
-  const upsertLocal = (c: CustomerType) => {
-    const idx = customers.value.findIndex((x) => x.id === c.id)
-    if (idx === -1) customers.value.unshift(c)
-    else customers.value[idx] = c
+  const upsertLocal = (a: AgentType) => {
+    const idx = agents.value.findIndex((x) => x.id === a.id)
+    if (idx === -1) agents.value.unshift(a)
+    else agents.value[idx] = a
   }
   const removeLocal = (id: number) => {
-    customers.value = customers.value.filter((x) => x.id !== id)
+    agents.value = agents.value.filter((x) => x.id !== id)
   }
 
   const startRealtime = () => {
     if (realtimeChannel.value) return realtimeChannel.value
     realtimeStatus.value = 'subscribing'
     const channel = supabase
-      .channel('customers-channel')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, (payload) => {
+      .channel('agents-channel')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'agents' }, (payload) => {
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-          upsertLocal(payload.new as CustomerType)
+          upsertLocal(payload.new as AgentType)
         } else if (payload.eventType === 'DELETE') {
-          const id = (payload.old as Partial<CustomerType>)?.id
+          const id = (payload.old as Partial<AgentType>)?.id
           if (typeof id === 'number') removeLocal(id)
         }
       })
@@ -96,82 +91,81 @@ export const useCustomersDataStore = defineStore('customersData', () => {
     await supabase.removeChannel(channel)
   }
 
-  const fetchCustomers = async (options: FetchCustomersOptions = {}) => {
+  const fetchAgents = async (options: FetchAgentsOptions = {}) => {
     loading.value = true
     clearError()
     try {
-      const { search, activeOnly, department } = options
-      let q = supabase.from('customers').select('*')
+      const { search, activeOnly } = options
+      let q = supabase.from('agents').select('*')
       if (activeOnly) q = q.eq('is_active', true)
-      if (department) q = q.eq('department', department)
       if (search?.trim()) {
         const s = search.trim().replace(/,/g, '')
-        q = q.or(`name.ilike.%${s}%,contact_person.ilike.%${s}%`)
+        q = q.or(`name.ilike.%${s}%,email.ilike.%${s}%,area.ilike.%${s}%`)
       }
       q = q.order('created_at', { ascending: false })
 
       const { data, error: fetchError } = await q
       if (fetchError) throw fetchError
-      customers.value = (data || []) as CustomerType[]
-      return customers.value
+      agents.value = (data || []) as AgentType[]
+      return agents.value
     } catch (err) {
-      handleError(err, 'Failed to fetch customers')
+      handleError(err, 'Failed to fetch agents')
       return []
     } finally {
       loading.value = false
     }
   }
 
-  const createCustomer = async (data: CreateCustomerData) => {
+  const createAgent = async (data: CreateAgentData) => {
     loading.value = true
     clearError()
     try {
       const { data: created, error: createError } = await supabase
-        .from('customers').insert([data]).select().single()
+        .from('agents').insert([data]).select().single()
       if (createError) throw createError
-      upsertLocal(created as CustomerType)
-      toast.success('Customer created.')
-      return created as CustomerType
+      upsertLocal(created as AgentType)
+      toast.success('Agent created.')
+      return created as AgentType
     } catch (err) {
-      handleError(err, 'Failed to create customer')
-      toast.error('Failed to create customer.')
+      handleError(err, 'Failed to create agent')
+      toast.error('Failed to create agent.')
       return undefined
     } finally {
       loading.value = false
     }
   }
 
-  const updateCustomer = async (id: number, data: UpdateCustomerData) => {
+  const updateAgent = async (id: number, data: UpdateAgentData) => {
     loading.value = true
     clearError()
     try {
       const { data: updated, error: updateError } = await supabase
-        .from('customers').update(data).eq('id', id).select().single()
+        .from('agents').update(data).eq('id', id).select().single()
       if (updateError) throw updateError
-      upsertLocal(updated as CustomerType)
-      toast.success('Customer updated.')
-      return updated as CustomerType
+      upsertLocal(updated as AgentType)
+      toast.success('Agent updated.')
+      return updated as AgentType
     } catch (err) {
-      handleError(err, 'Failed to update customer')
-      toast.error('Failed to update customer.')
+      handleError(err, 'Failed to update agent')
+      toast.error('Failed to update agent.')
       return undefined
     } finally {
       loading.value = false
     }
   }
 
-  const deleteCustomer = async (id: number) => {
+  const deleteAgent = async (id: number) => {
     loading.value = true
     clearError()
     try {
-      const { error: deleteError } = await supabase.from('customers').delete().eq('id', id)
+      const { error: deleteError } = await supabase.from('agents').delete().eq('id', id)
       if (deleteError) throw deleteError
       removeLocal(id)
-      toast.success('Customer deleted.')
+      toast.success('Agent deleted.')
       return true
     } catch (err) {
-      handleError(err, 'Failed to delete customer')
-      toast.error('Failed to delete customer.')
+      handleError(err, 'Failed to delete agent')
+      toast.error('Failed to delete agent.')
       return false
     } finally {
       loading.value = false
@@ -179,16 +173,16 @@ export const useCustomersDataStore = defineStore('customersData', () => {
   }
 
   const resetStore = () => {
-    customers.value = []
-    currentCustomer.value = undefined
+    agents.value = []
+    currentAgent.value = undefined
     loading.value = false
     error.value = ''
   }
 
   return {
-    customers, currentCustomer, loading, error,
+    agents, currentAgent, loading, error,
     isLoading, hasError,
-    fetchCustomers, createCustomer, updateCustomer, deleteCustomer,
+    fetchAgents, createAgent, updateAgent, deleteAgent,
     startRealtime, stopRealtime, clearError, resetStore,
   }
 })
