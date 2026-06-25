@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useSalesHistory, headers } from '../composables/useSalesHistory'
-import PosReceiptDialog from './PosReceiptDialog.vue'
-import VoidSaleDialog from './VoidSaleDialog.vue'
+import PosReceiptDialog from '../dialogs/PosReceiptDialog.vue'
+import VoidSaleDialog from '../dialogs/VoidSaleDialog.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {

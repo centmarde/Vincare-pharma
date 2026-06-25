@@ -2,8 +2,8 @@
 import { onMounted } from 'vue'
 import { usePos } from '../composables/usePos'
 import { usePosCheckout } from '../composables/usePosCheckout'
-import PosPaymentDialog from './PosPaymentDialog.vue'
-import PosReceiptDialog from './PosReceiptDialog.vue'
+import PosPaymentDialog from '../dialogs/PosPaymentDialog.vue'
+import PosReceiptDialog from '../dialogs/PosReceiptDialog.vue'
 import { formatCurrency } from '@/utils/helpers'
 
 const pos = usePos()

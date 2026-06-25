@@ -54,6 +54,28 @@ export type InhouseLineInput = {
 export type Shortfall = { product_id: number; ordered: number; on_hand: number; needed: number }
 export type NegotiationRound = { id: number; created_at: string; user_id: string | null; action: string | null; description: string | null }
 
+// One supplier's quote for a shortfall item during canvassing.
+export type CanvassQuote = {
+  supplier_id: number | null
+  supplier_name: string
+  price: number
+  expiry_date: string          // ISO date the supplier quoted
+  months_to_expiry: number     // computed from today
+  is_valid: boolean            // months_to_expiry >= 18
+}
+
+// A committed selection sent to the canvass->PR RPC (one per shortfall item).
+export type CanvassSelection = {
+  item_id: number              // the in-house order's transaction_item id
+  product_id: number
+  supplier_id: number          // winning supplier
+  unit_price: number           // winning quote price
+  qty: number                  // final order qty (>= shortfall, buffer allowed)
+  canvass: CanvassQuote[]      // full quote list, for audit
+}
+
+export type CanvassPRResult = { supplier_id: number; pr_id: number; pr_no: string; item_count: number; total: number }
+
 const SELECT_ORDER =
   '*, transaction_items(id, product_id, qty, unit_price, line_total, cost_price, delivered_qty, product:product_id(*)), customer:customer_id(*)'
 
@@ -298,6 +320,33 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     return { success: true }
   }
 
+  // Commit a supplier canvass: create one PR per winning supplier (atomic RPC).
+  const canvassToPRs = async (orderId: number, selections: CanvassSelection[]) => {
+    loading.value = true
+    clearError()
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
+    if (!selections.length) { toast.warning('Add at least one supplier selection.'); loading.value = false; return { success: false } }
+
+    const { data, error: rpcError } = await supabase.rpc('inhouse_canvass_to_prs', {
+      p_order_id:   orderId,
+      p_selections: selections,
+      p_user:       user.id,
+    })
+    if (rpcError) {
+      handleError(rpcError, 'Failed to raise purchase requisitions.')
+      toast.error(rpcError.message || 'Failed to raise purchase requisitions.')
+      loading.value = false; return { success: false }
+    }
+    const prs = (data ?? []) as CanvassPRResult[]
+    toast.success(prs.length === 1
+      ? `Raised ${prs[0].pr_no}.`
+      : `Raised ${prs.length} purchase requisitions.`)
+    await fetchOrders()
+    loading.value = false
+    return { success: true, prs }
+  }
+
   const fetchNegotiation = async (orderId: number): Promise<NegotiationRound[]> => {
     const { data, error: e } = await supabase
       .from('logs').select('id, created_at, user_id, action, description')
@@ -312,7 +361,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
   return {
     orders, loading, error,
     fetchOrders, fetchOrderById, createOrder, recordOffer, agreeOrder,
-    recheckStock, deliver, markPaid, fetchNegotiation, generateOrderNumber,
+    recheckStock, deliver, markPaid, canvassToPRs, fetchNegotiation, generateOrderNumber,
     startRealtime, stopRealtime, clearError, resetStore,
   }
 })

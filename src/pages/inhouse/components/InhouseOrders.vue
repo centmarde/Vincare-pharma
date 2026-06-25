@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { useInhouseOrders, headers } from '../composables/useInhouseOrders'
-import RaiseOrderDialog from './RaiseOrderDialog.vue'
-import OrderDetailDialog from './OrderDetailDialog.vue'
+import RaiseOrderDialog from '../dialogs/RaiseOrderDialog.vue'
+import OrderDetailDialog from '../dialogs/OrderDetailDialog.vue'
 import { formatCurrency } from '@/utils/helpers'
 
 const {

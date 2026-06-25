@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useOrderDetail } from '../composables/useOrderDetail'
+import SupplierCanvass from '../components/SupplierCanvass.vue'
 import type { InhouseOrderType } from '@/stores/inhouseData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
@@ -101,8 +102,12 @@ const productName = (id: number | null) =>
                 </tr>
               </tbody>
             </v-table>
-            <div class="text-caption text-medium-emphasis mt-2">Raise a Purchase Requisition for the shortfall, then re-check once stock arrives.</div>
+            <div class="text-caption text-medium-emphasis mt-2">Canvass suppliers below to auto-raise Purchase Requisitions, then re-check once stock arrives.</div>
             <v-btn variant="text" size="small" color="info" class="text-none mt-1" @click="recheck">Re-check stock</v-btn>
+
+            <v-divider class="my-3" />
+            <div class="text-subtitle-2 font-weight-bold mb-2">Supplier Canvass</div>
+            <SupplierCanvass :order="order" :shortfall="shortfall" @created="recheck" />
           </v-card-text>
         </v-card>
 
