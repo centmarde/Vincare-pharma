@@ -23,6 +23,7 @@ export type LogType = {
   transaction_id?: number | null
   user_id?:        string | null
   user_email?:     string | null
+  reference_no?:   string | null
 }
 
 export type LogItemType = {
@@ -94,6 +95,11 @@ export const useLogsDataStore = defineStore('logsData', () => {
         const firstItem = items.length > 0 ? items[0] : {}
         const userId = firstItem.user_id ?? null
         const userEmail = await resolveUserEmail(userId)
+
+        // Resolve reference_no from the nested transactions relation
+        const transactions = log.log_items?.[0]?.transactions
+        const referenceNo = transactions?.reference_no ?? null
+
         return {
           id:              log.id,
           created_at:      log.created_at,
@@ -105,6 +111,7 @@ export const useLogsDataStore = defineStore('logsData', () => {
           transaction_id:  firstItem.transaction_id ?? null,
           user_id:         userId,
           user_email:      userEmail,
+          reference_no:    referenceNo,
         }
       }),
     )
@@ -123,7 +130,10 @@ export const useLogsDataStore = defineStore('logsData', () => {
           *,
           log_items (
             transaction_id,
-            user_id
+            user_id,
+            transactions (
+              reference_no
+            )
           )
         `)
         .order('created_at', { ascending: false })

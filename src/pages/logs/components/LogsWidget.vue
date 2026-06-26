@@ -30,7 +30,7 @@ const headers = computed(() => [
   },
   { title: 'Module', key: 'module', sortable: true, width: 160 },
   { title: 'Created By', key: 'user_email', sortable: true, width: 200 },
-  { title: 'Transaction ID', key: 'transaction_id', sortable: false, width: 130 },
+  { title: 'Reference No.', key: 'reference_no', sortable: false, width: 150 },
   { title: 'Created At', key: 'created_at', sortable: true, width: 180 },
   { title: 'Updated By', key: 'updated_by', sortable: true, width: 180 },
   { title: 'Updated At', key: 'updated_at', sortable: true, width: 180 },
@@ -232,10 +232,26 @@ onMounted(async () => {
           <span class="text-body-2">{{ value || '—' }}</span>
         </template>
 
-        <!-- Transaction ID column -->
-        <template #[`item.transaction_id`]="{ value }">
-          <span v-if="value != null" class="text-body-2 font-weight-medium">{{ value }}</span>
-          <span v-else class="text-grey">—</span>
+        <!-- Reference No. column -->
+        <template #[`item.reference_no`]="{ value }">
+          <v-chip
+            v-if="value"
+            size="small"
+            color="primary"
+            variant="tonal"
+            class="font-weight-medium"
+          >
+            {{ value }}
+          </v-chip>
+          <v-chip
+            v-else
+            size="small"
+            color="warning"
+            variant="tonal"
+            class="font-weight-medium"
+          >
+            On Review
+          </v-chip>
         </template>
 
         <!-- Created At column -->
@@ -307,9 +323,13 @@ onMounted(async () => {
                   <v-icon size="12">mdi-account</v-icon>
                   <span>{{ log.user_email }}</span>
                 </div>
-                <div v-if="log.transaction_id != null" class="d-flex align-center ga-1">
+                <div v-if="log.reference_no" class="d-flex align-center ga-1">
                   <v-icon size="12">mdi-hash</v-icon>
-                  <span>Transaction #{{ log.transaction_id }}</span>
+                  <span>{{ log.reference_no }}</span>
+                </div>
+                <div v-else class="d-flex align-center ga-1">
+                  <v-icon size="12">mdi-clock-outline</v-icon>
+                  <span>On Review</span>
                 </div>
                 <div class="d-flex align-center ga-1">
                   <v-icon size="12">mdi-calendar</v-icon>
