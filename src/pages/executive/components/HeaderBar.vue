@@ -1,6 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { fetchRandomVerse, type BibleVerse } from '../composables/bibleVerse'
+import { navigationConfig } from '@/utils/navigation'
+
+const router = useRouter()
 
 const verse = ref<BibleVerse | null>(null)
 const verseLoading = ref(true)
@@ -10,6 +14,36 @@ onMounted(async () => {
 })
 
 const searchQuery = defineModel<string>('search')
+
+interface NavSearchItem {
+  title: string
+  icon: string
+  route: string
+  group: string
+}
+
+// Flatten navigation items into a searchable list for v-autocomplete
+const navItems = computed<NavSearchItem[]>(() => {
+  const items: NavSearchItem[] = []
+  for (const group of navigationConfig) {
+    for (const child of group.children) {
+      items.push({
+        title: child.title,
+        icon: child.icon,
+        route: child.route,
+        group: group.title,
+      })
+    }
+  }
+  return items
+})
+
+function goToRoute(route: string | null) {
+  if (route) {
+    searchQuery.value = ''
+    router.push(route)
+  }
+}
 </script>
 
 <template>
@@ -41,21 +75,47 @@ const searchQuery = defineModel<string>('search')
 
         <v-spacer />
 
-        <!-- Search Bar (right) -->
+        <!-- Search with v-autocomplete (right) -->
         <div
           class="d-flex align-center ga-2"
           style="min-width: 180px; max-width: 360px; flex: 1 1 auto;"
         >
-          <v-text-field
+          <v-autocomplete
             v-model="searchQuery"
-            placeholder="Search..."
+            :items="navItems"
+            item-title="title"
+            item-value="route"
+            placeholder="Search pages..."
             prepend-inner-icon="mdi-magnify"
             variant="outlined"
             density="compact"
             hide-details
             clearable
+            hide-no-data
+            autocomplete="off"
             class="search-input"
-          />
+            @update:model-value="goToRoute"
+          >
+            <template #item="{ props, item }">
+              <v-list-item
+                v-bind="props"
+                class="rounded-lg"
+              >
+                <template #prepend>
+                  <v-icon :icon="item.raw.icon" size="18" color="primary" class="mr-2" />
+                </template>
+                <v-list-item-title class="text-body-2 font-weight-medium">
+                  {{ item.raw.title }}
+                </v-list-item-title>
+                <v-list-item-subtitle class="text-caption text-medium-emphasis">
+                  {{ item.raw.group }}
+                </v-list-item-subtitle>
+                <template #append>
+                  <v-icon size="14" color="grey">mdi-arrow-right-thin</v-icon>
+                </template>
+              </v-list-item>
+            </template>
+          </v-autocomplete>
         </div>
       </div>
     </v-card-text>
