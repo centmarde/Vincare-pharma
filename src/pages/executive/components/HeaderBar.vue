@@ -53,17 +53,10 @@ function goToRoute(route: string | null) {
         <!-- Bible Verse (left) -->
         <div
           class="d-flex align-center ga-2"
-          style="min-width: 200px; max-width: 500px; flex: 1 1 auto;"
+          style="min-width: 200px; max-width: 500px; flex: 1 1 auto"
         >
-          <v-icon
-            icon="mdi-book-open-variant"
-            color="primary"
-            size="20"
-            class="flex-shrink-0"
-          />
-          <div v-if="verseLoading" class="text-caption text-medium-emphasis">
-            Loading verse...
-          </div>
+          <v-icon icon="mdi-book-open-variant" color="primary" size="20" class="flex-shrink-0" />
+          <div v-if="verseLoading" class="text-caption text-medium-emphasis">Loading verse...</div>
           <div v-else-if="verse" class="text-caption" style="line-height: 1.4">
             <span class="font-weight-medium">"{{ verse.text }}"</span>
             <span class="text-medium-emphasis"> — {{ verse.reference }}</span>
@@ -78,7 +71,7 @@ function goToRoute(route: string | null) {
         <!-- Search with v-autocomplete (right) -->
         <div
           class="d-flex align-center ga-2"
-          style="min-width: 180px; max-width: 360px; flex: 1 1 auto;"
+          style="min-width: 180px; max-width: 360px; flex: 1 1 auto"
         >
           <v-autocomplete
             v-model="searchQuery"
@@ -97,16 +90,10 @@ function goToRoute(route: string | null) {
             @update:model-value="goToRoute"
           >
             <template #item="{ props, item }">
-              <v-list-item
-                v-bind="props"
-                class="rounded-lg"
-              >
+              <v-list-item v-bind="props" class="rounded-lg">
                 <template #prepend>
                   <v-icon :icon="item.raw.icon" size="18" color="primary" class="mr-2" />
                 </template>
-                <v-list-item-title class="text-body-2 font-weight-medium">
-                  {{ item.raw.title }}
-                </v-list-item-title>
                 <v-list-item-subtitle class="text-caption text-medium-emphasis">
                   {{ item.raw.group }}
                 </v-list-item-subtitle>

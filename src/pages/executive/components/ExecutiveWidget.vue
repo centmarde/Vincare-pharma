@@ -46,7 +46,9 @@ const rightPanelView = ref<'actionRequired' | 'topProducts'>('actionRequired')
 
       <v-col cols="12" lg="4" class="pa-2 d-flex flex-column">
         <!-- Toggle Switch -->
-        <div class="d-flex align-center mb-3 bg-surface-variant rounded-lg pa-1 toggle-switch flex-shrink-0">
+        <div
+          class="d-flex align-center mb-3 bg-surface-variant rounded-lg pa-1 toggle-switch flex-shrink-0"
+        >
           <v-btn
             variant="text"
             size="small"
