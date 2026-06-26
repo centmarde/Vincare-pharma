@@ -1,3 +1,16 @@
+<script setup lang="ts">
+import { onMounted } from 'vue'
+import { useEthicalCustomers } from '../composables/useEthicalCustomers'
+import CustomerForm from './CustomerForm.vue'
+
+const {
+  customers, loading, searchText, showCreateDialog, showEditDialog, editingCustomer, headers,
+  agentOptions, createCustomer, updateCustomer, deleteCustomer, openEdit, init,
+} = useEthicalCustomers()
+
+onMounted(() => init())
+</script>
+
 <template>
   <v-container fluid pa-0>
     <v-card class="elevation-0">
@@ -49,16 +62,3 @@
     </v-dialog>
   </v-container>
 </template>
-
-<script setup lang="ts">
-import { onMounted } from 'vue'
-import { useEthicalCustomers } from '../composables/useEthicalCustomers'
-import CustomerForm from './CustomerForm.vue'
-
-const {
-  customers, loading, searchText, showCreateDialog, showEditDialog, editingCustomer, headers,
-  agentOptions, createCustomer, updateCustomer, deleteCustomer, openEdit, init,
-} = useEthicalCustomers()
-
-onMounted(() => init())
-</script>

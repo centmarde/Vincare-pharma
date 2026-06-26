@@ -29,6 +29,12 @@ import EthicalCustomersView from '@/pages/ethical/CustomersView.vue'
 import EthicalAgentsView from '@/pages/ethical/AgentsView.vue'
 import EthicalCommissionsView from '@/pages/ethical/CommissionsView.vue'
 import FinanceView from '@/pages/finance/FinanceView.vue'
+import ExpensesView from '@/pages/finance/ExpensesView.vue'
+import SupplierPaymentsView from '@/pages/finance/SupplierPaymentsView.vue'
+import DiscrepanciesView from '@/pages/finance/DiscrepanciesView.vue'
+import AccountsReceivableView from '@/pages/finance/AccountsReceivableView.vue'
+import CashAccountsView from '@/pages/finance/CashAccountsView.vue'
+import ExpenseReportView from '@/pages/finance/ExpenseReportView.vue'
 import SuppliersView from '@/pages/suppliers/SuppliersView.vue'
 import LogsView from '@/pages/logs/LogsView.vue'
 import WarehouseProductsListView from '@/pages/warehouse/ProductsListView.vue'
@@ -169,6 +175,36 @@ const routes = setupLayouts([
   {
     path: '/finance/dashboard',
     component: FinanceView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/finance/expenses',
+    component: ExpensesView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/finance/supplier-payments',
+    component: SupplierPaymentsView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/finance/accounts-receivable',
+    component: AccountsReceivableView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/finance/cash-accounts',
+    component: CashAccountsView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/finance/expense-report',
+    component: ExpenseReportView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/finance/discrepancies',
+    component: DiscrepanciesView,
     meta: { requiresAuth: true },
   },
   {

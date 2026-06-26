@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import InnerLayoutWrapper from '@/layouts/InnerLayoutWrapper.vue'
-import FinanceDashboard from './components/FinanceDashboard.vue'
+import CashAccountsPanel from './components/CashAccountsPanel.vue'
 </script>
 
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <FinanceDashboard />
+      <CashAccountsPanel />
     </template>
   </InnerLayoutWrapper>
 </template>

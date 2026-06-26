@@ -1,3 +1,35 @@
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { useEthicalOrders } from '../composables/useEthicalOrders'
+import CreateOrderDialog from './dialogs/CreateOrderDialog.vue'
+import OrderDetailDialog from './dialogs/OrderDetailDialog.vue'
+
+const { orders, loading, searchText, statusFilter, statusOptions, statusMeta, isOverdue, init } = useEthicalOrders()
+const { headers } = useEthicalOrders()
+
+const showCreateDialog = ref(false)
+const showDetailDialog = ref(false)
+const selectedOrderId = ref<number | null>(null)
+
+function openOrderDialog(item: any) {
+  selectedOrderId.value = item.id
+  showDetailDialog.value = true
+}
+
+function handleRowClick(_: any, { item }: any) {
+  openOrderDialog(item)
+}
+
+async function fetchOrders() {
+  showCreateDialog.value = false
+  await init()
+}
+
+onMounted(() => {
+  init()
+})
+</script>
+
 <template>
   <v-container fluid pa-0>
     <v-card class="elevation-0">
@@ -61,35 +93,3 @@
     <OrderDetailDialog v-model="showDetailDialog" :order-id="selectedOrderId" />
   </v-container>
 </template>
-
-<script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useEthicalOrders } from '../composables/useEthicalOrders'
-import CreateOrderDialog from './dialogs/CreateOrderDialog.vue'
-import OrderDetailDialog from './dialogs/OrderDetailDialog.vue'
-
-const { orders, loading, searchText, statusFilter, statusOptions, statusMeta, isOverdue, init } = useEthicalOrders()
-const { headers } = useEthicalOrders()
-
-const showCreateDialog = ref(false)
-const showDetailDialog = ref(false)
-const selectedOrderId = ref<number | null>(null)
-
-function openOrderDialog(item: any) {
-  selectedOrderId.value = item.id
-  showDetailDialog.value = true
-}
-
-function handleRowClick(_: any, { item }: any) {
-  openOrderDialog(item)
-}
-
-async function fetchOrders() {
-  showCreateDialog.value = false
-  await init()
-}
-
-onMounted(() => {
-  init()
-})
-</script>

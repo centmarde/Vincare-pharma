@@ -223,6 +223,42 @@ export const navigationConfig: NavigationGroup[] = [
         route: '/finance/dashboard',
         permission: 'finance.dashboard.view',
       },
+      {
+        title: 'Expenses',
+        icon: 'mdi-cash-minus',
+        route: '/finance/expenses',
+        permission: 'finance.expenses.manage',
+      },
+      {
+        title: 'Supplier Payments',
+        icon: 'mdi-bank-transfer-out',
+        route: '/finance/supplier-payments',
+        permission: 'finance.payments.manage',
+      },
+      {
+        title: 'Accounts Receivable',
+        icon: 'mdi-cash-clock',
+        route: '/finance/accounts-receivable',
+        permission: 'finance.ar.view',
+      },
+      {
+        title: 'Cash Accounts',
+        icon: 'mdi-bank',
+        route: '/finance/cash-accounts',
+        permission: 'finance.cashAccounts.manage',
+      },
+      {
+        title: 'Expense Report',
+        icon: 'mdi-file-chart',
+        route: '/finance/expense-report',
+        permission: 'finance.expenseReport.view',
+      },
+      {
+        title: 'Discrepancies',
+        icon: 'mdi-alert-decagram',
+        route: '/finance/discrepancies',
+        permission: 'finance.discrepancies.view',
+      },
     ],
   },
   {

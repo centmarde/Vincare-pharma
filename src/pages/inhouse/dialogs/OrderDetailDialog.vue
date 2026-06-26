@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useOrderDetail } from '../composables/useOrderDetail'
-import SupplierCanvass from '@/components/common/canvass/SupplierCanvass.vue'
+import SupplierCanvass from '@/components/canvass/SupplierCanvass.vue'
 import { useInhouseDataStore, type InhouseOrderType } from '@/stores/inhouseData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 

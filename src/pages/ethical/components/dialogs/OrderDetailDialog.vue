@@ -1,3 +1,50 @@
+<script setup lang="ts">
+import { computed, watch } from 'vue'
+import { useOrderDetail } from '../../composables/useOrderDetail'
+import { useEthicalDataStore } from '@/stores/ethicalData'
+import SupplierCanvass from '@/components/canvass/SupplierCanvass.vue'
+
+const props = defineProps<{ modelValue: boolean; orderId: number | null }>()
+const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
+
+const internalValue = computed({
+  get: () => props.modelValue,
+  set: (v) => emit('update:modelValue', v),
+})
+
+const ethical = useEthicalDataStore()
+const order = computed(() => ethical.currentOrder)
+
+const {
+  loading, collectionAmount, collectionMethod, collectionReference,
+  isInvoiced, isPartial, isPaid, isAwaitingStock, isCancellable, isOverdue, balance, shortfall, collections,
+  recordCollection, cancelOrder, markCommissionPaid, recheck,
+} = useOrderDetail(() => order.value)
+
+const productName = (id: number) =>
+  order.value?.items?.find((i) => i.product_id === id)?.product?.product_name ?? `#${id}`
+
+const statusMeta = (status: string | null) => {
+  const map: Record<string, { label: string; color: string }> = {
+    invoiced: { label: 'Invoiced', color: 'warning' },
+    partial: { label: 'Partial', color: 'info' },
+    paid: { label: 'Paid', color: 'success' },
+    cancelled: { label: 'Cancelled', color: 'error' },
+  }
+  return map[status ?? ''] ?? { label: '—', color: 'grey' }
+}
+
+watch(
+  () => props.orderId,
+  async (id) => {
+    if (id && internalValue.value) {
+      ethical.currentOrder = await ethical.fetchOrderById(id) || undefined
+    }
+  },
+  { immediate: true },
+)
+</script>
+
 <template>
   <v-dialog v-model="internalValue" persistent max-width="1000px">
     <v-card v-if="order">
@@ -155,50 +202,3 @@
     </v-card>
   </v-dialog>
 </template>
-
-<script setup lang="ts">
-import { computed, watch } from 'vue'
-import { useOrderDetail } from '../../composables/useOrderDetail'
-import { useEthicalDataStore } from '@/stores/ethicalData'
-import SupplierCanvass from '@/components/common/canvass/SupplierCanvass.vue'
-
-const props = defineProps<{ modelValue: boolean; orderId: number | null }>()
-const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
-
-const internalValue = computed({
-  get: () => props.modelValue,
-  set: (v) => emit('update:modelValue', v),
-})
-
-const ethical = useEthicalDataStore()
-const order = computed(() => ethical.currentOrder)
-
-const {
-  loading, collectionAmount, collectionMethod, collectionReference,
-  isInvoiced, isPartial, isPaid, isAwaitingStock, isCancellable, isOverdue, balance, shortfall, collections,
-  recordCollection, cancelOrder, markCommissionPaid, recheck,
-} = useOrderDetail(() => order.value)
-
-const productName = (id: number) =>
-  order.value?.items?.find((i) => i.product_id === id)?.product?.product_name ?? `#${id}`
-
-const statusMeta = (status: string | null) => {
-  const map: Record<string, { label: string; color: string }> = {
-    invoiced: { label: 'Invoiced', color: 'warning' },
-    partial: { label: 'Partial', color: 'info' },
-    paid: { label: 'Paid', color: 'success' },
-    cancelled: { label: 'Cancelled', color: 'error' },
-  }
-  return map[status ?? ''] ?? { label: '—', color: 'grey' }
-}
-
-watch(
-  () => props.orderId,
-  async (id) => {
-    if (id && internalValue.value) {
-      ethical.currentOrder = await ethical.fetchOrderById(id) || undefined
-    }
-  },
-  { immediate: true },
-)
-</script>

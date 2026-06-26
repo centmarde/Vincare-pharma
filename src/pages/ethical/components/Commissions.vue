@@ -1,3 +1,18 @@
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { useCommissions } from '../composables/useCommissions'
+import { useEthicalDataStore } from '@/stores/ethicalData'
+
+const { collections, commissionSummary, loading, statusFilter, init } = useCommissions()
+const ethical = useEthicalDataStore()
+
+async function markPaid(collectionId: number) {
+  await ethical.markCommissionPaid(collectionId)
+}
+
+onMounted(() => init())
+</script>
+
 <template>
   <v-container fluid pa-0>
     <v-card class="elevation-0">
@@ -80,18 +95,3 @@
     </v-card>
   </v-container>
 </template>
-
-<script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useCommissions } from '../composables/useCommissions'
-import { useEthicalDataStore } from '@/stores/ethicalData'
-
-const { collections, commissionSummary, loading, statusFilter, init } = useCommissions()
-const ethical = useEthicalDataStore()
-
-async function markPaid(collectionId: number) {
-  await ethical.markCommissionPaid(collectionId)
-}
-
-onMounted(() => init())
-</script>

@@ -1,3 +1,29 @@
+<script setup lang="ts">
+import { ref, computed, watch } from 'vue'
+import { useCreateOrder } from '../../composables/useCreateOrder'
+
+const props = defineProps<{ modelValue: boolean }>()
+const emit = defineEmits<{ 'update:modelValue': [boolean]; created: [] }>()
+
+const internalValue = computed({
+  get: () => props.modelValue,
+  set: (v) => emit('update:modelValue', v),
+})
+
+const {
+  loading, customerId, agentId, discount, rebate, termsDays, remarks, lines,
+  customerOptions, agentOptions, productOptions, subtotal, totalWithDiscount,
+  addLine, removeLine, onProductChange, onCustomerChange, submit, reset, init,
+} = useCreateOrder(() => {
+  emit('created')
+  internalValue.value = false
+})
+
+watch(() => internalValue.value, (v) => {
+  if (v) init()
+})
+</script>
+
 <template>
   <v-dialog v-model="internalValue" persistent max-width="900px">
     <v-card>
@@ -75,29 +101,3 @@
     </v-card>
   </v-dialog>
 </template>
-
-<script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import { useCreateOrder } from '../../composables/useCreateOrder'
-
-const props = defineProps<{ modelValue: boolean }>()
-const emit = defineEmits<{ 'update:modelValue': [boolean]; created: [] }>()
-
-const internalValue = computed({
-  get: () => props.modelValue,
-  set: (v) => emit('update:modelValue', v),
-})
-
-const {
-  loading, customerId, agentId, discount, rebate, termsDays, remarks, lines,
-  customerOptions, agentOptions, productOptions, subtotal, totalWithDiscount,
-  addLine, removeLine, onProductChange, onCustomerChange, submit, reset, init,
-} = useCreateOrder(() => {
-  emit('created')
-  internalValue.value = false
-})
-
-watch(() => internalValue.value, (v) => {
-  if (v) init()
-})
-</script>

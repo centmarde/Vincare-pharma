@@ -1,3 +1,16 @@
+<script setup lang="ts">
+import { onMounted } from 'vue'
+import { useAgents } from '../composables/useAgents'
+import AgentForm from './AgentForm.vue'
+
+const {
+  agents, loading, searchText, showCreateDialog, showEditDialog, editingAgent, headers,
+  createAgent, updateAgent, deleteAgent, openEdit, init,
+} = useAgents()
+
+onMounted(() => init())
+</script>
+
 <template>
   <v-container fluid pa-0>
     <v-card class="elevation-0">
@@ -45,16 +58,3 @@
     </v-dialog>
   </v-container>
 </template>
-
-<script setup lang="ts">
-import { onMounted } from 'vue'
-import { useAgents } from '../composables/useAgents'
-import AgentForm from './AgentForm.vue'
-
-const {
-  agents, loading, searchText, showCreateDialog, showEditDialog, editingAgent, headers,
-  createAgent, updateAgent, deleteAgent, openEdit, init,
-} = useAgents()
-
-onMounted(() => init())
-</script>
