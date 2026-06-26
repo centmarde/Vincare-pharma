@@ -1,117 +1,85 @@
 import { computed, ref } from 'vue'
 import type { Ref } from 'vue'
 import { defineStore } from 'pinia'
-import axios from 'axios'
+import { supabase } from '@/lib/supabase'
+import { useAuthUserStore } from './authUser'
+import { useToast } from 'vue-toastification'
 
-// Version log types matching the JSON structure
-export type VersionLogChange = {
-  change: string
-  type: string
-}
+const toast = useToast()
 
-export type VersionLog = {
-  version: string
-  date: string
-  title: string
-  changes: string[]
-}
-
-export type VersionLogsData = {
-  versions: VersionLog[]
-}
-
-// Transformed log type for display (similar to the original LogType)
+// ─── Types matching the public.logs table schema ─────────────────────────
+// Table columns:
+//   id, created_at, user_id, action, description,
+//   trasaction_id (typo in schema), module, transaction_id, updated_at
 export type LogType = {
-  id: string
-  created_at: string
-  title: string
-  version: string
-  description: string
-  type: string
+  id:             number
+  created_at:     string
+  user_id:        string | null
+  action:         string | null
+  description:    string | null
+  trasaction_id:  number | null   // typo column from schema (missing 'n')
+  module:         string | null
+  transaction_id: number | null
+  updated_at:     string | null
 }
 
-type LogsState = {
-  logs: LogType[]
-  loading: boolean
-  error: string
+export type CreateLogData = {
+  user_id?:        string
+  action?:         string
+  description?:    string
+  trasaction_id?:  number
+  transaction_id?: number
+  module?:         string
+  updated_at?:     string
 }
+
+export type UpdateLogData = Partial<CreateLogData>
+
+// ─── Store ──────────────────────────────────────────────────────────────────
 
 export const useLogsDataStore = defineStore('logsData', () => {
-  // States
+  const authStore = useAuthUserStore()
+
+  // ─── States ─────────────────────────────────────────────────────────
   const logs: Ref<LogType[]> = ref([])
   const loading = ref(false)
   const error: Ref<string> = ref('')
 
-  // Computed properties
+  // ─── Computed properties ────────────────────────────────────────────
   const logsCount = computed(() => logs.value.length)
   const hasLogs = computed(() => logs.value.length > 0)
   const isLoading = computed(() => loading.value)
   const hasError = computed(() => error.value !== '')
 
-  // Helper function to handle errors
-  const handleError = (err: any, defaultMessage: string) => {
-    const errorMessage = err?.message || defaultMessage
+  // ─── Helper functions ───────────────────────────────────────────────
+  const handleError = (err: unknown, defaultMessage: string) => {
+    const errorMessage = err instanceof Error ? err.message : defaultMessage
     error.value = errorMessage
   }
 
-  // Clear error state
   const clearError = () => {
     error.value = ''
   }
 
-  // Transform version logs to log format
-  const transformVersionLogsToLogs = (versionLogs: VersionLogsData): LogType[] => {
-    const transformedLogs: LogType[] = []
+  // ─── CRUD Actions ───────────────────────────────────────────────────
 
-    versionLogs.versions.forEach((versionLog, versionIndex) => {
-      // Create a single log entry per version with all changes combined
-      const combinedDescription = versionLog.changes.join('\n• ')
-
-      // Determine the primary type based on the majority of changes
-      const types = versionLog.changes.map((change) => {
-        if (change.toLowerCase().includes('feat') || change.toLowerCase().includes('feature')) {
-          return 'feature'
-        } else if (change.toLowerCase().includes('fix')) {
-          return 'fix'
-        }
-        return 'update'
-      })
-
-      // Get the most common type, or default to 'update'
-      const typeCount = types.reduce(
-        (acc, type) => {
-          acc[type] = (acc[type] || 0) + 1
-          return acc
-        },
-        {} as Record<string, number>,
-      )
-
-      const primaryType = Object.entries(typeCount).reduce((a, b) =>
-        typeCount[a[0]] > typeCount[b[0]] ? a : b,
-      )[0]
-
-      transformedLogs.push({
-        id: versionLog.version,
-        created_at: versionLog.date + 'T00:00:00.000Z', // Convert date to ISO format
-        title: versionLog.title,
-        version: versionLog.version,
-        description: `• ${combinedDescription}`,
-        type: primaryType,
-      })
-    })
-
-    return transformedLogs
-  } // Fetch all logs from version-logs.json
+  // Fetch all logs
   const fetchLogs = async () => {
     loading.value = true
     clearError()
 
     try {
-      const response = await axios.get('/data/version-logs.json')
-      const versionLogsData: VersionLogsData = response.data
+      const { data, error: fetchError } = await supabase
+        .from('logs')
+        .select('*')
+        .order('created_at', { ascending: false })
 
-      const transformedLogs = transformVersionLogsToLogs(versionLogsData)
-      logs.value = transformedLogs
+      if (fetchError) {
+        handleError(fetchError, 'Failed to fetch logs')
+        return
+      }
+
+      logs.value = (data || []) as LogType[]
     } catch (err) {
       handleError(err, 'Failed to fetch logs')
     } finally {
@@ -119,17 +87,24 @@ export const useLogsDataStore = defineStore('logsData', () => {
     }
   }
 
-  // Fetch logs by type
+  // Fetch logs by type (action / module)
   const fetchLogsByType = async (logType: string) => {
     loading.value = true
     clearError()
 
     try {
-      const response = await axios.get('/data/version-logs.json')
-      const versionLogsData: VersionLogsData = response.data
+      const { data, error: fetchError } = await supabase
+        .from('logs')
+        .select('*')
+        .or(`action.ilike.%${logType}%,module.ilike.%${logType}%`)
+        .order('created_at', { ascending: false })
 
-      const transformedLogs = transformVersionLogsToLogs(versionLogsData)
-      logs.value = transformedLogs.filter((log) => log.type === logType)
+      if (fetchError) {
+        handleError(fetchError, `Failed to fetch logs of type "${logType}"`)
+        return
+      }
+
+      logs.value = (data || []) as LogType[]
     } catch (err) {
       handleError(err, `Failed to fetch logs of type "${logType}"`)
     } finally {
@@ -143,17 +118,19 @@ export const useLogsDataStore = defineStore('logsData', () => {
     clearError()
 
     try {
-      const response = await axios.get('/data/version-logs.json')
-      const versionLogsData: VersionLogsData = response.data
+      const { data, error: fetchError } = await supabase
+        .from('logs')
+        .select('*')
+        .gte('created_at', startDate)
+        .lte('created_at', endDate)
+        .order('created_at', { ascending: false })
 
-      const transformedLogs = transformVersionLogsToLogs(versionLogsData)
-      const start = new Date(startDate)
-      const end = new Date(endDate)
+      if (fetchError) {
+        handleError(fetchError, 'Failed to fetch logs for the specified date range')
+        return
+      }
 
-      logs.value = transformedLogs.filter((log) => {
-        const logDate = new Date(log.created_at)
-        return logDate >= start && logDate <= end
-      })
+      logs.value = (data || []) as LogType[]
     } catch (err) {
       handleError(err, 'Failed to fetch logs for the specified date range')
     } finally {
@@ -161,14 +138,141 @@ export const useLogsDataStore = defineStore('logsData', () => {
     }
   }
 
-  // Get logs by version
-  const getLogsByVersion = computed(() => {
-    return (version: string) => logs.value.filter((log) => log.version === version)
+  // Create a new log entry
+  const createLog = async (logData: CreateLogData) => {
+    loading.value = true
+    clearError()
+
+    try {
+      const { user, error: authError } = await authStore.getCurrentUser()
+      if (authError || !user) {
+        toast.error('User not authenticated.')
+        loading.value = false
+        return undefined
+      }
+
+      const { data, error: createError } = await supabase
+        .from('logs')
+        .insert([{
+          user_id:        logData.user_id ?? user.id,
+          action:         logData.action ?? null,
+          description:    logData.description ?? null,
+          transaction_id: logData.transaction_id ?? null,
+          module:         logData.module ?? null,
+          updated_at:     logData.updated_at ?? new Date().toISOString(),
+        }])
+        .select('*')
+        .single()
+
+      if (createError) {
+        handleError(createError, 'Failed to create log')
+        toast.error('Failed to create log entry.')
+        loading.value = false
+        return undefined
+      }
+
+      const created = data as LogType
+      logs.value.unshift(created)
+      toast.success('Log entry created successfully.')
+      loading.value = false
+      return created
+    } catch (err) {
+      handleError(err, 'Failed to create log')
+      toast.error('Failed to create log entry.')
+      loading.value = false
+      return undefined
+    }
+  }
+
+  // Update an existing log
+  const updateLog = async (id: number, updateData: UpdateLogData) => {
+    loading.value = true
+    clearError()
+
+    try {
+      const { data, error: updateError } = await supabase
+        .from('logs')
+        .update({
+          ...updateData,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select('*')
+        .single()
+
+      if (updateError) {
+        handleError(updateError, `Failed to update log with ID ${id}`)
+        toast.error('Failed to update log entry.')
+        loading.value = false
+        return undefined
+      }
+
+      const updated = data as LogType
+      const index = logs.value.findIndex(l => l.id === id)
+      if (index !== -1) logs.value[index] = updated
+      toast.success('Log entry updated successfully.')
+      loading.value = false
+      return updated
+    } catch (err) {
+      handleError(err, `Failed to update log with ID ${id}`)
+      toast.error('Failed to update log entry.')
+      loading.value = false
+      return undefined
+    }
+  }
+
+  // Delete a log
+  const deleteLog = async (id: number) => {
+    loading.value = true
+    clearError()
+
+    try {
+      const { error: deleteError } = await supabase
+        .from('logs')
+        .delete()
+        .eq('id', id)
+
+      if (deleteError) {
+        handleError(deleteError, `Failed to delete log with ID ${id}`)
+        toast.error('Failed to delete log entry.')
+        loading.value = false
+        return false
+      }
+
+      logs.value = logs.value.filter(l => l.id !== id)
+      toast.success('Log entry deleted successfully.')
+      loading.value = false
+      return true
+    } catch (err) {
+      handleError(err, `Failed to delete log with ID ${id}`)
+      toast.error('Failed to delete log entry.')
+      loading.value = false
+      return false
+    }
+  }
+
+  // Get logs by transaction_id
+  const getLogsByTransaction = computed(() => {
+    return (transactionId: number) =>
+      logs.value.filter((log) => log.transaction_id === transactionId)
   })
 
-  // Get logs by type (computed filter)
-  const getLogsByType = computed(() => {
-    return (logType: string) => logs.value.filter((log) => log.type === logType)
+  // Get logs by module
+  const getLogsByModule = computed(() => {
+    return (module: string) =>
+      logs.value.filter((log) => log.module?.toLowerCase() === module.toLowerCase())
+  })
+
+  // Get logs by user_id
+  const getLogsByUser = computed(() => {
+    return (userId: string) =>
+      logs.value.filter((log) => log.user_id === userId)
+  })
+
+  // Get logs by action
+  const getLogsByAction = computed(() => {
+    return (action: string) =>
+      logs.value.filter((log) => log.action?.toLowerCase() === action.toLowerCase())
   })
 
   // Get recent logs (last N logs)
@@ -176,7 +280,7 @@ export const useLogsDataStore = defineStore('logsData', () => {
     return (limit: number = 10) => logs.value.slice(0, limit)
   })
 
-  // Search logs by title or description
+  // Search logs by action, description, or module
   const searchLogs = computed(() => {
     return (searchTerm: string) => {
       if (!searchTerm.trim()) return logs.value
@@ -184,7 +288,9 @@ export const useLogsDataStore = defineStore('logsData', () => {
       const term = searchTerm.toLowerCase()
       return logs.value.filter(
         (log) =>
-          log.title.toLowerCase().includes(term) || log.description.toLowerCase().includes(term),
+          log.action?.toLowerCase().includes(term) ||
+          log.description?.toLowerCase().includes(term) ||
+          log.module?.toLowerCase().includes(term),
       )
     }
   })
@@ -213,8 +319,10 @@ export const useLogsDataStore = defineStore('logsData', () => {
     hasLogs,
     isLoading,
     hasError,
-    getLogsByVersion,
-    getLogsByType,
+    getLogsByTransaction,
+    getLogsByModule,
+    getLogsByUser,
+    getLogsByAction,
     getRecentLogs,
     searchLogs,
 
@@ -222,6 +330,9 @@ export const useLogsDataStore = defineStore('logsData', () => {
     fetchLogs,
     fetchLogsByType,
     fetchLogsByDateRange,
+    createLog,
+    updateLog,
+    deleteLog,
     clearError,
     clearLogs,
     resetStore,

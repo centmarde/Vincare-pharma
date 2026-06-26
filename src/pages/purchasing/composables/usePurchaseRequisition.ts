@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import { useToast } from 'vue-toastification'
 import { useTransactionsDataStore } from '@/stores/transactionsData'
+import { useLogRequisition } from './useLogRequisition'
 
 export const unitOptions = ['Box', 'Pcs', 'Set', 'Unit', 'Kg', 'M']
 
@@ -17,6 +18,7 @@ type PRFormItem = {
 export function usePurchaseRequisition() {
   const toast = useToast()
   const prStore = useTransactionsDataStore()
+  const { logPRSubmission } = useLogRequisition()
 
   // ─── State ────────────────────────────────────────────────────────
   const loading = ref(false)
@@ -93,7 +95,14 @@ export function usePurchaseRequisition() {
 
     const result = await prStore.savePurchaseRequisition()
 
-    if (result?.success) {
+    if (result?.success && result.transactionId && result.requisitionNo) {
+      // Log the PR submission to the logs table with module = transaction_type
+      await logPRSubmission(
+        result.transactionId,
+        result.requisitionNo,
+        'purchase_requisition',
+        validItems.length,
+      )
       reset()
     }
 
