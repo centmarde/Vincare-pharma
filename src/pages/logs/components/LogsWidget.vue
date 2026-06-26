@@ -29,10 +29,10 @@ const headers = computed(() => [
     width: mobile.value ? 200 : 350,
   },
   { title: 'Module', key: 'module', sortable: true, width: 160 },
-  { title: 'Created By', key: 'user_email', sortable: true, width: 200 },
+  { title: 'Created By', key: 'created_by_email', sortable: true, width: 200 },
   { title: 'Reference No.', key: 'reference_no', sortable: false, width: 150 },
   { title: 'Created At', key: 'created_at', sortable: true, width: 180 },
-  { title: 'Updated By', key: 'updated_by', sortable: true, width: 180 },
+  { title: 'Updated By', key: 'updated_by_email', sortable: true, width: 180 },
   { title: 'Updated At', key: 'updated_at', sortable: true, width: 180 },
 ])
 
@@ -228,7 +228,7 @@ onMounted(async () => {
         </template>
 
         <!-- Created By (email) column -->
-        <template #[`item.user_email`]="{ value }">
+        <template #[`item.created_by_email`]="{ value }">
           <span class="text-body-2">{{ value || '—' }}</span>
         </template>
 
@@ -260,7 +260,7 @@ onMounted(async () => {
         </template>
 
         <!-- Updated By column -->
-        <template #[`item.updated_by`]="{ value }">
+        <template #[`item.updated_by_email`]="{ value }">
           <span class="text-body-2">{{ value || '—' }}</span>
         </template>
 
@@ -319,9 +319,9 @@ onMounted(async () => {
               <div class="text-body-2 mb-2">{{ log.description || '—' }}</div>
               <v-divider class="mb-2"></v-divider>
               <div class="d-flex flex-wrap align-center ga-3 text-caption text-medium-emphasis">
-                <div v-if="log.user_email" class="d-flex align-center ga-1">
+                <div v-if="log.created_by_email" class="d-flex align-center ga-1">
                   <v-icon size="12">mdi-account</v-icon>
-                  <span>{{ log.user_email }}</span>
+                  <span>{{ log.created_by_email }}</span>
                 </div>
                 <div v-if="log.reference_no" class="d-flex align-center ga-1">
                   <v-icon size="12">mdi-hash</v-icon>
@@ -335,9 +335,9 @@ onMounted(async () => {
                   <v-icon size="12">mdi-calendar</v-icon>
                   <span>{{ formatDate(log.created_at) }}</span>
                 </div>
-                <div v-if="log.updated_by" class="d-flex align-center ga-1">
+                <div v-if="log.updated_by_email" class="d-flex align-center ga-1">
                   <v-icon size="12">mdi-account-edit</v-icon>
-                  <span>By: {{ log.updated_by }}</span>
+                  <span>By: {{ log.updated_by_email }}</span>
                 </div>
                 <div v-if="log.updated_at" class="d-flex align-center ga-1">
                   <v-icon size="12">mdi-clock-edit</v-icon>

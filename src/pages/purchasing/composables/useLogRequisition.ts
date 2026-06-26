@@ -43,8 +43,8 @@ export function useLogRequisition() {
     }
 
     await logsStore.createLog({
-      user_id: user.id,
-      updated_by: userEmail,
+      created_by: user.id,
+      updated_by: user.id,
       action: 'submit_pr',
       description,
       transaction_id: transactionId,

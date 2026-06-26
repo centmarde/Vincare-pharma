@@ -7,41 +7,35 @@ import { useToast } from 'vue-toastification'
 
 const toast = useToast()
 
-// ─── Types matching the new normalized schema ──────────────────────────
-// public.logs:    id, created_at, action, description, module, updated_at, updated_by
-// public.log_items: id, created_at, transaction_id, logs_id, user_id
+// ─── Types matching the public.logs table schema ──────────────────────
+// id, created_at, action, description, module, updated_at,
+// updated_by (uuid → auth.users), created_by (uuid → auth.users),
+// transaction_id (bigint → transactions)
 
 export type LogType = {
-  id:              number
-  created_at:      string
-  action:          string | null
-  description:     string | null
-  module:          string | null
-  updated_at:      string | null
-  updated_by:      string | null
-  // Joined from log_items (via fetch)
-  transaction_id?: number | null
-  user_id?:        string | null
-  user_email?:     string | null
-  reference_no?:   string | null
-}
-
-export type LogItemType = {
-  id:              number
-  created_at:      string
-  transaction_id:  number | null
-  logs_id:         number | null
-  user_id:         string | null
+  id: number
+  created_at: string
+  action: string | null
+  description: string | null
+  module: string | null
+  updated_at: string | null
+  updated_by: string | null // uuid FK → auth.users
+  created_by: string | null // uuid FK → auth.users
+  transaction_id: number | null
+  // Resolved at display time
+  created_by_email?: string | null
+  updated_by_email?: string | null
+  reference_no?: string | null
 }
 
 export type CreateLogData = {
-  action?:         string
-  description?:    string
-  module?:         string
+  action?: string
+  description?: string
+  module?: string
   transaction_id?: number
-  user_id?:        string
-  updated_by?:     string
-  updated_at?:     string
+  created_by?: string // uuid
+  updated_by?: string // uuid
+  updated_at?: string
 }
 
 export type UpdateLogData = Partial<CreateLogData>
@@ -72,13 +66,7 @@ export const useLogsDataStore = defineStore('logsData', () => {
     error.value = ''
   }
 
-  // ─── CRUD Actions ───────────────────────────────────────────────────
-
   // ─── User email resolver ─────────────────────────────────────────
-  /**
-   * Resolve a user's email from authStore.users by user_id.
-   * Ensures users are loaded if not already available.
-   */
   async function resolveUserEmail(userId: string | null): Promise<string | null> {
     if (!userId) return null
     if (!authStore.users.length) {
@@ -87,38 +75,47 @@ export const useLogsDataStore = defineStore('logsData', () => {
     return authStore.users.find((u: any) => u.id === userId)?.email ?? null
   }
 
-  // ─── Shared flatten helper ───────────────────────────────────────
-  async function flattenLogs(rawData: any[]): Promise<LogType[]> {
-    const resolved = await Promise.all(
-      (rawData || []).map(async (log: any) => {
-        const items = log.log_items ?? []
-        const firstItem = items.length > 0 ? items[0] : {}
-        const userId = firstItem.user_id ?? null
-        const userEmail = await resolveUserEmail(userId)
+  /**
+   * Enrich an array of raw logs with resolved emails and reference_no.
+   * Uses Promise.all for concurrent resolution.
+   */
+  async function enrichLogs(rawData: any[]): Promise<LogType[]> {
+    // Ensure users are loaded once for the whole batch
+    if (!authStore.users.length) {
+      await authStore.getAllUsers()
+    }
 
-        // Resolve reference_no from the nested transactions relation
-        const transactions = log.log_items?.[0]?.transactions
-        const referenceNo = transactions?.reference_no ?? null
+    return Promise.all(
+      (rawData || []).map(async (log: any) => {
+        const createdByEmail = await resolveUserEmail(log.created_by)
+        const updatedByEmail = await resolveUserEmail(log.updated_by)
+
+        // Resolve reference_no from transactions table, falling through:
+        // reference_no → po_no → requisition_no
+        const tx = log.transactions ?? {}
+        const referenceNo = tx.reference_no ?? tx.po_no ?? tx.requisition_no ?? null
 
         return {
-          id:              log.id,
-          created_at:      log.created_at,
-          action:          log.action,
-          description:     log.description,
-          module:          log.module,
-          updated_at:      log.updated_at,
-          updated_by:      log.updated_by ?? null,
-          transaction_id:  firstItem.transaction_id ?? null,
-          user_id:         userId,
-          user_email:      userEmail,
-          reference_no:    referenceNo,
+          id: log.id,
+          created_at: log.created_at,
+          action: log.action,
+          description: log.description,
+          module: log.module,
+          updated_at: log.updated_at,
+          updated_by: log.updated_by ?? null,
+          created_by: log.created_by ?? null,
+          transaction_id: log.transaction_id ?? null,
+          created_by_email: createdByEmail,
+          updated_by_email: updatedByEmail,
+          reference_no: referenceNo,
         }
       }),
     )
-    return resolved as LogType[]
   }
 
-  // Fetch all logs with related log_items (user_id, transaction_id)
+  // ─── CRUD Actions ───────────────────────────────────────────────────
+
+  // Fetch all logs with joined transactions.reference_no
   const fetchLogs = async () => {
     loading.value = true
     clearError()
@@ -126,16 +123,16 @@ export const useLogsDataStore = defineStore('logsData', () => {
     try {
       const { data, error: fetchError } = await supabase
         .from('logs')
-        .select(`
+        .select(
+          `
           *,
-          log_items (
-            transaction_id,
-            user_id,
-            transactions (
-              reference_no
-            )
+          transactions (
+            reference_no,
+            po_no,
+            requisition_no
           )
-        `)
+        `,
+        )
         .order('created_at', { ascending: false })
 
       if (fetchError) {
@@ -143,7 +140,7 @@ export const useLogsDataStore = defineStore('logsData', () => {
         return
       }
 
-      logs.value = await flattenLogs(data || [])
+      logs.value = await enrichLogs(data || [])
     } catch (err) {
       handleError(err, 'Failed to fetch logs')
     } finally {
@@ -159,13 +156,14 @@ export const useLogsDataStore = defineStore('logsData', () => {
     try {
       const { data, error: fetchError } = await supabase
         .from('logs')
-        .select(`
+        .select(
+          `
           *,
-          log_items (
-            transaction_id,
-            user_id
+          transactions (
+            reference_no
           )
-        `)
+        `,
+        )
         .or(`action.ilike.%${logType}%,module.ilike.%${logType}%`)
         .order('created_at', { ascending: false })
 
@@ -174,7 +172,7 @@ export const useLogsDataStore = defineStore('logsData', () => {
         return
       }
 
-      logs.value = await flattenLogs(data || [])
+      logs.value = await enrichLogs(data || [])
     } catch (err) {
       handleError(err, `Failed to fetch logs of type "${logType}"`)
     } finally {
@@ -190,13 +188,14 @@ export const useLogsDataStore = defineStore('logsData', () => {
     try {
       const { data, error: fetchError } = await supabase
         .from('logs')
-        .select(`
+        .select(
+          `
           *,
-          log_items (
-            transaction_id,
-            user_id
+          transactions (
+            reference_no
           )
-        `)
+        `,
+        )
         .gte('created_at', startDate)
         .lte('created_at', endDate)
         .order('created_at', { ascending: false })
@@ -206,7 +205,7 @@ export const useLogsDataStore = defineStore('logsData', () => {
         return
       }
 
-      logs.value = await flattenLogs(data || [])
+      logs.value = await enrichLogs(data || [])
     } catch (err) {
       handleError(err, 'Failed to fetch logs for the specified date range')
     } finally {
@@ -214,121 +213,71 @@ export const useLogsDataStore = defineStore('logsData', () => {
     }
   }
 
-  // Create a new log entry + log_items row (many-to-many connector)
-  // If user_id is provided in logData, it will be used directly.
-  // Otherwise, falls back to authStore.getCurrentUser().
+  // Create a new log entry
   const createLog = async (logData: CreateLogData) => {
     loading.value = true
     clearError()
 
     try {
-      let userId = logData.user_id
-      if (!userId) {
+      let createdBy = logData.created_by
+      if (!createdBy) {
         const { user, error: authError } = await authStore.getCurrentUser()
         if (authError || !user) {
           toast.error('User not authenticated.')
           loading.value = false
           return undefined
         }
-        userId = user.id
+        createdBy = user.id
       }
 
-      // Resolve the acting user's email for updated_by
-      if (!authStore.users.length) {
-        await authStore.getAllUsers()
-      }
-      const actingUser = authStore.users.find((u: any) => u.id === userId)
-      const updatedBy = logData.updated_by ?? actingUser?.email ?? userId
+      let updatedBy = logData.updated_by ?? createdBy
 
-      // 1. Insert into logs table
-      const { data: logRecord, error: createError } = await supabase
+      const { data, error: createError } = await supabase
         .from('logs')
-        .insert([{
-          action:      logData.action ?? null,
-          description: logData.description ?? null,
-          module:      logData.module ?? null,
-          updated_at:  logData.updated_at ?? new Date().toISOString(),
-          updated_by:  updatedBy,
-        }])
-        .select('id')
+        .insert([
+          {
+            action: logData.action ?? null,
+            description: logData.description ?? null,
+            module: logData.module ?? null,
+            transaction_id: logData.transaction_id ?? null,
+            created_by: createdBy,
+            updated_by: updatedBy,
+            updated_at: logData.updated_at ?? new Date().toISOString(),
+          },
+        ])
+        .select('*')
         .single()
 
-      if (createError || !logRecord) {
+      if (createError) {
         handleError(createError, 'Failed to create log')
         toast.error('Failed to create log entry.')
         loading.value = false
         return undefined
       }
 
-      const logId = logRecord.id
+      // Resolve emails for the single created record
+      const created = data as any
+      const createdByEmail = await resolveUserEmail(created.created_by)
+      const updatedByEmail = await resolveUserEmail(created.updated_by)
 
-      // 2. Insert into log_items (many-to-many connector)
-      const { error: itemError } = await supabase
-        .from('log_items')
-        .insert([{
-          logs_id:        logId,
-          transaction_id: logData.transaction_id ?? null,
-          user_id:        userId,
-        }])
-
-      if (itemError) {
-        handleError(itemError, 'Failed to link log to transaction/user')
-        toast.warning('Log created but linkage failed.')
+      const log: LogType = {
+        id: created.id,
+        created_at: created.created_at,
+        action: created.action,
+        description: created.description,
+        module: created.module,
+        updated_at: created.updated_at,
+        updated_by: created.updated_by ?? null,
+        created_by: created.created_by ?? null,
+        transaction_id: created.transaction_id ?? null,
+        created_by_email: createdByEmail,
+        updated_by_email: updatedByEmail,
       }
 
-      // 3. Fetch the created log with its joined data
-      const { data: fullLog, error: fetchError } = await supabase
-        .from('logs')
-        .select(`
-          *,
-          log_items (
-            transaction_id,
-            user_id
-          )
-        `)
-        .eq('id', logId)
-        .single()
-
-      if (fetchError || !fullLog) {
-        // Fallback: return basic log data
-        const created: LogType = {
-          id:             logId,
-          created_at:     new Date().toISOString(),
-          action:         logData.action ?? null,
-          description:    logData.description ?? null,
-          module:         logData.module ?? null,
-          updated_at:     logData.updated_at ?? null,
-          updated_by:     updatedBy ?? null,
-          transaction_id: logData.transaction_id ?? null,
-          user_id:        userId ?? null,
-          user_email:     actingUser?.email ?? null,
-        }
-        logs.value.unshift(created)
-        toast.success('Log entry created successfully.')
-        loading.value = false
-        return created
-      }
-
-      // Flatten the joined result
-      const items = fullLog.log_items ?? []
-      const firstItem = items.length > 0 ? items[0] : {}
-      const created: LogType = {
-        id:              fullLog.id,
-        created_at:      fullLog.created_at,
-        action:          fullLog.action,
-        description:     fullLog.description,
-        module:          fullLog.module,
-        updated_at:      fullLog.updated_at,
-        updated_by:      fullLog.updated_by ?? null,
-        transaction_id:  firstItem.transaction_id ?? null,
-        user_id:         firstItem.user_id ?? null,
-        user_email:      actingUser?.email ?? null,
-      }
-
-      logs.value.unshift(created)
-      toast.success('Log entry created successfully.')
+      logs.value.unshift(log)
+      // toast.success('Log entry created successfully.')
       loading.value = false
-      return created
+      return log
     } catch (err) {
       handleError(err, 'Failed to create log')
       toast.error('Failed to create log entry.')
@@ -337,7 +286,7 @@ export const useLogsDataStore = defineStore('logsData', () => {
     }
   }
 
-  // Update an existing log (only the logs table row)
+  // Update an existing log
   const updateLog = async (id: number, updateData: UpdateLogData) => {
     loading.value = true
     clearError()
@@ -361,17 +310,13 @@ export const useLogsDataStore = defineStore('logsData', () => {
       }
 
       const updated = data as LogType
-      const index = logs.value.findIndex(l => l.id === id)
+      const index = logs.value.findIndex((l) => l.id === id)
       if (index !== -1) {
         logs.value[index] = { ...logs.value[index], ...updated }
       }
       toast.success('Log entry updated successfully.')
       loading.value = false
-      return {
-        ...updated,
-        transaction_id: logs.value.find(l => l.id === id)?.transaction_id ?? null,
-        user_id: logs.value.find(l => l.id === id)?.user_id ?? null,
-      } as LogType
+      return updated
     } catch (err) {
       handleError(err, `Failed to update log with ID ${id}`)
       toast.error('Failed to update log entry.')
@@ -380,16 +325,13 @@ export const useLogsDataStore = defineStore('logsData', () => {
     }
   }
 
-  // Delete a log (cascades to log_items via FK constraint)
+  // Delete a log
   const deleteLog = async (id: number) => {
     loading.value = true
     clearError()
 
     try {
-      const { error: deleteError } = await supabase
-        .from('logs')
-        .delete()
-        .eq('id', id)
+      const { error: deleteError } = await supabase.from('logs').delete().eq('id', id)
 
       if (deleteError) {
         handleError(deleteError, `Failed to delete log with ID ${id}`)
@@ -398,7 +340,7 @@ export const useLogsDataStore = defineStore('logsData', () => {
         return false
       }
 
-      logs.value = logs.value.filter(l => l.id !== id)
+      logs.value = logs.value.filter((l) => l.id !== id)
       toast.success('Log entry deleted successfully.')
       loading.value = false
       return true
@@ -410,36 +352,31 @@ export const useLogsDataStore = defineStore('logsData', () => {
     }
   }
 
-  // Get logs by transaction_id
+  // ─── Computed filters ──────────────────────────────────────────────
+
   const getLogsByTransaction = computed(() => {
     return (transactionId: number) =>
       logs.value.filter((log) => log.transaction_id === transactionId)
   })
 
-  // Get logs by module
   const getLogsByModule = computed(() => {
     return (module: string) =>
       logs.value.filter((log) => log.module?.toLowerCase() === module.toLowerCase())
   })
 
-  // Get logs by user_id
-  const getLogsByUser = computed(() => {
-    return (userId: string) =>
-      logs.value.filter((log) => log.user_id === userId)
+  const getLogsByCreatedBy = computed(() => {
+    return (userId: string) => logs.value.filter((log) => log.created_by === userId)
   })
 
-  // Get logs by action
   const getLogsByAction = computed(() => {
     return (action: string) =>
       logs.value.filter((log) => log.action?.toLowerCase() === action.toLowerCase())
   })
 
-  // Get recent logs (last N logs)
   const getRecentLogs = computed(() => {
     return (limit: number = 10) => logs.value.slice(0, limit)
   })
 
-  // Search logs by action, description, or module
   const searchLogs = computed(() => {
     return (searchTerm: string) => {
       if (!searchTerm.trim()) return logs.value
@@ -454,13 +391,11 @@ export const useLogsDataStore = defineStore('logsData', () => {
     }
   })
 
-  // Clear logs state
   const clearLogs = () => {
     logs.value = []
     clearError()
   }
 
-  // Reset store to initial state
   const resetStore = () => {
     logs.value = []
     loading.value = false
@@ -480,7 +415,7 @@ export const useLogsDataStore = defineStore('logsData', () => {
     hasError,
     getLogsByTransaction,
     getLogsByModule,
-    getLogsByUser,
+    getLogsByCreatedBy,
     getLogsByAction,
     getRecentLogs,
     searchLogs,

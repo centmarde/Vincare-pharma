@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useProductsWidget } from '@/composables/useProductsWidget'
+import { useTheme } from '@/stores/useTheme'
 import ProductMobile from '../products/mobile/ProductMobile.vue'
 import ProductFormDialog from '../products/dialogs/ProductFormDialog.vue'
 import ProductDeleteDialog from '../products/dialogs/ProductDeleteDialog.vue'
@@ -34,6 +36,20 @@ const {
   handleSearch,
   handleTableOptions,
 } = useProductsWidget()
+
+const { getCurrentTheme } = useTheme()
+const isDark = computed<'light' | 'dark'>(() => getCurrentTheme())
+
+// Theme-aware stock color logic
+function stockColor(item: any) {
+  const stock = item.current_stock ?? 0
+  const isOutOfStock = stock <= 0
+  const isLowStock = item.reorder_level && stock <= item.reorder_level
+
+  if (isOutOfStock) return 'error'
+  if (isLowStock) return 'warning'
+  return isDark.value === 'dark' ? 'grey-lighten-2' : 'grey-darken-3'
+}
 </script>
 
 <template>
@@ -60,7 +76,13 @@ const {
         </v-btn>
       </template>
       <template v-else>
-        <v-btn icon="mdi-plus" color="primary" variant="elevated" size="small" @click="openCreateDialog"></v-btn>
+        <v-btn
+          icon="mdi-plus"
+          color="primary"
+          variant="elevated"
+          size="small"
+          @click="openCreateDialog"
+        ></v-btn>
       </template>
     </v-card-title>
 
@@ -86,7 +108,11 @@ const {
               <v-icon icon="mdi-alert-circle-outline" color="primary" size="small"></v-icon>
               <span class="text-body-2 font-weight-medium">
                 Low Stock Alert —
-                <strong>{{ lowStockProducts.length }} product{{ lowStockProducts.length > 1 ? 's' : '' }}</strong>
+                <strong
+                  >{{ lowStockProducts.length }} product{{
+                    lowStockProducts.length > 1 ? 's' : ''
+                  }}</strong
+                >
                 need{{ lowStockProducts.length > 1 ? '' : 's' }} to be reordered
               </span>
             </div>
@@ -139,14 +165,7 @@ const {
           <span v-else class="text-grey">-</span>
         </template>
         <template #[`item.current_stock`]="{ item }">
-          <v-chip
-            :color="
-              (item.current_stock ?? 0) <= 0 ? 'error'
-              : item.reorder_level && (item.current_stock ?? 0) <= item.reorder_level ? 'primary'
-              : 'black'
-            "
-            size="small" variant="outlined"
-          >
+          <v-chip :color="stockColor(item)" size="small" variant="outlined">
             {{ item.current_stock ?? 0 }}
           </v-chip>
         </template>
@@ -159,7 +178,9 @@ const {
                     <v-icon icon="mdi-label" color="primary" class="mr-3"></v-icon>
                     <div>
                       <div class="text-caption text-grey-darken-1">Generic Name</div>
-                      <div class="text-body-1 font-weight-medium">{{ item.generic_name || 'N/A' }}</div>
+                      <div class="text-body-1 font-weight-medium">
+                        {{ item.generic_name || 'N/A' }}
+                      </div>
                     </div>
                   </v-col>
                   <v-col cols="12" md="6" class="d-flex align-center py-2">
@@ -173,7 +194,9 @@ const {
                     <v-icon icon="mdi-truck-delivery" color="primary" class="mr-3"></v-icon>
                     <div>
                       <div class="text-caption text-grey-darken-1">Supplier</div>
-                      <div class="text-body-1 font-weight-medium">{{ item.suppliers?.name || 'N/A' }}</div>
+                      <div class="text-body-1 font-weight-medium">
+                        {{ item.suppliers?.name || 'N/A' }}
+                      </div>
                     </div>
                   </v-col>
                   <v-col cols="12" md="6" class="d-flex align-center py-2">
@@ -190,8 +213,20 @@ const {
         </template>
         <template #[`item.actions`]="{ item }">
           <div class="d-flex ga-1">
-            <v-btn icon="mdi-pencil" size="small" variant="text" color="info" @click="openEditDialog(item)"></v-btn>
-            <v-btn icon="mdi-delete" size="small" variant="text" color="error" @click="openDeleteDialog(item)"></v-btn>
+            <v-btn
+              icon="mdi-pencil"
+              size="small"
+              variant="text"
+              color="info"
+              @click="openEditDialog(item)"
+            ></v-btn>
+            <v-btn
+              icon="mdi-delete"
+              size="small"
+              variant="text"
+              color="error"
+              @click="openDeleteDialog(item)"
+            ></v-btn>
           </div>
         </template>
         <template #[`no-data`]>
