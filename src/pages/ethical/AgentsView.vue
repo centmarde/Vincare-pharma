@@ -1,6 +1,10 @@
 <template>
   <InnerLayoutWrapper>
-    <AgentCRUD />
+    <template #content>
+      <v-container fluid class="pa-0">
+        <AgentCRUD />
+      </v-container>
+    </template>
   </InnerLayoutWrapper>
 </template>
 

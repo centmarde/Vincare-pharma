@@ -30,7 +30,7 @@
       <v-card>
         <v-card-title>New Customer</v-card-title>
         <v-card-text>
-          <CustomerForm :agent-options="agentOptions" @submit="createCustomer; showCreateDialog = false" />
+          <CustomerForm :agent-options="agentOptions" @submit="createCustomer" />
         </v-card-text>
       </v-card>
     </v-dialog>
@@ -42,7 +42,7 @@
           <CustomerForm
             :customer="editingCustomer"
             :agent-options="agentOptions"
-            @submit="updateCustomer; showEditDialog = false"
+            @submit="updateCustomer"
           />
         </v-card-text>
       </v-card>

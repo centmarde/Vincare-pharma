@@ -23,8 +23,9 @@ export function useEthicalCustomers() {
     { title: 'Type', key: 'agency_type' },
     { title: 'Contact', key: 'contact_person' },
     { title: 'Phone', key: 'contact_no' },
-    { title: 'Agent', key: 'agent.name' },
+    { title: 'Agent', key: 'agent_name' },
     { title: 'Status', key: 'is_active' },
+    { title: '', key: 'actions', sortable: false, align: 'end' as const },
   ]
 
   const agencyTypeOptions = [
@@ -32,6 +33,9 @@ export function useEthicalCustomers() {
     { title: 'LGU', value: 'lgu' },
     { title: 'Private', value: 'private' },
   ]
+
+  const agentName = (agentId: number | null): string =>
+    agents.value.find(a => a.id === agentId)?.name ?? '—'
 
   const filteredCustomers = computed(() => {
     let result = customers.value.filter(c => c.department === 'ethical')
@@ -42,7 +46,7 @@ export function useEthicalCustomers() {
         (c.contact_person?.toLowerCase().includes(s))
       )
     }
-    return result
+    return result.map(c => ({ ...c, agent_name: agentName(c.agent_id) }))
   })
 
   const editingCustomer = computed(() => {
@@ -54,7 +58,7 @@ export function useEthicalCustomers() {
     agents.value.map(a => ({ title: a.name, value: a.id })))
 
   async function init() {
-    if (!customers.value.length) await customersStore.fetchCustomers({ department: 'ethical' })
+    await customersStore.fetchCustomers({ department: 'ethical' })
     if (!agents.value.length) await agentsStore.fetchAgents({ activeOnly: true })
   }
 

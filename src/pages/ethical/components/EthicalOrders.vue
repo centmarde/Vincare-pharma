@@ -35,6 +35,9 @@
             <v-chip :color="statusMeta(item.status).color" label size="small">
               {{ statusMeta(item.status).label }}
             </v-chip>
+            <v-chip v-if="item.fulfillment_status === 'awaiting_stock'" color="orange" label size="small" class="ml-1">
+              Awaiting Stock
+            </v-chip>
           </template>
           <template #item.due_date="{ item }">
             <div :class="{ 'text-red': isOverdue(item) }">

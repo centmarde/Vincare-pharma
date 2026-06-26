@@ -1,9 +1,8 @@
 import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
-import { useInhouseDataStore } from '@/stores/inhouseData'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
-import type { InhouseOrderType, Shortfall, CanvassQuote, CanvassSelection } from '@/stores/inhouseData'
+import type { CanvassableOrder, Shortfall, CanvassQuote, CanvassSelection, CanvassCommitFn } from '@/utils/canvassTypes'
 
 const toast = useToast()
 
@@ -33,11 +32,11 @@ function monthsUntil(dateStr: string): number {
 }
 
 export function useCanvass(
-  order: () => InhouseOrderType | null,
+  order: () => CanvassableOrder | null,
   shortfall: () => Shortfall[],
+  commitFn: CanvassCommitFn,
   onCreated: () => void,
 ) {
-  const store = useInhouseDataStore()
   const suppliersStore = useSuppliersDataStore()
   const { suppliers } = storeToRefs(suppliersStore)
 
@@ -174,7 +173,7 @@ export function useCanvass(
     })
 
     loading.value = true
-    const result = await store.canvassToPRs(o.id, selections)
+    const result = await commitFn(o.id, selections)
     loading.value = false
     if (result.success) onCreated()
   }

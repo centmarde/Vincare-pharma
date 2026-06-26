@@ -58,9 +58,10 @@ export function useCustomers() {
 
   async function submit(): Promise<boolean> {
     if (!form.value.name?.trim()) return false
+    const payload = { ...form.value, department: 'inhouse' }
     const result = editingId.value
-      ? await store.updateCustomer(editingId.value, form.value)
-      : await store.createCustomer(form.value)
+      ? await store.updateCustomer(editingId.value, payload)
+      : await store.createCustomer(payload)
     if (result) { showForm.value = false; return true }
     return false
   }
@@ -70,7 +71,7 @@ export function useCustomers() {
   }
 
   async function init() {
-    await store.fetchCustomers()
+    await store.fetchCustomers({ department: 'inhouse' })
   }
 
   return {

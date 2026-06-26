@@ -1,7 +1,7 @@
 import { ref, computed, watch } from 'vue'
 import { useToast } from 'vue-toastification'
 import { useEthicalDataStore } from '@/stores/ethicalData'
-import type { EthicalOrderType, CollectionType } from '@/stores/ethicalData'
+import type { EthicalOrderType, CollectionType, Shortfall } from '@/stores/ethicalData'
 
 const toast = useToast()
 
@@ -17,7 +17,20 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
   const isInvoiced = computed(() => order()?.status === 'invoiced')
   const isPartial = computed(() => order()?.status === 'partial')
   const isPaid = computed(() => order()?.status === 'paid')
-  const isCancellable = computed(() => isInvoiced.value)
+  const isAwaitingStock = computed(() => order()?.fulfillment_status === 'awaiting_stock')
+  const isCancellable = computed(() => isInvoiced.value && !isAwaitingStock.value)
+
+  const shortfall = computed<Shortfall[]>(() => {
+    const o = order()
+    return (o?.items ?? [])
+      .filter((it) => it.delivered_qty < it.quantity)
+      .map((it) => ({
+        product_id: it.product_id ?? 0,
+        ordered: it.quantity,
+        on_hand: it.delivered_qty,
+        needed: it.quantity - it.delivered_qty,
+      }))
+  })
 
   const isOverdue = computed(() => {
     const o = order()
@@ -82,6 +95,14 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
     loading.value = false
   }
 
+  async function recheck() {
+    const o = order()
+    if (!o?.id) return
+    loading.value = true
+    await ethical.recheckStock(o.id)
+    loading.value = false
+  }
+
   return {
     loading,
     collectionAmount,
@@ -91,12 +112,15 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
     isInvoiced,
     isPartial,
     isPaid,
+    isAwaitingStock,
     isCancellable,
     isOverdue,
     balance,
+    shortfall,
     collections,
     recordCollection,
     cancelOrder,
     markCommissionPaid,
+    recheck,
   }
 }

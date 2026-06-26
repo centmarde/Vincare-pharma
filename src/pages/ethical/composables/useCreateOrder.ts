@@ -100,7 +100,7 @@ export function useCreateOrder(onCreated: () => void) {
   }
 
   async function init() {
-    if (!customers.value.length) await customersStore.fetchCustomers({ department: 'ethical', activeOnly: true })
+    await customersStore.fetchCustomers({ department: 'ethical', activeOnly: true })
     if (!agents.value.length) await agentsStore.fetchAgents({ activeOnly: true })
     if (!products.value.length) await productsStore.fetchProducts()
     if (!lines.value.length) addLine()

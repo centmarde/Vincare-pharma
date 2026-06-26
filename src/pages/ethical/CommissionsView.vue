@@ -1,6 +1,10 @@
 <template>
   <InnerLayoutWrapper>
-    <Commissions />
+    <template #content>
+      <v-container fluid class="pa-0">
+        <Commissions />
+      </v-container>
+    </template>
   </InnerLayoutWrapper>
 </template>
 

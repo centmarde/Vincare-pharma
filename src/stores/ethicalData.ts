@@ -8,8 +8,11 @@ import { useAuthUserStore } from '@/stores/authUser'
 import type { ProductType } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
 import type { AgentType } from '@/stores/agentsData'
+import type { Shortfall, CanvassSelection, CanvassPRResult } from '@/utils/canvassTypes'
 
 const toast = useToast()
+
+export type { Shortfall, CanvassSelection, CanvassPRResult }
 
 export type EthicalItemType = {
   id: number
@@ -17,6 +20,7 @@ export type EthicalItemType = {
   quantity: number
   unit_price: number
   line_total: number
+  delivered_qty: number
   product?: ProductType | null
 }
 
@@ -44,6 +48,7 @@ export type EthicalOrderType = {
   customer_id: number | null
   agent_id: number | null
   status: string | null
+  fulfillment_status: string | null
   subtotal: number | null
   total_amount: number | null
   discount_amount: number | null
@@ -83,7 +88,7 @@ type CommissionSummaryRow = {
 }
 
 const SELECT_ORDER =
-  '*, transaction_items(id, product_id, qty, unit_price, line_total, product:product_id(*)), customer:customer_id(*), agent:agent_id(*)'
+  '*, transaction_items(id, product_id, qty, unit_price, line_total, delivered_qty, product:product_id(*)), customer:customer_id(*), agent:agent_id(*)'
 
 function mapRow(row: any): EthicalOrderType {
   return {
@@ -94,6 +99,7 @@ function mapRow(row: any): EthicalOrderType {
     customer_id:    row.customer_id,
     agent_id:       row.agent_id,
     status:         row.status,
+    fulfillment_status: row.fulfillment_status,
     subtotal:       row.subtotal,
     total_amount:   row.total_amount,
     discount_amount: row.discount_amount,
@@ -107,12 +113,13 @@ function mapRow(row: any): EthicalOrderType {
     customer:       row.customer,
     agent:          row.agent,
     items: (row.transaction_items ?? []).map((li: any) => ({
-      id:         li.id,
-      product_id: li.product_id,
-      quantity:   li.qty,
-      unit_price: li.unit_price,
-      line_total: li.line_total,
-      product:    li.product,
+      id:            li.id,
+      product_id:    li.product_id,
+      quantity:      li.qty,
+      unit_price:    li.unit_price,
+      line_total:    li.line_total,
+      delivered_qty: li.delivered_qty ?? 0,
+      product:       li.product,
     })),
   }
 }
@@ -288,6 +295,40 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     return { success: true }
   }
 
+  const recheckStock = async (orderId: number): Promise<Shortfall[]> => {
+    const { data, error: e } = await supabase.rpc('ethical_recheck_stock', { p_id: orderId })
+    if (e) { handleError(e, 'Failed to recheck stock'); return [] }
+    await fetchOrders()
+    return (data ?? []) as Shortfall[]
+  }
+
+  // Commit a supplier canvass: create one PR per winning supplier (atomic RPC).
+  const canvassToPRs = async (orderId: number, selections: CanvassSelection[]) => {
+    loading.value = true
+    clearError()
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
+    if (!selections.length) { toast.warning('Add at least one supplier selection.'); loading.value = false; return { success: false } }
+
+    const { data, error: rpcError } = await supabase.rpc('ethical_canvass_to_prs', {
+      p_order_id:   orderId,
+      p_selections: selections,
+      p_user:       user.id,
+    })
+    if (rpcError) {
+      handleError(rpcError, 'Failed to raise purchase requisitions.')
+      toast.error(rpcError.message || 'Failed to raise purchase requisitions.')
+      loading.value = false; return { success: false }
+    }
+    const prs = (data ?? []) as CanvassPRResult[]
+    toast.success(prs.length === 1
+      ? `Raised ${prs[0].pr_no}.`
+      : `Raised ${prs.length} purchase requisitions.`)
+    await fetchOrders()
+    loading.value = false
+    return { success: true, prs }
+  }
+
   const fetchCollections = async (orderId: number): Promise<CollectionType[]> => {
     try {
       const { data, error: e } = await supabase
@@ -381,6 +422,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
   return {
     orders, currentOrder, collections, commissionSummary, loading, error,
     fetchOrders, fetchOrderById, createOrder, recordCollection, cancelOrder,
+    recheckStock, canvassToPRs,
     fetchCollections, markCommissionPaid, fetchCommissionSummary,
     generateOrderNumber, startRealtime, stopRealtime, clearError, resetStore,
   }

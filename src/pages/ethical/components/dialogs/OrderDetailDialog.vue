@@ -46,6 +46,30 @@
           <div class="text-lg font-weight-bold">Balance: {{ balance.toFixed(2) }}</div>
         </div>
 
+        <v-card v-if="isAwaitingStock" variant="outlined" rounded="lg" class="my-4 bg-orange-lighten-5">
+          <v-card-title class="text-subtitle-2 font-weight-bold pa-3">Insufficient Stock</v-card-title>
+          <v-divider />
+          <v-card-text class="pa-3">
+            <div class="text-caption text-medium-emphasis mb-2">
+              Ethical, Exelmed, and warehouse stock combined still can't cover the following — canvass suppliers below to raise Purchase Requisitions, then re-check once stock arrives.
+            </div>
+            <v-table density="compact">
+              <thead><tr><th class="text-left">Product</th><th class="text-right">Ordered</th><th class="text-right">On hand</th><th class="text-right">Needed</th></tr></thead>
+              <tbody>
+                <tr v-for="s in shortfall" :key="s.product_id">
+                  <td>{{ productName(s.product_id) }}</td><td class="text-right">{{ s.ordered }}</td>
+                  <td class="text-right">{{ s.on_hand }}</td><td class="text-right text-error font-weight-bold">{{ s.needed }}</td>
+                </tr>
+              </tbody>
+            </v-table>
+            <v-btn variant="text" size="small" color="info" class="text-none mt-1" @click="recheck">Re-check stock</v-btn>
+
+            <v-divider class="my-3" />
+            <div class="text-subtitle-2 font-weight-bold mb-2">Supplier Canvass</div>
+            <SupplierCanvass :order="order" :shortfall="shortfall" :commit-fn="ethical.canvassToPRs" @created="recheck" />
+          </v-card-text>
+        </v-card>
+
         <v-divider class="my-4" />
 
         <h4 class="mb-2">Record Collection</h4>
@@ -133,9 +157,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { computed, watch } from 'vue'
 import { useOrderDetail } from '../../composables/useOrderDetail'
 import { useEthicalDataStore } from '@/stores/ethicalData'
+import SupplierCanvass from '@/components/common/canvass/SupplierCanvass.vue'
 
 const props = defineProps<{ modelValue: boolean; orderId: number | null }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
@@ -150,9 +175,12 @@ const order = computed(() => ethical.currentOrder)
 
 const {
   loading, collectionAmount, collectionMethod, collectionReference,
-  isInvoiced, isPartial, isPaid, isCancellable, isOverdue, balance, collections,
-  recordCollection, cancelOrder, markCommissionPaid,
+  isInvoiced, isPartial, isPaid, isAwaitingStock, isCancellable, isOverdue, balance, shortfall, collections,
+  recordCollection, cancelOrder, markCommissionPaid, recheck,
 } = useOrderDetail(() => order.value)
+
+const productName = (id: number) =>
+  order.value?.items?.find((i) => i.product_id === id)?.product?.product_name ?? `#${id}`
 
 const statusMeta = (status: string | null) => {
   const map: Record<string, { label: string; color: string }> = {

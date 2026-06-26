@@ -30,7 +30,7 @@
       <v-card>
         <v-card-title>New Agent</v-card-title>
         <v-card-text>
-          <AgentForm @submit="createAgent; showCreateDialog = false" />
+          <AgentForm @submit="createAgent" />
         </v-card-text>
       </v-card>
     </v-dialog>
@@ -39,7 +39,7 @@
       <v-card v-if="editingAgent">
         <v-card-title>Edit Agent</v-card-title>
         <v-card-text>
-          <AgentForm :agent="editingAgent" @submit="updateAgent; showEditDialog = false" />
+          <AgentForm :agent="editingAgent" @submit="updateAgent" />
         </v-card-text>
       </v-card>
     </v-dialog>

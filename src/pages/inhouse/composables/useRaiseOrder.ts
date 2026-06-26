@@ -76,7 +76,7 @@ export function useRaiseOrder(onCreated: () => void) {
   }
 
   async function init() {
-    if (!customers.value.length) await customersStore.fetchCustomers({ activeOnly: true })
+    await customersStore.fetchCustomers({ activeOnly: true, department: 'inhouse' })
     if (!products.value.length) await productsStore.fetchProducts()
     if (!lines.value.length) addLine()
   }

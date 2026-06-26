@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { useOrderDetail } from '../composables/useOrderDetail'
-import SupplierCanvass from '../components/SupplierCanvass.vue'
-import type { InhouseOrderType } from '@/stores/inhouseData'
+import SupplierCanvass from '@/components/common/canvass/SupplierCanvass.vue'
+import { useInhouseDataStore, type InhouseOrderType } from '@/stores/inhouseData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+
+const inhouse = useInhouseDataStore()
 
 const props = defineProps<{
   modelValue: boolean
@@ -88,7 +90,7 @@ const productName = (id: number | null) =>
         </v-card>
 
         <!-- ── STOCK / SHORTFALL ───────────────────────── -->
-        <v-card v-if="isAwaitingStock" variant="outlined" rounded="lg" class="mb-4" color="orange-lighten-5">
+        <v-card v-if="isAwaitingStock" variant="outlined" rounded="lg" class="mb-4 bg-orange-lighten-5">
           <v-card-title class="text-subtitle-2 font-weight-bold pa-3">Insufficient Stock</v-card-title>
           <v-divider />
           <v-card-text class="pa-3">
@@ -107,7 +109,7 @@ const productName = (id: number | null) =>
 
             <v-divider class="my-3" />
             <div class="text-subtitle-2 font-weight-bold mb-2">Supplier Canvass</div>
-            <SupplierCanvass :order="order" :shortfall="shortfall" @created="recheck" />
+            <SupplierCanvass :order="order" :shortfall="shortfall" :commit-fn="inhouse.canvassToPRs" @created="recheck" />
           </v-card-text>
         </v-card>
 

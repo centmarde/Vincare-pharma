@@ -22,6 +22,7 @@ export function useAgents() {
     { title: 'Phone', key: 'contact_no' },
     { title: 'Commission %', key: 'commission_rate', align: 'end' as const },
     { title: 'Status', key: 'is_active' },
+    { title: '', key: 'actions', sortable: false, align: 'end' as const },
   ]
 
   const filteredAgents = computed(() => {

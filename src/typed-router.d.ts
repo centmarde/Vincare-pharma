@@ -53,7 +53,6 @@ declare module 'vue-router/auto-routes' {
     '/HomeView': RouteRecordInfo<'/HomeView', '/HomeView', Record<never, never>, Record<never, never>>,
     '/inhouse/components/CustomerCRUD': RouteRecordInfo<'/inhouse/components/CustomerCRUD', '/inhouse/components/CustomerCRUD', Record<never, never>, Record<never, never>>,
     '/inhouse/components/InhouseOrders': RouteRecordInfo<'/inhouse/components/InhouseOrders', '/inhouse/components/InhouseOrders', Record<never, never>, Record<never, never>>,
-    '/inhouse/components/SupplierCanvass': RouteRecordInfo<'/inhouse/components/SupplierCanvass', '/inhouse/components/SupplierCanvass', Record<never, never>, Record<never, never>>,
     '/inhouse/CustomersView': RouteRecordInfo<'/inhouse/CustomersView', '/inhouse/CustomersView', Record<never, never>, Record<never, never>>,
     '/inhouse/dialogs/OrderDetailDialog': RouteRecordInfo<'/inhouse/dialogs/OrderDetailDialog', '/inhouse/dialogs/OrderDetailDialog', Record<never, never>, Record<never, never>>,
     '/inhouse/dialogs/RaiseOrderDialog': RouteRecordInfo<'/inhouse/dialogs/RaiseOrderDialog', '/inhouse/dialogs/RaiseOrderDialog', Record<never, never>, Record<never, never>>,

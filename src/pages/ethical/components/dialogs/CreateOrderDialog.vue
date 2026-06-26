@@ -69,7 +69,7 @@
 
       <v-card-actions>
         <v-spacer />
-        <v-btn @click="reset; internalValue = false">Cancel</v-btn>
+        <v-btn @click="reset(); internalValue = false">Cancel</v-btn>
         <v-btn color="primary" :loading="loading" @click="submit">Create Order</v-btn>
       </v-card-actions>
     </v-card>

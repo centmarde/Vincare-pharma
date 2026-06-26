@@ -1,6 +1,10 @@
 <template>
   <InnerLayoutWrapper>
-    <EthicalOrders />
+    <template #content>
+      <v-container fluid class="pa-0">
+        <EthicalOrders />
+      </v-container>
+    </template>
   </InnerLayoutWrapper>
 </template>
 

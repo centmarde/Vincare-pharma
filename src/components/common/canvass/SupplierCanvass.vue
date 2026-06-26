@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { useCanvass } from '../composables/useCanvass'
-import type { InhouseOrderType, Shortfall } from '@/stores/inhouseData'
+import { useCanvass } from './useCanvass'
+import type { CanvassableOrder, Shortfall, CanvassCommitFn } from '@/utils/canvassTypes'
 import { formatCurrency } from '@/utils/helpers'
 
 const props = defineProps<{
-  order: InhouseOrderType | null
+  order: CanvassableOrder | null
   shortfall: Shortfall[]
+  commitFn: CanvassCommitFn
 }>()
 const emit = defineEmits<{ (e: 'created'): void }>()
 
@@ -16,7 +17,7 @@ const {
   validateQty, bufferQty, lineTotal,
   canCommit, prPreview, commit, init,
   MIN_MONTHS_TO_EXPIRY,
-} = useCanvass(() => props.order, () => props.shortfall, () => emit('created'))
+} = useCanvass(() => props.order, () => props.shortfall, props.commitFn, () => emit('created'))
 
 onMounted(init)
 </script>

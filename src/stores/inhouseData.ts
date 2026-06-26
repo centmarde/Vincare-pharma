@@ -7,6 +7,7 @@ import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import type { ProductType } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
+import type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult } from '@/utils/canvassTypes'
 
 const toast = useToast()
 
@@ -51,30 +52,9 @@ export type InhouseLineInput = {
   cost_price: number
 }
 
-export type Shortfall = { product_id: number; ordered: number; on_hand: number; needed: number }
 export type NegotiationRound = { id: number; created_at: string; user_id: string | null; action: string | null; description: string | null }
 
-// One supplier's quote for a shortfall item during canvassing.
-export type CanvassQuote = {
-  supplier_id: number | null
-  supplier_name: string
-  price: number
-  expiry_date: string          // ISO date the supplier quoted
-  months_to_expiry: number     // computed from today
-  is_valid: boolean            // months_to_expiry >= 18
-}
-
-// A committed selection sent to the canvass->PR RPC (one per shortfall item).
-export type CanvassSelection = {
-  item_id: number              // the in-house order's transaction_item id
-  product_id: number
-  supplier_id: number          // winning supplier
-  unit_price: number           // winning quote price
-  qty: number                  // final order qty (>= shortfall, buffer allowed)
-  canvass: CanvassQuote[]      // full quote list, for audit
-}
-
-export type CanvassPRResult = { supplier_id: number; pr_id: number; pr_no: string; item_count: number; total: number }
+export type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult }
 
 const SELECT_ORDER =
   '*, transaction_items(id, product_id, qty, unit_price, line_total, cost_price, delivered_qty, product:product_id(*)), customer:customer_id(*)'
