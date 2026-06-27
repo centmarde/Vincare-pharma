@@ -426,7 +426,11 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
     toast.success('Purchase Requisition saved successfully.')
     resetStore()
     loading.value = false
-    return { success: true }
+    return {
+      success: true,
+      transactionId: txData.id,
+      requisitionNo: prNumber,
+    }
   }
 
   async function approvePR(prId: number) {

@@ -2,6 +2,8 @@ import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSuppliersDataStore, type SupplierType } from '@/stores/suppliersData'
 import { useTransactionsDataStore } from '@/stores/transactionsData'
+import { useLogsDataStore } from '@/stores/logsData'
+import { useAuthUserStore } from '@/stores/authUser'
 import { supabase } from '@/lib/supabase'
 import type { PR } from '@/stores/transactionsData'
 
@@ -11,6 +13,8 @@ export function useIssuePOModal(
 ) {
   const supplierStore      = useSuppliersDataStore()
   const transactionsStore  = useTransactionsDataStore()
+  const logsStore          = useLogsDataStore()
+  const authStore          = useAuthUserStore()
   const { suppliers }      = storeToRefs(supplierStore)
   const { loading }        = storeToRefs(transactionsStore)
 
@@ -74,10 +78,28 @@ export function useIssuePOModal(
       pr:         props.pr,
       ship_via:   form.value.ship_via,
       ship_method: form.value.ship_method,
-      
     })
 
     if (result.success) {
+      // Create a log entry for issuing the PO
+      const { user: currentUser, error: authError } = await authStore.getCurrentUser()
+      const userId = !authError && currentUser ? currentUser.id : user.id
+
+      if (!authStore.users.length) {
+        await authStore.getAllUsers()
+      }
+      const actingUser = authStore.users.find((u: any) => u.id === userId)
+      const userEmail = actingUser?.email ?? userId ?? 'unknown'
+      const now = new Date().toISOString()
+
+      await logsStore.createLog({
+        created_by: userId,
+        action: 'issue_po',
+        description: `Purchase order issued from requisition ${props.pr.requisition_no}`,
+        transaction_id: props.pr.id,
+        module: 'purchase_order',
+      })
+
       showConfirm.value = false
       emit('update:modelValue', false)
     }

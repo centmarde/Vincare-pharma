@@ -18,7 +18,7 @@ const {
   itemSummary,
   statusConfig,
   page,
-  pagedPRs,      // ← use this in v-for on mobile instead of sortedFilteredPRs
+  pagedPRs, // ← use this in v-for on mobile instead of sortedFilteredPRs
   totalItems,
   itemsPerPage,
   statusOptions,
@@ -43,12 +43,16 @@ onMounted(() => {
 
 <template>
   <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
-    <v-card class="mx-auto w-100" max-width="1400" rounded="lg" elevation="1">
+    <v-card class="mx-auto w-100" rounded="lg" elevation="1">
       <!-- Header -->
       <v-card-title class="pa-4 pa-sm-5">
         <div class="d-flex justify-space-between align-center" :class="mobile ? 'mb-3' : ''">
           <div class="d-flex align-center">
-            <v-icon icon="mdi-file-clock-outline" :size="mobile ? 28 : 36" class="mr-1 text-primary" />
+            <v-icon
+              icon="mdi-file-clock-outline"
+              :size="mobile ? 28 : 36"
+              class="mr-1 text-primary"
+            />
             <span :class="mobile ? 'text-subtitle-1' : 'text-h6'" class="font-weight-bold">
               Purchase Requisition
             </span>
@@ -56,17 +60,36 @@ onMounted(() => {
 
           <!-- Desktop: search + filter -->
           <div v-if="!mobile" class="d-flex align-center" style="gap: 12px">
-            <v-text-field v-model="search" placeholder="Search..." prepend-inner-icon="mdi-magnify"
-              variant="outlined" density="compact" hide-details clearable style="min-width: 240px" />
+            <v-text-field
+              v-model="search"
+              placeholder="Search..."
+              prepend-inner-icon="mdi-magnify"
+              variant="outlined"
+              density="compact"
+              hide-details
+              clearable
+              style="min-width: 240px"
+            />
             <v-menu>
               <template #activator="{ props }">
-                <v-btn v-bind="props" variant="text" class="text-none font-weight-bold"
-                  color="primary" append-icon="mdi-chevron-down">Filter</v-btn>
+                <v-btn
+                  v-bind="props"
+                  variant="text"
+                  class="text-none font-weight-bold"
+                  color="primary"
+                  append-icon="mdi-chevron-down"
+                  >Filter</v-btn
+                >
               </template>
               <v-list density="compact" min-width="180">
-                <v-list-item v-for="opt in statusOptions" :key="String(opt.value)" :title="opt.title"
-                  :active="filterStatus === opt.value" active-color="primary"
-                  @click="filterStatus = opt.value" />
+                <v-list-item
+                  v-for="opt in statusOptions"
+                  :key="String(opt.value)"
+                  :title="opt.title"
+                  :active="filterStatus === opt.value"
+                  active-color="primary"
+                  @click="filterStatus = opt.value"
+                />
               </v-list>
             </v-menu>
           </div>
@@ -74,17 +97,36 @@ onMounted(() => {
 
         <!-- Mobile: search + icon filter (reuses same list) -->
         <div v-if="mobile" class="d-flex align-center" style="gap: 8px">
-          <v-text-field v-model="search" placeholder="Search..." prepend-inner-icon="mdi-magnify"
-            variant="outlined" density="compact" hide-details clearable style="flex: 1; min-width: 0" />
+          <v-text-field
+            v-model="search"
+            placeholder="Search..."
+            prepend-inner-icon="mdi-magnify"
+            variant="outlined"
+            density="compact"
+            hide-details
+            clearable
+            style="flex: 1; min-width: 0"
+          />
           <v-menu>
             <template #activator="{ props }">
-              <v-btn v-bind="props" variant="outlined" icon="mdi-filter-outline"
-                density="compact" color="primary" size="40" />
+              <v-btn
+                v-bind="props"
+                variant="outlined"
+                icon="mdi-filter-outline"
+                density="compact"
+                color="primary"
+                size="40"
+              />
             </template>
             <v-list density="compact" min-width="180">
-              <v-list-item v-for="opt in statusOptions" :key="String(opt.value)" :title="opt.title"
-                :active="filterStatus === opt.value" active-color="primary"
-                @click="filterStatus = opt.value" />
+              <v-list-item
+                v-for="opt in statusOptions"
+                :key="String(opt.value)"
+                :title="opt.title"
+                :active="filterStatus === opt.value"
+                active-color="primary"
+                @click="filterStatus = opt.value"
+              />
             </v-list>
           </v-menu>
         </div>
@@ -93,19 +135,19 @@ onMounted(() => {
       <v-divider />
 
       <!-- Table -->
-    <template v-if="!mobile">
-      <v-data-table
-        v-model:page="page"
-        v-model:items-per-page="itemsPerPage"
-        :headers="headers"
-        :items="sortedFilteredPRs"
-        :search="search"
-        :loading="loading"
-        hover
-        loading-text="Loading purchase requisitions..."
-        no-data-text="No purchase requisitions found."
-        @update:options="loadItems"
-      >
+      <template v-if="!mobile">
+        <v-data-table
+          v-model:page="page"
+          v-model:items-per-page="itemsPerPage"
+          :headers="headers"
+          :items="sortedFilteredPRs"
+          :search="search"
+          :loading="loading"
+          hover
+          loading-text="Loading purchase requisitions..."
+          no-data-text="No purchase requisitions found."
+          @update:options="loadItems"
+        >
           <!-- PR # -->
           <template #item.requisition_no="{ item }">
             <span class="text-body-2 font-weight-bold" style="white-space: nowrap">
@@ -201,16 +243,15 @@ onMounted(() => {
             </div>
           </template>
         </v-data-table>
-      </template> 
-    
+      </template>
 
-          <!-- ── MOBILE: card list ───────────────────────────────── -->
+      <!-- ── MOBILE: card list ───────────────────────────────── -->
       <template v-else>
         <v-progress-linear v-if="loading" indeterminate color="primary" />
         <div v-if="!loading && pagedPRs.length === 0" class="text-center pa-8 text-medium-emphasis">
           No purchase requisitions found.
         </div>
- 
+
         <div class="pa-3" style="display: flex; flex-direction: column; gap: 10px">
           <v-card
             v-for="item in pagedPRs"
@@ -233,9 +274,9 @@ onMounted(() => {
                 {{ statusConfig(item.status).label }}
               </span>
             </div>
- 
+
             <v-divider class="mx-4 mb-2" />
- 
+
             <!-- Card body: key details -->
             <div class="px-4 pb-2" style="display: flex; flex-direction: column; gap: 6px">
               <!-- Items summary -->
@@ -244,18 +285,23 @@ onMounted(() => {
                 <div>
                   <div class="text-body-2">{{ itemSummary(item.items) }}</div>
                   <div class="text-caption text-medium-emphasis">
-                    {{ item.items.length }} line {{ item.items.length === 1 ? 'item' : 'items' }}
-                    &bull; Qty: {{ totalQty(item.items).toLocaleString() }}
+                    {{ item.items.length }} line
+                    {{ item.items.length === 1 ? 'item' : 'items' }} &bull; Qty:
+                    {{ totalQty(item.items).toLocaleString() }}
                   </div>
                 </div>
               </div>
- 
+
               <!-- Amount -->
               <div class="d-flex align-center" style="gap: 8px">
-                <v-icon size="16" class="text-medium-emphasis flex-shrink-0">mdi-currency-php</v-icon>
-                <span class="text-body-2 font-weight-medium">{{ formatCurrency(totalCost(item.items)) }}</span>
+                <v-icon size="16" class="text-medium-emphasis flex-shrink-0"
+                  >mdi-currency-php</v-icon
+                >
+                <span class="text-body-2 font-weight-medium">{{
+                  formatCurrency(totalCost(item.items))
+                }}</span>
               </div>
- 
+
               <!-- Requester + Date -->
               <div class="d-flex align-center justify-space-between">
                 <div class="d-flex align-center" style="gap: 6px">
@@ -266,14 +312,16 @@ onMounted(() => {
                   {{ formatDatePR_ISO(item.created_at) }}
                 </span>
               </div>
- 
+
               <!-- Reviewed by (only if present) -->
               <div v-if="item.reviewer_name" class="d-flex align-center" style="gap: 6px">
                 <v-icon size="16" class="text-medium-emphasis">mdi-account-check-outline</v-icon>
-                <span class="text-caption text-medium-emphasis">Reviewed by {{ item.reviewer_name }}</span>
+                <span class="text-caption text-medium-emphasis"
+                  >Reviewed by {{ item.reviewer_name }}</span
+                >
               </div>
             </div>
- 
+
             <!-- Card actions -->
             <div class="px-4 pb-3 pt-1 d-flex flex-column" style="gap: 6px">
               <v-btn
@@ -285,7 +333,7 @@ onMounted(() => {
               >
                 View Details
               </v-btn>
- 
+
               <template v-if="item.status === 'pending_approval'">
                 <div class="d-flex" style="gap: 6px">
                   <v-btn
@@ -310,7 +358,7 @@ onMounted(() => {
                   </v-btn>
                 </div>
               </template>
- 
+
               <template v-if="item.status === 'approved'">
                 <v-btn
                   variant="outlined"
@@ -326,7 +374,7 @@ onMounted(() => {
             </div>
           </v-card>
         </div>
- 
+
         <!-- Mobile pagination -->
         <div class="d-flex justify-center align-center pa-3" style="gap: 8px">
           <v-btn
@@ -337,7 +385,8 @@ onMounted(() => {
             @click="prevPage"
           />
           <span class="text-caption text-medium-emphasis">
-            {{ (page - 1) * itemsPerPage + 1 }}–{{ Math.min(page * itemsPerPage, totalItems) }} of {{ totalItems }}
+            {{ (page - 1) * itemsPerPage + 1 }}–{{ Math.min(page * itemsPerPage, totalItems) }} of
+            {{ totalItems }}
           </span>
           <v-btn
             icon="mdi-chevron-right"
@@ -348,7 +397,6 @@ onMounted(() => {
           />
         </div>
       </template>
-    
     </v-card>
 
     <!-- 3. Add the Modal Component -->
@@ -422,12 +470,30 @@ onMounted(() => {
   background: currentColor;
 }
 
-.status-chip--pending_approval { color: #c2922e; background: rgba(194, 146, 46, 0.12); }
-.status-chip--pending          { color: #c2922e; background: rgba(194, 146, 46, 0.12); }
-.status-chip--approved         { color: #2e7d32; background: rgba(46, 125, 50,  0.12); }
-.status-chip--complete         { color: #2e7d32; background: rgba(46, 125, 50,  0.12); }
-.status-chip--rejected         { color: #c62828; background: rgba(198, 40, 40,  0.12); }
-.status-chip--issued           { color: #1565c0; background: rgba(21, 101, 192, 0.12); }
+.status-chip--pending_approval {
+  color: #c2922e;
+  background: rgba(194, 146, 46, 0.12);
+}
+.status-chip--pending {
+  color: #c2922e;
+  background: rgba(194, 146, 46, 0.12);
+}
+.status-chip--approved {
+  color: #2e7d32;
+  background: rgba(46, 125, 50, 0.12);
+}
+.status-chip--complete {
+  color: #2e7d32;
+  background: rgba(46, 125, 50, 0.12);
+}
+.status-chip--rejected {
+  color: #c62828;
+  background: rgba(198, 40, 40, 0.12);
+}
+.status-chip--issued {
+  color: #1565c0;
+  background: rgba(21, 101, 192, 0.12);
+}
 
 /* ─── Table ───────────────────────────────────────────────────── */
 .actions-gap {
@@ -455,7 +521,7 @@ onMounted(() => {
 .pr-mobile-card {
   transition: box-shadow 0.15s ease;
 }
-.pr-mobile-card:active{
+.pr-mobile-card:active {
   box-shadow: 0 0 0 2px rgba(var(v-theme-primary), 0.3) !important;
 }
 </style>

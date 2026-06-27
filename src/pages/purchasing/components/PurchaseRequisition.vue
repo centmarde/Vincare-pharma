@@ -31,13 +31,14 @@ onMounted(() => {
 
 <template>
   <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
-    <v-card class="mx-auto w-100" max-width="1500" rounded="lg" elevation="1">
-
+    <v-card class="mx-auto w-100" rounded="lg" elevation="1">
       <!-- Header -->
       <v-card-title class="d-flex justify-space-between align-center pa-4 pa-sm-5">
         <div class="d-flex align-center">
           <v-icon icon="mdi-file-document-edit-outline" size="30" class="mr-2 text-primary" />
-          <span class="text-subtitle-1 text-sm-h6 font-weight-bold">Raise Purchase Requisition</span>
+          <span class="text-subtitle-1 text-sm-h6 font-weight-bold"
+            >Raise Purchase Requisition</span
+          >
         </div>
         <span v-if="!mobile" class="text-caption text-medium-emphasis">
           Customer offer vs. company cost
@@ -47,10 +48,8 @@ onMounted(() => {
       <v-divider />
 
       <v-card-text class="pa-3 pa-sm-5">
-
         <!-- ── DESKTOP TABLE VIEW ── -->
         <template v-if="!mobile">
-
           <!-- Table Header -->
           <v-row class="text-caption font-weight-bold mb-1 px-1" no-gutters>
             <v-col cols="auto" style="width: 40px" class="text-center">NO.</v-col>
@@ -165,7 +164,6 @@ onMounted(() => {
               />
             </v-col>
           </v-row>
-
         </template>
 
         <!-- ── MOBILE CARD VIEW ── -->
@@ -318,14 +316,14 @@ onMounted(() => {
 
         <!-- Footer: Submit + Summary -->
         <v-row align="end">
-
           <!-- Summary Card (shown first on mobile for quick reference) -->
           <v-col cols="12" md="6" :order="mobile ? 1 : 2">
             <v-card variant="flat" rounded="lg" class="pa-4 border mb-4 mb-md-0">
-
               <div class="d-flex justify-space-between align-center mb-2">
                 <span class="text-body-2">Customer Offer Total</span>
-                <span class="text-h6 font-weight-bold">{{ formatCurrency(customerOfferTotal) }}</span>
+                <span class="text-h6 font-weight-bold">{{
+                  formatCurrency(customerOfferTotal)
+                }}</span>
               </div>
 
               <div class="d-flex justify-space-between align-center mb-4">
@@ -361,7 +359,6 @@ onMounted(() => {
                   {{ offerCostRatio }}x · {{ marginPercent }}% margin
                 </span>
               </div>
-
             </v-card>
           </v-col>
 
@@ -380,11 +377,10 @@ onMounted(() => {
               Submit for Approval
             </v-btn>
             <div class="text-caption text-medium-emphasis">
-              Saved as one record <strong>(Pending Approval)</strong> even if not profitable —
-              the admin decides. → Manager approves → Issue PO.
+              Saved as one record <strong>(Pending Approval)</strong> even if not profitable — the
+              admin decides. → Manager approves → Issue PO.
             </div>
           </v-col>
-
         </v-row>
       </v-card-text>
     </v-card>
