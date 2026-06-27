@@ -99,19 +99,10 @@ export function usePurchaseRequisitionList() {
       userId = user.id
     }
 
-    // Resolve user email for updated_by
-    if (!authStore.users.length) {
-      await authStore.getAllUsers()
-    }
-    const actingUser = userId ? authStore.users.find((u: any) => u.id === userId) : null
-    const userEmail = actingUser?.email ?? userId ?? 'unknown'
-    const now = new Date().toISOString()
-
     if (action === 'APPROVE') {
       await approvePR(prId)
       await logsStore.createLog({
         created_by: userId,
-        updated_by: userId,
         action: 'approve_pr',
         description: `Purchase requisition ${prNumber} approved`,
         transaction_id: prId,
@@ -121,7 +112,6 @@ export function usePurchaseRequisitionList() {
       await rejectPR(prId)
       await logsStore.createLog({
         created_by: userId,
-        updated_by: userId,
         action: 'reject_pr',
         description: `Purchase requisition ${prNumber} rejected`,
         transaction_id: prId,
@@ -142,17 +132,8 @@ export function usePurchaseRequisitionList() {
       userId = user.id
     }
 
-    // Resolve user email for updated_by
-    if (!authStore.users.length) {
-      await authStore.getAllUsers()
-    }
-    const actingUser = userId ? authStore.users.find((u: any) => u.id === userId) : null
-    const userEmail = actingUser?.email ?? userId ?? 'unknown'
-    const now = new Date().toISOString()
-
     await logsStore.createLog({
       created_by: userId,
-      updated_by: userId,
       action: 'issue_po',
       description: `Purchase order issued from requisition ${pr.requisition_no}`,
       transaction_id: pr.id,

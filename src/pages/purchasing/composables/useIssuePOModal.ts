@@ -94,7 +94,6 @@ export function useIssuePOModal(
 
       await logsStore.createLog({
         created_by: userId,
-        updated_by: userId,
         action: 'issue_po',
         description: `Purchase order issued from requisition ${props.pr.requisition_no}`,
         transaction_id: props.pr.id,

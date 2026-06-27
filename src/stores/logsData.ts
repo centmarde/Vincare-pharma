@@ -9,7 +9,7 @@ const toast = useToast()
 
 // ─── Types matching the public.logs table schema ──────────────────────
 // id, created_at, action, description, module,
-// updated_by (uuid → auth.users), created_by (uuid → auth.users),
+// created_by (uuid → auth.users),
 // transaction_id (bigint → transactions)
 
 export type LogType = {
@@ -18,12 +18,10 @@ export type LogType = {
   action: string | null
   description: string | null
   module: string | null
-  updated_by: string | null // uuid FK → auth.users
   created_by: string | null // uuid FK → auth.users
   transaction_id: number | null
   // Resolved at display time
   created_by_email?: string | null
-  updated_by_email?: string | null
   reference_no?: string | null
 }
 
@@ -33,7 +31,6 @@ export type CreateLogData = {
   module?: string
   transaction_id?: number
   created_by?: string // uuid
-  updated_by?: string // uuid
 }
 
 export type UpdateLogData = Partial<CreateLogData>
@@ -86,7 +83,6 @@ export const useLogsDataStore = defineStore('logsData', () => {
     return Promise.all(
       (rawData || []).map(async (log: any) => {
         const createdByEmail = await resolveUserEmail(log.created_by)
-        const updatedByEmail = await resolveUserEmail(log.updated_by)
 
         // Resolve reference_no from transactions table, falling through:
         // reference_no → po_no → requisition_no
@@ -99,11 +95,9 @@ export const useLogsDataStore = defineStore('logsData', () => {
           action: log.action,
           description: log.description,
           module: log.module,
-          updated_by: log.updated_by ?? null,
           created_by: log.created_by ?? null,
           transaction_id: log.transaction_id ?? null,
           created_by_email: createdByEmail,
-          updated_by_email: updatedByEmail,
           reference_no: referenceNo,
         }
       }),
@@ -227,8 +221,6 @@ export const useLogsDataStore = defineStore('logsData', () => {
         createdBy = user.id
       }
 
-      let updatedBy = logData.updated_by ?? createdBy
-
       const { data, error: createError } = await supabase
         .from('logs')
         .insert([
@@ -238,7 +230,6 @@ export const useLogsDataStore = defineStore('logsData', () => {
             module: logData.module ?? null,
             transaction_id: logData.transaction_id ?? null,
             created_by: createdBy,
-            updated_by: updatedBy,
           },
         ])
         .select('*')
@@ -254,7 +245,6 @@ export const useLogsDataStore = defineStore('logsData', () => {
       // Resolve emails for the single created record
       const created = data as any
       const createdByEmail = await resolveUserEmail(created.created_by)
-      const updatedByEmail = await resolveUserEmail(created.updated_by)
 
       const log: LogType = {
         id: created.id,
@@ -262,11 +252,9 @@ export const useLogsDataStore = defineStore('logsData', () => {
         action: created.action,
         description: created.description,
         module: created.module,
-        updated_by: created.updated_by ?? null,
         created_by: created.created_by ?? null,
         transaction_id: created.transaction_id ?? null,
         created_by_email: createdByEmail,
-        updated_by_email: updatedByEmail,
       }
 
       logs.value.unshift(log)

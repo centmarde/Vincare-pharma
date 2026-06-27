@@ -32,7 +32,6 @@ export function useLogRequisition() {
       return
     }
 
-    // Resolve the user's email for updated_by
     const userEmail = authStore.users.length
       ? authStore.users.find((u: any) => u.id === user.id)?.email ?? user.email ?? user.id
       : user.email ?? user.id
@@ -44,7 +43,6 @@ export function useLogRequisition() {
 
     await logsStore.createLog({
       created_by: user.id,
-      updated_by: user.id,
       action: 'submit_pr',
       description,
       transaction_id: transactionId,

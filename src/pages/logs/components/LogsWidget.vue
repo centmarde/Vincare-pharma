@@ -5,6 +5,7 @@ import { useLogsDataStore } from '@/stores/logsData'
 import type { LogType } from '@/stores/logsData'
 import { useDisplay } from 'vuetify'
 import { formatCurrency } from '@/utils/helpers'
+import LogsViewDialog from '@/pages/logs/dialogs/LogsViewDialog.vue'
 
 const logsStore = useLogsDataStore()
 const { logs, loading, logsCount, hasLogs, isLoading, hasError, error } = storeToRefs(logsStore)
@@ -18,21 +19,23 @@ const totalLogs = ref(0)
 const loadingTable = ref(false)
 
 const search = ref('')
+const selectedLog = ref<LogType | null>(null)
+const showDialog = ref(false)
 
 // Headers definition (ID column intentionally omitted)
 const headers = computed(() => [
-  { title: 'Action', key: 'action', sortable: true, width: 140 },
+  { title: 'Action', key: 'action', sortable: true, width: 120 },
   {
     title: 'Description',
     key: 'description',
     sortable: false,
-    width: mobile.value ? 200 : 350,
+    width: mobile.value ? 200 : 300,
   },
-  { title: 'Module', key: 'module', sortable: true, width: 160 },
-  { title: 'Created By', key: 'created_by_email', sortable: true, width: 200 },
-  { title: 'Reference No.', key: 'reference_no', sortable: false, width: 150 },
-  { title: 'Created At', key: 'created_at', sortable: true, width: 180 },
-  { title: 'Updated By', key: 'updated_by_email', sortable: true, width: 180 },
+  { title: 'Module', key: 'module', sortable: true, width: 140 },
+  { title: 'Created By', key: 'created_by_email', sortable: true, width: 180 },
+  { title: 'Reference No.', key: 'reference_no', sortable: false, width: 130 },
+  { title: 'Created At', key: 'created_at', sortable: true, width: 160 },
+  { title: 'Actions', key: 'actions', sortable: false, width: 100 },
 ])
 
 // Load server data handler (v-data-table-server callback)
@@ -42,8 +45,20 @@ const loadItems = async ({ page: p, itemsPerPage: ipp, sortBy: sb }: any) => {
   // Fetch all logs from Supabase (store already sorts desc by created_at)
   await logsStore.fetchLogs()
 
-  // Apply client-side sort if specified
-  let sorted = [...logs.value]
+  // Deduplicate by transaction_id, keeping only the latest log per transaction
+  const latestByTransaction = new Map<number, LogType>()
+  logs.value.forEach((log) => {
+    const txId = log.transaction_id
+    if (txId) {
+      const existing = latestByTransaction.get(txId)
+      if (!existing || log.id > existing.id) {
+        latestByTransaction.set(txId, log)
+      }
+    }
+  })
+
+  // Use deduplicated logs
+  let sorted = Array.from(latestByTransaction.values())
   if (sb.length) {
     const { key, order } = sb[0]
     sorted.sort((a: any, b: any) => {
@@ -73,6 +88,33 @@ const loadItems = async ({ page: p, itemsPerPage: ipp, sortBy: sb }: any) => {
 
   loadingTable.value = false
 }
+
+// Open dialog to show all logs for a transaction
+const openLogsDialog = async (log: any) => {
+  if (!log.transaction_id) return
+
+  // Fetch all logs for this transaction
+  await logsStore.fetchLogs()
+  const txLogs = logs.value.filter((l: any) => l.transaction_id === log.transaction_id)
+
+  // Sort by id descending to show latest first
+  txLogs.sort((a: any, b: any) => b.id - a.id)
+
+  selectedLog.value = txLogs[0] || log
+  showDialog.value = true
+}
+
+// Close dialog
+const closeDialog = () => {
+  showDialog.value = false
+  selectedLog.value = null
+}
+
+// Computed property for dialog logs
+const dialogLogs = computed<LogType[]>(() => {
+  if (!selectedLog.value) return []
+  return logs.value.filter((l) => l.transaction_id === selectedLog.value!.transaction_id)
+})
 
 // Format date
 const formatDate = (dateString: string | null) => {
@@ -242,13 +284,7 @@ onMounted(async () => {
           >
             {{ value }}
           </v-chip>
-          <v-chip
-            v-else
-            size="small"
-            color="warning"
-            variant="tonal"
-            class="font-weight-medium"
-          >
+          <v-chip v-else size="small" color="warning" variant="tonal" class="font-weight-medium">
             On Review
           </v-chip>
         </template>
@@ -258,9 +294,18 @@ onMounted(async () => {
           <span class="text-caption">{{ formatDate(value) }}</span>
         </template>
 
-        <!-- Updated By column -->
-        <template #[`item.updated_by_email`]="{ value }">
-          <span class="text-body-2">{{ value || '—' }}</span>
+        <!-- Actions column -->
+        <template #[`item.actions`]="{ item }">
+          <v-btn
+            icon="mdi-history"
+            size="small"
+            variant="outlined"
+            color="primary"
+            @click="openLogsDialog(item)"
+          >
+            <v-icon size="16">mdi-text-box-search-outline</v-icon>
+            <v-tooltip activator="parent" location="top">View transaction history</v-tooltip>
+          </v-btn>
         </template>
       </v-data-table-server>
 
@@ -278,13 +323,22 @@ onMounted(async () => {
             <v-card-title class="d-flex align-center ga-2 pa-3 pb-1">
               <v-avatar size="32" :color="getActionColor(log.action)" variant="tonal">
                 <v-icon size="16" color="white">
-                  {{ log.action?.toLowerCase().includes('submit') ? 'mdi-send' :
-                     log.action?.toLowerCase().includes('create') ? 'mdi-plus-circle' :
-                     log.action?.toLowerCase().includes('update') || log.action?.toLowerCase().includes('edit') ? 'mdi-pencil' :
-                     log.action?.toLowerCase().includes('delete') || log.action?.toLowerCase().includes('remove') ? 'mdi-delete' :
-                     log.action?.toLowerCase().includes('approve') ? 'mdi-check-circle' :
-                     log.action?.toLowerCase().includes('reject') ? 'mdi-close-circle' :
-                     'mdi-circle-small'
+                  {{
+                    log.action?.toLowerCase().includes('submit')
+                      ? 'mdi-send'
+                      : log.action?.toLowerCase().includes('create')
+                        ? 'mdi-plus-circle'
+                        : log.action?.toLowerCase().includes('update') ||
+                            log.action?.toLowerCase().includes('edit')
+                          ? 'mdi-pencil'
+                          : log.action?.toLowerCase().includes('delete') ||
+                              log.action?.toLowerCase().includes('remove')
+                            ? 'mdi-delete'
+                            : log.action?.toLowerCase().includes('approve')
+                              ? 'mdi-check-circle'
+                              : log.action?.toLowerCase().includes('reject')
+                                ? 'mdi-close-circle'
+                                : 'mdi-circle-small'
                   }}
                 </v-icon>
               </v-avatar>
@@ -329,18 +383,33 @@ onMounted(async () => {
                   <v-icon size="12">mdi-calendar</v-icon>
                   <span>{{ formatDate(log.created_at) }}</span>
                 </div>
-                <div v-if="log.updated_by_email" class="d-flex align-center ga-1">
-                  <v-icon size="12">mdi-account-edit</v-icon>
-                  <span>By: {{ log.updated_by_email }}</span>
-                </div>
               </div>
             </v-card-text>
+
+            <!-- Mobile action button -->
+            <v-card-actions class="pa-3 pt-0">
+              <v-btn
+                size="small"
+                variant="outlined"
+                color="primary"
+                block
+                @click="openLogsDialog(log)"
+              >
+                <v-icon size="16" class="mr-1">mdi-text-box-search-outline</v-icon>
+                View History
+              </v-btn>
+            </v-card-actions>
           </v-card>
         </div>
 
         <!-- Mobile empty state -->
         <div v-else-if="!loadingTable" class="text-center pa-6">
-          <v-icon icon="mdi-text-box-search-outline" size="48" color="grey-lighten-1" class="mb-3"></v-icon>
+          <v-icon
+            icon="mdi-text-box-search-outline"
+            size="48"
+            color="grey-lighten-1"
+            class="mb-3"
+          ></v-icon>
           <div class="text-h6 text-medium-emphasis mb-1">No logs found</div>
           <div class="text-body-2 text-medium-emphasis">No activity logs to display.</div>
         </div>
@@ -352,7 +421,10 @@ onMounted(async () => {
         </div>
 
         <!-- Mobile pagination info -->
-        <div v-if="serverItems.length > 0 && totalLogs > itemsPerPage" class="d-flex align-center justify-center pa-3 ga-2">
+        <div
+          v-if="serverItems.length > 0 && totalLogs > itemsPerPage"
+          class="d-flex align-center justify-center pa-3 ga-2"
+        >
           <v-btn
             icon="mdi-chevron-left"
             variant="tonal"
@@ -372,6 +444,9 @@ onMounted(async () => {
           ></v-btn>
         </div>
       </template>
+
+      <!-- Logs Detail Dialog (outside v-if/v-else to avoid template errors) -->
+      <LogsViewDialog v-model="showDialog" :logs="dialogLogs" @close="closeDialog" />
     </v-card-text>
   </v-card>
 </template>
