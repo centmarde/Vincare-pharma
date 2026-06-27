@@ -20,6 +20,7 @@ export function useProductsWidget() {
   const showDialog = ref(false)
   const showDeleteDialog = ref(false)
   const dialogMode = ref<'create' | 'edit'>('create')
+  
 
   // Form state
   const form = ref<any>(null)
@@ -34,6 +35,7 @@ export function useProductsWidget() {
     cost_price: null,
     selling_price: null,
     current_stock: null,
+    actual_count: null,
     reorder_level: null,
     supplier_id: null,
     batch_no: null,
@@ -52,7 +54,7 @@ export function useProductsWidget() {
   const searchQuery = ref('')
   const itemsPerPage = ref(10)
   const page = ref(1)
-  const sortBy = ref([{ key: 'current_stock', order: 'asc' as 'asc' | 'desc' }])
+  const sortBy = ref([{ key: 'actual_count', order: 'asc' as 'asc' | 'desc' }])
 
   // Expanded rows
   const expanded = ref<string[]>([])
@@ -66,7 +68,7 @@ export function useProductsWidget() {
     { title: 'ID', key: 'id', sortable: true },
     { title: 'Product Name', key: 'product_name', sortable: true },
     { title: 'SKU', key: 'sku', sortable: true },
-    { title: 'Stock', key: 'current_stock', sortable: true },
+    { title: 'Stock', key: 'actual_count', sortable: true },
     { title: 'Selling Price', key: 'selling_price', sortable: true },
     { title: 'Cost Price', key: 'cost_price', sortable: true },
     { title: 'Batch No.', key: 'batch_no' },
@@ -86,7 +88,7 @@ export function useProductsWidget() {
 
   const lowStockProducts = computed(() =>
     products.value.filter(p => {
-      const stock = p.current_stock ?? 0
+      const stock = p.actual_count ?? 0
       const reorder = p.reorder_level ?? 0
       return reorder > 0 && stock <= reorder
     })
@@ -94,11 +96,11 @@ export function useProductsWidget() {
 
   const sortedProducts = computed(() =>
     [...products.value].sort((a, b) => {
-      const aLow = (a.reorder_level ?? 0) > 0 && (a.current_stock ?? 0) <= (a.reorder_level ?? 0)
-      const bLow = (b.reorder_level ?? 0) > 0 && (b.current_stock ?? 0) <= (b.reorder_level ?? 0)
+      const aLow = (a.reorder_level ?? 0) > 0 && (a.actual_count ?? 0) <= (a.reorder_level ?? 0)
+      const bLow = (b.reorder_level ?? 0) > 0 && (b.actual_count ?? 0) <= (b.reorder_level ?? 0)
       if (aLow && !bLow) return -1
       if (!aLow && bLow) return 1
-      return (a.current_stock ?? 0) - (b.current_stock ?? 0)
+      return (a.actual_count ?? 0) - (b.actual_count ?? 0)
     })
   )
 
