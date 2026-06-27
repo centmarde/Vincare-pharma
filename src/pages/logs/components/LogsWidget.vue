@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useLogsDataStore } from '@/stores/logsData'
 import type { LogType } from '@/stores/logsData'
@@ -10,6 +10,11 @@ import LogsViewDialog from '@/pages/logs/dialogs/LogsViewDialog.vue'
 const logsStore = useLogsDataStore()
 const { logs, loading, logsCount, hasLogs, isLoading, hasError, error } = storeToRefs(logsStore)
 const { mobile } = useDisplay()
+
+// ─── Props ─────────────────────────────────────────────────────────────
+const props = defineProps<{
+  moduleFilter?: string | null
+}>()
 
 // ─── Data-table state ──────────────────────────────────────────────────
 const itemsPerPage = ref(10)
@@ -59,6 +64,12 @@ const loadItems = async ({ page: p, itemsPerPage: ipp, sortBy: sb }: any) => {
 
   // Use deduplicated logs
   let sorted = Array.from(latestByTransaction.values())
+  
+  // Apply module filter if set
+  if (props.moduleFilter) {
+    sorted = sorted.filter((log) => log.module?.toLowerCase() === props.moduleFilter!.toLowerCase())
+  }
+  
   if (sb.length) {
     const { key, order } = sb[0]
     sorted.sort((a: any, b: any) => {
@@ -76,7 +87,9 @@ const loadItems = async ({ page: p, itemsPerPage: ipp, sortBy: sb }: any) => {
       (log) =>
         log.action?.toLowerCase().includes(term) ||
         log.description?.toLowerCase().includes(term) ||
-        log.module?.toLowerCase().includes(term),
+        log.module?.toLowerCase().includes(term) ||
+        log.created_by_email?.toLowerCase().includes(term) ||
+        log.reference_no?.toLowerCase().includes(term),
     )
   }
 
@@ -140,20 +153,30 @@ const getActionColor = (action: string | null) => {
   return 'grey'
 }
 
-// Module chip color
+// Module chip color — matching LogsCard module colors
 const getModuleColor = (module: string | null) => {
   if (!module) return 'grey'
   const lower = module.toLowerCase()
-  if (lower.includes('purchase')) return 'purple'
-  if (lower.includes('order') || lower.includes('po')) return 'indigo'
-  if (lower.includes('product')) return 'teal'
-  if (lower.includes('user') || lower.includes('auth')) return 'blue'
-  if (lower.includes('supplier')) return 'orange'
+  if (lower.includes('purchase_requisition') || lower.includes('requisition')) return 'purple'
+  if (lower.includes('purchase_order') || lower.includes('po') || lower.includes('order')) return 'indigo'
+  if (lower.includes('stock_in') || lower.includes('stock in')) return 'teal'
+  if (lower.includes('stock_out') || lower.includes('stock out')) return 'orange'
+  if (lower.includes('sale') && !lower.includes('sales_return') && !lower.includes('return')) return 'green'
+  if (lower.includes('transfer')) return 'blue'
+  if (lower.includes('expense')) return 'red'
+  if (lower.includes('purchase_return')) return 'purple'
+  if (lower.includes('sales_return') || lower.includes('return')) return 'pink'
   return 'grey'
 }
 
 onMounted(async () => {
   await loadItems({ page: 1, itemsPerPage: 10, sortBy: [] })
+})
+
+// Watch moduleFilter to reload when filter changes
+watch(() => props.moduleFilter, () => {
+  page.value = 1
+  loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
 })
 </script>
 
