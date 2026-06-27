@@ -10,7 +10,7 @@ const authStore = useAuthUserStore()
 const toast = useToast()
 
 // Reactive references from the auth store
-const { userName, loading } = storeToRefs(authStore)
+const { userName, loading, userRole } = storeToRefs(authStore)
 
 const handleLogout = async () => {
   try {
@@ -32,6 +32,16 @@ const handleLogout = async () => {
   <InnerLayoutWrapper>
     <template #content>
       <v-container fluid class="pa-0">
+        <!-- Role 3 Notice -->
+        >
+        <div style="margin-top: 1rem"></div>
+        <v-alert v-if="userRole === 3" type="info" prominent border="start" class="mb-8 mx-4">
+          <div class="text-body-1">
+            <strong>Welcome to Vincare Pharma!</strong><br />
+            Please contact the administrator for role requests and access permissions.
+          </div>
+        </v-alert>
+
         <!-- Announcements Carousel Section -->
         <section class="announcements-section mb-8">
           <v-container>

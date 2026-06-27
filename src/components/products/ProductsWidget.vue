@@ -143,6 +143,7 @@ function stockColor(item: any) {
       <v-data-table-server
         v-if="!mobile"
         v-model:items-per-page="itemsPerPage"
+        :items-per-page-options="[5, 10, 15, 25, 50, 100]"
         v-model:page="page"
         v-model:sort-by="sortBy"
         v-model:expanded="expanded"

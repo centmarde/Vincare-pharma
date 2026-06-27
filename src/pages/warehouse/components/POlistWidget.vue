@@ -16,7 +16,6 @@ const {
   selectedPR,
   confirmDialog,
   showSkuEditModal,
-  statusOptions,
   serverItems,
   itemsPerPage,
   totalItems,
@@ -34,9 +33,17 @@ const {
 
 const totalPages = computed(() => Math.max(1, Math.ceil(totalItems.value / itemsPerPage.value)))
 
+// Local filter options: always show All / Issued / Complete
+const statusFilterOptions = [
+  { title: 'All', value: null },
+  { title: 'Issued', value: 'issued' },
+  { title: 'Complete', value: 'complete' },
+]
+
 onMounted(() => {
   init()
-  loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
+  // Setting filterStatus triggers the composable's watch, which calls loadItems automatically
+  filterStatus.value = ['issued', 'complete']
 })
 
 function openMarkReceivedDialog(item: any) {
@@ -56,7 +63,7 @@ function goToPage(p: number) {
 }
 </script>
 <template>
-  <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
+  <div class="pa-2 bg-surface-variant fill-height align-start">
     <v-card class="mx-auto w-100 pa-0" rounded="lg" elevation="1">
       <!-- Header -->
       <v-card-title class="pa-5">
@@ -92,12 +99,15 @@ function goToPage(p: number) {
               </template>
               <v-list density="compact" min-width="180">
                 <v-list-item
-                  v-for="opt in statusOptions"
+                  v-for="opt in statusFilterOptions"
                   :key="String(opt.value)"
                   :title="opt.title"
-                  :active="filterStatus === opt.value"
+                  :active="
+                    filterStatus === opt.value ||
+                    (Array.isArray(filterStatus) && opt.value === null)
+                  "
                   active-color="primary"
-                  @click="filterStatus = opt.value"
+                  @click="filterStatus = opt.value ?? ['issued', 'complete']"
                 />
               </v-list>
             </v-menu>
@@ -111,6 +121,7 @@ function goToPage(p: number) {
       <v-data-table-server
         v-if="!mobile"
         v-model:items-per-page="itemsPerPage"
+        :items-per-page-options="[5, 10, 15, 25, 50, 100]"
         :headers="headers"
         :items="serverItems"
         :items-length="totalItems"
@@ -350,7 +361,7 @@ function goToPage(p: number) {
         </v-card-actions>
       </v-card>
     </v-dialog>
-  </v-container>
+  </div>
 </template>
 
 <style scoped>
