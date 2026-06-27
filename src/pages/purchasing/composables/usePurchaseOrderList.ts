@@ -1,10 +1,12 @@
+import { useTransactionsDataStore } from '@/stores/transactionsData'
+import { useSuppliersDataStore } from '@/stores/suppliersData'
+import type { PurchaseOrder } from './usePODetailModal'
+import { useLogsDataStore } from '@/stores/logsData'
+import { useAuthUserStore } from '@/stores/authUser'
+import type { PR } from '@/stores/transactionsData'
+import { useToast } from 'vue-toastification'
 import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useToast } from 'vue-toastification'
-import { useSuppliersDataStore } from '@/stores/suppliersData'
-import { useTransactionsDataStore } from '@/stores/transactionsData'
-import type { PR } from '@/stores/transactionsData'
-import type { PurchaseOrder } from './usePODetailModal'
 
 const toast = useToast()
 
@@ -31,6 +33,8 @@ export function usePurchaseOrderList() {
   const txStore       = useTransactionsDataStore()
   const { suppliers } = storeToRefs(supplierStore)
   const { loading }   = storeToRefs(txStore)
+  const logsStore = useLogsDataStore()
+  const authStore = useAuthUserStore()
 
   // ─── State ────────────────────────────────────────────────────────
   const search           = ref('')
@@ -160,8 +164,19 @@ export function usePurchaseOrderList() {
   }
 
   async function handleMarkReceived() {
-    const success = await txStore.markPOAsReceived(confirmDialog.value.poId)
+    const { poId, poNumber } = confirmDialog.value
+    const success = await txStore.markPOAsReceived(poId)
     if (success) {
+      const { user } = await authStore.getCurrentUser()
+      if (user) {
+      await logsStore.createLog({
+        created_by:     user.id,
+        action:         'mark_received',
+        description:    `Purchase order ${poNumber} marked as received`,
+        transaction_id: poId,
+        module:         'stock_in',
+      })
+    }
       confirmDialog.value.show = false
       await loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
     }

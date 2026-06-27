@@ -1,11 +1,11 @@
-import { ref, computed, watch } from 'vue'
-import { storeToRefs } from 'pinia'
 import { useSuppliersDataStore, type SupplierType } from '@/stores/suppliersData'
 import { useTransactionsDataStore } from '@/stores/transactionsData'
 import { useLogsDataStore } from '@/stores/logsData'
 import { useAuthUserStore } from '@/stores/authUser'
-import { supabase } from '@/lib/supabase'
 import type { PR } from '@/stores/transactionsData'
+import { ref, computed, watch } from 'vue'
+import { supabase } from '@/lib/supabase'
+import { storeToRefs } from 'pinia'
 
 export function useIssuePOModal(
   props: { modelValue: boolean; pr: PR | null },
@@ -82,18 +82,8 @@ export function useIssuePOModal(
 
     if (result.success) {
       // Create a log entry for issuing the PO
-      const { user: currentUser, error: authError } = await authStore.getCurrentUser()
-      const userId = !authError && currentUser ? currentUser.id : user.id
-
-      if (!authStore.users.length) {
-        await authStore.getAllUsers()
-      }
-      const actingUser = authStore.users.find((u: any) => u.id === userId)
-      const userEmail = actingUser?.email ?? userId ?? 'unknown'
-      const now = new Date().toISOString()
-
       await logsStore.createLog({
-        created_by: userId,
+        created_by: user.id,
         action: 'issue_po',
         description: `Purchase order issued from requisition ${props.pr.requisition_no}`,
         transaction_id: props.pr.id,
