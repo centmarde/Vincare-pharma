@@ -33,7 +33,6 @@ const headers = computed(() => [
   { title: 'Reference No.', key: 'reference_no', sortable: false, width: 150 },
   { title: 'Created At', key: 'created_at', sortable: true, width: 180 },
   { title: 'Updated By', key: 'updated_by_email', sortable: true, width: 180 },
-  { title: 'Updated At', key: 'updated_at', sortable: true, width: 180 },
 ])
 
 // Load server data handler (v-data-table-server callback)
@@ -263,11 +262,6 @@ onMounted(async () => {
         <template #[`item.updated_by_email`]="{ value }">
           <span class="text-body-2">{{ value || '—' }}</span>
         </template>
-
-        <!-- Updated At column -->
-        <template #[`item.updated_at`]="{ value }">
-          <span class="text-caption">{{ formatDate(value) }}</span>
-        </template>
       </v-data-table-server>
 
       <!-- Mobile cards -->
@@ -338,10 +332,6 @@ onMounted(async () => {
                 <div v-if="log.updated_by_email" class="d-flex align-center ga-1">
                   <v-icon size="12">mdi-account-edit</v-icon>
                   <span>By: {{ log.updated_by_email }}</span>
-                </div>
-                <div v-if="log.updated_at" class="d-flex align-center ga-1">
-                  <v-icon size="12">mdi-clock-edit</v-icon>
-                  <span>Updated: {{ formatDate(log.updated_at) }}</span>
                 </div>
               </div>
             </v-card-text>

@@ -49,7 +49,6 @@ export function useLogRequisition() {
       description,
       transaction_id: transactionId,
       module,
-      updated_at: new Date().toISOString(),
     })
   }
 

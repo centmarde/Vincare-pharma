@@ -8,7 +8,7 @@ import { useToast } from 'vue-toastification'
 const toast = useToast()
 
 // ─── Types matching the public.logs table schema ──────────────────────
-// id, created_at, action, description, module, updated_at,
+// id, created_at, action, description, module,
 // updated_by (uuid → auth.users), created_by (uuid → auth.users),
 // transaction_id (bigint → transactions)
 
@@ -18,7 +18,6 @@ export type LogType = {
   action: string | null
   description: string | null
   module: string | null
-  updated_at: string | null
   updated_by: string | null // uuid FK → auth.users
   created_by: string | null // uuid FK → auth.users
   transaction_id: number | null
@@ -35,7 +34,6 @@ export type CreateLogData = {
   transaction_id?: number
   created_by?: string // uuid
   updated_by?: string // uuid
-  updated_at?: string
 }
 
 export type UpdateLogData = Partial<CreateLogData>
@@ -101,7 +99,6 @@ export const useLogsDataStore = defineStore('logsData', () => {
           action: log.action,
           description: log.description,
           module: log.module,
-          updated_at: log.updated_at,
           updated_by: log.updated_by ?? null,
           created_by: log.created_by ?? null,
           transaction_id: log.transaction_id ?? null,
@@ -242,7 +239,6 @@ export const useLogsDataStore = defineStore('logsData', () => {
             transaction_id: logData.transaction_id ?? null,
             created_by: createdBy,
             updated_by: updatedBy,
-            updated_at: logData.updated_at ?? new Date().toISOString(),
           },
         ])
         .select('*')
@@ -266,7 +262,6 @@ export const useLogsDataStore = defineStore('logsData', () => {
         action: created.action,
         description: created.description,
         module: created.module,
-        updated_at: created.updated_at,
         updated_by: created.updated_by ?? null,
         created_by: created.created_by ?? null,
         transaction_id: created.transaction_id ?? null,
@@ -294,10 +289,7 @@ export const useLogsDataStore = defineStore('logsData', () => {
     try {
       const { data, error: updateError } = await supabase
         .from('logs')
-        .update({
-          ...updateData,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updateData)
         .eq('id', id)
         .select('*')
         .single()

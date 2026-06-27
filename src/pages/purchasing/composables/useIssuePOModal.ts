@@ -99,7 +99,6 @@ export function useIssuePOModal(
         description: `Purchase order issued from requisition ${props.pr.requisition_no}`,
         transaction_id: props.pr.id,
         module: 'purchase_order',
-        updated_at: now,
       })
 
       showConfirm.value = false

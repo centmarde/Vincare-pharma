@@ -116,7 +116,6 @@ export function usePurchaseRequisitionList() {
         description: `Purchase requisition ${prNumber} approved`,
         transaction_id: prId,
         module: 'purchase_requisition',
-        updated_at: now,
       })
     } else {
       await rejectPR(prId)
@@ -127,7 +126,6 @@ export function usePurchaseRequisitionList() {
         description: `Purchase requisition ${prNumber} rejected`,
         transaction_id: prId,
         module: 'purchase_requisition',
-        updated_at: now,
       })
     }
     closeConfirm()
@@ -159,7 +157,6 @@ export function usePurchaseRequisitionList() {
       description: `Purchase order issued from requisition ${pr.requisition_no}`,
       transaction_id: pr.id,
       module: 'purchase_order',
-      updated_at: now,
     })
   }
 
