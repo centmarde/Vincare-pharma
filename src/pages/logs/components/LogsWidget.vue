@@ -64,12 +64,12 @@ const loadItems = async ({ page: p, itemsPerPage: ipp, sortBy: sb }: any) => {
 
   // Use deduplicated logs
   let sorted = Array.from(latestByTransaction.values())
-  
+
   // Apply module filter if set
   if (props.moduleFilter) {
     sorted = sorted.filter((log) => log.module?.toLowerCase() === props.moduleFilter!.toLowerCase())
   }
-  
+
   if (sb.length) {
     const { key, order } = sb[0]
     sorted.sort((a: any, b: any) => {
@@ -80,7 +80,7 @@ const loadItems = async ({ page: p, itemsPerPage: ipp, sortBy: sb }: any) => {
     })
   }
 
-  // Apply client-side filter on search
+  // Apply client-side filter on search (across all columns)
   if (search.value.trim()) {
     const term = search.value.toLowerCase()
     sorted = sorted.filter(
@@ -178,6 +178,12 @@ watch(() => props.moduleFilter, () => {
   page.value = 1
   loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
 })
+
+// Watch search to reload when search term changes (reacts on every keystroke)
+watch(search, () => {
+  page.value = 1
+  loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
+})
 </script>
 
 <template>
@@ -197,7 +203,6 @@ watch(() => props.moduleFilter, () => {
           hide-details
           class="max-width-300"
           clearable
-          @keyup.enter="page = 1; loadItems({ page: 1, itemsPerPage, sortBy: [] })"
           @click:clear="page = 1; loadItems({ page: 1, itemsPerPage, sortBy: [] })"
         ></v-text-field>
         <v-btn
@@ -228,8 +233,7 @@ watch(() => props.moduleFilter, () => {
         density="compact"
         hide-details
         clearable
-        @keyup.enter="page = 1; loadItems({ page: 1, itemsPerPage, sortBy: [] })"
-        @click:clear="page = 1; loadItems({ page: 1, itemsPerPage, sortBy: [] })"
+          @click:clear="page = 1; loadItems({ page: 1, itemsPerPage, sortBy: [] })"
       ></v-text-field>
     </div>
 
@@ -257,6 +261,7 @@ watch(() => props.moduleFilter, () => {
         :items="serverItems"
         :items-length="totalLogs"
         :loading="loadingTable"
+        :items-per-page-options="[5, 10, 15, 20, 25, 50, 100]"
         loading-text="Loading logs..."
         hover
         density="comfortable"
