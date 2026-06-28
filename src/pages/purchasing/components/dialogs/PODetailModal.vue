@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { usePODetailModal, company } from '../composables/usePODetailModal'
+import { usePODetailModal, company } from '../../composables/usePODetailModal'
 import { formatCurrency, formatDatePO_Written } from '@/utils/helpers'
-import type { PurchaseOrder } from '../composables/usePODetailModal'
+import type { PurchaseOrder } from '../../composables/usePODetailModal'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import { useDisplay } from 'vuetify'
 

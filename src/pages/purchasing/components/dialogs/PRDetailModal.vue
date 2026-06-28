@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
-import { usePRDetailModal } from '../composables/usePRDetailModal'
+import { usePRDetailModal } from '../../composables/usePRDetailModal'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import { useDisplay } from 'vuetify'
 

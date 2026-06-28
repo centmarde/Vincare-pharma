@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useIssuePOModal } from '../composables/useIssuePOModal'
+import { useIssuePOModal } from '../../composables/useIssuePOModal'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import { formatCurrency } from '@/utils/helpers'
 import { useDisplay } from 'vuetify'
