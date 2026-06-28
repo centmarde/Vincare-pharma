@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { formatCurrency } from '@/utils/helpers'
 import { useIssuePOModal } from '../composables/useIssuePOModal'
-import type { PR } from '@/stores/transactionsData'
+import type { PR } from '@/stores/purchaseRequisitionData'
+import { formatCurrency } from '@/utils/helpers'
 import { useDisplay } from 'vuetify'
 
 const { mobile } = useDisplay()

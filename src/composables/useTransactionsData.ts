@@ -1,10 +1,10 @@
-import { useTransactionsDataStore }    from '@/stores/transactionsData'
-import type { PRItem }                 from '@/stores/transactionsData'
-import { storeToRefs }                 from 'pinia'
-import { computed }                    from 'vue'
+import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
+import type { PRItem } from '@/stores/purchaseRequisitionData'
+import { storeToRefs } from 'pinia'
+import { computed } from 'vue'
 
 export function useTransactionsData() {
-  const store = useTransactionsDataStore()
+  const store = usePurchaseRequisitionStore()
   const { items, prs, filterStatus } = storeToRefs(store)
 
   // ─── Computed ────────────────────────────────────────────────────

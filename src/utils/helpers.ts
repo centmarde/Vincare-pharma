@@ -504,7 +504,21 @@ export const formatDatePO_Written = (dateString: string | null | undefined) => {
   return `${datePart} at ${timePart}` // Output: "13 June 2026 at 09:30 PM"
 }
 
-export function buildReferenceNumber(prefix: 'PR' | 'PO'| 'SI', lastNum: number): string {
-  const year = new Date().getFullYear()
-  return `${prefix}-${year}-${String(lastNum + 1).padStart(3, '0')}`
+
+type DocType = 'PR' | 'PO' | 'SI'
+
+const DOC_CONFIG: Record<DocType, { column: 'requisition_no' | 'po_no' | 'reference_no' }> = {
+  PR: { column: 'requisition_no' },
+  PO: { column: 'po_no' },
+  SI: { column: 'reference_no' },
+}
+
+export async function generateDocNumber(
+  type: DocType,
+  getLatest: (column: 'requisition_no' | 'po_no' | 'reference_no', prefix: string) => Promise<number>
+): Promise<string> {
+  const year   = new Date().getFullYear()
+  const prefix = `${type}-${year}-`
+  const last   = await getLatest(DOC_CONFIG[type].column, prefix)
+  return `${prefix}${String(last + 1).padStart(3, '0')}`
 }

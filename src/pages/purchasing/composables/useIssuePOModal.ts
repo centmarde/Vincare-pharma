@@ -1,8 +1,7 @@
 import { useSuppliersDataStore, type SupplierType } from '@/stores/suppliersData'
-import { useTransactionsDataStore } from '@/stores/transactionsData'
+import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
+import type { PR } from '@/stores/purchaseRequisitionData'
 import { useLogsDataStore } from '@/stores/logsData'
-import { useAuthUserStore } from '@/stores/authUser'
-import type { PR } from '@/stores/transactionsData'
 import { ref, computed, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { storeToRefs } from 'pinia'
@@ -12,11 +11,10 @@ export function useIssuePOModal(
   emit: (e: 'update:modelValue', value: boolean) => void,
 ) {
   const supplierStore      = useSuppliersDataStore()
-  const transactionsStore  = useTransactionsDataStore()
+  const purchaseRequisitionStore = usePurchaseRequisitionStore()
   const logsStore          = useLogsDataStore()
-  const authStore          = useAuthUserStore()
   const { suppliers }      = storeToRefs(supplierStore)
-  const { loading }        = storeToRefs(transactionsStore)
+  const { loading }        = storeToRefs(purchaseRequisitionStore)
 
   // ─── Company Header ───────────────────────────────────────────────
   const company = ref({
@@ -74,7 +72,7 @@ export function useIssuePOModal(
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    const result = await transactionsStore.issuePurchaseOrder({
+    const result = await purchaseRequisitionStore.issuePurchaseOrder({
       pr:         props.pr,
       ship_via:   form.value.ship_via,
       ship_method: form.value.ship_method,

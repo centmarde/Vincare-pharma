@@ -1,8 +1,8 @@
 import { useTransactionsData } from '@/composables/useTransactionsData'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
+import type { PR } from '@/stores/purchaseRequisitionData'
 import { useLogsDataStore } from '@/stores/logsData'
 import { useAuthUserStore } from '@/stores/authUser'
-import type { PR } from '@/stores/transactionsData'
 import { ref, computed } from 'vue'
 
 export const headers = [

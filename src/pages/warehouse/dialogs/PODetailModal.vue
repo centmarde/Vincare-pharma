@@ -2,7 +2,7 @@
 import { usePODetailModal, company } from '@/pages/purchasing/composables/usePODetailModal'
 import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
 import { formatCurrency, formatDatePO_Written } from '@/utils/helpers'
-import type { PR } from '@/stores/transactionsData'
+import type { PR } from '@/stores/purchaseRequisitionData'
 import { useDisplay } from 'vuetify'
 
 const { mobile } = useDisplay()
