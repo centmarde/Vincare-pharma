@@ -140,6 +140,7 @@ function goToPage(p: number) {
           :items-length="totalItems"
           :loading="loading"
           :search="search"
+          :items-per-page-options="[5, 10, 15, 20, 25, 50, 100]"
           hover
           loading-text="Loading purchase orders..."
           no-data-text="No purchase orders found."

@@ -143,6 +143,7 @@ onMounted(() => {
           :items="sortedFilteredPRs"
           :search="search"
           :loading="loading"
+          :items-per-page-options="[5, 10, 15, 20, 25, 50, 100]"
           hover
           loading-text="Loading purchase requisitions..."
           no-data-text="No purchase requisitions found."
