@@ -1,5 +1,5 @@
+import type { PR } from '@/stores/purchaseRequisitionData'
 import { computed } from 'vue'
-import type { PR } from '@/stores/transactionsData'
 
 export function usePRDetailModal(props: { pr: PR }) {
   const statusConfig = (status: string | null) => {

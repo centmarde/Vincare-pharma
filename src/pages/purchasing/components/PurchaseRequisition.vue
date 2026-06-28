@@ -61,7 +61,6 @@ onMounted(() => {
             <v-col cols="1" class="text-right pr-4">OFFER TOTAL</v-col>
             <v-col cols="1" class="pl-2">COST/UNIT</v-col>
             <v-col cols="1" class="text-right pr-2">COST TOTAL</v-col>
-            <v-col cols="1" />
           </v-row>
 
           <!-- Desktop Line Items -->
@@ -154,7 +153,6 @@ onMounted(() => {
               </span>
             </v-col>
 
-            <v-col cols="1" class="pl-2">
               <v-btn
                 icon="mdi-close"
                 variant="tonal"
@@ -162,7 +160,6 @@ onMounted(() => {
                 size="small"
                 @click="removeItem(index)"
               />
-            </v-col>
           </v-row>
         </template>
 

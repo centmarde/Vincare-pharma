@@ -1,8 +1,8 @@
 import { useTransactionsData } from '@/composables/useTransactionsData'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
+import type { PR } from '@/stores/purchaseRequisitionData'
 import { useLogsDataStore } from '@/stores/logsData'
 import { useAuthUserStore } from '@/stores/authUser'
-import type { PR } from '@/stores/transactionsData'
 import { ref, computed } from 'vue'
 
 export const headers = [
@@ -124,21 +124,6 @@ export function usePurchaseRequisitionList() {
   async function openPurchaseOrder(pr: PR) {
     selectedPRForPO.value = pr
     showPOModal.value     = true
-
-    // Get the current user for logging
-    let userId: string | undefined
-    const { user, error: authError } = await authStore.getCurrentUser()
-    if (!authError && user) {
-      userId = user.id
-    }
-
-    await logsStore.createLog({
-      created_by: userId,
-      action: 'issue_po',
-      description: `Purchase order issued from requisition ${pr.requisition_no}`,
-      transaction_id: pr.id,
-      module: 'purchase_order',
-    })
   }
 
   async function loadItems({ sortBy }: {

@@ -1,9 +1,9 @@
+import { useSuppliersDataStore, type SupplierType } from '@/stores/suppliersData'
+import type { PR } from '@/stores/purchaseRequisitionData'
 import { computed, ref, nextTick } from 'vue'
 import { useToast } from 'vue-toastification'
 import html2pdf from 'html2pdf.js'
-import { useSuppliersDataStore, type SupplierType } from '@/stores/suppliersData'
 import { storeToRefs } from 'pinia'
-import type { PR } from '@/stores/transactionsData'
 
 // ✅ Updated to match new transactions schema
 export type PurchaseOrder = {

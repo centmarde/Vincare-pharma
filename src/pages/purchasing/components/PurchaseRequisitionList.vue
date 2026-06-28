@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { usePurchaseRequisitionList, headers } from '../composables/usePurchaseRequisitionList'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
-import PRDetailModal from './PRDetailModal.vue'
-import IssuePOModal from './IssuePOModal.vue'
+import PRDetailModal from './dialogs/PRDetailModal.vue'
+import IssuePOModal from './dialogs/IssuePOModal.vue'
 import { useDisplay } from 'vuetify'
 import { onMounted } from 'vue'
 

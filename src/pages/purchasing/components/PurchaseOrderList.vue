@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { usePurchaseOrderList, headers } from '../composables/usePurchaseOrderList'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
-import ViewPODetailModal from './PODetailModal.vue'
+import ViewPODetailModal from './dialogs/PODetailModal.vue'
 import { useDisplay } from 'vuetify'
 import { onMounted } from 'vue'
 

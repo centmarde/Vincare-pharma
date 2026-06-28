@@ -3,7 +3,7 @@ import { usePODetailModal, company } from '@/pages/purchasing/composables/usePOD
 import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
 import { formatCurrency, formatDatePO_Written } from '@/utils/helpers'
 import { useProductsDataStore } from '@/stores/productsData'
-import type { PR } from '@/stores/transactionsData'
+import type { PR } from '@/stores/purchaseRequisitionData'
 import { useToast } from 'vue-toastification'
 import { ref, computed } from 'vue'
 import { useDisplay } from 'vuetify'
