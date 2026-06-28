@@ -31,7 +31,7 @@ export type FetchTransactionsOptions = {
   po_no_not_null?:   boolean
   search?:           string
   transaction_type?: string | null
-  status?:           string | null
+  status?:           string | string[] | null
   orderBy?:          keyof Pick<TransactionType, 'created_at' | 'total_amount' | 'status'>
   ascending?:        boolean
   limit?:            number
@@ -89,9 +89,12 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
 
     let q = supabase.from('transactions').select('*')
 
-    if (transaction_type) q = q.eq('transaction_type', transaction_type)
-    if (status)           q = q.eq('status', status)
-    if (po_no_not_null)   q = q.not('po_no', 'is', null)
+    if (transaction_type)  q = q.eq('transaction_type', transaction_type)
+    if (status) {
+      if (Array.isArray(status)) q = q.in('status', status)
+      else                       q = q.eq('status', status)
+    }
+    if (po_no_not_null)    q = q.not('po_no', 'is', null)              // ← add here
     if (search?.trim()) {
       const s = search.trim().replace(/,/g, '')
       q = q.or(`requisition_no.ilike.%${s}%,remarks.ilike.%${s}%,status.ilike.%${s}%`)

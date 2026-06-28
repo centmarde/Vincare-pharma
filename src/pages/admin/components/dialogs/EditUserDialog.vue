@@ -57,10 +57,12 @@ const rules = computed(() => ({
 
 // Computed
 const roleOptions = computed(() => {
-  return rolesStore.roles.map((role) => ({
-    title: role.title,
-    value: role.id,
-  }))
+  return rolesStore.roles
+    .filter((role) => role.id !== 1)
+    .map((role) => ({
+      title: role.title,
+      value: role.id,
+    }))
 })
 
 const isCurrentUserAdmin = computed(() => {
@@ -219,3 +221,4 @@ const handleClose = () => {
   background-color: rgb(var(--v-theme-surface-variant));
 }
 </style>
+

@@ -40,7 +40,7 @@ export function usePurchaseOrderList() {
 
   // ─── State ────────────────────────────────────────────────────────
   const search           = ref('')
-  const filterStatus     = ref<string | null>(null)
+  const filterStatus     = ref<string | string[] | null>(null)
   const showDetailModal  = ref(false)
   const showSkuEditModal = ref(false)
   const selectedPO       = ref<PurchaseOrder | null>(null)
