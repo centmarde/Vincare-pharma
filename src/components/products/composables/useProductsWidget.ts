@@ -7,14 +7,10 @@ import {
   type CreateProductData,
   type UpdateProductData,
 } from '@/stores/productsData'
-import { useTransactionsDataStore } from '@/stores/transactionsData'
-import { useTransactionItemsDataStore } from '@/stores/transactionsItemsData'
 
 export function useProductsWidget() {
   const toast = useToast()
   const productsStore = useProductsDataStore()
-  const transactionsStore = useTransactionsDataStore()
-  const transactionItemsStore = useTransactionItemsDataStore()
 
   // Dialog states
   const showDialog = ref(false)
@@ -57,6 +53,10 @@ export function useProductsWidget() {
   // Expanded rows
   const expanded = ref<string[]>([])
 
+  // Stock status dialog
+  const showStockDialog = ref(false)
+  const stockDialogType = ref<'out-of-stock' | 'low-stock'>('out-of-stock')
+
   // Eligible product IDs (those in stock_in transactions)
   const eligibleProductIds = ref<Set<number>>(new Set())
 
@@ -92,14 +92,22 @@ export function useProductsWidget() {
     })
   )
 
-  const sortedProducts = computed(() =>
-    [...products.value].sort((a, b) => {
-      const aLow = (a.reorder_level ?? 0) > 0 && (a.current_stock ?? 0) <= (a.reorder_level ?? 0)
-      const bLow = (b.reorder_level ?? 0) > 0 && (b.current_stock ?? 0) <= (b.reorder_level ?? 0)
-      if (aLow && !bLow) return -1
-      if (!aLow && bLow) return 1
-      return (a.current_stock ?? 0) - (b.current_stock ?? 0)
-    })
+  // All-products stock status counts (not paginated, from the full store)
+  const allEligibleProducts = computed(() =>
+    productsStore.products.filter(
+      p => p.sku != null && p.sku !== 'null' && eligibleProductIds.value.has(p.id)
+    )
+  )
+
+  const allOutOfStockCount = computed(
+    () => allEligibleProducts.value.filter(p => (p.current_stock ?? 0) <= 0).length
+  )
+
+  const allLowStockCount = computed(
+    () => allEligibleProducts.value.filter(p => {
+      const stock = p.current_stock ?? 0
+      return stock > 0 && p.reorder_level && stock <= p.reorder_level
+    }).length
   )
 
   // Validation rules
@@ -112,18 +120,9 @@ export function useProductsWidget() {
   // Methods
   async function fetchEligibleProductIds() {
     try {
-      const stockInTxs = await transactionsStore.fetchTransactions({ transaction_type: 'stock_in' })
-      if (!stockInTxs?.length) {
-        eligibleProductIds.value = new Set()
-        return
-      }
-      const productIds = new Set<number>()
-      for (const tx of stockInTxs) {
-        const items = await transactionItemsStore.fetchTransactionItems({ transaction_id: tx.id })
-        items?.forEach(item => { if (item.product_id) productIds.add(item.product_id) })
-      }
-      eligibleProductIds.value = productIds
-      console.log('[ProductsWidget] Eligible product IDs from stock_in transactions:', [...productIds])
+      const ids = await productsStore.fetchEligibleProductIds()
+      eligibleProductIds.value = new Set(ids)
+      console.log('[ProductsWidget] Eligible product IDs from stock_in transactions:', ids)
     } catch (err) {
       console.error('[ProductsWidget] Failed to fetch eligible product IDs:', err)
       eligibleProductIds.value = new Set()
@@ -181,7 +180,7 @@ export function useProductsWidget() {
     for (const [key, value] of Object.entries(productForm.value)) {
       cleaned[key] = value === '' ? null : value
     }
-    
+
     if (dialogMode.value === 'create') {
       const result = await productsStore.createProduct(cleaned as CreateProductData)
       if (result) {
@@ -243,13 +242,16 @@ export function useProductsWidget() {
     page,
     sortBy,
     expanded,
+    showStockDialog,
+    stockDialogType,
     // Computed
     headers,
     products,
     loading,
     totalProducts,
     lowStockProducts,
-    sortedProducts,
+    allOutOfStockCount,
+    allLowStockCount,
     // Validation
     rules,
     // Methods

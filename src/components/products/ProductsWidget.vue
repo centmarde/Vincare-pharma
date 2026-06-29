@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useDisplay } from 'vuetify'
-import { useProductsWidget } from '@/composables/useProductsWidget'
+import { useProductsWidget } from '@/components/products/composables/useProductsWidget.ts'
 import { useTheme } from '@/stores/useTheme'
-import ProductMobile from '../products/mobile/ProductMobile.vue'
-import ProductFormDialog from '../products/dialogs/ProductFormDialog.vue'
-import ProductDeleteDialog from '../products/dialogs/ProductDeleteDialog.vue'
+import ProductMobile from './mobile/ProductMobile.vue'
+import ProductFormDialog from './dialogs/ProductFormDialog.vue'
+import ProductDeleteDialog from './dialogs/ProductDeleteDialog.vue'
+import StockStatusCards from '../products/StockStatusCards.vue'
 
 const { mobile } = useDisplay()
 const {
@@ -24,8 +25,12 @@ const {
   loading,
   totalProducts,
   lowStockProducts,
-  sortedProducts,
+  products,
+  allOutOfStockCount,
+  allLowStockCount,
   rules,
+  showStockDialog,
+  stockDialogType,
   openCreateDialog,
   openEditDialog,
   openDeleteDialog,
@@ -36,6 +41,11 @@ const {
   handleSearch,
   handleTableOptions,
 } = useProductsWidget()
+
+function handleStockCardClick(type: 'out-of-stock' | 'low-stock') {
+  stockDialogType.value = type
+  showStockDialog.value = true
+}
 
 const { getCurrentTheme } = useTheme()
 const isDark = computed<'light' | 'dark'>(() => getCurrentTheme())
@@ -136,6 +146,13 @@ function stockColor(item: any) {
       </v-expansion-panels>
     </div>
 
+    <!-- Stock Status Cards -->
+    <StockStatusCards
+      :out-of-stock-count="allOutOfStockCount"
+      :low-stock-count="allLowStockCount"
+      @show-dialog="handleStockCardClick"
+    />
+
     <v-divider class="mt-3"></v-divider>
 
     <v-card-text class="pa-0">
@@ -148,7 +165,7 @@ function stockColor(item: any) {
         v-model:sort-by="sortBy"
         v-model:expanded="expanded"
         :headers="headers"
-        :items="sortedProducts"
+        :items="products"
         :items-length="totalProducts"
         :loading="loading"
         loading-text="Loading products..."
@@ -241,7 +258,7 @@ function stockColor(item: any) {
       <!-- Mobile card list -->
       <ProductMobile
         v-else
-        :products="sortedProducts"
+        :products="products"
         :loading="loading"
         :page="page"
         :items-per-page="itemsPerPage"
@@ -275,6 +292,29 @@ function stockColor(item: any) {
     @confirm="handleDelete"
     @close="closeDeleteDialog"
   />
+
+  <!-- Stock Status Dialog (placeholder for future development) -->
+  <v-dialog v-model="showStockDialog" max-width="500">
+    <v-card>
+      <v-card-title class="d-flex align-center pa-4">
+        <v-icon
+          :icon="stockDialogType === 'out-of-stock' ? 'mdi-close-circle-outline' : 'mdi-alert-outline'"
+          :color="stockDialogType === 'out-of-stock' ? 'error' : 'warning'"
+          class="mr-2"
+          size="28"
+        ></v-icon>
+        <span class="text-h6 font-weight-bold">
+          {{ stockDialogType === 'out-of-stock' ? 'Out of Stock' : 'Low Stock' }}
+        </span>
+        <v-spacer></v-spacer>
+        <v-btn icon="mdi-close" variant="text" size="small" @click="showStockDialog = false"></v-btn>
+      </v-card-title>
+      <v-divider></v-divider>
+      <v-card-text class="pa-4 text-body-1 text-medium-emphasis">
+        <p>This feature is under development.</p>
+      </v-card-text>
+    </v-card>
+  </v-dialog>
 </template>
 
 <style scoped>
