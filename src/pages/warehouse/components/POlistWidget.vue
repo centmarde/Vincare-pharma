@@ -39,11 +39,20 @@ const statusFilterOptions = [
   { title: 'Issued', value: 'issued' },
   { title: 'Complete', value: 'complete' },
 ]
+const searchInput = ref(search.value)
+
+function commitSearch() {
+  search.value = searchInput.value
+}
+
+function clearSearch() {
+  searchInput.value = ''
+  search.value = ''
+}
 
 onMounted(() => {
   init()
-  // Setting filterStatus triggers the composable's watch, which calls loadItems automatically
-  filterStatus.value = ['issued', 'complete']
+  
 })
 
 function openMarkReceivedDialog(item: any) {
@@ -76,7 +85,7 @@ function goToPage(p: number) {
           >
           <div class="d-flex align-center" :class="mobile ? 'w-100' : ''" style="gap: 12px">
             <v-text-field
-              v-model="search"
+              v-model="searchInput"
               placeholder="Search..."
               prepend-inner-icon="mdi-magnify"
               variant="outlined"
@@ -84,6 +93,8 @@ function goToPage(p: number) {
               hide-details
               clearable
               :style="mobile ? 'flex: 1; min-width: 0' : 'min-width: 240px'"
+              @keyup.enter="commitSearch"
+              @click:clear="clearSearch"
             />
             <v-menu>
               <template #activator="{ props }">
@@ -102,12 +113,9 @@ function goToPage(p: number) {
                   v-for="opt in statusFilterOptions"
                   :key="String(opt.value)"
                   :title="opt.title"
-                  :active="
-                    filterStatus === opt.value ||
-                    (Array.isArray(filterStatus) && opt.value === null)
-                  "
+                  :active="filterStatus === opt.value"
                   active-color="primary"
-                  @click="filterStatus = opt.value ?? ['issued', 'complete']"
+                  @click="filterStatus = opt.value"
                 />
               </v-list>
             </v-menu>
@@ -126,7 +134,6 @@ function goToPage(p: number) {
         :items="serverItems"
         :items-length="totalItems"
         :loading="loading"
-        :search="search"
         hover
         loading-text="Loading purchase orders..."
         no-data-text="No purchase orders found."
