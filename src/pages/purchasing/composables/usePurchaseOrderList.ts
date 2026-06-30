@@ -1,5 +1,6 @@
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import { useTransactionsDataStore } from '@/stores/transactionsData'
+import { useTransactionsData } from '@/composables/useTransactionsData'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import type { PurchaseOrder } from './usePODetailModal'
@@ -37,6 +38,7 @@ export function usePurchaseOrderList() {
   const { loading }   = storeToRefs(txStore)
   const logsStore = useLogsDataStore()
   const authStore = useAuthUserStore()
+  const { poStatusOptions } = useTransactionsData()
 
   // ─── State ────────────────────────────────────────────────────────
   const search           = ref('')
@@ -51,16 +53,11 @@ export function usePurchaseOrderList() {
   const itemsPerPage     = ref(10)
   const sortKey          = ref('created_at')
   const sortOrder        = ref<'asc' | 'desc'>('desc')
+  const searchInput      = ref(search.value)
 
   const prItemsCache  = ref<Record<number, PR>>({})
   const confirmDialog = ref({ show: false, poId: 0, poNumber: '' })
 
-  // ─── Computed ─────────────────────────────────────────────────────
-  const statusOptions = computed(() => {
-    const unique = [...new Set(serverItems.value.map(po => po.status).filter(Boolean))]
-    const mapped = unique.map(s => ({ title: s.charAt(0).toUpperCase() + s.slice(1), value: s }))
-    return [{ title: 'All', value: null }, ...mapped]
-  })
 
   // ─── Helpers ──────────────────────────────────────────────────────
   const resolveSupplier = (id: string | null) =>
@@ -184,6 +181,15 @@ export function usePurchaseOrderList() {
     }
   }
 
+  function commitSearch(){
+    search.value = searchInput.value
+  }
+  
+  function clearSearch(){
+    searchInput.value = ''
+    search.value = ''
+  }
+
   watch([search, filterStatus], () =>
     loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
   )
@@ -197,7 +203,8 @@ export function usePurchaseOrderList() {
     showDetailModal, showSkuEditModal,
     selectedPO, selectedPR,
     confirmDialog, serverItems, totalItems,
-    page, itemsPerPage, statusOptions,
+    page, itemsPerPage, poStatusOptions: poStatusOptions,
+    searchInput, commitSearch, clearSearch,
     resolveSupplier, statusLabel, getSupplierSummary,
     loadItems, openDetail, openDetailForSku,
     openConfirm, handleMarkReceived, init,

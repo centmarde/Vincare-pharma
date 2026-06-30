@@ -97,7 +97,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
     if (po_no_not_null)    q = q.not('po_no', 'is', null)              // ← add here
     if (search?.trim()) {
       const s = search.trim().replace(/,/g, '')
-      q = q.or(`requisition_no.ilike.%${s}%,remarks.ilike.%${s}%,status.ilike.%${s}%`)
+      q = q.or(`requisition_no.ilike.%${s}%,po_no.ilike.%${s}%,remarks.ilike.%${s}%,status.ilike.%${s}%`)
     }
 
     q = q.order(orderBy as string, { ascending })
@@ -131,7 +131,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
     if (status)         q = q.eq('status', status)
     if (search?.trim()) {
       const s = search.trim().replace(/,/g, '')
-      q = q.or(`requisition_no.ilike.%${s}%,remarks.ilike.%${s}%,status.ilike.%${s}%`)
+      q = q.or(`requisition_no.ilike.%${s}%,po_no.ilike.%${s}%,remarks.ilike.%${s}%,status.ilike.%${s}%`)
     }
 
     const { count } = await q

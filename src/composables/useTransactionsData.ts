@@ -44,6 +44,13 @@ export function useTransactionsData() {
     { title: 'Pending Approval', value: 'pending_approval' },
     { title: 'Approved',         value: 'approved' },
     { title: 'Rejected',         value: 'rejected' },
+    { title: 'Complete',         value: 'complete' },
+  ]
+
+  const poStatusOptions = [
+    { title: 'All',      value: null },
+    { title: 'Issued',   value: 'issued' },
+    { title: 'Complete', value: 'complete' },
   ]
 
   // ─── Utilities ───────────────────────────────────────────────────
@@ -77,6 +84,8 @@ export function useTransactionsData() {
     // Store passthrough (state + actions components need directly)
     ...store,
 
+    filterStatus,
+
     // Computed
     customerOfferTotal,
     companyCostTotal,
@@ -88,7 +97,7 @@ export function useTransactionsData() {
 
     // Constants
     statusOptions,
-
+    poStatusOptions,
     // Utilities
     totalQty,
     totalCost,
