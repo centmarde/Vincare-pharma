@@ -52,7 +52,9 @@ function clearSearch() {
 
 onMounted(() => {
   init()
-  
+  if (mobile.value) {
+    loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
+  }
 })
 
 function openMarkReceivedDialog(item: any) {

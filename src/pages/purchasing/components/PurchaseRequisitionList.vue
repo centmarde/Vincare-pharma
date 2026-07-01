@@ -3,22 +3,21 @@ import { usePurchaseRequisitionList, headers } from '../composables/usePurchaseR
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import PRDetailModal from './dialogs/PRDetailModal.vue'
 import IssuePOModal from './dialogs/IssuePOModal.vue'
+import { computed, onMounted } from 'vue'
 import { useDisplay } from 'vuetify'
-import { onMounted } from 'vue'
 
 const {
   init,
   loading,
   selectedPR,
   filterStatus,
-  sortedFilteredPRs,
+  serverItems,
   loadItems,
   totalQty,
   totalCost,
   itemSummary,
   statusConfig,
   page,
-  pagedPRs, // ← use this in v-for on mobile instead of sortedFilteredPRs
   totalItems,
   itemsPerPage,
   statusOptions,
@@ -27,8 +26,9 @@ const {
   showPOModal,
   selectedPRForPO,
   confirmDialog,
-  prevPage,
-  nextPage,
+  searchInput, 
+  commitSearch, 
+  clearSearch,
   openDetail,
   openConfirm,
   closeConfirm,
@@ -38,7 +38,17 @@ const {
 const { mobile } = useDisplay()
 onMounted(() => {
   init()
+  if (mobile.value) {
+      loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
+    }
 })
+const totalPages = computed(() => Math.max(1, Math.ceil(totalItems.value / itemsPerPage.value)))
+function goToPage(p: number) {
+  // window.scrollTo({ top: 100, behavior: 'smooth' as ScrollBehavior })
+  if (p < 1 || p > totalPages.value || p === page.value) return
+  page.value = p
+  loadItems({ page: p, itemsPerPage: itemsPerPage.value, sortBy: [] })
+}
 </script>
 
 <template>
@@ -61,14 +71,16 @@ onMounted(() => {
           <!-- Desktop: search + filter -->
           <div v-if="!mobile" class="d-flex align-center" style="gap: 12px">
             <v-text-field
-              v-model="search"
-              placeholder="Search..."
+              v-model="searchInput"
+              placeholder="Search... (press Enter)"
               prepend-inner-icon="mdi-magnify"
               variant="outlined"
               density="compact"
               hide-details
               clearable
               style="min-width: 240px"
+              @keyup.enter="commitSearch"
+              @click:clear="clearSearch"
             />
             <v-menu>
               <template #activator="{ props }">
@@ -98,7 +110,7 @@ onMounted(() => {
         <!-- Mobile: search + icon filter (reuses same list) -->
         <div v-if="mobile" class="d-flex align-center" style="gap: 8px">
           <v-text-field
-            v-model="search"
+            v-model="searchInput"
             placeholder="Search..."
             prepend-inner-icon="mdi-magnify"
             variant="outlined"
@@ -106,6 +118,9 @@ onMounted(() => {
             hide-details
             clearable
             style="flex: 1; min-width: 0"
+            @keyup.enter="commitSearch"
+            @click:clear="clearSearch"
+
           />
           <v-menu>
             <template #activator="{ props }">
@@ -136,17 +151,17 @@ onMounted(() => {
 
       <!-- Table -->
       <template v-if="!mobile">
-        <v-data-table
-          v-model:page="page"
+        <v-data-table-server
           v-model:items-per-page="itemsPerPage"
           :headers="headers"
-          :items="sortedFilteredPRs"
-          :search="search"
+          :items="serverItems"
+          :items-length="totalItems"
           :loading="loading"
+          
           :items-per-page-options="[5, 10, 15, 20, 25, 50, 100]"
           hover
-          loading-text="Loading purchase requisitions..."
-          no-data-text="No purchase requisitions found."
+          loading-text="Loading purchase orders..."
+          no-data-text="No purchase orders found."
           @update:options="loadItems"
         >
           <!-- PR # -->
@@ -243,19 +258,19 @@ onMounted(() => {
               </template>
             </div>
           </template>
-        </v-data-table>
+        </v-data-table-server>
       </template>
 
       <!-- ── MOBILE: card list ───────────────────────────────── -->
       <template v-else>
         <v-progress-linear v-if="loading" indeterminate color="primary" />
-        <div v-if="!loading && pagedPRs.length === 0" class="text-center pa-8 text-medium-emphasis">
+        <div v-if="!loading && serverItems.length === 0" class="text-center pa-8 text-medium-emphasis">
           No purchase requisitions found.
         </div>
 
         <div class="pa-3" style="display: flex; flex-direction: column; gap: 10px">
           <v-card
-            v-for="item in pagedPRs"
+            v-for="item in serverItems"
             :key="item.requisition_no"
             rounded="lg"
             border
@@ -377,24 +392,26 @@ onMounted(() => {
         </div>
 
         <!-- Mobile pagination -->
-        <div class="d-flex justify-center align-center pa-3" style="gap: 8px">
+        <div class="d-flex align-center justify-center ga-2 py-4">
           <v-btn
             icon="mdi-chevron-left"
             variant="text"
-            density="compact"
-            :disabled="page <= 1"
-            @click="prevPage"
+            size="small"
+            :disabled="page <= 1 || loading"
+            @click="goToPage(page - 1)"
           />
-          <span class="text-caption text-medium-emphasis">
-            {{ (page - 1) * itemsPerPage + 1 }}–{{ Math.min(page * itemsPerPage, totalItems) }} of
-            {{ totalItems }}
+          <span
+            class="text-body-2 text-medium-emphasis mx-2"
+            style="min-width: 80px; text-align: center"
+          >
+            Page {{ page }} of {{ totalPages }}
           </span>
           <v-btn
             icon="mdi-chevron-right"
             variant="text"
-            density="compact"
-            :disabled="page * itemsPerPage >= totalItems"
-            @click="nextPage"
+            size="small"
+            :disabled="page >= totalPages || loading"
+            @click="goToPage(page + 1)"
           />
         </div>
       </template>
