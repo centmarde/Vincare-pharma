@@ -3,6 +3,11 @@ import { supabase } from '@/lib/supabase'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { Ref } from 'vue'
+import { useAuthUserStore } from './authUser'
+import { useToast } from 'vue-toastification'
+
+const toast = useToast()
+const authStore = useAuthUserStore()
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,6 +43,48 @@ export type FetchTransactionsOptions = {
   offset?:           number
 }
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export type PRItem = {
+  id:               number
+  no:               number
+  unit:             string
+  item_description: string
+  qty:              number
+  offer_per_unit:   number
+  cost_per_unit:    number
+  product_id?:      number
+  sku?:             string | null
+  supplier_name?:   string | null
+  actual_count?:    number | null
+}
+
+export type PR = {
+  id:              number
+  requisition_no:  string
+  po_no:           string | null
+  status:          string
+  remarks:         string | null
+  total_amount:    number
+  supplier_id:     string | null
+  supplier_name?:  string | null
+  created_at:      string
+  created_by:      string
+  approved_by:     string | null
+  updated_at:      string | null
+  requester_name?: string
+  reviewer_name?:  string
+  actual_count?:   number | null
+  items:           PRItem[]
+}
+
+export type PurchaseRequisitionType = {
+  remarks:      string | null
+  status:       string
+  requested_by: string | null
+  supplier_id:  string | null
+}
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useTransactionsDataStore = defineStore('transactionsData', () => {
@@ -49,6 +96,14 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
   const currentTransaction: Ref<TransactionType | undefined>                     = ref(undefined)
   const realtimeChannel:    Ref<RealtimeChannel | null>                          = ref(null)
   const realtimeStatus:     Ref<'idle'|'subscribing'|'subscribed'|'error'>       = ref('idle')
+  const prs:                Ref<PR[]>                                             = ref([])
+  const currentPR:          Ref<PurchaseRequisitionType>                         = ref({
+    remarks:      null,
+    status:       'pending_approval',
+    requested_by: null,
+    supplier_id:  null,
+  })
+  const items:              Ref<any[]>                                            = ref([])
 
   // ─── Computed ───────────────────────────────────────────────────
   const transactionsCount    = computed(() => transactions.value.length)
@@ -120,10 +175,10 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       actual_count:     ti.products?.actual_count  ?? 0,
     }))
   }
-  
+
   function resolveUserNames(createdBy: string | null, approvedBy: string | null) {
     const authStore = useAuthUserStore()
-    const findName = (id: string | null) => 
+    const findName = (id: string | null) =>
       authStore.users.find(u => u.id === id)?.full_name?.toUpperCase() ?? '—'
 
     return{
@@ -500,7 +555,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
   }
 
   async function fetchPRByRequisitionId(requisitionId: number): Promise<PR | null> {
-    
+
     if (!authStore.users.length) await authStore.getAllUsers()
 
     const { data } = await supabase
