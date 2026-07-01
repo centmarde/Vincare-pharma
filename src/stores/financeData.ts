@@ -4,7 +4,6 @@ import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
-import { OUTLETS } from '@/stores/salesData'
 
 const toast = useToast()
 
@@ -187,6 +186,54 @@ export type StockReconRow = {
   drift: number
 }
 
+export type GLAccountLine = { code: string; name: string; amount: number }
+
+export type GLISSection = {
+  subsection: string
+  accounts: GLAccountLine[]
+  subtotal: number
+}
+
+export type GLIncomeStatement = {
+  from: string
+  to: string
+  sections: GLISSection[]
+  netSales: number
+  cogs: number
+  grossProfit: number
+  sellingExpenses: number
+  adminExpenses: number
+  operatingIncome: number
+  otherIncome: number
+  financeCosts: number
+  netIncome: number
+}
+
+export type GLBSSection = {
+  class: string
+  subsection: string
+  accounts: GLAccountLine[]
+  subtotal: number
+}
+
+export type GLBalanceSheet = {
+  asOf: string
+  sections: GLBSSection[]
+  currentYearEarnings: number
+  totalAssets: number
+  totalLiabilities: number
+  totalEquity: number
+  tiesOut: boolean
+}
+
+export type TrialBalanceLine = {
+  account_code: string
+  account_name: string
+  class: string
+  debit_balance: number
+  credit_balance: number
+}
+
 type DateRange = { dateFrom?: string; dateTo?: string }
 
 const COMMISSION_LIABILITY_FLAG_DAYS = 30
@@ -211,6 +258,11 @@ export const useFinanceDataStore = defineStore('financeData', () => {
   const arAging: Ref<ARAgingRow[]> = ref([])
   const commissionLiability: Ref<CommissionLiabilityRow[]> = ref([])
   const stockReconciliation: Ref<StockReconRow[]> = ref([])
+  const stockReconciliationComputedAt: Ref<number | null> = ref(null)
+  const STOCK_RECON_CACHE_MS = 5 * 60 * 1000
+  const incomeStatement: Ref<GLIncomeStatement | null> = ref(null)
+  const balanceSheet: Ref<GLBalanceSheet | null> = ref(null)
+  const trialBalance: Ref<TrialBalanceLine[]> = ref([])
 
   const loading = ref(false)
   const error: Ref<string> = ref('')
@@ -649,57 +701,120 @@ export const useFinanceDataStore = defineStore('financeData', () => {
   }
 
   // ─── P&L: revenue actually received, COGS from stock_in, opex from expenses ─
+  // Past days are cached in finance_daily_summary (computed once, immutable
+  // after the day ends); only "today" is ever recomputed live, against a
+  // 24h-bounded query instead of the full transaction history.
+
+  const todayStr = () => new Date().toISOString().slice(0, 10)
+
+  const fetchTodayPnLSlice = async () => {
+    const today = todayStr()
+    const todayStart = today + 'T00:00:00'
+    const todayEnd   = today + 'T23:59:59.999'
+
+    const [saleRes, collectionRes, stockInRes, expenseRes] = await Promise.all([
+      supabase.from('transactions')
+        .select('total_amount, pos_sale_details(voided_at)')
+        .eq('transaction_type', 'sale').eq('status', 'completed')
+        .gte('created_at', todayStart).lte('created_at', todayEnd),
+      // All today's collections — we'll split by transaction_type in JS
+      supabase.from('collections')
+        .select('amount, transaction:transaction_id!inner(transaction_type)')
+        .gte('created_at', todayStart).lte('created_at', todayEnd),
+      supabase.from('transactions').select('total_amount')
+        .eq('transaction_type', 'stock_in')
+        .gte('updated_at', todayStart).lte('updated_at', todayEnd),
+      supabase.from('transactions').select('total_amount')
+        .eq('transaction_type', 'expense')
+        .gte('paid_at', todayStart).lte('paid_at', todayEnd),
+    ])
+    if (saleRes.error) throw saleRes.error
+    if (collectionRes.error) throw collectionRes.error
+    if (stockInRes.error) throw stockInRes.error
+    if (expenseRes.error) throw expenseRes.error
+
+    const revenuePos = ((saleRes.data || []) as any[]).reduce((sum, r) => {
+      if (r.pos_sale_details?.voided_at) return sum
+      return sum + (r.total_amount ?? 0)
+    }, 0)
+
+    const allCollections = (collectionRes.data || []) as any[]
+    const revenueEthical = allCollections
+      .filter(r => r.transaction?.transaction_type === 'ethical_order')
+      .reduce((sum, r) => sum + (r.amount ?? 0), 0)
+    const revenueInhouse = allCollections
+      .filter(r => r.transaction?.transaction_type === 'inhouse_order')
+      .reduce((sum, r) => sum + (r.amount ?? 0), 0)
+
+    return {
+      revenuePos,
+      revenueEthical,
+      revenueInhouse,
+      cogs: ((stockInRes.data || []) as any[]).reduce((sum, r) => sum + (r.total_amount ?? 0), 0),
+      opex: ((expenseRes.data || []) as any[]).reduce((sum, r) => sum + (r.total_amount ?? 0), 0),
+    }
+  }
 
   const fetchPnL = async (range: DateRange = {}) => {
     loading.value = true
     clearError()
     try {
-      let saleQ = supabase.from('transactions').select('outlet, total_amount')
-        .eq('transaction_type', 'sale').eq('status', 'completed')
-      saleQ = applyDateRange(saleQ, 'created_at', range)
+      const today = todayStr()
+      const includesToday = (!range.dateTo || range.dateTo >= today) && (!range.dateFrom || range.dateFrom <= today)
 
-      let collectionQ = supabase.from('collections').select('amount, created_at')
-      collectionQ = applyDateRange(collectionQ, 'created_at', range)
+      // Backfill any past days in range that aren't cached yet, then sum the
+      // cache directly — O(days with activity), not O(all-time transactions).
+      const { error: backfillError } = await supabase.rpc('finance_backfill_daily_summary', {
+        p_date_from: range.dateFrom ?? null,
+        p_date_to: range.dateTo ?? null,
+      })
+      if (backfillError) throw backfillError
 
-      let inhouseQ = supabase.from('transactions').select('amount_paid, paid_at')
-        .eq('transaction_type', 'inhouse_order').not('amount_paid', 'is', null)
-      inhouseQ = applyDateRange(inhouseQ, 'paid_at', range)
+      let historicalQ = supabase.from('finance_daily_summary')
+        .select('revenue_pos, revenue_ethical, revenue_inhouse, cogs, opex')
+        .lt('summary_date', today)
+      if (range.dateFrom) historicalQ = historicalQ.gte('summary_date', range.dateFrom)
+      if (range.dateTo) historicalQ = historicalQ.lte('summary_date', range.dateTo)
 
-      let stockInQ = supabase.from('transactions').select('total_amount').eq('transaction_type', 'stock_in')
-      stockInQ = applyDateRange(stockInQ, 'updated_at', range)
-
-      let expenseQ = supabase.from('transactions').select('total_amount').eq('transaction_type', 'expense')
-      expenseQ = applyDateRange(expenseQ, 'paid_at', range)
-
-      const [saleRes, collectionRes, inhouseRes, stockInRes, expenseRes] = await Promise.all([
-        saleQ, collectionQ, inhouseQ, stockInQ, expenseQ,
+      const [historicalRes, todaySlice] = await Promise.all([
+        historicalQ,
+        includesToday ? fetchTodayPnLSlice() : Promise.resolve(null),
       ])
-      if (saleRes.error) throw saleRes.error
-      if (collectionRes.error) throw collectionRes.error
-      if (inhouseRes.error) throw inhouseRes.error
-      if (stockInRes.error) throw stockInRes.error
-      if (expenseRes.error) throw expenseRes.error
+      if (historicalRes.error) throw historicalRes.error
 
-      const revenuePos = ((saleRes.data || []) as any[]).reduce((sum, r) => sum + (r.total_amount ?? 0), 0)
-      const revenueEthical = ((collectionRes.data || []) as any[]).reduce((sum, r) => sum + (r.amount ?? 0), 0)
-      const revenueInhouse = ((inhouseRes.data || []) as any[]).reduce((sum, r) => sum + (r.amount_paid ?? 0), 0)
-      const cogs = ((stockInRes.data || []) as any[]).reduce((sum, r) => sum + (r.total_amount ?? 0), 0)
-      const opex = ((expenseRes.data || []) as any[]).reduce((sum, r) => sum + (r.total_amount ?? 0), 0)
+      const totals = ((historicalRes.data || []) as any[]).reduce(
+        (acc, r) => ({
+          revenuePos: acc.revenuePos + (r.revenue_pos ?? 0),
+          revenueEthical: acc.revenueEthical + (r.revenue_ethical ?? 0),
+          revenueInhouse: acc.revenueInhouse + (r.revenue_inhouse ?? 0),
+          cogs: acc.cogs + (r.cogs ?? 0),
+          opex: acc.opex + (r.opex ?? 0),
+        }),
+        { revenuePos: 0, revenueEthical: 0, revenueInhouse: 0, cogs: 0, opex: 0 },
+      )
 
-      const revenueTotal = revenuePos + revenueEthical + revenueInhouse
+      if (todaySlice) {
+        totals.revenuePos += todaySlice.revenuePos
+        totals.revenueEthical += todaySlice.revenueEthical
+        totals.revenueInhouse += todaySlice.revenueInhouse
+        totals.cogs += todaySlice.cogs
+        totals.opex += todaySlice.opex
+      }
+
+      const revenueTotal = totals.revenuePos + totals.revenueEthical + totals.revenueInhouse
 
       const summary: PnLSummary = {
-        revenuePos,
-        revenueEthical,
-        revenueInhouse,
+        revenuePos: totals.revenuePos,
+        revenueEthical: totals.revenueEthical,
+        revenueInhouse: totals.revenueInhouse,
         revenueTotal,
-        cogs,
-        opex,
-        net: revenueTotal - cogs - opex,
+        cogs: totals.cogs,
+        opex: totals.opex,
+        net: revenueTotal - totals.cogs - totals.opex,
         byOutlet: [
-          { outlet: 'EXELMED', revenue: revenuePos },
-          { outlet: 'ETHICAL', revenue: revenueEthical },
-          { outlet: 'INHOUSE', revenue: revenueInhouse },
+          { outlet: 'EXELMED', revenue: totals.revenuePos },
+          { outlet: 'ETHICAL', revenue: totals.revenueEthical },
+          { outlet: 'INHOUSE', revenue: totals.revenueInhouse },
         ],
       }
       pnl.value = summary
@@ -719,23 +834,28 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     clearError()
     try {
       const threshold = options.threshold ?? 0.01
+      // actual_amount moved to remittance_details in hub redesign; old rows
+      // still have it on transactions — coalesce handles both.
       const { data, error: fetchError } = await supabase.from('transactions')
-        .select('id, reference_no, outlet, created_at, total_amount, actual_amount, discrepancy')
+        .select('id, reference_no, outlet, outlet_id, created_at, total_amount, actual_amount, remittance_details(actual_amount)')
         .eq('transaction_type', 'remittance')
         .order('created_at', { ascending: false })
       if (fetchError) throw fetchError
 
       const rows: RemittanceDiscrepancyRow[] = ((data || []) as any[])
-        .filter((r) => Math.abs(r.discrepancy ?? 0) > threshold)
-        .map((r) => ({
-          id: r.id,
-          reference_no: r.reference_no,
-          outlet: r.outlet,
-          created_at: r.created_at,
-          expected_amount: r.total_amount ?? 0,
-          actual_amount: r.actual_amount ?? 0,
-          discrepancy: r.discrepancy ?? 0,
-        }))
+        .map((r) => {
+          const actualAmount = r.remittance_details?.actual_amount ?? r.actual_amount ?? 0
+          return {
+            id: r.id,
+            reference_no: r.reference_no,
+            outlet: r.outlet,
+            created_at: r.created_at,
+            expected_amount: r.total_amount ?? 0,
+            actual_amount: actualAmount,
+            discrepancy: actualAmount - (r.total_amount ?? 0),
+          }
+        })
+        .filter((r) => Math.abs(r.discrepancy) > threshold)
       remittanceDiscrepancies.value = rows
       return rows
     } catch (err) {
@@ -763,10 +883,10 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     try {
       const [ethicalRes, inhouseRes] = await Promise.all([
         supabase.from('transactions')
-          .select('id, reference_no, total_amount, amount_paid, due_date, customer:customer_id(name)')
+          .select('id, reference_no, total_amount, ethical_details(amount_paid, due_date), customer:customer_id(name)')
           .eq('transaction_type', 'ethical_order').in('status', ['invoiced', 'partial']),
         supabase.from('transactions')
-          .select('id, reference_no, total_amount, amount_paid, status, customer:customer_id(name)')
+          .select('id, reference_no, total_amount, inhouse_details(amount_paid), status, customer:customer_id(name)')
           .eq('transaction_type', 'inhouse_order').not('status', 'in', '("paid","cancelled")'),
       ])
       if (ethicalRes.error) throw ethicalRes.error
@@ -776,25 +896,28 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       const rows: ARAgingRow[] = []
 
       for (const r of (ethicalRes.data || []) as any[]) {
-        const balance = (r.total_amount ?? 0) - (r.amount_paid ?? 0)
+        const amountPaid = r.ethical_details?.amount_paid ?? 0
+        const balance = (r.total_amount ?? 0) - amountPaid
         if (balance <= 0.01) continue
-        const daysOverdue = r.due_date ? Math.floor((now - new Date(r.due_date).getTime()) / 86400000) : null
+        const dueDate = r.ethical_details?.due_date ?? null
+        const daysOverdue = dueDate ? Math.floor((now - new Date(dueDate).getTime()) / 86400000) : null
         rows.push({
           id: r.id, source: 'ethical_order', reference_no: r.reference_no,
           customer_name: r.customer?.name ?? null, total_amount: r.total_amount ?? 0,
-          amount_paid: r.amount_paid ?? 0, balance, due_date: r.due_date,
+          amount_paid: amountPaid, balance, due_date: dueDate,
           days_overdue: daysOverdue, bucket: bucketFor(daysOverdue),
         })
       }
 
       for (const r of (inhouseRes.data || []) as any[]) {
-        const balance = (r.total_amount ?? 0) - (r.amount_paid ?? 0)
+        const amountPaid = r.inhouse_details?.amount_paid ?? 0
+        const balance = (r.total_amount ?? 0) - amountPaid
         if (balance <= 0.01) continue
         // No due_date convention exists yet for in-house orders.
         rows.push({
           id: r.id, source: 'inhouse_order', reference_no: r.reference_no,
           customer_name: r.customer?.name ?? null, total_amount: r.total_amount ?? 0,
-          amount_paid: r.amount_paid ?? 0, balance, due_date: null,
+          amount_paid: amountPaid, balance, due_date: null,
           days_overdue: null, bucket: 'no-term',
         })
       }
@@ -873,22 +996,40 @@ export const useFinanceDataStore = defineStore('financeData', () => {
   //     Cancelled orders are excluded entirely since their stock impact nets to
   //     zero once restored — including them would double-count, not reconcile.
 
-  const fetchStockReconciliation = async () => {
+  const fetchStockReconciliation = async (options: { forceRefresh?: boolean } = {}) => {
+    // Drift-detection, not a summable fact — a stale-but-cached read is fine
+    // for a few minutes (this is a "flag-only, experimental" diagnostic, not
+    // a money mutation), but unlike P&L we deliberately do NOT checkpoint the
+    // replay itself: a checkpoint taken while data is already drifted would
+    // freeze that drift in permanently instead of continuing to flag it.
+    if (
+      !options.forceRefresh &&
+      stockReconciliationComputedAt.value != null &&
+      Date.now() - stockReconciliationComputedAt.value < STOCK_RECON_CACHE_MS
+    ) {
+      return stockReconciliation.value
+    }
+
     loading.value = true
     clearError()
     try {
-      const [stockInRes, transferRes, saleRes, ethicalRes, inhouseRes, warehouseRes, outletRes] = await Promise.all([
+      // Fetch voided POS sale IDs from pos_sale_details (hub redesign) so we
+      // can exclude them in the reconciliation loop without breaking the nested
+      // transaction_items join (PostgREST can't express NOT EXISTS through !inner).
+      const [stockInRes, transferRes, saleRes, ethicalRes, inhouseRes, warehouseRes, outletRes, voidedPsdRes] = await Promise.all([
         supabase.from('transaction_items').select('product_id, qty, transaction:transaction_id!inner(transaction_type)').eq('transaction.transaction_type', 'stock_in'),
         supabase.from('transaction_items').select('product_id, qty, received_qty, transaction:transaction_id!inner(transaction_type, status, outlet)').eq('transaction.transaction_type', 'stock_transfer'),
-        supabase.from('transaction_items').select('product_id, qty, transaction:transaction_id!inner(transaction_type, status, outlet, voided_at)').eq('transaction.transaction_type', 'sale'),
+        supabase.from('transaction_items').select('product_id, qty, transaction_id, transaction:transaction_id!inner(transaction_type, status, outlet)').eq('transaction.transaction_type', 'sale'),
         supabase.from('transaction_items').select('product_id, stock_sources, transaction:transaction_id!inner(transaction_type, status)').eq('transaction.transaction_type', 'ethical_order'),
         supabase.from('transaction_items').select('product_id, delivered_qty, transaction:transaction_id!inner(transaction_type)').eq('transaction.transaction_type', 'inhouse_order'),
         supabase.from('products').select('id, product_name, current_stock'),
         supabase.from('outlet_stock').select('product_id, outlet, quantity, product:product_id(product_name)'),
+        supabase.from('pos_sale_details').select('transaction_id').not('voided_at', 'is', null),
       ])
-      for (const res of [stockInRes, transferRes, saleRes, ethicalRes, inhouseRes, warehouseRes, outletRes]) {
+      for (const res of [stockInRes, transferRes, saleRes, ethicalRes, inhouseRes, warehouseRes, outletRes, voidedPsdRes]) {
         if (res.error) throw res.error
       }
+      const voidedByPsd = new Set<number>(((voidedPsdRes.data || []) as any[]).map((v) => v.transaction_id))
 
       const expectedWarehouse = new Map<number, number>()
       const expectedOutlet = { EXELMED: new Map<number, number>(), ETHICAL: new Map<number, number>() }
@@ -907,7 +1048,8 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       }
       for (const r of (saleRes.data || []) as any[]) {
         const t = r.transaction
-        if (!t || t.status !== 'completed' || t.voided_at) continue
+        if (!t || t.status !== 'completed') continue
+        if (voidedByPsd.has(r.transaction_id)) continue
         if (r.product_id != null && t.outlet === 'EXELMED') bump(expectedOutlet.EXELMED, r.product_id, -(r.qty ?? 0))
       }
       for (const r of (ethicalRes.data || []) as any[]) {
@@ -948,9 +1090,78 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       }
 
       stockReconciliation.value = rows
+      stockReconciliationComputedAt.value = Date.now()
       return rows
     } catch (err) {
       handleError(err, 'Failed to compute stock reconciliation')
+      return []
+    } finally {
+      loading.value = false
+    }
+  }
+
+  // ─── GL: projection + authoritative financial statements ────────────────────
+
+  const runGLProjection = async (dateFrom?: string, dateTo?: string) => {
+    const { error: err } = await supabase.rpc('gl_project_events', {
+      p_date_from: dateFrom ?? null,
+      p_date_to:   dateTo   ?? null,
+    })
+    if (err) console.warn('GL projection warning:', err.message)
+  }
+
+  const fetchIncomeStatement = async (range: DateRange = {}) => {
+    loading.value = true
+    clearError()
+    try {
+      await runGLProjection(range.dateFrom, range.dateTo)
+      const { data, error: err } = await supabase.rpc('gl_income_statement', {
+        p_from: range.dateFrom ?? null,
+        p_to:   range.dateTo   ?? null,
+      })
+      if (err) throw err
+      incomeStatement.value = data as GLIncomeStatement
+      return incomeStatement.value
+    } catch (err) {
+      handleError(err, 'Failed to fetch income statement')
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const fetchBalanceSheet = async (asOf?: string) => {
+    loading.value = true
+    clearError()
+    try {
+      await runGLProjection(undefined, asOf)
+      const { data, error: err } = await supabase.rpc('gl_balance_sheet', {
+        p_as_of: asOf ?? null,
+      })
+      if (err) throw err
+      balanceSheet.value = data as GLBalanceSheet
+      return balanceSheet.value
+    } catch (err) {
+      handleError(err, 'Failed to fetch balance sheet')
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const fetchTrialBalance = async (asOf?: string) => {
+    loading.value = true
+    clearError()
+    try {
+      await runGLProjection(undefined, asOf)
+      const { data, error: err } = await supabase.rpc('gl_trial_balance', {
+        p_as_of: asOf ?? null,
+      })
+      if (err) throw err
+      trialBalance.value = (data || []) as TrialBalanceLine[]
+      return trialBalance.value
+    } catch (err) {
+      handleError(err, 'Failed to fetch trial balance')
       return []
     } finally {
       loading.value = false
@@ -968,13 +1179,16 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     arAging.value = []
     commissionLiability.value = []
     stockReconciliation.value = []
+    incomeStatement.value = null
+    balanceSheet.value = null
+    trialBalance.value = []
     loading.value = false
     error.value = ''
   }
 
   return {
-    OUTLETS,
     expenses, cashAccounts, replenishmentRequests, supplierPayments, supplierAP, pnl,
+    incomeStatement, balanceSheet, trialBalance,
     remittanceDiscrepancies, arAging, commissionLiability, stockReconciliation,
     loading, error, isLoading, hasError,
     fetchExpenses, recordExpense, deleteExpense,
@@ -983,6 +1197,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     fetchSupplierPayments, recordSupplierPayment, fetchSupplierAP,
     fetchPnL,
     fetchRemittanceDiscrepancies, fetchARAging, fetchCommissionLiability, fetchStockReconciliation,
+    runGLProjection, fetchIncomeStatement, fetchBalanceSheet, fetchTrialBalance,
     clearError, resetStore,
   }
 })

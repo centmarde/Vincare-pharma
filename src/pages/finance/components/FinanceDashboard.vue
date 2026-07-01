@@ -9,6 +9,15 @@ const { pnl, loading, dateFrom, dateTo, applyFilter, clearFilter } = useFinanceD
   <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
     <div class="w-100" style="max-width: 1400px; margin: 0 auto">
 
+      <div class="d-flex align-center gap-2 mb-2">
+        <span class="text-h6 font-weight-bold">Cash Flow (management view)</span>
+        <v-chip color="grey" size="x-small" label>Cash basis — not the authoritative GL</v-chip>
+      </div>
+      <div class="text-caption text-medium-emphasis mb-3">
+        Revenue recognized when cash is actually received. For accrual-basis financials, see
+        Income Statement / Balance Sheet / Trial Balance under Finance Controls.
+      </div>
+
       <!-- Date range filter -->
       <v-row dense class="mb-1">
         <v-col cols="12" sm="4">

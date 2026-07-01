@@ -6,7 +6,9 @@ defineProps<{
   modelValue: boolean
   expected: ExpectedSummary
   actualAmount: number | null
+  notes: string
   discrepancy: number
+  requiresNote: boolean
   canSubmit: boolean
   loading: boolean
 }>()
@@ -17,6 +19,8 @@ const emit = defineEmits<{
   (e: 'update:notes', value: string): void
   (e: 'submit'): void
 }>()
+
+const noteRequiredRule = (v: string) => !!v?.trim() || 'A note is required for a cash discrepancy.'
 </script>
 
 <template>
@@ -64,16 +68,6 @@ const emit = defineEmits<{
             @update:model-value="emit('update:actualAmount', $event === '' ? null : Number($event))"
           />
 
-          <label class="field-label mt-3">Notes</label>
-          <v-textarea
-            placeholder="Optional — e.g. reason for discrepancy"
-            variant="outlined"
-            density="compact"
-            rows="2"
-            hide-details
-            @update:model-value="emit('update:notes', $event)"
-          />
-
           <v-divider class="my-4" />
 
           <div class="d-flex justify-space-between align-center">
@@ -85,9 +79,23 @@ const emit = defineEmits<{
               {{ formatCurrency(discrepancy) }}
             </span>
           </div>
-          <div class="text-caption text-medium-emphasis text-right">
+          <div class="text-caption text-medium-emphasis text-right mb-3">
             {{ discrepancy === 0 ? 'Balanced' : discrepancy > 0 ? 'Over' : 'Short' }}
           </div>
+
+          <label class="field-label">
+            Notes <span v-if="requiresNote" class="text-error">* required — explain the discrepancy</span>
+          </label>
+          <v-textarea
+            :model-value="notes"
+            :placeholder="requiresNote ? 'Required: why is this short/over?' : 'Optional'"
+            :rules="requiresNote ? [noteRequiredRule] : []"
+            variant="outlined"
+            density="compact"
+            rows="2"
+            hide-details="auto"
+            @update:model-value="emit('update:notes', $event)"
+          />
         </template>
       </v-card-text>
 

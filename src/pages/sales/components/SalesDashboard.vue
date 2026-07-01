@@ -3,14 +3,29 @@ import { useSalesDashboard } from '../composables/useSalesDashboard'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
-  loading, today, week, month,
-  topProducts, byCashier, lowStockCount, recentSales,
+  loading, filterOutletId, outletOptions, today, week, month,
+  topProducts, byCashier, lowStockCount, recentSales, load,
 } = useSalesDashboard()
 </script>
 
 <template>
   <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
     <div class="w-100" style="max-width: 1400px; margin: 0 auto">
+
+      <div class="d-flex justify-end mb-2">
+        <v-select
+          v-model="filterOutletId"
+          :items="outletOptions"
+          item-title="title"
+          item-value="value"
+          label="Branch"
+          variant="outlined"
+          density="compact"
+          hide-details
+          style="min-width: 200px"
+          @update:model-value="load"
+        />
+      </div>
 
       <!-- Metric cards -->
       <v-row dense class="mb-1">
@@ -99,6 +114,7 @@ const {
               <thead>
                 <tr>
                   <th class="text-left">Sale #</th>
+                  <th class="text-left">Branch</th>
                   <th class="text-left">Date</th>
                   <th class="text-left">Customer</th>
                   <th class="text-right">Total</th>
@@ -108,8 +124,9 @@ const {
               <tbody>
                 <tr v-for="s in recentSales" :key="s.id">
                   <td>{{ s.sale_no }}</td>
+                  <td>{{ s.outlet?.name ?? '—' }}</td>
                   <td class="text-medium-emphasis">{{ formatDatePR_ISO(s.created_at) }}</td>
-                  <td>{{ s.customer_name || '—' }}</td>
+                  <td>{{ s.customer?.name || '—' }}</td>
                   <td class="text-right">{{ formatCurrency(s.total_amount ?? 0) }}</td>
                   <td class="text-center">
                     <v-chip :color="s.status === 'voided' ? 'error' : 'success'" size="x-small" variant="tonal">
@@ -118,7 +135,7 @@ const {
                   </td>
                 </tr>
                 <tr v-if="!recentSales.length">
-                  <td colspan="5" class="text-center text-medium-emphasis pa-4">No sales yet.</td>
+                  <td colspan="6" class="text-center text-medium-emphasis pa-4">No sales yet.</td>
                 </tr>
               </tbody>
             </v-table>

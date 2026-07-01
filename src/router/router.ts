@@ -22,6 +22,7 @@ import PosView from '@/pages/sales/PosView.vue'
 import RemittanceView from '@/pages/sales/RemittanceView.vue'
 import InventoryView from '@/pages/sales/InventoryView.vue'
 import SalesHistoryView from '@/pages/sales/SalesHistoryView.vue'
+import OutletsView from '@/pages/sales/OutletsView.vue'
 import InhouseOrdersView from '@/pages/inhouse/InhouseOrdersView.vue'
 import CustomersView from '@/pages/inhouse/CustomersView.vue'
 import EthicalOrdersView from '@/pages/ethical/EthicalOrdersView.vue'
@@ -35,6 +36,10 @@ import DiscrepanciesView from '@/pages/finance/DiscrepanciesView.vue'
 import AccountsReceivableView from '@/pages/finance/AccountsReceivableView.vue'
 import CashAccountsView from '@/pages/finance/CashAccountsView.vue'
 import ExpenseReportView from '@/pages/finance/ExpenseReportView.vue'
+import IncomeStatementView from '@/pages/finance/IncomeStatementView.vue'
+import BalanceSheetView from '@/pages/finance/BalanceSheetView.vue'
+import TrialBalanceView from '@/pages/finance/TrialBalanceView.vue'
+import GeneralJournalView from '@/pages/finance/GeneralJournalView.vue'
 import SuppliersView from '@/pages/suppliers/SuppliersView.vue'
 import LogsView from '@/pages/logs/LogsView.vue'
 import WarehouseProductsListView from '@/pages/warehouse/ProductsListView.vue'
@@ -143,6 +148,11 @@ const routes = setupLayouts([
     meta: { requiresAuth: true },
   },
   {
+    path: '/sales/outlets',
+    component: OutletsView,
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/inhouse/orders',
     component: InhouseOrdersView,
     meta: { requiresAuth: true },
@@ -205,6 +215,26 @@ const routes = setupLayouts([
   {
     path: '/finance/discrepancies',
     component: DiscrepanciesView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/finance/income-statement',
+    component: IncomeStatementView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/finance/balance-sheet',
+    component: BalanceSheetView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/finance/trial-balance',
+    component: TrialBalanceView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/finance/general-journal',
+    component: GeneralJournalView,
     meta: { requiresAuth: true },
   },
   {

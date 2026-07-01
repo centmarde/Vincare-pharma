@@ -8,6 +8,7 @@ import { useAuthUserStore } from '@/stores/authUser'
 import type { ProductType } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
 import type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult } from '@/utils/canvassTypes'
+import type { CollectionType } from '@/stores/ethicalData'
 
 const toast = useToast()
 
@@ -33,7 +34,6 @@ export type InhouseOrderType = {
   govt_po_no: string | null      // the government's PO number
   customer_id: number | null
   status: string | null
-  subtotal: number | null
   total_amount: number | null
   amount_paid: number | null
   paid_at: string | null
@@ -52,14 +52,15 @@ export type InhouseLineInput = {
   cost_price: number
 }
 
-export type NegotiationRound = { id: number; created_at: string; user_id: string | null; action: string | null; description: string | null }
+export type NegotiationRound = { id: number; created_at: string; created_by: string | null; action: string | null; description: string | null }
 
 export type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult }
 
 const SELECT_ORDER =
-  '*, transaction_items(id, product_id, qty, unit_price, line_total, cost_price, delivered_qty, product:product_id(*)), customer:customer_id(*)'
+  '*, transaction_items(id, product_id, qty, unit_price, line_total, cost_price, delivered_qty, product:product_id(*)), customer:customer_id(*), inhouse_details(*)'
 
 function mapRow(row: any): InhouseOrderType {
+  const details = row.inhouse_details ?? {}
   return {
     id:           row.id,
     created_at:   row.created_at,
@@ -67,10 +68,9 @@ function mapRow(row: any): InhouseOrderType {
     govt_po_no:   row.po_no,
     customer_id:  row.customer_id,
     status:       row.status,
-    subtotal:     row.subtotal,
     total_amount: row.total_amount,
-    amount_paid:  row.amount_paid,
-    paid_at:      row.paid_at,
+    amount_paid:  details.amount_paid ?? 0,
+    paid_at:      details.paid_at ?? null,
     created_by:   row.created_by,
     approved_by:  row.approved_by,
     approved_at:  row.approved_at,
@@ -100,17 +100,6 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
   const handleError = (err: unknown, msg: string) => { error.value = err instanceof Error ? err.message : msg }
   const clearError = () => { error.value = '' }
-
-  async function generateOrderNumber(): Promise<string> {
-    const year = new Date().getFullYear()
-    const prefix = `IH-${year}-`
-    const { data } = await supabase
-      .from('transactions').select('reference_no')
-      .ilike('reference_no', `${prefix}%`).order('reference_no', { ascending: false }).limit(1)
-    const latest = (data as { reference_no: string }[] | null)?.[0]?.reference_no
-    const last = latest ? parseInt(latest.split('-')[2], 10) : 0
-    return `${prefix}${String(last + 1).padStart(3, '0')}`
-  }
 
   const startRealtime = () => {
     if (realtimeChannel.value) return realtimeChannel.value
@@ -167,46 +156,28 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
     if (!payload.lines.length) { toast.warning('Add at least one line item.'); loading.value = false; return { success: false } }
 
-    const subtotal = payload.lines.reduce((s, l) => s + l.qty * l.unit_price, 0)
-    const orderNo = await generateOrderNumber()
-
-    const { data: header, error: headerError } = await supabase
-      .from('transactions').insert({
-        reference_no:     orderNo,
-        po_no:            payload.govtPoNo ?? null,
-        transaction_type: 'inhouse_order',
-        status:           'negotiating',
-        customer_id:      payload.customerId,
-        subtotal,
-        total_amount:     subtotal,
-        remarks:          payload.remarks ?? null,
-        created_by:       user.id,
-      }).select('id').single()
-
-    if (headerError || !header) {
-      handleError(headerError, 'Failed to create order.'); toast.error('Failed to create order.')
-      loading.value = false; return { success: false }
-    }
-
-    const { error: itemsError } = await supabase.from('transaction_items').insert(
-      payload.lines.map((l) => ({
-        transaction_id: header.id,
-        product_id:     l.product_id,
-        qty:            l.qty,
-        unit_price:     l.unit_price,
-        line_total:     l.qty * l.unit_price,
-        cost_price:     l.cost_price,
+    // Atomic: header + inhouse_details + items + reference_no all in one DB
+    // transaction (no orphan headers, no client-side number race).
+    const { data, error: rpcError } = await supabase.rpc('inhouse_create_order', {
+      p_customer_id: payload.customerId,
+      p_govt_po_no:  payload.govtPoNo ?? null,
+      p_remarks:     payload.remarks ?? null,
+      p_lines:       payload.lines.map((l) => ({
+        product_id: l.product_id, qty: l.qty, unit_price: l.unit_price, cost_price: l.cost_price,
       })),
-    )
-    if (itemsError) {
-      handleError(itemsError, 'Failed to save line items.'); toast.error('Failed to save line items.')
+      p_user:        user.id,
+    })
+
+    if (rpcError || !data) {
+      handleError(rpcError, 'Failed to create order.'); toast.error(rpcError?.message || 'Failed to create order.')
       loading.value = false; return { success: false }
     }
 
-    toast.success(`Order ${orderNo} raised.`)
+    const result = data as { order_id: number; order_no: string }
+    toast.success(`Order ${result.order_no} raised.`)
     await fetchOrders()
     loading.value = false
-    return { success: true, orderId: header.id, orderNo }
+    return { success: true, orderId: result.order_id, orderNo: result.order_no }
   }
 
   // Apply per-line price edits (optional) then log a negotiation round.
@@ -215,21 +186,25 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     total: number
     party: 'government' | 'company'
     note?: string
-    lineUpdates?: { item_id: number; unit_price: number; qty: number }[]
+    // product_id/cost_price are set when a counter-offer swaps a line's
+    // product (customer wants something else for ~the same spend).
+    lineUpdates?: { item_id: number; unit_price: number; qty: number; product_id?: number; cost_price?: number }[]
   }) => {
     loading.value = true
     clearError()
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
 
-    for (const u of payload.lineUpdates ?? []) {
-      await supabase.from('transaction_items')
-        .update({ unit_price: u.unit_price, line_total: u.unit_price * u.qty }).eq('id', u.item_id)
-    }
-
+    // Line edits (incl. product swaps) + the logged round happen inside the one
+    // RPC transaction — a failed offer never leaves the lines mutated.
     const { error: rpcError } = await supabase.rpc('inhouse_record_offer', {
       p_id: payload.orderId, p_total: payload.total, p_party: payload.party,
-      p_note: payload.note ?? null, p_user: user.id,
+      p_note: payload.note ?? null,
+      p_lines: (payload.lineUpdates ?? []).map((u) => ({
+        item_id: u.item_id, unit_price: u.unit_price, qty: u.qty,
+        product_id: u.product_id ?? null, cost_price: u.cost_price ?? null,
+      })),
+      p_user: user.id,
     })
     if (rpcError) {
       handleError(rpcError, 'Failed to record offer.'); toast.error(rpcError.message || 'Failed to record offer.')
@@ -283,21 +258,44 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     return { success: true }
   }
 
-  const markPaid = async (orderId: number, amount: number) => {
+  // Government POs are commonly paid in tranches, not lump-sum — each call
+  // records one payment against the balance (mirrors ethical_record_collection).
+  const recordPayment = async (payload: {
+    orderId: number
+    amount: number
+    method?: string
+    reference?: string
+    remarks?: string
+  }) => {
     loading.value = true
     clearError()
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
 
-    const { error: rpcError } = await supabase.rpc('inhouse_mark_paid', { p_id: orderId, p_amount: amount, p_user: user.id })
-    if (rpcError) {
-      handleError(rpcError, 'Failed to mark paid.'); toast.error(rpcError.message || 'Failed to mark paid.')
+    const { data: paymentId, error: rpcError } = await supabase.rpc('inhouse_record_payment', {
+      p_id:        payload.orderId,
+      p_amount:    payload.amount,
+      p_method:    payload.method ?? null,
+      p_reference: payload.reference ?? null,
+      p_remarks:   payload.remarks ?? null,
+      p_user:      user.id,
+    })
+    if (rpcError || !paymentId) {
+      handleError(rpcError, 'Failed to record payment.'); toast.error(rpcError?.message || 'Failed to record payment.')
       loading.value = false; return { success: false }
     }
     toast.success('Payment recorded.')
     await fetchOrders()
     loading.value = false
-    return { success: true }
+    return { success: true, paymentId }
+  }
+
+  const fetchPayments = async (orderId: number): Promise<CollectionType[]> => {
+    const { data, error: e } = await supabase
+      .from('collections').select('*')
+      .eq('transaction_id', orderId).order('created_at', { ascending: true })
+    if (e) { handleError(e, 'Failed to load payments'); return [] }
+    return (data || []) as CollectionType[]
   }
 
   // Commit a supplier canvass: create one PR per winning supplier (atomic RPC).
@@ -308,7 +306,8 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
     if (!selections.length) { toast.warning('Add at least one supplier selection.'); loading.value = false; return { success: false } }
 
-    const { data, error: rpcError } = await supabase.rpc('inhouse_canvass_to_prs', {
+    const { data, error: rpcError } = await supabase.rpc('canvass_to_prs', {
+      p_order_type: 'inhouse_order',
       p_order_id:   orderId,
       p_selections: selections,
       p_user:       user.id,
@@ -329,7 +328,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
   const fetchNegotiation = async (orderId: number): Promise<NegotiationRound[]> => {
     const { data, error: e } = await supabase
-      .from('logs').select('id, created_at, user_id, action, description')
+      .from('logs').select('id, created_at, created_by, action, description')
       .eq('transaction_id', orderId).eq('module', 'inhouse_negotiation')
       .order('created_at', { ascending: true })
     if (e) { handleError(e, 'Failed to load negotiation history'); return [] }
@@ -341,7 +340,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
   return {
     orders, loading, error,
     fetchOrders, fetchOrderById, createOrder, recordOffer, agreeOrder,
-    recheckStock, deliver, markPaid, canvassToPRs, fetchNegotiation, generateOrderNumber,
+    recheckStock, deliver, recordPayment, fetchPayments, canvassToPRs, fetchNegotiation,
     startRealtime, stopRealtime, clearError, resetStore,
   }
 })

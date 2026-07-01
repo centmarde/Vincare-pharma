@@ -6,6 +6,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import type { ProductType } from '@/stores/productsData'
+import type { OutletType } from '@/stores/outletsData'
 
 const toast = useToast()
 
@@ -25,7 +26,8 @@ export type StockTransferType = {
   id: number
   created_at: string
   transfer_no: string | null
-  outlet: string | null
+  outlet_id: number | null
+  outlet?: OutletType | null
   status: string | null
   remarks: string | null
   requested_by: string | null
@@ -43,19 +45,20 @@ export type StockTransferLineInput = {
 }
 
 type FetchTransfersOptions = {
-  outlet?: string
+  outletId?: number
   status?: string
   orderBy?: 'created_at' | 'status'
   ascending?: boolean
 }
 
-const SELECT_TRANSFER = '*, transaction_items(id, product_id, qty, received_qty, product:product_id(*))'
+const SELECT_TRANSFER = '*, transaction_items(id, product_id, qty, received_qty, product:product_id(*)), outlet:outlet_id(*)'
 
 function mapRowToTransfer(row: any): StockTransferType {
   return {
     id:           row.id,
     created_at:   row.created_at,
     transfer_no:  row.reference_no,
+    outlet_id:    row.outlet_id,
     outlet:       row.outlet,
     status:       row.status,
     remarks:      row.remarks,
@@ -96,20 +99,6 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
   }
   const clearError = () => { error.value = '' }
 
-  async function generateTransferNumber(): Promise<string> {
-    const year = new Date().getFullYear()
-    const prefix = `ST-${year}-`
-    const { data } = await supabase
-      .from('transactions')
-      .select('reference_no')
-      .ilike('reference_no', `${prefix}%`)
-      .order('reference_no', { ascending: false })
-      .limit(1)
-    const latest = (data as { reference_no: string }[] | null)?.[0]?.reference_no
-    const last = latest ? parseInt(latest.split('-')[2], 10) : 0
-    return `${prefix}${String(last + 1).padStart(3, '0')}`
-  }
-
   const startRealtime = () => {
     if (realtimeChannel.value) return realtimeChannel.value
     realtimeStatus.value = 'subscribing'
@@ -138,9 +127,9 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
     loading.value = true
     clearError()
     try {
-      const { outlet, status, orderBy = 'created_at', ascending = false } = options
+      const { outletId, status, orderBy = 'created_at', ascending = false } = options
       let q = supabase.from('transactions').select(SELECT_TRANSFER).eq('transaction_type', 'stock_transfer')
-      if (outlet) q = q.eq('outlet', outlet)
+      if (outletId) q = q.eq('outlet_id', outletId)
       if (status) q = q.eq('status', status)
       q = q.order(orderBy, { ascending })
 
@@ -157,7 +146,7 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
   }
 
   const createTransferRequest = async (
-    outlet: string,
+    outletId: number,
     items: StockTransferLineInput[],
     remarks?: string,
   ) => {
@@ -176,44 +165,24 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
       return { success: false }
     }
 
-    const transferNo = await generateTransferNumber()
+    // Atomic: header + items + reference_no in one DB transaction (no orphan
+    // headers, no client-side number race).
+    const { data, error: rpcError } = await supabase.rpc('stock_transfer_create', {
+      p_outlet_id: outletId,
+      p_lines:     items.map(item => ({ product_id: item.product_id, requested_qty: item.requested_qty })),
+      p_remarks:   remarks ?? null,
+      p_user:      user.id,
+    })
 
-    const { data: header, error: headerError } = await supabase
-      .from('transactions')
-      .insert({
-        reference_no:     transferNo,
-        transaction_type: 'stock_transfer',
-        status:           'pending_approval',
-        outlet,
-        remarks:          remarks ?? null,
-        created_by:       user.id,
-      })
-      .select('id')
-      .single()
-
-    if (headerError || !header) {
-      handleError(headerError, 'Failed to create stock transfer request.')
-      toast.error('Failed to create stock transfer request.')
+    if (rpcError || !data) {
+      handleError(rpcError, 'Failed to create stock transfer request.')
+      toast.error(rpcError?.message || 'Failed to create stock transfer request.')
       loading.value = false
       return { success: false }
     }
 
-    const { error: itemsError } = await supabase
-      .from('transaction_items')
-      .insert(items.map(item => ({
-        transaction_id: header.id,
-        product_id:     item.product_id,
-        qty:            item.requested_qty,
-      })))
-
-    if (itemsError) {
-      handleError(itemsError, 'Failed to save stock transfer items.')
-      toast.error('Failed to save stock transfer items.')
-      loading.value = false
-      return { success: false }
-    }
-
-    toast.success(`Stock transfer ${transferNo} requested successfully.`)
+    const result = data as { transfer_id: number; transfer_no: string }
+    toast.success(`Stock transfer ${result.transfer_no} requested successfully.`)
     await fetchTransfers()
     loading.value = false
     return { success: true }
@@ -301,7 +270,6 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
     approveTransfer,
     rejectTransfer,
     receiveTransfer,
-    generateTransferNumber,
     clearError,
     resetStore,
     startRealtime,

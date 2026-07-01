@@ -23,6 +23,10 @@ export function useEthicalCustomers() {
     { title: 'Type', key: 'agency_type' },
     { title: 'Contact', key: 'contact_person' },
     { title: 'Phone', key: 'contact_no' },
+    { title: 'TIN', key: 'tin_number' },
+    { title: 'VAT', key: 'is_vat_registered' },
+    { title: 'Structure', key: 'business_structure' },
+    { title: 'SEC/DTI #', key: 'reg_no' },
     { title: 'Agent', key: 'agent_name' },
     { title: 'Status', key: 'is_active' },
     { title: '', key: 'actions', sortable: false, align: 'end' as const },
@@ -33,6 +37,19 @@ export function useEthicalCustomers() {
     { title: 'LGU', value: 'lgu' },
     { title: 'Private', value: 'private' },
   ]
+
+  // Legal structure drives which registration number is required — the
+  // accountant's "avoid ghost transactions" control: every AR balance should
+  // tie to a verifiably real, registered entity.
+  const businessStructureOptions = [
+    { title: 'Corporation', value: 'corporation' },
+    { title: 'Partnership', value: 'partnership' },
+    { title: 'Sole Proprietorship', value: 'sole_proprietorship' },
+    { title: 'Other (govt. agency, cooperative, etc.)', value: 'other' },
+  ]
+
+  const structureLabel = (value: string | null): string =>
+    businessStructureOptions.find((s) => s.value === value)?.title ?? '—'
 
   const agentName = (agentId: number | null): string =>
     agents.value.find(a => a.id === agentId)?.name ?? '—'
@@ -92,6 +109,24 @@ export function useEthicalCustomers() {
     if (result) toast.success('Customer deleted.')
   }
 
+  function openCreateDialog() {
+    showCreateDialog.value = true
+  }
+
+  function cancelCreate() {
+    showCreateDialog.value = false
+  }
+
+  function openEdit(id: number) {
+    editingId.value = id
+    showEditDialog.value = true
+  }
+
+  function cancelEdit() {
+    showEditDialog.value = false
+    editingId.value = null
+  }
+
   return {
     customers: filteredCustomers,
     loading,
@@ -101,14 +136,16 @@ export function useEthicalCustomers() {
     editingCustomer,
     headers,
     agencyTypeOptions,
+    businessStructureOptions,
+    structureLabel,
     agentOptions,
     createCustomer,
     updateCustomer,
     deleteCustomer,
-    openEdit: (id: number) => {
-      editingId.value = id
-      showEditDialog.value = true
-    },
+    openCreateDialog,
+    cancelCreate,
+    openEdit,
+    cancelEdit,
     init,
   }
 }

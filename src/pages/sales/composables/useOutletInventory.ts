@@ -1,7 +1,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useOutletStockDataStore } from '@/stores/outletStockData'
-import { EXELMED_OUTLET } from '@/stores/salesData'
+import { useOutletsDataStore } from '@/stores/outletsData'
 import type { OutletStockType } from '@/stores/outletStockData'
 
 export type StockStatus = 'out' | 'low' | 'ok'
@@ -24,16 +24,22 @@ export function rowStatus(row: OutletStockType): StockStatus {
 
 export function useOutletInventory() {
   const outletStockStore = useOutletStockDataStore()
+  const outletsStore = useOutletsDataStore()
   const { outletStock, loading } = storeToRefs(outletStockStore)
+  const { outlets } = storeToRefs(outletsStore)
 
   const search = ref('')
   const filterStatus = ref<'all' | StockStatus>('all')
+  const selectedOutletId = ref<number | null>(null)
   const statusOptions = [
     { title: 'All', value: 'all' },
     { title: 'Out of stock', value: 'out' },
     { title: 'Low stock', value: 'low' },
     { title: 'OK', value: 'ok' },
   ]
+  const outletOptions = computed(() =>
+    outlets.value.filter(o => o.channel === 'pos').map(o => ({ title: o.name, value: o.id })),
+  )
 
   const rows = computed(() => outletStock.value)
 
@@ -58,14 +64,28 @@ export function useOutletInventory() {
   const lowCount = computed(() => rows.value.filter((r) => rowStatus(r) === 'low').length)
   const outCount = computed(() => rows.value.filter((r) => rowStatus(r) === 'out').length)
 
+  async function loadStock() {
+    if (!selectedOutletId.value) return
+    await outletStockStore.fetchOutletStock({ outletId: selectedOutletId.value })
+    outletStockStore.startRealtime(selectedOutletId.value)
+  }
+
+  async function setOutlet(outletId: number) {
+    selectedOutletId.value = outletId
+    await loadStock()
+  }
+
   async function init() {
-    await outletStockStore.fetchOutletStock({ outlet: EXELMED_OUTLET })
+    if (!outlets.value.length) await outletsStore.fetchOutlets()
+    if (!selectedOutletId.value) selectedOutletId.value = outletOptions.value[0]?.value ?? null
+    await loadStock()
   }
 
   onMounted(init)
 
   return {
     loading, search, filterStatus, statusOptions,
+    selectedOutletId, outletOptions, setOutlet,
     filteredRows,
     totalSkus, totalValue, lowCount, outCount,
     rowStatus, init,

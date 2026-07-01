@@ -8,6 +8,7 @@ import { useAuthUserStore } from '@/stores/authUser'
 import type { ProductType } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
 import type { AgentType } from '@/stores/agentsData'
+import type { OutletType } from '@/stores/outletsData'
 import type { Shortfall, CanvassSelection, CanvassPRResult } from '@/utils/canvassTypes'
 
 const toast = useToast()
@@ -44,7 +45,8 @@ export type EthicalOrderType = {
   id: number
   created_at: string
   order_no: string | null
-  outlet: string | null
+  outlet_id: number | null
+  outlet?: OutletType | null
   customer_id: number | null
   agent_id: number | null
   status: string | null
@@ -88,26 +90,30 @@ type CommissionSummaryRow = {
 }
 
 const SELECT_ORDER =
-  '*, transaction_items(id, product_id, qty, unit_price, line_total, delivered_qty, product:product_id(*)), customer:customer_id(*), agent:agent_id(*)'
+  '*, transaction_items(id, product_id, qty, unit_price, line_total, delivered_qty, product:product_id(*)), customer:customer_id(*), agent:agent_id(*), outlet:outlet_id(*), ethical_details(*)'
 
 function mapRow(row: any): EthicalOrderType {
+  const details = row.ethical_details ?? {}
+  const discountAmount = details.discount_amount ?? 0
+  const rebateAmount = details.rebate_amount ?? 0
   return {
     id:             row.id,
     created_at:     row.created_at,
     order_no:       row.reference_no,
+    outlet_id:      row.outlet_id,
     outlet:         row.outlet,
     customer_id:    row.customer_id,
     agent_id:       row.agent_id,
     status:         row.status,
-    fulfillment_status: row.fulfillment_status,
-    subtotal:       row.subtotal,
+    fulfillment_status: details.fulfillment_status ?? null,
+    subtotal:       (row.total_amount ?? 0) + discountAmount + rebateAmount,
     total_amount:   row.total_amount,
-    discount_amount: row.discount_amount,
-    rebate_amount:  row.rebate_amount,
-    terms_days:     row.terms_days,
-    due_date:       row.due_date,
-    amount_paid:    row.amount_paid ?? 0,
-    paid_at:        row.paid_at,
+    discount_amount: discountAmount,
+    rebate_amount:  rebateAmount,
+    terms_days:     details.terms_days ?? null,
+    due_date:       details.due_date ?? null,
+    amount_paid:    details.amount_paid ?? 0,
+    paid_at:        details.paid_at ?? null,
     created_by:     row.created_by,
     remarks:        row.remarks,
     customer:       row.customer,
@@ -138,12 +144,6 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
 
   const handleError = (err: unknown, msg: string) => { error.value = err instanceof Error ? err.message : msg }
   const clearError = () => { error.value = '' }
-
-  async function generateOrderNumber(): Promise<string> {
-    const { data } = await supabase
-      .rpc('generate_ethical_order_number')
-    return (data as string) ?? 'EO-error'
-  }
 
   const startRealtime = () => {
     if (realtimeChannel.value) return realtimeChannel.value
@@ -199,6 +199,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
   const createOrder = async (payload: {
     customerId: number
     agentId?: number | null
+    outletId: number
     discount?: number
     rebate?: number
     termsDays?: number
@@ -209,11 +210,13 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     clearError()
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
+    if (!payload.outletId) { toast.warning('Select a branch first.'); loading.value = false; return { success: false } }
     if (!payload.lines.length) { toast.warning('Add at least one line item.'); loading.value = false; return { success: false } }
 
     const { data: orderId, error: rpcError } = await supabase.rpc('ethical_create_order', {
       p_customer_id:  payload.customerId,
       p_agent_id:     payload.agentId ?? null,
+      p_outlet_id:    payload.outletId,
       p_lines:        payload.lines.map(l => ({ product_id: l.product_id, quantity: l.quantity, unit_price: l.unit_price })),
       p_discount:     payload.discount ?? 0,
       p_rebate:       payload.rebate ?? 0,
@@ -310,7 +313,8 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
     if (!selections.length) { toast.warning('Add at least one supplier selection.'); loading.value = false; return { success: false } }
 
-    const { data, error: rpcError } = await supabase.rpc('ethical_canvass_to_prs', {
+    const { data, error: rpcError } = await supabase.rpc('canvass_to_prs', {
+      p_order_type: 'ethical_order',
       p_order_id:   orderId,
       p_selections: selections,
       p_user:       user.id,
@@ -329,13 +333,11 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     return { success: true, prs }
   }
 
-  const fetchCollections = async (orderId: number): Promise<CollectionType[]> => {
+  const fetchCollections = async (orderId?: number): Promise<CollectionType[]> => {
     try {
-      const { data, error: e } = await supabase
-        .from('collections')
-        .select('*')
-        .eq('transaction_id', orderId)
-        .order('created_at', { ascending: true })
+      let q = supabase.from('collections').select('*').order('created_at', { ascending: true })
+      if (orderId !== undefined) q = q.eq('transaction_id', orderId)
+      const { data, error: e } = await q
       if (e) throw e
       collections.value = (data || []) as CollectionType[]
       return collections.value
@@ -424,6 +426,6 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     fetchOrders, fetchOrderById, createOrder, recordCollection, cancelOrder,
     recheckStock, canvassToPRs,
     fetchCollections, markCommissionPaid, fetchCommissionSummary,
-    generateOrderNumber, startRealtime, stopRealtime, clearError, resetStore,
+    startRealtime, stopRealtime, clearError, resetStore,
   }
 })

@@ -5,7 +5,7 @@ import VoidSaleDialog from '../dialogs/VoidSaleDialog.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
-  loading, search, filterStatus, dateFrom, dateTo, statusOptions,
+  loading, search, filterStatus, filterOutletId, outletOptions, dateFrom, dateTo, statusOptions,
   filteredSales, cashierName, canVoid,
   showReceipt, receipt, showVoid, voidReason, selectedSale,
   load, openReceipt, openVoid, confirmVoid,
@@ -19,6 +19,18 @@ const {
       <v-card-title class="d-flex justify-space-between align-center pa-5 flex-wrap" style="gap: 12px">
         <span class="text-h6 font-weight-bold">Sales History</span>
         <div class="d-flex align-center flex-wrap" style="gap: 12px">
+          <v-select
+            v-model="filterOutletId"
+            :items="outletOptions"
+            item-title="title"
+            item-value="value"
+            label="Branch"
+            variant="outlined"
+            density="compact"
+            hide-details
+            style="min-width: 170px"
+            @update:model-value="load"
+          />
           <v-text-field
             v-model="dateFrom"
             type="date"
@@ -73,12 +85,16 @@ const {
           <span class="font-weight-medium">{{ item.sale_no }}</span>
         </template>
 
+        <template #item.outlet="{ item }">
+          {{ item.outlet?.name ?? '—' }}
+        </template>
+
         <template #item.created_at="{ item }">
           <span class="text-body-2 text-medium-emphasis">{{ formatDatePR_ISO(item.created_at) }}</span>
         </template>
 
         <template #item.customer="{ item }">
-          {{ item.customer_name || '—' }}
+          {{ item.customer?.name || '—' }}
         </template>
 
         <template #item.cashier="{ item }">

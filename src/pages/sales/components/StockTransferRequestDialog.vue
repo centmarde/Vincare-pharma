@@ -12,7 +12,7 @@ const emit = defineEmits<{
 }>()
 
 const {
-  loading, outlet, remarks, items,
+  loading, outletId, remarks, items,
   outletOptions, productOptions,
   addItem, removeItem, handleSubmit, init,
 } = useStockTransferRequest(() => emit('created'))
@@ -37,11 +37,11 @@ onMounted(init)
       <v-card-text class="pa-5">
         <v-row dense>
           <v-col cols="12">
-            <label class="field-label">Outlet <span class="text-error">*</span></label>
+            <label class="field-label">Branch <span class="text-error">*</span></label>
             <v-select
-              v-model="outlet"
+              v-model="outletId"
               :items="outletOptions"
-              placeholder="Select destination outlet"
+              placeholder="Select destination branch"
               variant="outlined"
               density="compact"
               hide-details

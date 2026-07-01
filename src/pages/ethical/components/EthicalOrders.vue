@@ -4,8 +4,7 @@ import { useEthicalOrders } from '../composables/useEthicalOrders'
 import CreateOrderDialog from './dialogs/CreateOrderDialog.vue'
 import OrderDetailDialog from './dialogs/OrderDetailDialog.vue'
 
-const { orders, loading, searchText, statusFilter, statusOptions, statusMeta, isOverdue, init } = useEthicalOrders()
-const { headers } = useEthicalOrders()
+const { orders, loading, searchText, statusFilter, statusOptions, statusMeta, isOverdue, headers, init } = useEthicalOrders()
 
 const showCreateDialog = ref(false)
 const showDetailDialog = ref(false)
@@ -63,6 +62,14 @@ onMounted(() => {
           @click:row="handleRowClick"
           class="cursor-pointer"
         >
+          <template #item.customer.tin_number="{ item }">
+            <span class="text-body-2">{{ item.customer?.tin_number || '—' }}</span>
+          </template>
+          <template #item.customer.is_vat_registered="{ item }">
+            <v-chip size="small" :color="item.customer?.is_vat_registered ? 'primary' : 'grey'" variant="tonal">
+              {{ item.customer?.is_vat_registered ? 'VAT' : 'Non-VAT' }}
+            </v-chip>
+          </template>
           <template #item.status="{ item }">
             <v-chip :color="statusMeta(item.status).color" label size="small">
               {{ statusMeta(item.status).label }}

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { useStockTransferDetail } from '../composables/useStockTransferDetail'
 import type { StockTransferType } from '@/stores/stockTransfersData'
-import { outletName } from '@/stores/salesData'
 import { formatDatePR_ISO } from '@/utils/helpers'
 
 const props = withDefaults(defineProps<{
@@ -60,8 +59,8 @@ async function onMarkReceived() {
       <v-card-text class="pa-5">
         <v-row dense class="mb-2">
           <v-col cols="6">
-            <div class="text-caption text-medium-emphasis">Outlet</div>
-            <div class="text-body-2 font-weight-medium">{{ outletName(transfer.outlet) }}</div>
+            <div class="text-caption text-medium-emphasis">Branch</div>
+            <div class="text-body-2 font-weight-medium">{{ transfer.outlet?.name ?? '—' }}</div>
           </v-col>
           <v-col cols="6">
             <div class="text-caption text-medium-emphasis">Requested</div>

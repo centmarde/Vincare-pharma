@@ -5,6 +5,7 @@ import { useEthicalDataStore } from '@/stores/ethicalData'
 import { useCustomersDataStore } from '@/stores/customersData'
 import { useProductsDataStore } from '@/stores/productsData'
 import { useAgentsDataStore } from '@/stores/agentsData'
+import { useOutletsDataStore } from '@/stores/outletsData'
 
 const toast = useToast()
 
@@ -19,14 +20,17 @@ export function useCreateOrder(onCreated: () => void) {
   const customersStore = useCustomersDataStore()
   const productsStore = useProductsDataStore()
   const agentsStore = useAgentsDataStore()
+  const outletsStore = useOutletsDataStore()
 
   const { customers } = storeToRefs(customersStore)
   const { products } = storeToRefs(productsStore)
   const { agents } = storeToRefs(agentsStore)
+  const { outlets } = storeToRefs(outletsStore)
 
   const loading = ref(false)
   const customerId = ref<number | null>(null)
   const agentId = ref<number | null>(null)
+  const outletId = ref<number | null>(null)
   const discount = ref(0)
   const rebate = ref(0)
   const termsDays = ref(0)
@@ -40,6 +44,9 @@ export function useCreateOrder(onCreated: () => void) {
 
   const agentOptions = computed(() =>
     agents.value.map(a => ({ title: a.name, value: a.id })))
+
+  const outletOptions = computed(() =>
+    outlets.value.filter(o => o.channel === 'ethical' && o.is_active).map(o => ({ title: o.name, value: o.id })))
 
   const productOptions = computed(() =>
     products.value.map(p => ({
@@ -68,12 +75,14 @@ export function useCreateOrder(onCreated: () => void) {
 
   async function submit() {
     if (!customerId.value) { toast.warning('Select a customer.'); return }
+    if (!outletId.value) { toast.warning('Select a branch.'); return }
     if (!validLines.value.length) { toast.warning('Add at least one product with quantity.'); return }
 
     loading.value = true
     const result = await ethical.createOrder({
       customerId: customerId.value,
       agentId: agentId.value,
+      outletId: outletId.value,
       discount: discount.value || undefined,
       rebate: rebate.value || undefined,
       termsDays: termsDays.value || undefined,
@@ -91,6 +100,7 @@ export function useCreateOrder(onCreated: () => void) {
   function reset() {
     customerId.value = null
     agentId.value = null
+    outletId.value = null
     discount.value = 0
     rebate.value = 0
     termsDays.value = 0
@@ -103,12 +113,14 @@ export function useCreateOrder(onCreated: () => void) {
     await customersStore.fetchCustomers({ department: 'ethical', activeOnly: true })
     if (!agents.value.length) await agentsStore.fetchAgents({ activeOnly: true })
     if (!products.value.length) await productsStore.fetchProducts()
+    if (!outlets.value.length) await outletsStore.fetchOutlets()
+    if (!outletId.value) outletId.value = outletOptions.value[0]?.value ?? null
     if (!lines.value.length) addLine()
   }
 
   return {
-    loading, customerId, agentId, discount, rebate, termsDays, remarks, lines,
-    customerOptions, agentOptions, productOptions, subtotal, totalWithDiscount,
+    loading, customerId, agentId, outletId, discount, rebate, termsDays, remarks, lines,
+    customerOptions, agentOptions, outletOptions, productOptions, subtotal, totalWithDiscount,
     addLine, removeLine, onProductChange, onCustomerChange, submit, reset, init,
   }
 }

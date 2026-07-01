@@ -14,6 +14,8 @@ export function useEthicalOrders() {
   const headers = [
     { title: 'Order No', key: 'order_no', width: '120px' },
     { title: 'Customer', key: 'customer.name' },
+    { title: 'TIN', key: 'customer.tin_number' },
+    { title: 'VAT', key: 'customer.is_vat_registered', align: 'center' as const },
     { title: 'Agent', key: 'agent.name' },
     { title: 'Total', key: 'total_amount', align: 'end' as const },
     { title: 'Balance', key: 'balance', align: 'end' as const },

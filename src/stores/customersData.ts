@@ -7,6 +7,8 @@ import { useToast } from 'vue-toastification'
 
 const toast = useToast()
 
+export type BusinessStructure = 'corporation' | 'sole_proprietorship' | 'partnership' | 'other'
+
 export type CustomerType = {
   id: number
   created_at: string
@@ -19,6 +21,11 @@ export type CustomerType = {
   is_active: boolean | null
   department: string | null
   agent_id: number | null
+  is_vat_registered: boolean | null
+  tin_number: string | null
+  business_structure: BusinessStructure | null
+  sec_registration_no: string | null
+  dti_registration_no: string | null
 }
 
 export type CreateCustomerData = {
@@ -31,6 +38,11 @@ export type CreateCustomerData = {
   is_active?: boolean | null
   department?: string | null
   agent_id?: number | null
+  is_vat_registered?: boolean | null
+  tin_number?: string | null
+  business_structure?: BusinessStructure | null
+  sec_registration_no?: string | null
+  dti_registration_no?: string | null
 }
 
 export type UpdateCustomerData = CreateCustomerData

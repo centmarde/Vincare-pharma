@@ -1,8 +1,8 @@
 import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
-import { EXELMED_OUTLET } from '@/stores/salesData'
 import { useOutletStockDataStore } from '@/stores/outletStockData'
+import { useOutletsDataStore } from '@/stores/outletsData'
 
 const toast = useToast()
 
@@ -31,11 +31,21 @@ export type PosProduct = {
 
 export function usePos() {
   const outletStockStore = useOutletStockDataStore()
+  const outletsStore = useOutletsDataStore()
   const { outletStock, loading } = storeToRefs(outletStockStore)
+  const { outlets } = storeToRefs(outletsStore)
 
   // ─── State ────────────────────────────────────────────────────────
   const search = ref('')
   const cart = ref<CartLine[]>([])
+  const selectedOutletId = ref<number | null>(null)
+
+  // ─── Branch picker ────────────────────────────────────────────────
+  const posOutletOptions = computed(() =>
+    outlets.value
+      .filter(o => o.channel === 'pos' && o.is_active)
+      .map(o => ({ title: o.name, value: o.id })),
+  )
 
   // ─── Computed ─────────────────────────────────────────────────────
   // Sellable products = Exelmed outlet_stock rows with qty on hand.
@@ -68,14 +78,23 @@ export function usePos() {
   const isEmpty = computed(() => cart.value.length === 0)
 
   // ─── Cart actions ─────────────────────────────────────────────────
+  // Live on-hand for a product, from the realtime-backed `products` list —
+  // not the qty snapshotted into the cart line, which can go stale the
+  // moment another terminal sells from the same branch.
+  function liveAvailable(productId: number): number {
+    return products.value.find(p => p.product_id === productId)?.available ?? 0
+  }
+
   function addToCart(product: PosProduct) {
     const existing = cart.value.find(l => l.product_id === product.product_id)
+    const available = liveAvailable(product.product_id)
     if (existing) {
-      if (existing.quantity >= existing.available) {
-        toast.warning(`Only ${existing.available} of ${product.product_name} in stock.`)
+      if (existing.quantity >= available) {
+        toast.warning(`Only ${available} of ${product.product_name} in stock.`)
         return
       }
       existing.quantity += 1
+      existing.available = available
       return
     }
     cart.value.push({
@@ -87,15 +106,17 @@ export function usePos() {
       expiry_date:  product.expiry_date,
       unit_price:   product.unit_price,
       quantity:     1,
-      available:    product.available,
+      available,
     })
   }
 
   function setQty(index: number, qty: number) {
     const line = cart.value[index]
     if (!line) return
-    const clamped = Math.max(1, Math.min(qty, line.available))
-    if (qty > line.available) toast.warning(`Only ${line.available} of ${line.product_name} in stock.`)
+    const available = liveAvailable(line.product_id)
+    line.available = available
+    const clamped = Math.max(1, Math.min(qty, available))
+    if (qty > available) toast.warning(`Only ${available} of ${line.product_name} in stock.`)
     line.quantity = clamped
   }
 
@@ -108,19 +129,37 @@ export function usePos() {
   }
 
   // ─── Init ─────────────────────────────────────────────────────────
-  async function init() {
-    await outletStockStore.fetchOutletStock({ outlet: EXELMED_OUTLET })
+  async function refreshStock() {
+    if (!selectedOutletId.value) return
+    await outletStockStore.fetchOutletStock({ outletId: selectedOutletId.value })
+    // Live stock updates: with 2+ terminals on the same branch, a sale on
+    // one terminal must reflect here immediately — otherwise a cashier can
+    // add an item to cart that's already sold out and only find out from a
+    // raw RPC error at checkout instead of the UI greying it out up front.
+    outletStockStore.startRealtime(selectedOutletId.value)
   }
 
-  async function refreshStock() {
-    await outletStockStore.fetchOutletStock({ outlet: EXELMED_OUTLET })
+  async function setOutlet(outletId: number) {
+    if (selectedOutletId.value === outletId) return
+    selectedOutletId.value = outletId
+    clearCart()
+    await refreshStock()
+  }
+
+  async function init() {
+    if (!outlets.value.length) await outletsStore.fetchOutlets()
+    if (!selectedOutletId.value) {
+      selectedOutletId.value = posOutletOptions.value[0]?.value ?? null
+    }
+    await refreshStock()
   }
 
   return {
     search, cart, loading,
+    selectedOutletId, posOutletOptions,
     products, filteredProducts,
     subtotal, total, itemCount, isEmpty,
     addToCart, setQty, removeFromCart, clearCart,
-    init, refreshStock,
+    init, refreshStock, setOutlet,
   }
 }

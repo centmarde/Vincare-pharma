@@ -1,16 +1,25 @@
 import { ref, computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useSalesDataStore, EXELMED_OUTLET } from '@/stores/salesData'
+import { useSalesDataStore } from '@/stores/salesData'
 import { useOutletStockDataStore } from '@/stores/outletStockData'
+import { useOutletsDataStore } from '@/stores/outletsData'
 import { useAuthUserStore } from '@/stores/authUser'
 import type { SaleType } from '@/stores/salesData'
 
 export function useSalesDashboard() {
   const salesStore = useSalesDataStore()
   const outletStockStore = useOutletStockDataStore()
+  const outletsStore = useOutletsDataStore()
   const authStore = useAuthUserStore()
   const { sales, loading } = storeToRefs(salesStore)
   const { outletStock } = storeToRefs(outletStockStore)
+  const { outlets } = storeToRefs(outletsStore)
+
+  const filterOutletId = ref<number | null>(null)
+  const outletOptions = computed(() => [
+    { title: 'All Branches', value: null },
+    ...outlets.value.filter(o => o.channel === 'pos').map(o => ({ title: o.name, value: o.id })),
+  ])
 
   const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d }
   const startOfWeek  = () => { const d = startOfToday(); d.setDate(d.getDate() - 6); return d }
@@ -62,9 +71,13 @@ export function useSalesDashboard() {
 
   async function load() {
     if (!authStore.users.length) await authStore.getAllUsers()
+    if (!outlets.value.length) await outletsStore.fetchOutlets()
+    // Bound to month-start: the widest range the KPI cards/recent-sales list
+    // actually display. Without this the dashboard pulled every sale ever
+    // recorded on every visit, which only gets slower as history grows.
     await Promise.all([
-      salesStore.fetchSales({ outlet: EXELMED_OUTLET }),
-      outletStockStore.fetchOutletStock({ outlet: EXELMED_OUTLET }),
+      salesStore.fetchSales({ outletId: filterOutletId.value ?? undefined, dateFrom: startOfMonth().toISOString() }),
+      outletStockStore.fetchOutletStock({ outletId: filterOutletId.value ?? undefined }),
     ])
   }
 
@@ -72,6 +85,7 @@ export function useSalesDashboard() {
 
   return {
     loading,
+    filterOutletId, outletOptions,
     today, week, month,
     topProducts, byCashier, lowStockCount, recentSales,
     load,

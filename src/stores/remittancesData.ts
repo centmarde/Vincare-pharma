@@ -6,17 +6,21 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useSalesDataStore } from '@/stores/salesData'
+import type { OutletType } from '@/stores/outletsData'
 
 const toast = useToast()
 
 // Remittances live in `transactions` as transaction_type = 'remittance'
-// (no line items). total_amount = expected; actual_amount/discrepancy stored alongside.
+// (no line items). total_amount = expected; actual_amount lives in
+// remittance_details. discrepancy is derived (actual_amount - total_amount),
+// not a stored column.
 
 export type RemittanceType = {
   id: number
   created_at: string
   remittance_no: string | null
-  outlet: string | null
+  outlet_id: number | null
+  outlet?: OutletType | null
   remittance_date: string | null
   expected_amount: number | null
   actual_amount: number | null
@@ -31,21 +35,25 @@ export type ExpectedSummary = {
 }
 
 type FetchRemittancesOptions = {
-  outlet?: string
+  outletId?: number
   orderBy?: 'created_at'
   ascending?: boolean
 }
 
+const SELECT_REMITTANCE = '*, outlet:outlet_id(*), remittance_details(actual_amount)'
+
 function mapRowToRemittance(row: any): RemittanceType {
+  const actualAmount = row.remittance_details?.actual_amount ?? null
   return {
     id:              row.id,
     created_at:      row.created_at,
     remittance_no:   row.reference_no,
+    outlet_id:       row.outlet_id,
     outlet:          row.outlet,
     remittance_date: row.created_at,
     expected_amount: row.total_amount,
-    actual_amount:   row.actual_amount,
-    discrepancy:     row.discrepancy,
+    actual_amount:   actualAmount,
+    discrepancy:     actualAmount === null ? null : actualAmount - (row.total_amount ?? 0),
     status:          row.status,
     notes:           row.remarks,
   }
@@ -99,9 +107,9 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
     loading.value = true
     clearError()
     try {
-      const { outlet, orderBy = 'created_at', ascending = false } = options
-      let q = supabase.from('transactions').select('*').eq('transaction_type', 'remittance')
-      if (outlet) q = q.eq('outlet', outlet)
+      const { outletId, orderBy = 'created_at', ascending = false } = options
+      let q = supabase.from('transactions').select(SELECT_REMITTANCE).eq('transaction_type', 'remittance')
+      if (outletId) q = q.eq('outlet_id', outletId)
       q = q.order(orderBy, { ascending })
 
       const { data, error: fetchError } = await q
@@ -116,8 +124,8 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
     }
   }
 
-  // Expected = sum of completed cash sales for the outlet not yet remitted.
-  const computeExpected = async (outlet: string): Promise<ExpectedSummary> => {
+  // Expected = sum of completed cash sales for the branch not yet remitted.
+  const computeExpected = async (outletId: number): Promise<ExpectedSummary> => {
     clearError()
     const { data, error: fetchError } = await supabase
       .from('transactions')
@@ -125,7 +133,7 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
       .eq('transaction_type', 'sale')
       .eq('status', 'completed')
       .is('remittance_id', null)
-      .eq('outlet', outlet)
+      .eq('outlet_id', outletId)
 
     if (fetchError) {
       handleError(fetchError, 'Failed to compute expected amount')
@@ -138,7 +146,7 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
     }
   }
 
-  const submitRemittance = async (payload: { outlet: string; actualAmount: number; notes?: string }) => {
+  const submitRemittance = async (payload: { outletId: number; actualAmount: number; notes?: string }) => {
     loading.value = true
     clearError()
 
@@ -150,10 +158,10 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
     }
 
     const { error: rpcError } = await supabase.rpc('remittance_submit', {
-      p_outlet: payload.outlet,
-      p_actual: payload.actualAmount,
-      p_notes:  payload.notes ?? null,
-      p_user:   user.id,
+      p_outlet_id: payload.outletId,
+      p_actual:    payload.actualAmount,
+      p_notes:     payload.notes ?? null,
+      p_user:      user.id,
     })
 
     if (rpcError) {

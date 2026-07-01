@@ -1,11 +1,12 @@
 import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRemittancesDataStore } from '@/stores/remittancesData'
-import { EXELMED_OUTLET } from '@/stores/salesData'
+import { useOutletsDataStore } from '@/stores/outletsData'
 import type { ExpectedSummary } from '@/stores/remittancesData'
 
 export const headers = [
   { title: 'REMITTANCE #', key: 'remittance_no',   sortable: true,  align: 'center' as const },
+  { title: 'BRANCH',       key: 'outlet',           sortable: false, align: 'center' as const },
   { title: 'DATE',         key: 'remittance_date',  sortable: true,  align: 'center' as const },
   { title: 'EXPECTED',     key: 'expected_amount',  sortable: false, align: 'center' as const },
   { title: 'ACTUAL',       key: 'actual_amount',    sortable: false, align: 'center' as const },
@@ -14,34 +15,63 @@ export const headers = [
 
 export function useRemittance() {
   const remitStore = useRemittancesDataStore()
+  const outletsStore = useOutletsDataStore()
   const { remittances, loading } = storeToRefs(remitStore)
+  const { outlets } = storeToRefs(outletsStore)
 
   // ─── State ────────────────────────────────────────────────────────
+  const selectedOutletId = ref<number | null>(null)
   const showSubmitDialog = ref(false)
   const expected = ref<ExpectedSummary>({ expected: 0, saleCount: 0 })
   const actualAmount = ref<number | null>(null)
   const notes = ref('')
 
   // ─── Computed ─────────────────────────────────────────────────────
+  const outletOptions = computed(() =>
+    outlets.value.filter(o => o.channel === 'pos').map(o => ({ title: o.name, value: o.id })),
+  )
   const discrepancy = computed(() => (actualAmount.value ?? 0) - expected.value.expected)
-  const canSubmit = computed(() => expected.value.saleCount > 0 && actualAmount.value != null)
+  // A cash mismatch must carry a reason in the audit trail — only a balanced
+  // count (discrepancy === 0) can submit with notes left blank. Gated on
+  // actualAmount being entered so the "required" flag doesn't flash red
+  // before the cashier has typed anything (null defaults to 0 in the
+  // discrepancy calc, which would otherwise read as a mismatch on open).
+  const requiresNote = computed(() => actualAmount.value != null && discrepancy.value !== 0)
+  const canSubmit = computed(() =>
+    expected.value.saleCount > 0 &&
+    actualAmount.value != null &&
+    (!requiresNote.value || notes.value.trim().length > 0),
+  )
 
   // ─── Actions ──────────────────────────────────────────────────────
+  async function loadRemittances() {
+    if (!selectedOutletId.value) return
+    await remitStore.fetchRemittances({ outletId: selectedOutletId.value })
+  }
+
+  async function setOutlet(outletId: number) {
+    selectedOutletId.value = outletId
+    await loadRemittances()
+  }
+
   async function init() {
-    await remitStore.fetchRemittances({ outlet: EXELMED_OUTLET })
+    if (!outlets.value.length) await outletsStore.fetchOutlets()
+    if (!selectedOutletId.value) selectedOutletId.value = outletOptions.value[0]?.value ?? null
+    await loadRemittances()
   }
 
   async function openSubmitDialog() {
-    expected.value = await remitStore.computeExpected(EXELMED_OUTLET)
+    if (!selectedOutletId.value) return
+    expected.value = await remitStore.computeExpected(selectedOutletId.value)
     actualAmount.value = null
     notes.value = ''
     showSubmitDialog.value = true
   }
 
   async function handleSubmit() {
-    if (!canSubmit.value) return
+    if (!canSubmit.value || !selectedOutletId.value) return
     const result = await remitStore.submitRemittance({
-      outlet:       EXELMED_OUTLET,
+      outletId:     selectedOutletId.value,
       actualAmount: actualAmount.value ?? 0,
       notes:        notes.value || undefined,
     })
@@ -50,8 +80,9 @@ export function useRemittance() {
 
   return {
     remittances, loading,
+    selectedOutletId, outletOptions, setOutlet,
     showSubmitDialog, expected, actualAmount, notes,
-    discrepancy, canSubmit,
+    discrepancy, requiresNote, canSubmit,
     init, openSubmitDialog, handleSubmit,
   }
 }

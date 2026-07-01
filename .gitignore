@@ -26,3 +26,6 @@ pnpm-debug.log*
 # Local-only docs and manually-applied SQL (not part of repo workflow)
 CLAUDE.md
 supabase/
+
+FINANCE_GL_PLAN.md
+SALES_HUB_REDESIGN.md

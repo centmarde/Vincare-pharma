@@ -175,7 +175,11 @@ export function useCanvass(
     loading.value = true
     const result = await commitFn(o.id, selections)
     loading.value = false
-    if (result.success) onCreated()
+    if (result.success) {
+      onCreated()
+    } else {
+      toast.error('Failed to raise purchase requisitions. Please try again.')
+    }
   }
 
   async function init() {

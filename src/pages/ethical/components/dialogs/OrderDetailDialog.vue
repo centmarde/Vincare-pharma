@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useOrderDetail } from '../../composables/useOrderDetail'
 import { useEthicalDataStore } from '@/stores/ethicalData'
 import SupplierCanvass from '@/components/canvass/SupplierCanvass.vue'
+import EthicalInvoiceDialog from './EthicalInvoiceDialog.vue'
 
 const props = defineProps<{ modelValue: boolean; orderId: number | null }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
@@ -11,6 +12,8 @@ const internalValue = computed({
   get: () => props.modelValue,
   set: (v) => emit('update:modelValue', v),
 })
+
+const showInvoice = ref(false)
 
 const ethical = useEthicalDataStore()
 const order = computed(() => ethical.currentOrder)
@@ -56,10 +59,19 @@ watch(
       </v-card-title>
 
       <v-card-text>
-        <v-row class="mb-4">
+        <v-row class="mb-2">
           <v-col>Customer: <strong>{{ order.customer?.name }}</strong></v-col>
           <v-col>Agent: <strong>{{ order.agent?.name }}</strong></v-col>
           <v-col>Due Date: <strong :class="{ 'text-error': isOverdue }">{{ order.due_date ? new Date(order.due_date).toLocaleDateString() : '—' }}</strong></v-col>
+        </v-row>
+        <v-row class="mb-4">
+          <v-col>TIN: <strong>{{ order.customer?.tin_number || '—' }}</strong></v-col>
+          <v-col>
+            <v-chip size="small" :color="order.customer?.is_vat_registered ? 'primary' : 'grey'" variant="tonal">
+              {{ order.customer?.is_vat_registered ? 'VAT-Registered' : 'Non-VAT' }}
+            </v-chip>
+          </v-col>
+          <v-col />
         </v-row>
 
         <v-divider class="my-4" />
@@ -197,8 +209,11 @@ watch(
           Cancel Order
         </v-btn>
         <v-spacer />
+        <v-btn variant="text" prepend-icon="mdi-printer" @click="showInvoice = true">Print Invoice</v-btn>
         <v-btn @click="internalValue = false">Close</v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
+
+  <EthicalInvoiceDialog v-model="showInvoice" :order="order ?? null" />
 </template>

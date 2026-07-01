@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useUserPermissions } from '@/composables/useUserPermissions'
+import { isNavigationItem, flattenNavigationItems } from '@/utils/navigation'
+import type { NavigationChild } from '@/utils/navigation'
 
 const props = defineProps<{
   version?: string
@@ -25,21 +27,26 @@ const { getFilteredNavigationGroups, userRoleId, isLoading } = useUserPermission
 // Reactive state for sidebar
 const isExpanded = ref(true)
 
-// Track collapse/expand state per group title (works for any group from navigation.ts)
+// Manual open/close overrides, per group/sub-group title. This component
+// remounts on every navigation (it lives inside the per-page
+// InnerLayoutWrapper, see CLAUDE.md), so this ref starts empty on every page
+// load — it only captures a toggle the user makes during the current page's
+// lifetime. The actual "is this expanded" default below is computed from the
+// active route, not from this ref, which is what keeps a section open across
+// navigation instead of forcing the user to re-expand it after every click.
 const groupExpanded = ref<Record<string, boolean>>({})
 
-// Watch for route changes and keep admin group expanded if we're on an admin route
-watch(
-  () => route.path,
-  (newPath) => {
-    // Keep the current group's section expanded based on route prefix
-    if (newPath.startsWith('/admin')) groupExpanded.value['Admin Controls'] = true
-    if (newPath.startsWith('/executive')) groupExpanded.value['Executive Controls'] = true
-    if (newPath.startsWith('/purchasing')) groupExpanded.value['Purchasing Controls'] = true
-    if (newPath.startsWith('/account')) groupExpanded.value['My Account'] = true
-  },
-  { immediate: true },
-)
+// A group (or sub-group) is open-by-default whenever the active route is one
+// of its (possibly nested) leaf routes — recomputed fresh on every mount via
+// flattenNavigationItems, so newly added modules need no hardcoded prefix
+// here. A manual toggle this page-load overrides that default either way.
+const isGroupExpanded = (groupTitle: string, children: NavigationChild[]) => {
+  if (groupTitle in groupExpanded.value) return groupExpanded.value[groupTitle]
+  return flattenNavigationItems(children).some((item) => route.path === item.route)
+}
+const toggleGroupExpanded = (groupTitle: string, children: NavigationChild[]) => {
+  groupExpanded.value[groupTitle] = !isGroupExpanded(groupTitle, children)
+}
 
 // Hide sidebar on small screens or if user has no role
 const showSidebar = computed(
@@ -53,12 +60,6 @@ const footerVersionText = computed(() => {
 
 // Get filtered navigation groups based on user permissions
 const navigationGroups = computed(() => getFilteredNavigationGroups())
-
-// Helper functions to get/toggle group expansion state
-const isGroupExpanded = (groupTitle: string) => groupExpanded.value[groupTitle] ?? false
-const toggleGroupExpanded = (groupTitle: string) => {
-  groupExpanded.value[groupTitle] = !isGroupExpanded(groupTitle)
-}
 
 // Methods
 const navigateTo = (route: string) => {
@@ -124,10 +125,10 @@ const handleLogout = async () => {
       >
         <!-- Group Header -->
         <v-list-item
-          @click="toggleGroupExpanded(group.title)"
+          @click="toggleGroupExpanded(group.title, group.children)"
           class="mb-1 rounded-lg group-header"
           :prepend-icon="group.icon"
-          :append-icon="isGroupExpanded(group.title) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+          :append-icon="isGroupExpanded(group.title, group.children) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
         >
           <v-list-item-title class="font-weight-medium">
             {{ group.title }}
@@ -136,19 +137,51 @@ const handleLogout = async () => {
 
         <!-- Collapsible Children -->
         <v-expand-transition>
-          <div v-show="isGroupExpanded(group.title)" class="group-children">
-            <v-list-item
-              v-for="child in group.children"
-              :key="child.title"
-              @click="navigateTo(child.route)"
-              class="mb-1 rounded-lg ml-4"
-              :class="{ 'v-list-item--active': isRouteActive(child.route) }"
-              :prepend-icon="child.icon"
-            >
-              <v-list-item-title class="font-weight-medium">
-                {{ child.title }}
-              </v-list-item-title>
-            </v-list-item>
+          <div v-show="isGroupExpanded(group.title, group.children)" class="group-children">
+            <template v-for="child in group.children" :key="child.title">
+              <!-- Leaf item: a route to navigate to -->
+              <v-list-item
+                v-if="isNavigationItem(child)"
+                @click="navigateTo(child.route)"
+                class="mb-1 rounded-lg ml-4"
+                :class="{ 'v-list-item--active': isRouteActive(child.route) }"
+                :prepend-icon="child.icon"
+              >
+                <v-list-item-title class="font-weight-medium">
+                  {{ child.title }}
+                </v-list-item-title>
+              </v-list-item>
+
+              <!-- Sub-group: a labeled section with its own collapsible items -->
+              <div v-else class="subgroup-section ml-4">
+                <v-list-item
+                  @click="toggleGroupExpanded(child.title, child.children)"
+                  class="mb-1 rounded-lg subgroup-header"
+                  :prepend-icon="child.icon"
+                  :append-icon="isGroupExpanded(child.title, child.children) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                >
+                  <v-list-item-title class="font-weight-medium text-body-2">
+                    {{ child.title }}
+                  </v-list-item-title>
+                </v-list-item>
+                <v-expand-transition>
+                  <div v-show="isGroupExpanded(child.title, child.children)" class="group-children">
+                    <v-list-item
+                      v-for="item in child.children"
+                      :key="item.title"
+                      @click="navigateTo(item.route)"
+                      class="mb-1 rounded-lg ml-4"
+                      :class="{ 'v-list-item--active': isRouteActive(item.route) }"
+                      :prepend-icon="item.icon"
+                    >
+                      <v-list-item-title class="font-weight-medium">
+                        {{ item.title }}
+                      </v-list-item-title>
+                    </v-list-item>
+                  </div>
+                </v-expand-transition>
+              </div>
+            </template>
           </div>
         </v-expand-transition>
       </div>
@@ -237,6 +270,20 @@ const handleLogout = async () => {
 
 .group-header:hover {
   background-color: rgba(var(--v-theme-primary), 0.08) !important;
+}
+
+.subgroup-header {
+  background-color: transparent !important;
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+.subgroup-header:hover {
+  background-color: rgba(var(--v-theme-primary), 0.06) !important;
+}
+
+.subgroup-section {
+  margin-bottom: 4px;
 }
 
 .admin-children,

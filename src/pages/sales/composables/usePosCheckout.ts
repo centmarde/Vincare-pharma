@@ -1,8 +1,11 @@
 import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useToast } from 'vue-toastification'
 import { useSalesDataStore } from '@/stores/salesData'
 import type { SaleType } from '@/stores/salesData'
 import type { usePos } from './usePos'
+
+const toast = useToast()
 
 export type ReceiptLine = {
   product_name: string
@@ -43,9 +46,9 @@ export function buildReceiptFromSale(sale: SaleType, cashierName: string): Recei
     date:     sale.created_at,
     cashier:  cashierName,
     customer: {
-      name:    sale.customer_name ?? '',
-      address: sale.customer_address ?? '',
-      mobile:  sale.customer_mobile ?? '',
+      name:    sale.customer?.name ?? '',
+      address: sale.customer?.address ?? '',
+      mobile:  sale.customer?.contact_no ?? '',
     },
     lines,
     subtotal: sale.subtotal ?? 0,
@@ -87,6 +90,10 @@ export function usePosCheckout(pos: ReturnType<typeof usePos>) {
 
   async function confirmPayment() {
     if (!canComplete.value) return
+    if (!pos.selectedOutletId.value) {
+      toast.warning('Select a branch first.')
+      return
+    }
 
     // Snapshot cart for the receipt before the sale clears it.
     const snapshot: ReceiptLine[] = pos.cart.value.map(l => ({
@@ -100,6 +107,7 @@ export function usePosCheckout(pos: ReturnType<typeof usePos>) {
     }))
 
     const result = await salesStore.createSale({
+      outletId: pos.selectedOutletId.value,
       lines: pos.cart.value.map(l => ({
         product_id: l.product_id,
         quantity:   l.quantity,

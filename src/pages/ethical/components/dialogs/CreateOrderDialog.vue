@@ -11,8 +11,8 @@ const internalValue = computed({
 })
 
 const {
-  loading, customerId, agentId, discount, rebate, termsDays, remarks, lines,
-  customerOptions, agentOptions, productOptions, subtotal, totalWithDiscount,
+  loading, customerId, agentId, outletId, discount, rebate, termsDays, remarks, lines,
+  customerOptions, agentOptions, outletOptions, productOptions, subtotal, totalWithDiscount,
   addLine, removeLine, onProductChange, onCustomerChange, submit, reset, init,
 } = useCreateOrder(() => {
   emit('created')
@@ -29,14 +29,23 @@ watch(() => internalValue.value, (v) => {
     <v-card>
       <v-card-title>Create Ethical Order</v-card-title>
       <v-card-text>
-        <div class="mb-4">
+        <div class="mb-4 d-flex gap-2">
           <v-select
             v-model="customerId"
             :items="customerOptions"
             label="Customer"
             item-title="title"
             item-value="value"
+            class="flex-grow-1"
             @update:model-value="onCustomerChange"
+          />
+          <v-select
+            v-model="outletId"
+            :items="outletOptions"
+            label="Branch"
+            item-title="title"
+            item-value="value"
+            class="flex-grow-1"
           />
         </div>
 

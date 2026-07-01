@@ -6,8 +6,9 @@ import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
   remittances, loading,
+  selectedOutletId, outletOptions, setOutlet,
   showSubmitDialog, expected, actualAmount, notes,
-  discrepancy, canSubmit,
+  discrepancy, requiresNote, canSubmit,
   init, openSubmitDialog, handleSubmit,
 } = useRemittance()
 
@@ -18,17 +19,31 @@ onMounted(init)
   <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
     <v-card class="mx-auto w-100" max-width="1400" rounded="lg" elevation="1">
 
-      <v-card-title class="d-flex justify-space-between align-center pa-5">
+      <v-card-title class="d-flex justify-space-between align-center pa-5 flex-wrap" style="gap: 12px">
         <span class="text-h6 font-weight-bold">Cash Remittances</span>
-        <v-btn
-          color="primary"
-          class="text-none font-weight-bold"
-          elevation="0"
-          prepend-icon="mdi-cash-multiple"
-          @click="openSubmitDialog"
-        >
-          Close Day / Remit
-        </v-btn>
+        <div class="d-flex align-center" style="gap: 12px">
+          <v-select
+            :model-value="selectedOutletId"
+            :items="outletOptions"
+            item-title="title"
+            item-value="value"
+            label="Branch"
+            variant="outlined"
+            density="compact"
+            hide-details
+            style="min-width: 200px"
+            @update:model-value="setOutlet"
+          />
+          <v-btn
+            color="primary"
+            class="text-none font-weight-bold"
+            elevation="0"
+            prepend-icon="mdi-cash-multiple"
+            @click="openSubmitDialog"
+          >
+            Close Day / Remit
+          </v-btn>
+        </div>
       </v-card-title>
 
       <v-divider />
@@ -43,6 +58,10 @@ onMounted(init)
       >
         <template #item.remittance_no="{ item }">
           <span class="font-weight-medium">{{ item.remittance_no }}</span>
+        </template>
+
+        <template #item.outlet="{ item }">
+          {{ item.outlet?.name ?? '—' }}
         </template>
 
         <template #item.remittance_date="{ item }">
@@ -77,7 +96,9 @@ onMounted(init)
       v-model="showSubmitDialog"
       :expected="expected"
       :actual-amount="actualAmount"
+      :notes="notes"
       :discrepancy="discrepancy"
+      :requires-note="requiresNote"
       :can-submit="canSubmit"
       :loading="loading"
       @update:actual-amount="actualAmount = $event"

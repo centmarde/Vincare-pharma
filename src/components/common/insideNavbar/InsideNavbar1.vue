@@ -7,6 +7,7 @@ import { useDisplay } from 'vuetify'
 
 import SlugName from './SlugName.vue'
 import { useUserPermissions } from '@/composables/useUserPermissions'
+import { flattenNavigationItems } from '@/utils/navigation'
 
 interface Props {
   config?: UIConfig | null
@@ -141,7 +142,7 @@ function toggleTheme() {
             </template>
 
             <v-list-item
-              v-for="item in group.children"
+              v-for="item in flattenNavigationItems(group.children)"
               :key="item.route"
               :prepend-icon="item.icon"
               :title="item.title"

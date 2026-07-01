@@ -5,7 +5,10 @@ import { supabase } from '@/lib/supabase'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import type { ProductType } from '@/stores/productsData'
 
-// Per-outlet on-hand ledger, keyed by outlet CODE ('EXELMED' / 'ETHICAL').
+// Per-outlet on-hand ledger, keyed by the stable outlet_id (branches are
+// editable data — see outletsData.ts — so identity must never be the
+// renameable `outlet` text code). That text column is kept only as a
+// denormalised mirror for Finance's existing reads.
 // Reads only — all mutations happen atomically inside the DB functions
 // (pos_create_sale, pos_void_sale, transfer_receive).
 export type OutletStockType = {
@@ -13,13 +16,14 @@ export type OutletStockType = {
   created_at: string
   updated_at: string | null
   outlet: string
+  outlet_id: number
   product_id: number
   quantity: number
   product?: ProductType | null
 }
 
 type FetchOutletStockOptions = {
-  outlet: string
+  outletId?: number
   search?: string
 }
 
@@ -29,6 +33,7 @@ export const useOutletStockDataStore = defineStore('outletStockData', () => {
   const error: Ref<string> = ref('')
 
   const realtimeChannel: Ref<RealtimeChannel | null> = ref(null)
+  const realtimeOutletId: Ref<number | null> = ref(null)
   const realtimeStatus: Ref<'idle' | 'subscribing' | 'subscribed' | 'error'> = ref('idle')
 
   const isLoading = computed(() => loading.value)
@@ -40,14 +45,24 @@ export const useOutletStockDataStore = defineStore('outletStockData', () => {
   }
   const clearError = () => { error.value = '' }
 
-  const startRealtime = (outlet: string) => {
-    if (realtimeChannel.value) return realtimeChannel.value
+  // Branch picker callers re-call this on every outlet switch — without
+  // tracking which outlet the live channel is filtered to, a switch away
+  // from the first-subscribed branch would silently keep listening to the
+  // old one (or just no-op) instead of resubscribing to the new filter.
+  const startRealtime = (outletId: number) => {
+    if (realtimeChannel.value && realtimeOutletId.value === outletId) return realtimeChannel.value
+    if (realtimeChannel.value) {
+      const old = realtimeChannel.value
+      realtimeChannel.value = null
+      void supabase.removeChannel(old)
+    }
     realtimeStatus.value = 'subscribing'
+    realtimeOutletId.value = outletId
     const channel = supabase
-      .channel(`outlet-stock-channel-${outlet}`)
+      .channel(`outlet-stock-channel-${outletId}`)
       .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'outlet_stock', filter: `outlet=eq.${outlet}`,
-      }, async () => { await fetchOutletStock({ outlet }) })
+        event: '*', schema: 'public', table: 'outlet_stock', filter: `outlet_id=eq.${outletId}`,
+      }, async () => { await fetchOutletStock({ outletId }) })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') realtimeStatus.value = 'subscribed'
         else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') realtimeStatus.value = 'error'
@@ -60,6 +75,7 @@ export const useOutletStockDataStore = defineStore('outletStockData', () => {
     const channel = realtimeChannel.value
     if (!channel) return
     realtimeChannel.value = null
+    realtimeOutletId.value = null
     realtimeStatus.value = 'idle'
     await supabase.removeChannel(channel)
   }
@@ -68,8 +84,9 @@ export const useOutletStockDataStore = defineStore('outletStockData', () => {
     loading.value = true
     clearError()
     try {
-      const { outlet, search } = options
-      let q = supabase.from('outlet_stock').select('*, product:product_id(*)').eq('outlet', outlet)
+      const { outletId, search } = options
+      let q = supabase.from('outlet_stock').select('*, product:product_id(*)')
+      if (outletId) q = q.eq('outlet_id', outletId)
 
       if (search && search.trim()) {
         const s = search.trim().replace(/,/g, '')

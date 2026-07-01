@@ -3,7 +3,7 @@ import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useStockTransfersDataStore } from '@/stores/stockTransfersData'
 import { useProductsDataStore } from '@/stores/productsData'
-import { OUTLETS } from '@/stores/salesData'
+import { useOutletsDataStore } from '@/stores/outletsData'
 
 const toast = useToast()
 
@@ -15,17 +15,22 @@ type RequestLineItem = {
 export function useStockTransferRequest(onCreated: () => void) {
   const transfersStore = useStockTransfersDataStore()
   const productsStore  = useProductsDataStore()
+  const outletsStore   = useOutletsDataStore()
 
   const { products } = storeToRefs(productsStore)
+  const { outlets } = storeToRefs(outletsStore)
 
   // ─── State ────────────────────────────────────────────────────────
   const loading = ref(false)
-  const outlet  = ref<string | null>(null)
+  const outletId = ref<number | null>(null)
   const remarks = ref('')
   const items   = ref<RequestLineItem[]>([])
 
   // ─── Computed ─────────────────────────────────────────────────────
-  const outletOptions = OUTLETS.map(o => ({ title: o.name, value: o.code as string }))
+  // Destination can be any active branch — POS or Ethical.
+  const outletOptions = computed(() =>
+    outlets.value.filter(o => o.is_active).map(o => ({ title: o.name, value: o.id })),
+  )
 
   const productOptions = computed(() =>
     products.value.map(p => ({
@@ -50,8 +55,8 @@ export function useStockTransferRequest(onCreated: () => void) {
 
   // ─── Submit ───────────────────────────────────────────────────────
   async function handleSubmit() {
-    if (!outlet.value) {
-      toast.warning('Please select an outlet.')
+    if (!outletId.value) {
+      toast.warning('Please select a branch.')
       return
     }
     if (!validItems.value.length) {
@@ -61,7 +66,7 @@ export function useStockTransferRequest(onCreated: () => void) {
 
     loading.value = true
     const result = await transfersStore.createTransferRequest(
-      outlet.value,
+      outletId.value,
       validItems.value.map(i => ({ product_id: i.product_id!, requested_qty: i.requested_qty })),
       remarks.value || undefined,
     )
@@ -75,7 +80,7 @@ export function useStockTransferRequest(onCreated: () => void) {
 
   // ─── Reset ────────────────────────────────────────────────────────
   function reset() {
-    outlet.value = null
+    outletId.value = null
     remarks.value = ''
     items.value = []
     addItem()
@@ -84,11 +89,12 @@ export function useStockTransferRequest(onCreated: () => void) {
   // ─── Init ─────────────────────────────────────────────────────────
   async function init() {
     if (!products.value.length) await productsStore.fetchProducts()
+    if (!outlets.value.length) await outletsStore.fetchOutlets()
     if (items.value.length === 0) addItem()
   }
 
   return {
-    loading, outlet, remarks, items,
+    loading, outletId, remarks, items,
     outletOptions, productOptions, validItems,
     addItem, removeItem, handleSubmit, reset, init,
   }

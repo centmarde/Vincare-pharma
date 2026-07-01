@@ -9,8 +9,9 @@ import { formatCurrency } from '@/utils/helpers'
 const pos = usePos()
 const {
   search, cart, loading,
+  selectedOutletId, posOutletOptions,
   filteredProducts, subtotal, total, itemCount, isEmpty,
-  addToCart, setQty, removeFromCart, clearCart, init,
+  addToCart, setQty, removeFromCart, clearCart, init, setOutlet,
 } = pos
 
 const checkout = usePosCheckout(pos)
@@ -31,23 +32,37 @@ onMounted(init)
       <v-col cols="12" md="7" class="pa-2">
         <v-card rounded="lg" elevation="1">
           <v-card-title class="d-flex justify-space-between align-center pa-4 flex-wrap" style="gap: 12px">
-            <span class="text-h6 font-weight-bold">Exelmed POS</span>
-            <v-text-field
-              v-model="search"
-              placeholder="Search product or SKU..."
-              prepend-inner-icon="mdi-magnify"
-              variant="outlined"
-              density="compact"
-              hide-details
-              style="min-width: 240px"
-            />
+            <span class="text-h6 font-weight-bold">POS</span>
+            <div class="d-flex align-center flex-wrap" style="gap: 12px">
+              <v-select
+                :model-value="selectedOutletId"
+                :items="posOutletOptions"
+                item-title="title"
+                item-value="value"
+                label="Branch"
+                variant="outlined"
+                density="compact"
+                hide-details
+                style="min-width: 200px"
+                @update:model-value="setOutlet"
+              />
+              <v-text-field
+                v-model="search"
+                placeholder="Search product or SKU..."
+                prepend-inner-icon="mdi-magnify"
+                variant="outlined"
+                density="compact"
+                hide-details
+                style="min-width: 240px"
+              />
+            </div>
           </v-card-title>
           <v-divider />
 
           <v-card-text class="pa-3" style="max-height: 70vh; overflow-y: auto">
             <div v-if="loading" class="text-center pa-6 text-medium-emphasis">Loading stock…</div>
             <div v-else-if="!filteredProducts.length" class="text-center pa-6 text-medium-emphasis">
-              No sellable stock. Transfer stock into Exelmed first.
+              No sellable stock. Transfer stock into this branch first.
             </div>
             <v-row v-else dense>
               <v-col v-for="p in filteredProducts" :key="p.product_id" cols="6" sm="4">

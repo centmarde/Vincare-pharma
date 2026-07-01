@@ -29,13 +29,7 @@ export function useCommissions() {
   })
 
   async function init() {
-    await ethical.fetchCommissionSummary()
-    // Fetch all collections for detail view
-    const orders = await ethical.fetchOrders()
-    if (orders.length > 0) {
-      const firstOrder = orders[0]
-      if (firstOrder.id) await ethical.fetchCollections(firstOrder.id)
-    }
+    await Promise.all([ethical.fetchCommissionSummary(), ethical.fetchCollections()])
   }
 
   return {

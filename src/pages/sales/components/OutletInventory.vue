@@ -6,6 +6,7 @@ import { formatCurrency } from '@/utils/helpers'
 const router = useRouter()
 const {
   loading, search, filterStatus, statusOptions,
+  selectedOutletId, outletOptions, setOutlet,
   filteredRows, totalSkus, totalValue, lowCount, outCount,
 } = useOutletInventory()
 
@@ -50,8 +51,20 @@ const statusMeta = {
 
       <v-card rounded="lg" elevation="1">
         <v-card-title class="d-flex justify-space-between align-center pa-5 flex-wrap" style="gap: 12px">
-          <span class="text-h6 font-weight-bold">Exelmed Inventory</span>
+          <span class="text-h6 font-weight-bold">Branch Inventory</span>
           <div class="d-flex align-center flex-wrap" style="gap: 12px">
+            <v-select
+              :model-value="selectedOutletId"
+              :items="outletOptions"
+              item-title="title"
+              item-value="value"
+              label="Branch"
+              variant="outlined"
+              density="compact"
+              hide-details
+              style="min-width: 200px"
+              @update:model-value="setOutlet"
+            />
             <v-text-field
               v-model="search"
               placeholder="Search product or SKU..."
@@ -88,7 +101,7 @@ const statusMeta = {
           :items="filteredRows"
           :loading="loading"
           loading-text="Loading inventory..."
-          no-data-text="No inventory yet. Transfer stock into Exelmed first."
+          no-data-text="No inventory yet. Transfer stock into this branch first."
           hover
         >
           <template #item.product_name="{ item }">

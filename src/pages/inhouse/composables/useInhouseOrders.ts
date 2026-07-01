@@ -18,6 +18,7 @@ const statusMeta: Record<string, { label: string; color: string }> = {
   awaiting_stock: { label: 'Awaiting Stock', color: 'orange' },
   ready:          { label: 'Ready',          color: 'info' },
   delivered:      { label: 'Delivered',      color: 'teal' },
+  partial:        { label: 'Partially Paid', color: 'amber' },
   paid:           { label: 'Paid',           color: 'success' },
   cancelled:      { label: 'Cancelled',      color: 'error' },
 }
@@ -46,6 +47,7 @@ export function useInhouseOrders() {
     { title: 'Awaiting Stock', value: 'awaiting_stock' },
     { title: 'Ready', value: 'ready' },
     { title: 'Delivered', value: 'delivered' },
+    { title: 'Partially Paid', value: 'partial' },
     { title: 'Paid', value: 'paid' },
   ]
 

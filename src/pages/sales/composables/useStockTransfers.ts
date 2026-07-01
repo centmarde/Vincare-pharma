@@ -2,7 +2,7 @@ import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useStockTransfersDataStore } from '@/stores/stockTransfersData'
 import type { StockTransferType } from '@/stores/stockTransfersData'
-import { OUTLETS, outletName as resolveOutletName } from '@/stores/salesData'
+import { useOutletsDataStore } from '@/stores/outletsData'
 
 export const headers = [
   { title: 'TRANSFER #', key: 'transfer_no', sortable: true,  align: 'center' as const },
@@ -28,11 +28,13 @@ const statusColors: Record<string, string> = {
 
 export function useStockTransfers() {
   const transfersStore = useStockTransfersDataStore()
+  const outletsStore = useOutletsDataStore()
   const { transfers, loading } = storeToRefs(transfersStore)
+  const { outlets } = storeToRefs(outletsStore)
 
   const search       = ref('')
   const filterStatus = ref<string | null>(null)
-  const filterOutlet = ref<string | null>(null)
+  const filterOutletId = ref<number | null>(null)
 
   const showRequestDialog = ref(false)
   const showDetailDialog  = ref(false)
@@ -41,7 +43,7 @@ export function useStockTransfers() {
   const filteredTransfers = computed(() => {
     return transfers.value.filter(t => {
       if (filterStatus.value && t.status !== filterStatus.value) return false
-      if (filterOutlet.value && t.outlet !== filterOutlet.value) return false
+      if (filterOutletId.value && t.outlet_id !== filterOutletId.value) return false
       if (search.value.trim()) {
         const s = search.value.trim().toLowerCase()
         if (!t.transfer_no?.toLowerCase().includes(s)) return false
@@ -58,16 +60,16 @@ export function useStockTransfers() {
     { title: 'Rejected', value: 'rejected' },
   ]
 
-  const outletOptions = [
-    { title: 'All Outlets', value: null },
-    ...OUTLETS.map(o => ({ title: o.name, value: o.code as string })),
-  ]
+  const outletOptions = computed(() => [
+    { title: 'All Branches', value: null },
+    ...outlets.value.map(o => ({ title: o.name, value: o.id })),
+  ])
 
   const statusLabel = (status: string | null) => statusLabels[status ?? ''] ?? status ?? '—'
   const statusColor = (status: string | null) => statusColors[status ?? ''] ?? 'grey'
-  const outletName  = (code: string | null) => resolveOutletName(code)
 
   async function init() {
+    if (!outlets.value.length) await outletsStore.fetchOutlets()
     await transfersStore.fetchTransfers()
   }
 
@@ -94,11 +96,11 @@ export function useStockTransfers() {
   }
 
   return {
-    loading, search, filterStatus, filterOutlet,
+    loading, search, filterStatus, filterOutletId,
     statusOptions, outletOptions,
     showRequestDialog, showDetailDialog, selectedTransfer,
     filteredTransfers,
-    statusLabel, statusColor, outletName,
+    statusLabel, statusColor,
     init, openRequestDialog, openDetailDialog,
     handleRequestCreated, handleDialogChanged,
   }

@@ -10,11 +10,11 @@ import { formatDatePR_ISO } from '@/utils/helpers'
 withDefaults(defineProps<{ mode?: 'warehouse' | 'outlet' }>(), { mode: 'outlet' })
 
 const {
-  loading, search, filterStatus, filterOutlet,
+  loading, search, filterStatus, filterOutletId,
   statusOptions, outletOptions,
   showRequestDialog, showDetailDialog, selectedTransfer,
   filteredTransfers,
-  statusLabel, statusColor, outletName,
+  statusLabel, statusColor,
   init, openRequestDialog, openDetailDialog,
   handleRequestCreated, handleDialogChanged,
 } = useStockTransfers()
@@ -40,7 +40,7 @@ onMounted(init)
             style="min-width: 220px"
           />
           <v-select
-            v-model="filterOutlet"
+            v-model="filterOutletId"
             :items="outletOptions"
             variant="outlined"
             density="compact"
@@ -84,7 +84,7 @@ onMounted(init)
         </template>
 
         <template #item.outlet="{ item }">
-          {{ outletName(item.outlet) }}
+          {{ item.outlet?.name ?? '—' }}
         </template>
 
         <template #item.created_at="{ item }">
