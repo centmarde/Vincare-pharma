@@ -53,15 +53,15 @@ function nextPage() {
           <template #prepend>
             <v-chip
               :color="
-                (product.actual_count ?? 0) <= 0 ? 'error'
-                : product.reorder_level && (product.actual_count ?? 0) <= product.reorder_level ? 'primary'
+                (product.current_stock ?? 0) <= 0 ? 'error'
+                : product.reorder_level && (product.current_stock ?? 0) <= product.reorder_level ? 'primary'
                 : 'black'
               "
               size="small"
               variant="outlined"
               class="mr-2"
             >
-              {{ product.actual_count ?? 0 }}
+              {{ product.current_stock ?? 0 }}
             </v-chip>
           </template>
 

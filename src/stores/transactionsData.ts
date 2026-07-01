@@ -6,9 +6,6 @@ import type { Ref } from 'vue'
 import { useAuthUserStore } from './authUser'
 import { useToast } from 'vue-toastification'
 
-const toast = useToast()
-const authStore = useAuthUserStore()
-
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type TransactionType = {
@@ -88,6 +85,8 @@ export type PurchaseRequisitionType = {
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useTransactionsDataStore = defineStore('transactionsData', () => {
+  const toast = useToast()
+  const authStore = useAuthUserStore()
 
   // ─── State ──────────────────────────────────────────────────────
   const loading:            Ref<boolean>                                          = ref(false)
