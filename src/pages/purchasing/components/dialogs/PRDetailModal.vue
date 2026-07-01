@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import type { PR } from '@/stores/transactionsData'
-import { usePRDetailModal } from '../composables/usePRDetailModal'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import { usePRDetailModal } from '../../composables/usePRDetailModal'
+import type { PR } from '@/stores/purchaseRequisitionData'
 import { useDisplay } from 'vuetify'
 
 const { mobile } = useDisplay()
@@ -200,30 +200,21 @@ const {
   border-radius: 20px;
   white-space: nowrap;
 }
+
 .status-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
+  background: currentColor;
 }
 
-.status-chip--pending_approval {
-  color: #c2922e;
-  background: rgba(194, 146, 46, 0.12);
-}
-.status-chip--pending_approval .status-dot { background: #c2922e; }
-
-.status-chip--approved {
-  color: #2e7d32;
-  background: rgba(46, 125, 50, 0.12);
-}
-.status-chip--approved .status-dot { background: #4caf50; }
-
-.status-chip--rejected {
-  color: #c62828;
-  background: rgba(198, 40, 40, 0.12);
-}
-.status-chip--rejected .status-dot { background: #ef5350; }
+.status-chip--pending_approval { color: #c2922e; background: rgba(194, 146, 46, 0.12); }
+.status-chip--pending          { color: #c2922e; background: rgba(194, 146, 46, 0.12); }
+.status-chip--approved         { color: #2e7d32; background: rgba(46, 125, 50,  0.12); }
+.status-chip--complete         { color: #2e7d32; background: rgba(46, 125, 50,  0.12); }
+.status-chip--rejected         { color: #c62828; background: rgba(198, 40, 40,  0.12); }
+.status-chip--issued           { color: #1565c0; background: rgba(21, 101, 192, 0.12); }
 
 /* Table header — uses primary color with readable white text in both modes */
 :deep(.items-table thead tr th.table-header) {

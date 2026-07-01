@@ -1,13 +1,8 @@
 import type { RealtimeChannel } from '@supabase/supabase-js'
-import { useAuthUserStore } from './authUser'
-import { useToast } from 'vue-toastification'
 import { supabase } from '@/lib/supabase'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { Ref } from 'vue'
-
-
-const toast = useToast()
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,62 +27,11 @@ export type TransactionType = {
 export type CreateTransactionData = Partial<Omit<TransactionType, 'id' | 'created_at'>>
 export type UpdateTransactionData = Partial<CreateTransactionData>
 
-export type PRItem = {
-  id:               number
-  no:               number
-  unit:             string
-  item_description: string
-  qty:              number
-  offer_per_unit:   number
-  cost_per_unit:    number
-  product_id?:      number
-  sku?:             string | null
-  supplier_name?:   string | null
-  actual_count?:    number | null   // ← add this
-}
-
-export type RequisitionItemType = {
-  no:               number
-  unit:             string
-  item_description: string
-  qty:              number
-  offer_per_unit:   number
-  cost_per_unit:    number
-  supplier_id:      string | null
-  actual_count?:    number
-}
-
-export type PR = {
-  id:              number
-  requisition_no:  string
-  po_no:           string | null
-  status:          string
-  remarks:         string | null
-  total_amount:    number
-  supplier_id:     string | null
-  supplier_name?:  string | null
-  created_at:      string
-  created_by:      string
-  approved_by:     string | null
-  updated_at:      string | null
-  requester_name?: string
-  reviewer_name?:  string
-  actual_count?:   number | null
-  items:           PRItem[]
-}
-
-export type PurchaseRequisitionType = {
-  remarks:      string | null
-  status:       string
-  requested_by: string | null
-  supplier_id:  string | null
-}
-
-type FetchTransactionsOptions = {
-  po_no_not_null?:  boolean
+export type FetchTransactionsOptions = {
+  po_no_not_null?:   boolean
   search?:           string
   transaction_type?: string | null
-  status?:           string | null
+  status?:           string | string[] | null
   orderBy?:          keyof Pick<TransactionType, 'created_at' | 'total_amount' | 'status'>
   ascending?:        boolean
   limit?:            number
@@ -98,40 +42,25 @@ type FetchTransactionsOptions = {
 
 export const useTransactionsDataStore = defineStore('transactionsData', () => {
 
-  // ─── State ────────────────────────────────────────────────────────
-  const authStore = useAuthUserStore()   
-  const loading:            Ref<boolean>                          = ref(false)
-  const error:              Ref<string>                           = ref('')
-  const transactions:       Ref<TransactionType[]>               = ref([])
-  const currentTransaction: Ref<TransactionType | undefined>     = ref(undefined)
-  const prs:                Ref<PR[]>                            = ref([])
-  const selectedPR:         Ref<PR | null>                       = ref(null)
-  const filterStatus:       Ref<string | null>                   = ref(null)
-  const items:              Ref<RequisitionItemType[]>           = ref([])
-  const realtimeChannel:    Ref<RealtimeChannel | null>          = ref(null)
-  const realtimeStatus:     Ref<'idle'|'subscribing'|'subscribed'|'error'> = ref('idle')
-  const subscriptionChannel: Ref<any>                            = ref(null)
+  // ─── State ──────────────────────────────────────────────────────
+  const loading:            Ref<boolean>                                          = ref(false)
+  const error:              Ref<string>                                           = ref('')
+  const transactions:       Ref<TransactionType[]>                               = ref([])
+  const currentTransaction: Ref<TransactionType | undefined>                     = ref(undefined)
+  const realtimeChannel:    Ref<RealtimeChannel | null>                          = ref(null)
+  const realtimeStatus:     Ref<'idle'|'subscribing'|'subscribed'|'error'>       = ref('idle')
 
-  const currentPR: Ref<PurchaseRequisitionType> = ref({
-    remarks:      null,
-    status:       'pending_approval',
-    requested_by: null,
-    supplier_id:  null,
-  })
-
-  // ─── Computed ─────────────────────────────────────────────────────
+  // ─── Computed ───────────────────────────────────────────────────
   const transactionsCount    = computed(() => transactions.value.length)
   const hasTransactions      = computed(() => transactions.value.length > 0)
   const isLoading            = computed(() => loading.value)
   const hasError             = computed(() => error.value !== '')
   const isRealtimeSubscribed = computed(() => realtimeStatus.value === 'subscribed')
 
-
-  // ─── Helpers ──────────────────────────────────────────────────────
+  // ─── Helpers ────────────────────────────────────────────────────
   const handleError = (err: unknown, message: string) => {
     error.value = err instanceof Error ? err.message : message
   }
-
   const clearError = () => { error.value = '' }
 
   function resetStore() {
@@ -236,20 +165,24 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
     if (currentTransaction.value?.id === id) currentTransaction.value = undefined
   }
 
-  // ─── Generic Transaction Actions ──────────────────────────────────
+
+  // ─── Generic CRUD ───────────────────────────────────────────────
   const fetchTransactions = async (options: FetchTransactionsOptions = {}) => {
     loading.value = true
     clearError()
 
     const {
-      search, transaction_type, status, po_no_not_null,  // ← add here
+      search, transaction_type, status, po_no_not_null,
       orderBy = 'created_at', ascending = false, limit, offset,
     } = options
 
     let q = supabase.from('transactions').select('*')
 
     if (transaction_type)  q = q.eq('transaction_type', transaction_type)
-    if (status)            q = q.eq('status', status)
+    if (status) {
+      if (Array.isArray(status)) q = q.in('status', status)
+      else                       q = q.eq('status', status)
+    }
     if (po_no_not_null)    q = q.not('po_no', 'is', null)              // ← add here
     if (search?.trim()) {
       const s = search.trim().replace(/,/g, '')
@@ -274,6 +207,24 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
 
     transactions.value = (data || []) as TransactionType[]
     return transactions.value
+  }
+
+  async function fetchTransactionsCount(options: FetchTransactionsOptions = {}): Promise<number> {
+    const { po_no_not_null, status, search } = options
+
+    let q = supabase
+      .from('transactions')
+      .select('*', { count: 'exact', head: true })
+
+    if (po_no_not_null) q = q.not('po_no', 'is', null)
+    if (status)         q = q.eq('status', status)
+    if (search?.trim()) {
+      const s = search.trim().replace(/,/g, '')
+      q = q.or(`requisition_no.ilike.%${s}%,remarks.ilike.%${s}%,status.ilike.%${s}%`)
+    }
+
+    const { count } = await q
+    return count ?? 0
   }
 
   const fetchTransactionById = async (id: number) => {
@@ -309,7 +260,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
     }
 
     const created = data as TransactionType
-    transactions.value.unshift(created)
+    upsertTransactionLocal(created)
     currentTransaction.value = created
     return created
   }
@@ -329,9 +280,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
     }
 
     const updated = data as TransactionType
-    const index = transactions.value.findIndex(t => t.id === id)
-    if (index !== -1) transactions.value[index] = updated
-    if (currentTransaction.value?.id === id) currentTransaction.value = updated
+    upsertTransactionLocal(updated)
     return updated
   }
 
@@ -611,7 +560,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
         }
       })
       .subscribe(status => {
-        if (status === 'SUBSCRIBED') realtimeStatus.value = 'subscribed'
+        if (status === 'SUBSCRIBED')                                   realtimeStatus.value = 'subscribed'
         else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') realtimeStatus.value = 'error'
       })
 
@@ -627,48 +576,24 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
     await supabase.removeChannel(channel)
   }
 
-  function subscribeToPurchaseRequisitions() {
-    subscriptionChannel.value = supabase
-      .channel('transactions_pr_changes')
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'transactions',
-        filter: 'transaction_type=eq.purchase_requisition',
-      }, async () => { await fetchPurchaseRequisition() })
-      .subscribe()
-  }
-
-  function unsubscribeFromPurchaseRequisitions() {
-    if (subscriptionChannel.value) {
-      supabase.removeChannel(subscriptionChannel.value)
-      subscriptionChannel.value = null
-    }
-  }
-
-  // ─── Expose ───────────────────────────────────────────────────────
+  // ─── Expose ─────────────────────────────────────────────────────
   return {
-    // Generic state
+    // State
     transactions, currentTransaction, loading, error,
 
-    // Generic computed
+    // Computed
     transactionsCount, hasTransactions, isLoading, hasError, isRealtimeSubscribed,
 
-    // Generic actions
-    fetchTransactions, fetchTransactionById,
-    createTransaction, updateTransaction, deleteTransaction,
-    clearError, upsertTransactionLocal, removeTransactionLocal,
+    // Helpers (exposed for cross-store use)
+    clearError, handleError,
+    upsertTransactionLocal, removeTransactionLocal,
 
-    // PR state
-    prs, selectedPR, filterStatus, items, currentPR,
-
-    // PR actions
-    savePurchaseRequisition, resetStore,
-    fetchPurchaseRequisition, approvePR, rejectPR,
-
-    // PO actions
-    issuePurchaseOrder, fetchPRByRequisitionId, markPOAsReceived,
+    // CRUD
+    fetchTransactions, fetchTransactionsCount,
+    fetchTransactionById, createTransaction,
+    updateTransaction, deleteTransaction,
 
     // Realtime
     startRealtime, stopRealtime,
-    subscribeToPurchaseRequisitions, unsubscribeFromPurchaseRequisitions,
   }
 })

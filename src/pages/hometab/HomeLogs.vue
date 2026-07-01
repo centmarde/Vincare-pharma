@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { onMounted, computed, ref, nextTick, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useLogsDataStore } from '@/stores/logsData'
-import type { LogType } from '@/stores/logsData'
+import { useVersionLogsDataStore } from '@/stores/versionLogsData'
+import type { VersionLogDisplay } from '@/stores/versionLogsData'
 import { useTheme } from '@/stores/useTheme'
 
-// Initialize logs store
-const logsStore = useLogsDataStore()
+// Initialize version logs store (fetches from public/data/version-logs.json via axios)
+const logsStore = useVersionLogsDataStore()
 const { logs, loading, error, logsCount, hasLogs, isLoading, hasError } = storeToRefs(logsStore)
 
 // Theme-aware UI tweaks
@@ -17,7 +17,7 @@ const isDark = computed(() => getCurrentTheme() === 'dark')
 const isCollapsed = ref(true)
 
 // Lazy loading state
-const displayedLogs = ref<LogType[]>([])
+const displayedLogs = ref<VersionLogDisplay[]>([])
 const loadCount = ref(5) // Initial load count
 const hasMoreLogs = computed(() => displayedLogs.value.length < logs.value.length)
 const logsContainer = ref<HTMLElement | null>(null)

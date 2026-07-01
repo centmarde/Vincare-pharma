@@ -1,6 +1,8 @@
 import { useTransactionsData } from '@/composables/useTransactionsData'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
-import type { PR } from '@/stores/transactionsData'
+import type { PR } from '@/stores/purchaseRequisitionData'
+import { useLogsDataStore } from '@/stores/logsData'
+import { useAuthUserStore } from '@/stores/authUser'
 import { ref, computed } from 'vue'
 
 export const headers = [
@@ -17,6 +19,8 @@ export const headers = [
 
 export function usePurchaseRequisitionList() {
   const supplierStore = useSuppliersDataStore()
+  const logsStore = useLogsDataStore()
+  const authStore = useAuthUserStore()
 
   const { 
     // state
@@ -68,6 +72,8 @@ export function usePurchaseRequisitionList() {
       return sortOrder.value === 'asc' ? cmp : -cmp
     })
   })
+  // total count of filtered results (used for mobile pagination)
+  const totalItems = computed(() => sortedFilteredPRs.value.length)
 
   // ─── Actions ──────────────────────────────────────────────────────
   function openDetail(pr: PR) {
@@ -84,12 +90,38 @@ export function usePurchaseRequisitionList() {
   }
 
   async function handleConfirm() {
-    const { action, prId } = confirmDialog.value
-    action === 'APPROVE' ? await approvePR(prId) : await rejectPR(prId)
+    const { action, prId, prNumber } = confirmDialog.value
+
+    // Get the current user for logging
+    let userId: string | undefined
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (!authError && user) {
+      userId = user.id
+    }
+
+    if (action === 'APPROVE') {
+      await approvePR(prId)
+      await logsStore.createLog({
+        created_by: userId,
+        action: 'approve_pr',
+        description: `Purchase requisition ${prNumber} approved`,
+        transaction_id: prId,
+        module: 'purchase_requisition',
+      })
+    } else {
+      await rejectPR(prId)
+      await logsStore.createLog({
+        created_by: userId,
+        action: 'reject_pr',
+        description: `Purchase requisition ${prNumber} rejected`,
+        transaction_id: prId,
+        module: 'purchase_requisition',
+      })
+    }
     closeConfirm()
   }
 
-  function openPurchaseOrder(pr: PR) {
+  async function openPurchaseOrder(pr: PR) {
     selectedPRForPO.value = pr
     showPOModal.value     = true
   }
@@ -119,6 +151,25 @@ export function usePurchaseRequisitionList() {
     ])
   }
 
+  // ─── Mobile Pagination ────────────────────────────────────────────
+  function prevPage() {
+    if (page.value > 1) {
+      page.value--
+    }
+  }
+
+  function nextPage() {
+    if (page.value * itemsPerPage.value < totalItems.value) {
+      page.value++
+    }
+  }
+
+  // slice of sortedFilteredPRs for the current mobile page
+  const pagedPRs = computed(() => {
+    const start = (page.value - 1) * itemsPerPage.value
+    return sortedFilteredPRs.value.slice(start, start + itemsPerPage.value)
+  })
+
   return {
     // store refs
     loading, filterStatus,
@@ -128,11 +179,15 @@ export function usePurchaseRequisitionList() {
     confirmDialog, page, itemsPerPage,
     // computed
     sortedFilteredPRs,
+    pagedPRs,
+    totalItems,
     // store utils
     totalQty, totalCost, itemSummary, statusConfig, statusOptions,
     // actions
     openDetail, openConfirm, closeConfirm,
     handleConfirm, openPurchaseOrder,
     loadItems, init,
+    // mobile pagination
+    prevPage, nextPage,
   }
 }

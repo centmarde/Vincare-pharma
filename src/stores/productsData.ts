@@ -14,7 +14,7 @@ export type ProductType = {
   product_name: string | null
   generic_name: string | null
   category: string | null
-  unit: number | null
+  unit: string | null
   cost_price: number | null
   selling_price: number | null
   current_stock: number | null
@@ -38,7 +38,7 @@ export type CreateProductData = {
   product_name?: string | null
   generic_name?: string | null
   category?: string | null
-  unit?: number | null
+  unit?: string | null
   cost_price?: number | null
   selling_price?: number | null
   current_stock?: number | null
@@ -67,6 +67,8 @@ type FetchProductsOptions = {
   ascending?: boolean
   limit?: number
   offset?: number
+  eligibleIds?: number[]  // ← new option for filtering by eligible IDs
+  
 }
 
 export const useProductsDataStore = defineStore('productsData', () => {
@@ -97,6 +99,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
   const clearError = () => {
     error.value = ''
   }
+  const totalCount = ref(0)  // ← add this
 
   const startRealtime = () => {
     // Avoid double subscriptions
@@ -155,13 +158,14 @@ export const useProductsDataStore = defineStore('productsData', () => {
         search,
         category,
         supplier_id,
-        orderBy = 'created_at',
-        ascending = false,
+        orderBy = 'current_stock',
+        ascending = true,
         limit,
         offset,
+        eligibleIds,
       } = options
 
-      let q = supabase.from('products').select('*, suppliers(*)')
+      let q = supabase.from('products').select('*, suppliers(*)', { count: 'exact' })
 
       if (category) {
         q = q.eq('category', category)
@@ -176,6 +180,9 @@ export const useProductsDataStore = defineStore('productsData', () => {
           `product_name.ilike.%${s}%,generic_name.ilike.%${s}%,barcode.ilike.%${s}%,sku.ilike.%${s}%`,
         )
       }
+      if (eligibleIds && eligibleIds.length > 0) {  // ← here
+        q = q.in('id', eligibleIds)
+      }
 
       q = q.order(orderBy as string, { ascending })
 
@@ -185,11 +192,13 @@ export const useProductsDataStore = defineStore('productsData', () => {
         q = q.limit(limit)
       }
 
-      const { data, error: fetchError } = await q
+
+      const { data, count,  error: fetchError } = await q
 
       if (fetchError) throw fetchError
 
       products.value = (data || []) as ProductType[]
+      totalCount.value = count ?? 0  // ← must be here
       return products.value
     } catch (err) {
       handleError(err, 'Failed to fetch products')
@@ -252,9 +261,11 @@ export const useProductsDataStore = defineStore('productsData', () => {
     clearError()
 
     try {
+      const { suppliers, id: _id, created_at, ...payload } = updateData as any
+
       const { data, error: updateError } = await supabase
         .from('products')
-        .update(updateData)
+        .update(payload)
         .eq('id', id)
         .select('*, suppliers(*)')
         .single()
@@ -377,6 +388,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     isLoading,
     hasError,
     isRealtimeSubscribed,
+    totalCount,
 
     // Actions
     fetchProducts,

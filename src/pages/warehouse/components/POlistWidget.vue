@@ -16,7 +16,6 @@ const {
   selectedPR,
   confirmDialog,
   showSkuEditModal,
-  statusOptions,
   serverItems,
   itemsPerPage,
   totalItems,
@@ -34,9 +33,17 @@ const {
 
 const totalPages = computed(() => Math.max(1, Math.ceil(totalItems.value / itemsPerPage.value)))
 
+// Local filter options: always show All / Issued / Complete
+const statusFilterOptions = [
+  { title: 'All', value: null },
+  { title: 'Issued', value: 'issued' },
+  { title: 'Complete', value: 'complete' },
+]
+
 onMounted(() => {
   init()
-  loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
+  // Setting filterStatus triggers the composable's watch, which calls loadItems automatically
+  filterStatus.value = ['issued', 'complete']
 })
 
 function openMarkReceivedDialog(item: any) {
@@ -45,7 +52,7 @@ function openMarkReceivedDialog(item: any) {
 
 function onMarkReceived(poId: number) {
   showSkuEditModal.value = false
-  const po = serverItems.value.find(item => item.id === poId)
+  const po = serverItems.value.find((item) => item.id === poId)
   if (po) openConfirm(po)
 }
 
@@ -54,15 +61,19 @@ function goToPage(p: number) {
   page.value = p
   loadItems({ page: p, itemsPerPage: itemsPerPage.value, sortBy: [] })
 }
-
 </script>
 <template>
-  <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
-    <v-card class="mx-auto w-100 pa-0" max-width="1400" rounded="lg" elevation="1">
+  <div class="pa-2 bg-surface-variant fill-height align-start">
+    <v-card class="mx-auto w-100 pa-0" rounded="lg" elevation="1">
       <!-- Header -->
       <v-card-title class="pa-5">
-        <div class="d-flex flex-wrap align-center" :class="mobile ? 'flex-column ga-3' : 'justify-space-between'">
-          <span class="text-h6 font-weight-bold" :class="mobile ? 'w-100' : ''">Warehouse Dashboard</span>
+        <div
+          class="d-flex flex-wrap align-center"
+          :class="mobile ? 'flex-column ga-3' : 'justify-space-between'"
+        >
+          <span class="text-h6 font-weight-bold" :class="mobile ? 'w-100' : ''"
+            >Warehouse Dashboard</span
+          >
           <div class="d-flex align-center" :class="mobile ? 'w-100' : ''" style="gap: 12px">
             <v-text-field
               v-model="search"
@@ -88,12 +99,15 @@ function goToPage(p: number) {
               </template>
               <v-list density="compact" min-width="180">
                 <v-list-item
-                  v-for="opt in statusOptions"
+                  v-for="opt in statusFilterOptions"
                   :key="String(opt.value)"
                   :title="opt.title"
-                  :active="filterStatus === opt.value"
+                  :active="
+                    filterStatus === opt.value ||
+                    (Array.isArray(filterStatus) && opt.value === null)
+                  "
                   active-color="primary"
-                  @click="filterStatus = opt.value"
+                  @click="filterStatus = opt.value ?? ['issued', 'complete']"
                 />
               </v-list>
             </v-menu>
@@ -107,6 +121,7 @@ function goToPage(p: number) {
       <v-data-table-server
         v-if="!mobile"
         v-model:items-per-page="itemsPerPage"
+        :items-per-page-options="[5, 10, 15, 25, 50, 100]"
         :headers="headers"
         :items="serverItems"
         :items-length="totalItems"
@@ -172,11 +187,22 @@ function goToPage(p: number) {
             <v-btn variant="outlined" size="small" class="text-none" @click="openDetail(item)">
               View
             </v-btn>
-            <v-btn v-if="item.status !== 'complete'" size="small" color="primary" @click="openMarkReceivedDialog(item)">
+            <v-btn
+              v-if="item.status !== 'complete'"
+              size="small"
+              color="primary"
+              @click="openMarkReceivedDialog(item)"
+            >
               Mark as Received
             </v-btn>
 
-            <v-chip v-if="item.status === 'complete'" color="green" size="small" variant="tonal" label>
+            <v-chip
+              v-if="item.status === 'complete'"
+              color="green"
+              size="small"
+              variant="tonal"
+              label
+            >
               <v-icon start size="14">mdi-check-circle</v-icon>
               Delivered
             </v-chip>
@@ -274,7 +300,10 @@ function goToPage(p: number) {
               :disabled="page <= 1 || loading"
               @click="goToPage(page - 1)"
             />
-            <span class="text-body-2 text-medium-emphasis mx-2" style="min-width: 80px; text-align: center">
+            <span
+              class="text-body-2 text-medium-emphasis mx-2"
+              style="min-width: 80px; text-align: center"
+            >
               Page {{ page }} of {{ totalPages }}
             </span>
             <v-btn
@@ -292,7 +321,13 @@ function goToPage(p: number) {
     <!-- Opened when clicking 'View' or 'Print' inside your table rows -->
     <PODetailViewModal v-model="showDetailModal" :po="selectedPO" :pr="selectedPR" />
 
-    <PODetailSkuModal v-model="showSkuEditModal" :po="selectedPO" :pr="selectedPR" :sku-edit-mode="true" @mark-received="onMarkReceived" />
+    <PODetailSkuModal
+      v-model="showSkuEditModal"
+      :po="selectedPO"
+      :pr="selectedPR"
+      :sku-edit-mode="true"
+      @mark-received="onMarkReceived"
+    />
 
     <!-- Confirm Mark as Received -->
     <v-dialog v-model="confirmDialog.show" max-width="420" persistent>
@@ -326,7 +361,7 @@ function goToPage(p: number) {
         </v-card-actions>
       </v-card>
     </v-dialog>
-  </v-container>
+  </div>
 </template>
 
 <style scoped>

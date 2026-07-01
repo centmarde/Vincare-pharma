@@ -1,10 +1,13 @@
+import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
+import { useTransactionsDataStore } from '@/stores/transactionsData'
+import { useSuppliersDataStore } from '@/stores/suppliersData'
+import type { PR } from '@/stores/purchaseRequisitionData'
+import type { PurchaseOrder } from './usePODetailModal'
+import { useLogsDataStore } from '@/stores/logsData'
+import { useAuthUserStore } from '@/stores/authUser'
+import { useToast } from 'vue-toastification'
 import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useToast } from 'vue-toastification'
-import { useSuppliersDataStore } from '@/stores/suppliersData'
-import { useTransactionsDataStore } from '@/stores/transactionsData'
-import type { PR } from '@/stores/transactionsData'
-import type { PurchaseOrder } from './usePODetailModal'
 
 const toast = useToast()
 
@@ -29,12 +32,15 @@ export type SupplierSummary = {
 export function usePurchaseOrderList() {
   const supplierStore = useSuppliersDataStore()
   const txStore       = useTransactionsDataStore()
+  const prsStore       = usePurchaseRequisitionStore()
   const { suppliers } = storeToRefs(supplierStore)
   const { loading }   = storeToRefs(txStore)
+  const logsStore = useLogsDataStore()
+  const authStore = useAuthUserStore()
 
   // ─── State ────────────────────────────────────────────────────────
   const search           = ref('')
-  const filterStatus     = ref<string | null>(null)
+  const filterStatus     = ref<string | string[] | null>(null)
   const showDetailModal  = ref(false)
   const showSkuEditModal = ref(false)
   const selectedPO       = ref<PurchaseOrder | null>(null)
@@ -95,15 +101,20 @@ export function usePurchaseOrderList() {
     itemsPerPage: number
     sortBy:       { key: string; order: string }[]
   }) {
-    const data = await txStore.fetchTransactions({
-      po_no_not_null: true,                                          // ← only change from before
+    const [data, count] = await Promise.all([txStore.fetchTransactions({
+      po_no_not_null: true,
       status:         filterStatus.value ?? undefined,
       search:         search.value.trim() || undefined,
       orderBy:        (sortBy[0]?.key ?? sortKey.value) as any,
       ascending:      sortBy[0] != null ? sortBy[0].order === 'asc' : sortOrder.value === 'asc',
       limit:          itemsPerPage,
       offset:         (page - 1) * itemsPerPage,
-    })
+    }),
+    txStore.fetchTransactionsCount({ 
+      po_no_not_null: true, 
+      status: filterStatus.value ?? undefined, 
+      search: search.value.trim() || undefined})
+  ])
 
     serverItems.value = data.map((tx: any) => ({
       id:             tx.id,
@@ -122,13 +133,13 @@ export function usePurchaseOrderList() {
       updated_at:     tx.updated_at  ?? null,
     }))
 
-    totalItems.value = data.length
+    totalItems.value = count
 
     // Pre-fetch linked PRs for supplier summary + PODetailModal
     await Promise.all(
       serverItems.value.map(async po => {
         if (!prItemsCache.value[po.id]) {
-          const pr = await txStore.fetchPRByRequisitionId(po.id)
+          const pr = await prsStore.fetchPRByRequisitionId(po.id)
           if (pr) prItemsCache.value[po.id] = pr
         }
       })
@@ -139,14 +150,14 @@ export function usePurchaseOrderList() {
   async function openDetail(po: PurchaseOrder) {
     selectedPO.value      = po
     selectedPR.value      = prItemsCache.value[po.id]
-      ?? await txStore.fetchPRByRequisitionId(po.id)
+      ?? await prsStore.fetchPRByRequisitionId(po.id)
     showDetailModal.value = true
   }
 
   async function openDetailForSku(po: PurchaseOrder) {
     selectedPO.value       = po
     selectedPR.value       = prItemsCache.value[po.id]
-      ?? await txStore.fetchPRByRequisitionId(po.id)
+      ?? await prsStore.fetchPRByRequisitionId(po.id)
     showSkuEditModal.value = true
   }
 
@@ -155,8 +166,19 @@ export function usePurchaseOrderList() {
   }
 
   async function handleMarkReceived() {
-    const success = await txStore.markPOAsReceived(confirmDialog.value.poId)
+    const { poId, poNumber } = confirmDialog.value
+    const success = await prsStore.markPOAsReceived(poId)
     if (success) {
+      const { user } = await authStore.getCurrentUser()
+      if (user) {
+      await logsStore.createLog({
+        created_by:     user.id,
+        action:         'mark_received',
+        description:    `Purchase order ${poNumber} marked as received`,
+        transaction_id: poId,
+        module:         'stock_in',
+      })
+    }
       confirmDialog.value.show = false
       await loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
     }

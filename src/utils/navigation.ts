@@ -4,6 +4,7 @@ export interface NavigationItem {
   route: string
   selected?: boolean
   permission?: string // Optional permission key for role-based access
+  keywords?: string // Comma-separated search terms for easier discovery
 }
 
 // An optional third level: a group's children can include a labeled
@@ -41,11 +42,13 @@ export const navigationConfig: NavigationGroup[] = [
         icon: 'mdi-home',
         route: '/account/home',
         permission: 'admin.dashboard.view',
+        keywords: 'dashboard, overview, main',
       },
       {
         title: 'Settings',
         icon: 'mdi-cog-outline',
         route: '/account/settings',
+        keywords: 'preferences, profile, configuration, options',
       },
     ],
   },
@@ -59,18 +62,21 @@ export const navigationConfig: NavigationGroup[] = [
         icon: 'mdi-account-multiple',
         route: '/admin/user-management',
         permission: 'admin.users.manage',
+        keywords: 'employees, staff, accounts, people, team',
       },
       {
         title: 'User Roles',
         icon: 'mdi-account-key',
         route: '/admin/user-roles',
         permission: 'admin.roles.manage',
+        keywords: 'permissions, access, levels, authorization',
       },
       {
         title: 'Announcements',
         icon: 'mdi-bullhorn',
         route: '/admin/announcements',
         permission: 'admin.announcements.manage',
+        keywords: 'news, updates, notices, broadcast',
       },
     ],
   },
@@ -84,6 +90,7 @@ export const navigationConfig: NavigationGroup[] = [
         icon: 'mdi-view-dashboard',
         route: '/executive/dashboard',
         permission: 'executive.dashboard.view',
+        keywords: 'exec, overview, kpi, metrics, reports',
       },
     ],
   },
@@ -97,18 +104,21 @@ export const navigationConfig: NavigationGroup[] = [
         icon: 'mdi-download-outline',
         route: '/purchasing/list-of-purchases',
         permission: 'purchasing.dashboard.view',
+        keywords: 'buy, procurement, orders list, transactions',
       },
       {
         title: 'Purchase Requisitions',
         icon: 'mdi-file-document-edit-outline',
         route: '/purchasing/purchase-requisitions',
         permission: 'purchasing.requisitions.view',
+        keywords: 'PR, request, approval, request form',
       },
       {
         title: 'Purchase Orders',
         icon: 'mdi-file-document-outline',
         route: '/purchasing/purchase-orders',
         permission: 'purchasing.orders.view',
+        keywords: 'PO, order, supplier order, release',
       },
     ],
   },
@@ -122,12 +132,14 @@ export const navigationConfig: NavigationGroup[] = [
         icon: 'mdi-view-dashboard',
         route: '/warehouse/dashboard',
         permission: 'warehouse.dashboard.view',
+        keywords: 'inventory, stock, storage, receiving',
       },
       {
         title: 'Products',
         icon: 'mdi-box',
         route: '/warehouse/products',
         permission: 'warehouse.products.view',
+        keywords: 'items, goods, merchandise, inventory list',
       },
       {
         title: 'Stock Transfers',
@@ -147,6 +159,7 @@ export const navigationConfig: NavigationGroup[] = [
         icon: 'mdi-view-dashboard',
         route: '/sales/dashboard',
         permission: 'sales.dashboard.view',
+        keywords: 'revenue, orders, customers, selling',
       },
       {
         title: 'POS',
@@ -339,6 +352,7 @@ export const navigationConfig: NavigationGroup[] = [
         icon: 'mdi-view-dashboard-variant',
         route: '/suppliers/dashboard',
         permission: 'suppliers.dashboard.view',
+        keywords: 'vendors, partners, providers, contractors',
       },
     ],
   },
@@ -352,6 +366,7 @@ export const navigationConfig: NavigationGroup[] = [
         icon: 'mdi-file-document',
         route: '/logs',
         permission: 'logs.view',
+        keywords: 'audit, history, trail, activity, changes',
       },
     ],
   },

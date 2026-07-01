@@ -1,0 +1,18 @@
+0 verbose cli C:\Program Files\nodejs\node.exe C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js
+1 info using npm@10.9.3
+2 info using node@v22.20.0
+3 silly config load:file:C:\Program Files\nodejs\node_modules\npm\npmrc
+4 silly config load:file:e:\Github\Vincare-pharma\.npmrc
+5 silly config load:file:C:\Users\Admin\.npmrc
+6 silly config load:file:C:\Users\Admin\AppData\Roaming\npm\etc\npmrc
+7 verbose title npm config get prefix
+8 verbose argv "config" "get" "prefix"
+9 verbose logfile logs-max:10 dir:E:\Github\Vincare-pharma\npm-cache\_logs\2026-06-26T10_01_06_932Z-
+10 verbose logfile E:\Github\Vincare-pharma\npm-cache\_logs\2026-06-26T10_01_06_932Z-debug-0.log
+11 silly logfile done cleaning log files
+12 verbose cwd e:\Github\Vincare-pharma
+13 verbose os Windows_NT 10.0.19045
+14 verbose node v22.20.0
+15 verbose npm  v10.9.3
+16 verbose exit 0
+17 info ok
