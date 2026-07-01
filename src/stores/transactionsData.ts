@@ -237,7 +237,11 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       if (Array.isArray(status)) q = q.in('status', status)
       else                       q = q.eq('status', status)
     }
-    if (po_no_not_null)    q = q.not('po_no', 'is', null)              // ← add here
+    // The Purchase Orders list is purchasing-only. `po_no` is overloaded —
+    // In-House orders store the government's PO number in the same column — so
+    // constrain to purchasing document types, else in-house orders (with their
+    // awaiting_stock/paid statuses) leak into this list.
+    if (po_no_not_null)    q = q.not('po_no', 'is', null).in('transaction_type', ['purchase_order', 'stock_in'])
     if (search?.trim()) {
       const s = search.trim().replace(/,/g, '')
       q = q.or(`requisition_no.ilike.%${s}%,remarks.ilike.%${s}%,status.ilike.%${s}%`)
@@ -270,7 +274,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       .from('transactions')
       .select('*', { count: 'exact', head: true })
 
-    if (po_no_not_null) q = q.not('po_no', 'is', null)
+    if (po_no_not_null) q = q.not('po_no', 'is', null).in('transaction_type', ['purchase_order', 'stock_in'])
     if (status)         q = q.eq('status', status)
     if (search?.trim()) {
       const s = search.trim().replace(/,/g, '')
