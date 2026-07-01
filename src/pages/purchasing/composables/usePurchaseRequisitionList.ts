@@ -1,10 +1,12 @@
+import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import { useTransactionsData } from '@/composables/useTransactionsData'
+import { useTransactionsDataStore } from '@/stores/transactionsData'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import { useLogsDataStore } from '@/stores/logsData'
 import { useAuthUserStore } from '@/stores/authUser'
-import { ref, computed } from 'vue'
-
+import { storeToRefs } from 'pinia'
+import { ref, watch } from 'vue'
 export const headers = [
   { title: 'PR #',         key: 'requisition_no',  sortable: true,  align: 'center' as const },
   { title: 'ITEMS',        key: 'items',          sortable: false, align: 'center' as const },
@@ -18,64 +20,66 @@ export const headers = [
 ]
 
 export function usePurchaseRequisitionList() {
+  const txStore       = useTransactionsDataStore()
+  const prStore       = usePurchaseRequisitionStore()
   const supplierStore = useSuppliersDataStore()
-  const logsStore = useLogsDataStore()
-  const authStore = useAuthUserStore()
+  const logsStore     = useLogsDataStore()
+  const authStore     = useAuthUserStore()
+  const { loading }   = storeToRefs(txStore)
+  const { totalQty, totalCost, itemSummary, statusConfig, statusOptions } = useTransactionsData()
 
-  const { 
-    // state
-    loading, filterStatus,
-    // computed
-    filteredPRs,
-    // utilities
-    totalQty, totalCost, itemSummary, statusConfig, statusOptions,
-    // actions
-    fetchPurchaseRequisition, approvePR, rejectPR,
-  } =  useTransactionsData()
-
-  // ─── Local State ──────────────────────────────────────────────────
-  const search          = ref('')
-  const showModal       = ref(false)
-  const showPOModal     = ref(false)
-  const selectedPR      = ref<PR | null>(null)
+  const search        = ref('')
+  const filterStatus  = ref<string | null>(null)
+  const showModal     = ref(false)
+  const showPOModal   = ref(false)
+  const selectedPR    = ref<PR | null>(null)
   const selectedPRForPO = ref<PR | null>(null)
-  const sortKey         = ref('')
-  const sortOrder       = ref<'asc' | 'desc'>('asc')
-  const page            = ref(1)
-  const itemsPerPage    = ref(10)
+  const serverItems   = ref<PR[]>([])
+  const totalItems    = ref(0)
+  const page          = ref(1)
+  const itemsPerPage  = ref(10)
+  const searchInput      = ref(search.value)
 
-  const confirmDialog = ref({
-    show:     false,
-    action:   '' as 'APPROVE' | 'REJECT',
-    prId:     0,
-    prNumber: '',
-  })
+  const confirmDialog = ref({ show: false, action: '' as 'APPROVE' | 'REJECT', prId: 0, prNumber: '' })
 
-  // ─── Computed ─────────────────────────────────────────────────────
-  const sortedFilteredPRs = computed(() => {
-    let result = filteredPRs.value
+  async function loadItems({ page: p, itemsPerPage: ipp, sortBy }: {
+    page: number
+    itemsPerPage: number
+    sortBy: { key: string; order: 'asc' | 'desc' }[]
+  }) {
+    const sort = sortBy[0]
 
-    if (search.value.trim()) {
-      const q = search.value.toLowerCase()
-      result = result.filter(pr =>
-        pr.requisition_no?.toLowerCase().includes(q) ||
-        pr.requester_name?.toLowerCase().includes(q)
+    const [data, count] = await Promise.all([
+      txStore.fetchTransactions({
+        requisition_no_not_null: true,
+        search:    search.value.trim() || undefined,
+        status:    filterStatus.value ?? undefined,
+        orderBy:   (sort?.key as any) ?? 'created_at',
+        ascending: sort ? sort.order === 'asc' : false,
+        limit:     ipp,
+        offset:    (p - 1) * ipp,
+      }),
+      txStore.fetchTransactionsCount({
+        requisition_no_not_null: true,
+        search: search.value.trim() || undefined,
+        status: filterStatus.value ?? undefined,
+      }),
+    ])
+    serverItems.value = await Promise.all(
+        data.map(async tx => (await prStore.fetchPRByRequisitionId(tx.id)) as PR)
       )
-    }
+    totalItems.value = count
+    page.value = p
+  }
 
-    if (!sortKey.value) return result
+  watch([search, filterStatus], () =>
+    loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
+  )
 
-    return [...result].sort((a: any, b: any) => {
-      const valA = a[sortKey.value] ?? ''
-      const valB = b[sortKey.value] ?? ''
-      const cmp  = String(valA).localeCompare(String(valB))
-      return sortOrder.value === 'asc' ? cmp : -cmp
-    })
-  })
-  // total count of filtered results (used for mobile pagination)
-  const totalItems = computed(() => sortedFilteredPRs.value.length)
+  async function init() {
+    await supplierStore.fetchSuppliers()
+  }
 
-  // ─── Actions ──────────────────────────────────────────────────────
   function openDetail(pr: PR) {
     selectedPR.value = pr
     showModal.value  = true
@@ -85,109 +89,53 @@ export function usePurchaseRequisitionList() {
     confirmDialog.value = { show: true, action, prId: pr.id, prNumber: pr.requisition_no }
   }
 
-  function closeConfirm() {
-    confirmDialog.value.show = false
-  }
+  function closeConfirm() { confirmDialog.value.show = false }
 
   async function handleConfirm() {
     const { action, prId, prNumber } = confirmDialog.value
-
-    // Get the current user for logging
-    let userId: string | undefined
     const { user, error: authError } = await authStore.getCurrentUser()
-    if (!authError && user) {
-      userId = user.id
-    }
+    const userId = !authError && user ? user.id : undefined
 
     if (action === 'APPROVE') {
-      await approvePR(prId)
+      await prStore.approvePR(prId)
       await logsStore.createLog({
-        created_by: userId,
-        action: 'approve_pr',
+        created_by: userId, action: 'approve_pr',
         description: `Purchase requisition ${prNumber} approved`,
-        transaction_id: prId,
-        module: 'purchase_requisition',
+        transaction_id: prId, module: 'purchase_requisition',
       })
     } else {
-      await rejectPR(prId)
+      await prStore.rejectPR(prId)
       await logsStore.createLog({
-        created_by: userId,
-        action: 'reject_pr',
+        created_by: userId, action: 'reject_pr',
         description: `Purchase requisition ${prNumber} rejected`,
-        transaction_id: prId,
-        module: 'purchase_requisition',
+        transaction_id: prId, module: 'purchase_requisition',
       })
     }
     closeConfirm()
+    await loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
   }
-
   async function openPurchaseOrder(pr: PR) {
     selectedPRForPO.value = pr
     showPOModal.value     = true
   }
 
-  async function loadItems({ sortBy }: {
-    page: number
-    itemsPerPage: number
-    sortBy: { key: string; order: 'asc' | 'desc' }[]
-  }) {
-    await Promise.all([
-      fetchPurchaseRequisition(),
-      supplierStore.fetchSuppliers(),
-    ])
-
-    if (sortBy.length) {
-      sortKey.value   = sortBy[0].key
-      sortOrder.value = sortBy[0].order
-    } else {
-      sortKey.value = ''
-    }
+  function commitSearch(){
+    search.value = searchInput.value
   }
-
-  async function init() {
-    await Promise.all([
-      fetchPurchaseRequisition(),
-      supplierStore.fetchSuppliers(),
-    ])
+  
+  function clearSearch(){
+    searchInput.value = ''
+    search.value = ''
   }
-
-  // ─── Mobile Pagination ────────────────────────────────────────────
-  function prevPage() {
-    if (page.value > 1) {
-      page.value--
-    }
-  }
-
-  function nextPage() {
-    if (page.value * itemsPerPage.value < totalItems.value) {
-      page.value++
-    }
-  }
-
-  // slice of sortedFilteredPRs for the current mobile page
-  const pagedPRs = computed(() => {
-    const start = (page.value - 1) * itemsPerPage.value
-    return sortedFilteredPRs.value.slice(start, start + itemsPerPage.value)
-  })
 
   return {
-    // store refs
-    loading, filterStatus,
-    // local state
-    search, showModal, showPOModal,
-    selectedPR, selectedPRForPO,
-    confirmDialog, page, itemsPerPage,
-    // computed
-    sortedFilteredPRs,
-    pagedPRs,
-    totalItems,
-    // store utils
+    loading, filterStatus, search, showModal, showPOModal,
+    selectedPR, selectedPRForPO, confirmDialog,
+    page, itemsPerPage, serverItems, totalItems,
+    searchInput, commitSearch, clearSearch,
     totalQty, totalCost, itemSummary, statusConfig, statusOptions,
-    // actions
     openDetail, openConfirm, closeConfirm,
     handleConfirm, openPurchaseOrder,
     loadItems, init,
-    // mobile pagination
-    prevPage, nextPage,
   }
 }

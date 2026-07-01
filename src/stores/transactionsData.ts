@@ -29,6 +29,7 @@ export type UpdateTransactionData = Partial<CreateTransactionData>
 
 export type FetchTransactionsOptions = {
   po_no_not_null?:   boolean
+  requisition_no_not_null?:  boolean   // ← add this
   search?:           string
   transaction_type?: string | null
   status?:           string | string[] | null
@@ -83,7 +84,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
     clearError()
 
     const {
-      search, transaction_type, status, po_no_not_null,
+      search, transaction_type, status, po_no_not_null, requisition_no_not_null,
       orderBy = 'created_at', ascending = false, limit, offset,
     } = options
 
@@ -94,10 +95,11 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       if (Array.isArray(status)) q = q.in('status', status)
       else                       q = q.eq('status', status)
     }
-    if (po_no_not_null)    q = q.not('po_no', 'is', null)              // ← add here
+    if (po_no_not_null)    q = q.ilike('po_no', 'PO%')              
+    if (requisition_no_not_null) q = q.ilike('requisition_no', 'PR%')
     if (search?.trim()) {
       const s = search.trim().replace(/,/g, '')
-      q = q.or(`requisition_no.ilike.%${s}%,remarks.ilike.%${s}%,status.ilike.%${s}%`)
+      q = q.or(`requisition_no.ilike.%${s}%,po_no.ilike.%${s}%,remarks.ilike.%${s}%,status.ilike.%${s}%`)
     }
 
     q = q.order(orderBy as string, { ascending })
@@ -121,17 +123,21 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
   }
 
   async function fetchTransactionsCount(options: FetchTransactionsOptions = {}): Promise<number> {
-    const { po_no_not_null, status, search } = options
+    const { po_no_not_null, requisition_no_not_null, status, search } = options
 
     let q = supabase
       .from('transactions')
       .select('*', { count: 'exact', head: true })
 
-    if (po_no_not_null) q = q.not('po_no', 'is', null)
-    if (status)         q = q.eq('status', status)
+    if (po_no_not_null)          q = q.ilike('po_no', 'PO%')
+    if (requisition_no_not_null) q = q.ilike('requisition_no', 'PR%')
+    if (status) {
+      if (Array.isArray(status)) q = q.in('status', status)
+      else                       q = q.eq('status', status)
+    }
     if (search?.trim()) {
       const s = search.trim().replace(/,/g, '')
-      q = q.or(`requisition_no.ilike.%${s}%,remarks.ilike.%${s}%,status.ilike.%${s}%`)
+      q = q.or(`requisition_no.ilike.%${s}%,po_no.ilike.%${s}%,remarks.ilike.%${s}%,status.ilike.%${s}%`)
     }
 
     const { count } = await q

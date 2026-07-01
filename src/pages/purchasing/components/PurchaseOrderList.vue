@@ -6,17 +6,19 @@ import { useDisplay } from 'vuetify'
 import { onMounted } from 'vue'
 
 const {
-  search,
   filterStatus,
   showDetailModal,
   selectedPO,
   selectedPR,
-  statusOptions,
+  poStatusOptions,
   serverItems,
   page,
   itemsPerPage,
   totalItems,
   loading,
+  searchInput,
+  commitSearch,
+  clearSearch,
   loadItems,
   statusLabel,
   openDetail,
@@ -59,14 +61,16 @@ function goToPage(p: number) {
           <!-- Desktop: search + filter -->
           <div v-if="!mobile" class="d-flex align-center" style="gap: 12px">
             <v-text-field
-              v-model="search"
-              placeholder="Search..."
+              v-model="searchInput"
+              placeholder="Search... (press Enter)"
               prepend-inner-icon="mdi-magnify"
               variant="outlined"
               density="compact"
               hide-details
               clearable
               style="min-width: 240px"
+              @keyup.enter="commitSearch"
+              @click:clear="clearSearch"
             />
             <v-menu>
               <template #activator="{ props }">
@@ -81,7 +85,7 @@ function goToPage(p: number) {
               </template>
               <v-list density="compact" min-width="180">
                 <v-list-item
-                  v-for="opt in statusOptions"
+                  v-for="opt in poStatusOptions"
                   :key="String(opt.value)"
                   :title="opt.title"
                   :active="filterStatus === opt.value"
@@ -96,14 +100,16 @@ function goToPage(p: number) {
         <!-- Mobile: search + icon filter (reuses same list) -->
         <div v-if="mobile" class="d-flex align-center" style="gap: 8px">
           <v-text-field
-            v-model="search"
-            placeholder="Search..."
-            prepend-inner-icon="mdi-magnify"
-            variant="outlined"
-            density="compact"
-            hide-details
-            clearable
-            style="flex: 1; min-width: 0"
+            v-model="searchInput"
+              placeholder="Search... (press Enter)"
+              prepend-inner-icon="mdi-magnify"
+              variant="outlined"
+              density="compact"
+              hide-details
+              clearable
+              style="flex: 1; min-width: 0"
+              @keyup.enter="commitSearch"
+              @click:clear="clearSearch"
           />
           <v-menu>
             <template #activator="{ props }">
@@ -118,7 +124,7 @@ function goToPage(p: number) {
             </template>
             <v-list density="compact" min-width="180">
               <v-list-item
-                v-for="opt in statusOptions"
+                v-for="opt in poStatusOptions"
                 :key="String(opt.value)"
                 :title="opt.title"
                 :active="filterStatus === opt.value"
@@ -139,7 +145,7 @@ function goToPage(p: number) {
           :items="serverItems"
           :items-length="totalItems"
           :loading="loading"
-          :search="search"
+          
           :items-per-page-options="[5, 10, 15, 20, 25, 50, 100]"
           hover
           loading-text="Loading purchase orders..."
