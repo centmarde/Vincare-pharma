@@ -15,7 +15,7 @@ const {
   <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
     <v-card class="mx-auto w-100" max-width="1400" rounded="lg" elevation="1">
 
-      <v-card-title class="pa-5 pb-3 text-h6 font-weight-bold">Discrepancies</v-card-title>
+      <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold">Discrepancies</v-card-title>
 
       <v-tabs :model-value="tab" color="primary" class="px-4" @update:model-value="onTabChange">
         <v-tab value="remittance">Remittance Float</v-tab>

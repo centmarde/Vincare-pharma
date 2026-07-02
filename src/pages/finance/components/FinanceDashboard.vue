@@ -7,7 +7,7 @@ const { pnl, loading, dateFrom, dateTo, applyFilter, clearFilter } = useFinanceD
 
 <template>
   <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
-    <div class="w-100" style="max-width: 1400px; margin: 0 auto">
+    <div class="mx-auto w-100">
 
       <div class="d-flex align-center gap-2 mb-2">
         <span class="text-h6 font-weight-bold">Cash Flow (management view)</span>

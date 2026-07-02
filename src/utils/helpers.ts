@@ -462,6 +462,30 @@ export const formatCurrency = (value: number): string =>
     maximumFractionDigits: 2,
   }).format(value).replace('PHP', '₱')
 
+// Batch-expiry fields only need month/year (e.g. "04/2026") — no day. Native
+// <input type="month"> renders an unclear segmented placeholder, so these back
+// a plain MM/YYYY text field with live masking + parsing instead.
+
+// "MM/YYYY" -> Date (first of that month), or null if not a complete valid value.
+export const parseMonthYear = (value: string): Date | null => {
+  const m = value.trim().match(/^(\d{1,2})\/(\d{4})$/)
+  if (!m) return null
+  const month = Number(m[1])
+  const year = Number(m[2])
+  if (month < 1 || month > 12) return null
+  return new Date(year, month - 1, 1)
+}
+
+// Date -> "MM/YYYY".
+export const formatMonthYear = (date: Date): string =>
+  `${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`
+
+// Live input mask: keep digits only, auto-insert the slash -> "MM/YYYY" (capped).
+export const maskMonthYearInput = (raw: string): string => {
+  const digits = raw.replace(/\D/g, '').slice(0, 6)
+  return digits.length <= 2 ? digits : `${digits.slice(0, 2)}/${digits.slice(2)}`
+}
+
 export const formatDatePR_ISO = (dateString: string | null | undefined) => {
   if (!dateString) return ''
   const date = new Date(dateString)

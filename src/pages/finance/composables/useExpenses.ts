@@ -1,13 +1,15 @@
-import { ref, computed, watch } from 'vue'
+import { ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useFinanceDataStore, EXPENSE_CATEGORIES, EXPENSE_DEPARTMENTS, EXPENSE_PAYMENT_METHODS } from '@/stores/financeData'
-import type { ExpenseCategory, ExpenseDepartment, ExpensePaymentMethod } from '@/stores/financeData'
+import { useToast } from 'vue-toastification'
+import { useFinanceDataStore } from '@/stores/financeData'
+import type { AddExpensePayload } from '@/utils/cashAccountTypes'
 
 export const headers = [
   { title: 'REFERENCE #', key: 'reference_no',     sortable: true,  align: 'center' as const },
   { title: 'DATE',        key: 'paid_at',           sortable: true,  align: 'center' as const },
   { title: 'DEPARTMENT',  key: 'department',        sortable: true,  align: 'center' as const },
   { title: 'CATEGORY',    key: 'category',          sortable: true,  align: 'center' as const },
+  { title: 'DESCRIPTION', key: 'remarks',           sortable: false, align: 'center' as const },
   { title: 'OR/SI NO.',   key: 'or_si_no',          sortable: false, align: 'center' as const },
   { title: 'PAID TO',     key: 'paid_to',           sortable: false, align: 'center' as const },
   { title: 'ACCOUNT',     key: 'cash_account_name', sortable: false, align: 'center' as const },
@@ -15,38 +17,16 @@ export const headers = [
   { title: 'ACTIONS',     key: 'actions',           sortable: false, align: 'center' as const },
 ] as const
 
-export { EXPENSE_CATEGORIES, EXPENSE_DEPARTMENTS, EXPENSE_PAYMENT_METHODS }
-
 export function useExpenses() {
   const financeStore = useFinanceDataStore()
+  const toast = useToast()
   const { expenses, cashAccounts, loading } = storeToRefs(financeStore)
 
-  // ─── State ────────────────────────────────────────────────────────
+  // ─── State (expense form fields live inside AddExpenseDialog) ──────
   const showFormDialog = ref(false)
-  const category = ref<ExpenseCategory | null>(null)
-  const department = ref<ExpenseDepartment | null>(null)
-  const orSiNo = ref('')
-  const amount = ref<number | null>(null)
-  const paidTo = ref('')
-  const paymentMethod = ref<ExpensePaymentMethod | null>(null)
-  const valueDate = ref<string | null>(null)
-  const remarks = ref('')
-  const cashAccountId = ref<number | null>(null)
 
   const showDeleteDialog = ref(false)
   const deleteTargetId = ref<number | null>(null)
-
-  // ─── Computed ─────────────────────────────────────────────────────
-  const canSubmit = computed(() => !!category.value && (amount.value ?? 0) > 0 && !!cashAccountId.value)
-
-  // Picking "Petty Cash" as the payment method only makes sense against the
-  // Petty Cash account — auto-select it (there's only ever one) so the user
-  // isn't asked to pick the same thing twice.
-  watch(paymentMethod, (method) => {
-    if (method !== 'petty_cash') return
-    const pettyCash = cashAccounts.value.find((a) => a.account_type === 'petty_cash')
-    if (pettyCash) cashAccountId.value = pettyCash.id
-  })
 
   // ─── Actions ──────────────────────────────────────────────────────
   async function init() {
@@ -54,32 +34,43 @@ export function useExpenses() {
   }
 
   function openFormDialog() {
-    category.value = null
-    department.value = null
-    orSiNo.value = ''
-    amount.value = null
-    paidTo.value = ''
-    paymentMethod.value = null
-    valueDate.value = null
-    remarks.value = ''
-    cashAccountId.value = null
     showFormDialog.value = true
   }
 
-  async function handleSubmit() {
-    if (!canSubmit.value) return
+  async function handleSubmit(payload: AddExpensePayload) {
+    const account = cashAccounts.value.find((a) => a.id === payload.cash_account_id)
     const result = await financeStore.recordExpense({
-      category: category.value as ExpenseCategory,
-      amount: amount.value ?? 0,
-      paidTo: paidTo.value || undefined,
-      paymentMethod: paymentMethod.value || undefined,
-      valueDate: valueDate.value || undefined,
-      remarks: remarks.value || undefined,
-      department: department.value ?? undefined,
-      orSiNo: orSiNo.value || undefined,
-      cashAccountId: cashAccountId.value as number,
+      category: payload.category,
+      amount: payload.amount,
+      paidTo: payload.paid_to || undefined,
+      paymentMethod: account?.classification === 'PETTY_CASH' ? 'petty_cash' : undefined,
+      valueDate: payload.expense_date,
+      remarks: payload.description,
+      department: payload.department,
+      orSiNo: payload.or_si_no || undefined,
+      cashAccountId: payload.cash_account_id,
     })
-    if (result.success) showFormDialog.value = false
+    if (!result.success) return
+    showFormDialog.value = false
+
+    // The dialog's "Request replenishment" toggle — raise the request right
+    // after the expense lands so the fund tops back up through the normal
+    // approval flow. Funding source defaults to the first non-petty account;
+    // the approver sees (and can reject) the FROM account on the request.
+    if (payload.request_replenishment && account) {
+      const fundingAccount = cashAccounts.value.find(
+        (a) => a.id !== account.id && a.classification !== 'PETTY_CASH' && a.is_active,
+      )
+      if (!fundingAccount) {
+        toast.warning('Petty cash is below threshold but no bank account exists to fund a replenishment.')
+        return
+      }
+      await financeStore.requestReplenishment({
+        pettyCashAccountId: account.id,
+        fundingAccountId: fundingAccount.id,
+        remarks: 'Auto-requested from expense entry — petty cash fell below threshold.',
+      })
+    }
   }
 
   function openDeleteDialog(id: number) {
@@ -95,8 +86,7 @@ export function useExpenses() {
 
   return {
     expenses, cashAccounts, loading,
-    showFormDialog, category, department, orSiNo, amount, paidTo, paymentMethod, valueDate, remarks,
-    cashAccountId, canSubmit,
+    showFormDialog,
     showDeleteDialog,
     init, openFormDialog, handleSubmit, openDeleteDialog, confirmDelete,
   }

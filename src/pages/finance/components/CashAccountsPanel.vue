@@ -1,101 +1,43 @@
 <script setup lang="ts">
 import { useCashAccounts, requestHeaders } from '../composables/useCashAccounts'
+import CashAccountsManager from './CashAccountsManager.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
-  cashAccounts, pettyCashAccount, bankAccounts, sortedCashAccounts, totalBankBalance, isPettyCashLow,
-  pendingRequests, replenishmentRequests, loading,
+  cashAccounts, pettyCashAccount, bankAccounts,
+  replenishmentRequests, loading,
   showRequestDialog, fundingAccountId, remarks, canSubmitRequest,
   requestPreview, requestPreviewTotal, requestPreviewLoading,
   showReportDialog, reportItems, reportTotal, openReportDialog,
   showRejectDialog, rejectReason,
-  showAddAccountDialog, newAccountName, newAccountBalance, canSubmitNewAccount,
   isOwnRequest,
   openRequestDialog, submitRequest, approve, openRejectDialog, confirmReject,
-  openAddAccountDialog, submitNewAccount,
+  createAccount,
 } = useCashAccounts()
 </script>
 
 <template>
   <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
-    <div class="w-100" style="max-width: 1400px; margin: 0 auto">
+    <div class="mx-auto w-100">
 
-      <!-- Page header -->
-      <div class="d-flex justify-space-between align-center mb-4">
-        <div>
-          <div class="text-h6 font-weight-bold">Cash Accounts</div>
-          <div class="text-caption text-medium-emphasis">
-            Petty Cash float + {{ bankAccounts.length }} bank account{{ bankAccounts.length === 1 ? '' : 's' }}
-            · {{ formatCurrency(totalBankBalance) }} in bank
-          </div>
-        </div>
-        <v-btn class="text-none" color="primary" variant="flat" elevation="0" prepend-icon="mdi-plus" @click="openAddAccountDialog">
-          Add Bank Account
-        </v-btn>
-      </div>
-
-      <!-- Account balance cards -->
-      <v-row dense class="mb-1">
-        <v-col v-for="account in sortedCashAccounts" :key="account.id" cols="12" sm="6" md="4">
-          <v-card
-            rounded="lg"
-            elevation="1"
-            class="pa-4 h-100 d-flex flex-column"
-            :class="account.account_type === 'petty_cash' ? 'border-s-lg border-warning' : 'border-s-lg border-primary'"
-          >
-            <div class="d-flex justify-space-between align-center mb-2">
-              <div class="d-flex align-center" style="gap: 8px">
-                <v-avatar
-                  size="32"
-                  :color="account.account_type === 'petty_cash' ? 'warning-lighten-4' : 'primary-lighten-5'"
-                  rounded="lg"
-                >
-                  <v-icon
-                    :icon="account.account_type === 'petty_cash' ? 'mdi-cash-multiple' : 'mdi-bank'"
-                    :color="account.account_type === 'petty_cash' ? 'warning' : 'primary'"
-                    size="18"
-                  />
-                </v-avatar>
-                <div>
-                  <div class="text-body-2 font-weight-medium">{{ account.name }}</div>
-                  <div class="text-caption text-medium-emphasis">
-                    {{ account.account_type === 'petty_cash' ? 'Petty Cash Fund' : 'Bank Account' }}
-                  </div>
-                </div>
-              </div>
-              <v-chip
-                v-if="account.account_type === 'petty_cash' && isPettyCashLow"
-                color="warning"
-                size="small"
-                variant="tonal"
-              >
-                Low
-              </v-chip>
-            </div>
-
-            <div class="text-h5 font-weight-bold mt-1">{{ formatCurrency(account.balance) }}</div>
-            <div v-if="account.float_amount != null" class="text-caption text-medium-emphasis mb-2">
-              Float: {{ formatCurrency(account.float_amount) }}
-            </div>
-            <v-spacer />
-            <v-btn
-              v-if="account.account_type === 'petty_cash'"
-              class="text-none mt-3"
-              size="small"
-              color="primary"
-              variant="tonal"
-              :disabled="bankAccounts.length === 0"
-              @click="openRequestDialog"
-            >
-              Request Replenishment
-            </v-btn>
-          </v-card>
-        </v-col>
-      </v-row>
+      <!-- Accounts grouped by classification (header + cards + add dialog) -->
+      <CashAccountsManager :accounts="cashAccounts" :loading="loading" @create="createAccount" />
 
       <!-- Replenishment requests -->
       <v-card rounded="lg" elevation="1">
-        <v-card-title class="pa-5 text-h6 font-weight-bold">Petty Cash Replenishment Requests</v-card-title>
+        <v-card-title class="pa-4 pa-sm-5 d-flex justify-space-between align-center">
+          <span class="text-h6 font-weight-bold">Petty Cash Replenishment Requests</span>
+          <v-btn
+            class="text-none"
+            size="small"
+            color="primary"
+            variant="tonal"
+            :disabled="!pettyCashAccount || bankAccounts.length === 0"
+            @click="openRequestDialog"
+          >
+            Request Replenishment
+          </v-btn>
+        </v-card-title>
         <v-divider />
 
         <v-data-table
@@ -137,7 +79,7 @@ const {
           </template>
 
           <template #item.actions="{ item }">
-            <div class="d-flex justify-center align-center" style="gap: 8px">
+            <div class="d-flex justify-center align-center ga-2">
               <v-btn size="small" variant="text" @click="openReportDialog(item.id)">
                 View Report
               </v-btn>
@@ -179,9 +121,9 @@ const {
     <!-- Request replenishment dialog -->
     <v-dialog v-model="showRequestDialog" max-width="520" persistent>
       <v-card rounded="lg">
-        <v-card-title class="pa-5 pb-3 text-h6 font-weight-bold">Request Petty Cash Replenishment</v-card-title>
+        <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold">Request Petty Cash Replenishment</v-card-title>
         <v-divider />
-        <v-card-text class="pa-5">
+        <v-card-text class="pa-4 pa-sm-5">
           <label class="field-label">Funding Bank Account <span class="text-error">*</span></label>
           <v-select
             v-model="fundingAccountId"
@@ -238,7 +180,7 @@ const {
           />
         </v-card-text>
         <v-divider />
-        <v-card-actions class="pa-4 justify-end" style="gap: 8px">
+        <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end ga-2">
           <v-btn variant="outlined" class="text-none" @click="showRequestDialog = false">Cancel</v-btn>
           <v-btn
             color="primary"
@@ -257,9 +199,9 @@ const {
     <!-- View liquidation report dialog (already-submitted requests) -->
     <v-dialog v-model="showReportDialog" max-width="520">
       <v-card rounded="lg">
-        <v-card-title class="pa-5 pb-3 text-h6 font-weight-bold">Liquidation Report</v-card-title>
+        <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold">Liquidation Report</v-card-title>
         <v-divider />
-        <v-card-text class="pa-5">
+        <v-card-text class="pa-4 pa-sm-5">
           <div v-if="!reportItems.length" class="pa-4 text-center text-medium-emphasis text-caption">
             No expense lines attached to this request.
           </div>
@@ -285,53 +227,8 @@ const {
           </div>
         </v-card-text>
         <v-divider />
-        <v-card-actions class="pa-4 justify-end">
+        <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end ga-2">
           <v-btn variant="outlined" class="text-none" @click="showReportDialog = false">Close</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
-    <!-- Add bank account dialog -->
-    <v-dialog v-model="showAddAccountDialog" max-width="420" persistent>
-      <v-card rounded="lg">
-        <v-card-title class="pa-5 pb-3 text-h6 font-weight-bold">Add Bank Account</v-card-title>
-        <v-divider />
-        <v-card-text class="pa-5">
-          <label class="field-label">Account Name <span class="text-error">*</span></label>
-          <v-text-field
-            v-model="newAccountName"
-            placeholder="e.g. BDO Current Account"
-            variant="outlined"
-            density="compact"
-            hide-details
-            class="mb-3"
-          />
-
-          <label class="field-label">Opening Balance</label>
-          <v-text-field
-            v-model="newAccountBalance"
-            type="number"
-            min="0"
-            prefix="₱"
-            placeholder="0"
-            variant="outlined"
-            density="compact"
-            hide-details
-          />
-        </v-card-text>
-        <v-divider />
-        <v-card-actions class="pa-4 justify-end" style="gap: 8px">
-          <v-btn variant="outlined" class="text-none" @click="showAddAccountDialog = false">Cancel</v-btn>
-          <v-btn
-            color="primary"
-            class="text-none font-weight-bold"
-            elevation="0"
-            :loading="loading"
-            :disabled="!canSubmitNewAccount"
-            @click="submitNewAccount"
-          >
-            Add Account
-          </v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>

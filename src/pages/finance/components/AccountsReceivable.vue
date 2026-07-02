@@ -16,7 +16,7 @@ const bucketLabels: Record<string, string> = {
 
 <template>
   <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
-    <div class="w-100" style="max-width: 1400px; margin: 0 auto">
+    <div class="mx-auto w-100">
 
       <!-- KPI cards -->
       <v-row dense class="mb-1">
@@ -37,7 +37,7 @@ const bucketLabels: Record<string, string> = {
         <v-col cols="12" sm="6" md="6">
           <v-card rounded="lg" elevation="1" class="pa-4">
             <div class="text-caption text-medium-emphasis mb-1">By Bucket</div>
-            <div class="d-flex flex-wrap" style="gap: 12px">
+            <div class="d-flex flex-wrap ga-3">
               <div v-for="b in bucketTotals" :key="b.bucket">
                 <div class="text-caption text-medium-emphasis">{{ bucketLabels[b.bucket] }}</div>
                 <div class="text-body-1 font-weight-bold">{{ formatCurrency(b.total) }}</div>
@@ -49,7 +49,7 @@ const bucketLabels: Record<string, string> = {
 
       <!-- AR ledger -->
       <v-card rounded="lg" elevation="1">
-        <v-card-title class="pa-5 text-h6 font-weight-bold">Accounts Receivable</v-card-title>
+        <v-card-title class="pa-4 pa-sm-5 text-h6 font-weight-bold">Accounts Receivable</v-card-title>
         <v-divider />
 
         <v-data-table

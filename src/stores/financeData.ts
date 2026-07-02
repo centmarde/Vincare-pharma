@@ -52,11 +52,18 @@ export const EXPENSE_PAYMENT_METHODS = [
 
 export type ExpensePaymentMethod = typeof EXPENSE_PAYMENT_METHODS[number]['value']
 
+export type CashClassification = 'CASA' | 'TIME_INVESTMENT' | 'PETTY_CASH'
+
 export type CashAccountType = {
   id: number
   created_at: string
   name: string
+  // account_type is the legacy split kept for the replenishment RPCs/composables;
+  // classification is the accountant-facing refinement (bank → CASA or TIME_INVESTMENT).
+  // Both are written on insert and must agree: PETTY_CASH ↔ 'petty_cash'.
   account_type: 'petty_cash' | 'bank'
+  classification: CashClassification
+  opening_balance: number
   float_amount: number | null
   balance: number
   is_active: boolean
@@ -277,22 +284,26 @@ export const useFinanceDataStore = defineStore('financeData', () => {
 
   // ─── Expenses (transaction_type='expense') ──────────────────────────────────
 
+  // Finance-only fields live in the finance_details extension table
+  // (20260702000004); the dormant core columns are kept as a read fallback for
+  // rows that predate the backfill.
   function mapExpenseRow(row: any): ExpenseType {
+    const details = row.finance_details ?? {}
     return {
       id: row.id,
       created_at: row.created_at,
       reference_no: row.reference_no,
-      category: row.category,
-      department: row.department,
-      or_si_no: row.or_si_no,
-      paid_to: row.paid_to,
+      category: details.category ?? row.category ?? null,
+      department: details.department ?? row.department ?? null,
+      or_si_no: details.or_si_no ?? row.or_si_no ?? null,
+      paid_to: details.paid_to ?? row.paid_to ?? null,
       payment_method: row.payment_method,
       amount: row.total_amount,
       paid_at: row.paid_at,
       remarks: row.remarks,
       created_by: row.created_by,
-      cash_account_id: row.cash_account_id,
-      cash_account_name: row.cash_account?.name ?? null,
+      cash_account_id: details.cash_account_id ?? row.cash_account_id ?? null,
+      cash_account_name: details.cash_account?.name ?? null,
     }
   }
 
@@ -300,10 +311,14 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     loading.value = true
     clearError()
     try {
+      // Category filter lives on the extension table, so filtering needs the
+      // inner-join embed variant to drop non-matching parents.
       let q = supabase.from('transactions')
-        .select('*, cash_account:cash_account_id(name)')
+        .select(options.category
+          ? '*, finance_details!inner(*, cash_account:cash_account_id(name))'
+          : '*, finance_details(*, cash_account:cash_account_id(name))')
         .eq('transaction_type', 'expense')
-      if (options.category) q = q.eq('category', options.category)
+      if (options.category) q = q.eq('finance_details.category', options.category)
       q = applyDateRange(q, 'paid_at', options)
       q = q.order('paid_at', { ascending: false })
 
@@ -383,36 +398,52 @@ export const useFinanceDataStore = defineStore('financeData', () => {
   // Plain master-data insert, same shape as suppliersData.createSupplier — no
   // money moves here, so no RPC is needed (only balance-mutating actions go
   // through SECURITY DEFINER functions).
-  const createCashAccount = async (payload: { name: string; openingBalance: number }) => {
+  // Booking an account posts its opening balance to the GL (DR cash / CR Owner's
+  // Capital) inside the RPC — an opening balance is an accounting event, so this
+  // is a SECURITY DEFINER RPC like every other GL-affecting action, not a plain
+  // insert. See 20260702000006_cash_account_opening_gl.sql.
+  const createCashAccount = async (payload: {
+    name: string
+    classification: CashClassification
+    openingBalance: number
+    isActive: boolean
+  }) => {
     loading.value = true
     clearError()
-    try {
-      const { data, error: createError } = await supabase.from('cash_accounts')
-        .insert([{ name: payload.name, account_type: 'bank', float_amount: null, balance: payload.openingBalance }])
-        .select()
-        .single()
-      if (createError) throw createError
-      cashAccounts.value.push(data as CashAccountType)
-      toast.success('Bank account added.')
-      return { success: true }
-    } catch (err) {
-      handleError(err, 'Failed to add bank account.')
-      toast.error(error.value)
-      return { success: false }
-    } finally {
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
+
+    const { data, error: rpcError } = await supabase.rpc('cash_account_open', {
+      p_name: payload.name,
+      p_classification: payload.classification,
+      p_opening_balance: payload.openingBalance,
+      p_is_active: payload.isActive,
+      p_user: user.id,
+    })
+
+    if (rpcError || !data) {
+      handleError(rpcError, 'Failed to add cash account.')
+      toast.error(rpcError?.message || 'Failed to add cash account.')
       loading.value = false
+      return { success: false }
     }
+
+    cashAccounts.value.push(data as CashAccountType)
+    toast.success('Cash account added.')
+    loading.value = false
+    return { success: true }
   }
 
   function mapReplenishmentRow(row: any): PettyCashReplenishmentType {
+    const details = row.finance_details ?? {}
     return {
       id: row.id,
       created_at: row.created_at,
       reference_no: row.reference_no,
-      cash_account_id: row.cash_account_id,
-      cash_account_name: row.cash_account?.name ?? null,
-      funding_account_id: row.funding_account_id,
-      funding_account_name: row.funding_account?.name ?? null,
+      cash_account_id: details.cash_account_id ?? row.cash_account_id ?? null,
+      cash_account_name: details.cash_account?.name ?? null,
+      funding_account_id: details.funding_account_id ?? row.funding_account_id ?? null,
+      funding_account_name: details.funding_account?.name ?? null,
       amount: row.total_amount ?? 0,
       status: row.status,
       approved_at: row.approved_at,
@@ -427,7 +458,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     clearError()
     try {
       const { data, error: fetchError } = await supabase.from('transactions')
-        .select('*, cash_account:cash_account_id(name), funding_account:funding_account_id(name)')
+        .select('*, finance_details(cash_account_id, funding_account_id, cash_account:cash_account_id(name), funding_account:funding_account_id(name))')
         .eq('transaction_type', 'petty_cash_replenishment')
         .order('created_at', { ascending: false })
       if (fetchError) throw fetchError
@@ -447,18 +478,18 @@ export const useFinanceDataStore = defineStore('financeData', () => {
   const previewPettyCashLiquidation = async (cashAccountId: number) => {
     try {
       const { data: lastApproved } = await supabase.from('transactions')
-        .select('approved_at')
+        .select('approved_at, finance_details!inner(cash_account_id)')
         .eq('transaction_type', 'petty_cash_replenishment')
-        .eq('cash_account_id', cashAccountId)
+        .eq('finance_details.cash_account_id', cashAccountId)
         .eq('status', 'approved')
         .order('approved_at', { ascending: false })
         .limit(1)
         .maybeSingle()
 
       let q = supabase.from('transactions')
-        .select('reference_no, category, paid_to, or_si_no, total_amount, paid_at')
+        .select('reference_no, total_amount, paid_at, finance_details!inner(category, paid_to, or_si_no, cash_account_id)')
         .eq('transaction_type', 'expense')
-        .eq('cash_account_id', cashAccountId)
+        .eq('finance_details.cash_account_id', cashAccountId)
       if (lastApproved?.approved_at) q = q.gt('created_at', lastApproved.approved_at)
       q = q.order('paid_at', { ascending: true })
 
@@ -466,9 +497,9 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       if (fetchError) throw fetchError
       const rows: LiquidationReportItem[] = ((data || []) as any[]).map((r) => ({
         reference_no: r.reference_no,
-        category: r.category,
-        paid_to: r.paid_to,
-        or_si_no: r.or_si_no,
+        category: r.finance_details?.category ?? null,
+        paid_to: r.finance_details?.paid_to ?? null,
+        or_si_no: r.finance_details?.or_si_no ?? null,
         amount: r.total_amount ?? 0,
         paid_at: r.paid_at,
       }))

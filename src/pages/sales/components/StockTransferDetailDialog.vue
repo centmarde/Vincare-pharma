@@ -49,14 +49,14 @@ async function onMarkReceived() {
     @update:model-value="emit('update:modelValue', $event)"
   >
     <v-card rounded="lg" v-if="transfer">
-      <v-card-title class="pa-5 pb-3 d-flex justify-space-between align-center">
+      <v-card-title class="pa-4 pa-sm-5 pb-3 d-flex justify-space-between align-center">
         <span class="text-h6 font-weight-bold">{{ transfer.transfer_no }}</span>
         <v-btn icon="mdi-close" variant="text" size="small" @click="emit('update:modelValue', false)" />
       </v-card-title>
 
       <v-divider />
 
-      <v-card-text class="pa-5">
+      <v-card-text class="pa-4 pa-sm-5">
         <v-row dense class="mb-2">
           <v-col cols="6">
             <div class="text-caption text-medium-emphasis">Branch</div>
@@ -106,7 +106,7 @@ async function onMarkReceived() {
 
       <v-divider />
 
-      <v-card-actions class="pa-4 justify-end" style="gap: 8px">
+      <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end ga-2">
         <!-- Warehouse reviewers approve/reject a pending request. -->
         <template v-if="mode === 'warehouse' && isPendingApproval">
           <v-btn variant="outlined" color="error" class="text-none" :loading="loading" @click="onReject">

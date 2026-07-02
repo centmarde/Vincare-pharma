@@ -14,7 +14,7 @@ const emit = defineEmits<{ (e: 'created'): void }>()
 const {
   loading, rows, supplierOptions,
   addQuote, removeQuote, onQuoteChange, isRecommended,
-  validateQty, bufferQty, lineTotal,
+  validateQty, onExpiryInput, onExpiryBlur, bufferQty, lineTotal,
   canCommit, prPreview, commit, init,
   MIN_MONTHS_TO_EXPIRY,
 } = useCanvass(() => props.order, () => props.shortfall, props.commitFn, () => emit('created'))
@@ -73,9 +73,11 @@ onMounted(init)
               </td>
               <td>
                 <v-text-field
-                  v-model="q.expiry_date" type="date"
+                  :model-value="q.expiry_date"
+                  placeholder="MM/YYYY" maxlength="7" inputmode="numeric"
                   density="compact" variant="outlined" hide-details
-                  @update:model-value="onQuoteChange(rowIdx, qIdx)" />
+                  @update:model-value="onExpiryInput(rowIdx, qIdx, $event)"
+                  @blur="onExpiryBlur(rowIdx, qIdx)" />
               </td>
               <td class="text-right">
                 <v-chip v-if="q.expiry_date" :color="q.is_valid ? 'success' : 'error'" size="x-small" label>
@@ -106,7 +108,7 @@ onMounted(init)
             <v-text-field
               v-model.number="row.order_qty" type="number" :min="row.shortfall_qty"
               density="compact" variant="outlined" hide-details style="max-width:120px"
-              @update:model-value="validateQty(rowIdx)" />
+              @blur="validateQty(rowIdx)" />
             <v-chip v-if="bufferQty(row) > 0" color="info" size="x-small" label>+{{ bufferQty(row) }} buffer</v-chip>
           </div>
           <div class="text-caption">

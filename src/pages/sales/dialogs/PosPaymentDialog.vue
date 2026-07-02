@@ -33,10 +33,10 @@ const quickAmounts = [20, 50, 100, 200, 500, 1000]
     @update:model-value="emit('update:modelValue', $event)"
   >
     <v-card rounded="lg">
-      <v-card-title class="pa-5 pb-3 text-h6 font-weight-bold">Payment</v-card-title>
+      <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold">Payment</v-card-title>
       <v-divider />
 
-      <v-card-text class="pa-5">
+      <v-card-text class="pa-4 pa-sm-5">
         <div class="d-flex justify-space-between align-center mb-4">
           <span class="text-body-1 text-medium-emphasis">Total Due</span>
           <span class="text-h5 font-weight-bold">{{ formatCurrency(total) }}</span>
@@ -110,7 +110,7 @@ const quickAmounts = [20, 50, 100, 200, 500, 1000]
 
       <v-divider />
 
-      <v-card-actions class="pa-4 justify-end" style="gap: 8px">
+      <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end ga-2">
         <v-btn variant="outlined" class="text-none" @click="emit('update:modelValue', false)">
           Cancel
         </v-btn>

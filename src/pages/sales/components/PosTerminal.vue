@@ -31,9 +31,9 @@ onMounted(init)
       <!-- ── Product picker ─────────────────────────────────────── -->
       <v-col cols="12" md="7" class="pa-2">
         <v-card rounded="lg" elevation="1">
-          <v-card-title class="d-flex justify-space-between align-center pa-4 flex-wrap" style="gap: 12px">
+          <v-card-title class="d-flex justify-space-between align-center pa-4 flex-wrap ga-3">
             <span class="text-h6 font-weight-bold">POS</span>
-            <div class="d-flex align-center flex-wrap" style="gap: 12px">
+            <div class="d-flex align-center flex-wrap ga-3">
               <v-select
                 :model-value="selectedOutletId"
                 :items="posOutletOptions"
@@ -112,8 +112,7 @@ onMounted(init)
             <div
               v-for="(line, i) in cart"
               :key="line.product_id"
-              class="d-flex align-center py-2"
-              style="gap: 8px"
+              class="d-flex align-center py-2 ga-2"
             >
               <div class="flex-grow-1">
                 <div class="text-body-2 font-weight-medium">{{ line.product_name }}</div>

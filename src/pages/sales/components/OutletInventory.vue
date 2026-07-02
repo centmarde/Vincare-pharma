@@ -19,7 +19,7 @@ const statusMeta = {
 
 <template>
   <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
-    <div class="w-100" style="max-width: 1400px; margin: 0 auto">
+    <div class="mx-auto w-100">
 
       <!-- Summary cards -->
       <v-row dense class="mb-1">
@@ -50,9 +50,9 @@ const statusMeta = {
       </v-row>
 
       <v-card rounded="lg" elevation="1">
-        <v-card-title class="d-flex justify-space-between align-center pa-5 flex-wrap" style="gap: 12px">
+        <v-card-title class="d-flex justify-space-between align-center pa-5 flex-wrap ga-3">
           <span class="text-h6 font-weight-bold">Branch Inventory</span>
-          <div class="d-flex align-center flex-wrap" style="gap: 12px">
+          <div class="d-flex align-center flex-wrap ga-3">
             <v-select
               :model-value="selectedOutletId"
               :items="outletOptions"

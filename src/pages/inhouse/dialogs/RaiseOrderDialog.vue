@@ -23,9 +23,9 @@ onMounted(init)
   <v-dialog :model-value="modelValue" max-width="960" persistent scrollable
     @update:model-value="emit('update:modelValue', $event)">
     <v-card rounded="lg">
-      <v-card-title class="pa-5 pb-3 text-h6 font-weight-bold">Raise In-House Order (Government PO)</v-card-title>
+      <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold">Raise In-House Order (Government PO)</v-card-title>
       <v-divider />
-      <v-card-text class="pa-5">
+      <v-card-text class="pa-4 pa-sm-5">
         <v-row dense class="mb-2">
           <v-col cols="12" md="6">
             <label class="lbl">Customer (Government / LGU) *</label>

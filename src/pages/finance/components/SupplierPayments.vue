@@ -15,10 +15,10 @@ onMounted(init)
 
 <template>
   <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
-    <div class="w-100" style="max-width: 1400px; margin: 0 auto">
+    <div class="mx-auto w-100">
 
       <v-card rounded="lg" elevation="1" class="mb-3">
-        <v-card-title class="pa-5 text-h6 font-weight-bold">Accounts Payable</v-card-title>
+        <v-card-title class="pa-4 pa-sm-5 text-h6 font-weight-bold">Accounts Payable</v-card-title>
         <v-divider />
 
         <v-data-table
@@ -67,7 +67,7 @@ onMounted(init)
       </v-card>
 
       <v-card rounded="lg" elevation="1">
-        <v-card-title class="pa-5 text-h6 font-weight-bold">Payment History</v-card-title>
+        <v-card-title class="pa-4 pa-sm-5 text-h6 font-weight-bold">Payment History</v-card-title>
         <v-divider />
 
         <v-data-table

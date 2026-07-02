@@ -19,9 +19,9 @@ onMounted(init)
   <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
     <v-card class="mx-auto w-100" max-width="1400" rounded="lg" elevation="1">
 
-      <v-card-title class="d-flex justify-space-between align-center pa-5 flex-wrap" style="gap: 12px">
+      <v-card-title class="d-flex justify-space-between align-center pa-5 flex-wrap ga-3">
         <span class="text-h6 font-weight-bold">Cash Remittances</span>
-        <div class="d-flex align-center" style="gap: 12px">
+        <div class="d-flex align-center ga-3">
           <v-select
             :model-value="selectedOutletId"
             :items="outletOptions"

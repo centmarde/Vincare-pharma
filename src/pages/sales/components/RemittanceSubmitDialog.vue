@@ -31,10 +31,10 @@ const noteRequiredRule = (v: string) => !!v?.trim() || 'A note is required for a
     @update:model-value="emit('update:modelValue', $event)"
   >
     <v-card rounded="lg">
-      <v-card-title class="pa-5 pb-3 text-h6 font-weight-bold">Close Day / Remit Cash</v-card-title>
+      <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold">Close Day / Remit Cash</v-card-title>
       <v-divider />
 
-      <v-card-text class="pa-5">
+      <v-card-text class="pa-4 pa-sm-5">
         <div class="d-flex justify-space-between align-center mb-1">
           <span class="text-body-2 text-medium-emphasis">Unremitted cash sales</span>
           <span class="text-body-2 font-weight-medium">{{ expected.saleCount }}</span>
@@ -101,7 +101,7 @@ const noteRequiredRule = (v: string) => !!v?.trim() || 'A note is required for a
 
       <v-divider />
 
-      <v-card-actions class="pa-4 justify-end" style="gap: 8px">
+      <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end ga-2">
         <v-btn variant="outlined" class="text-none" @click="emit('update:modelValue', false)">
           Cancel
         </v-btn>

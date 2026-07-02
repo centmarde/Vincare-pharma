@@ -2,6 +2,7 @@ import { ref, computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useFinanceDataStore } from '@/stores/financeData'
 import type { LiquidationReportItem } from '@/stores/financeData'
+import type { CreateCashAccountPayload } from '@/utils/cashAccountTypes'
 import { useAuthUserStore } from '@/stores/authUser'
 
 export const requestHeaders = [
@@ -65,25 +66,14 @@ export function useCashAccounts() {
   const rejectTargetId = ref<number | null>(null)
   const rejectReason = ref('')
 
-  // ─── Add bank account dialog ──────────────────────────────────────
-  const showAddAccountDialog = ref(false)
-  const newAccountName = ref('')
-  const newAccountBalance = ref<number | null>(null)
-  const canSubmitNewAccount = computed(() => !!newAccountName.value.trim())
-
-  function openAddAccountDialog() {
-    newAccountName.value = ''
-    newAccountBalance.value = null
-    showAddAccountDialog.value = true
-  }
-
-  async function submitNewAccount() {
-    if (!canSubmitNewAccount.value) return
-    const result = await store.createCashAccount({
-      name: newAccountName.value.trim(),
-      openingBalance: newAccountBalance.value ?? 0,
+  // ─── Add cash account (dialog/form state lives in CashAccountsManager) ──
+  async function createAccount(payload: CreateCashAccountPayload) {
+    await store.createCashAccount({
+      name: payload.name,
+      classification: payload.classification,
+      openingBalance: payload.opening_balance,
+      isActive: payload.is_active,
     })
-    if (result.success) showAddAccountDialog.value = false
   }
 
   async function init() {
@@ -146,9 +136,8 @@ export function useCashAccounts() {
     requestPreview, requestPreviewTotal, requestPreviewLoading,
     showReportDialog, reportItems, reportTotal, openReportDialog,
     showRejectDialog, rejectReason,
-    showAddAccountDialog, newAccountName, newAccountBalance, canSubmitNewAccount,
     isOwnRequest,
     init, openRequestDialog, submitRequest, approve, openRejectDialog, confirmReject,
-    openAddAccountDialog, submitNewAccount,
+    createAccount,
   }
 }

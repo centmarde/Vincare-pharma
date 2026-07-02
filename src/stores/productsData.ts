@@ -305,14 +305,28 @@ export const useProductsDataStore = defineStore('productsData', () => {
   }
 
   const updateProductSkuAndCount = async (
-    updates: { product_id: number; sku: string; actual_count: number }[]
+    updates: { product_id: number; sku: string; actual_count: number; restock?: boolean }[]
   ): Promise<boolean> => {
     if (!updates.length) return true
     clearError()
 
     try {
-      for (const { product_id, sku, actual_count } of updates) {
-        const result = await updateProduct(product_id, { sku, actual_count, current_stock: actual_count })
+      for (const { product_id, sku, actual_count, restock } of updates) {
+        // Manual PR lines own a freshly-minted product, so the counted amount
+        // IS the stock. Canvass-raised lines (restock) receive into an existing
+        // warehouse product — add to its current stock instead of overwriting.
+        let newStock = actual_count
+        if (restock) {
+          const { data, error: stockError } = await supabase
+            .from('products')
+            .select('current_stock')
+            .eq('id', product_id)
+            .single()
+          if (stockError) throw stockError
+          newStock = (data?.current_stock ?? 0) + actual_count
+        }
+
+        const result = await updateProduct(product_id, { sku, actual_count, current_stock: newStock })
         if (!result) throw new Error(`Failed to update product ID ${product_id}`)
       }
       return true

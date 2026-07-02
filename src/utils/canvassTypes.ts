@@ -8,7 +8,7 @@ export type CanvassQuote = {
   supplier_id: number | null
   supplier_name: string
   price: number
-  expiry_date: string          // ISO date the supplier quoted
+  expiry_date: string          // "MM/YYYY" batch expiry the supplier quoted
   months_to_expiry: number     // computed from today
   is_valid: boolean            // months_to_expiry >= 18
 }

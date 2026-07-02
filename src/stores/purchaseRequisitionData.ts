@@ -21,6 +21,7 @@ export type PRItem = {
   sku?:             string | null
   supplier_name?:   string | null
   actual_count?:    number | null
+  restock?:         boolean
 }
 
 export type RequisitionItemType = {
@@ -127,7 +128,12 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       product_id:       ti.product_id,
       sku:              ti.products?.sku             ?? null,
       supplier_name:    ti.products?.suppliers?.name ?? '—',
-      actual_count:     ti.products?.actual_count    ?? 0,
+      // Canvass lines restock an existing warehouse product: pre-fill the
+      // receive dialog's Actual Count with the ordered qty, not the product
+      // master's count from a previous receipt. Manual PR lines own a
+      // freshly-minted product, so the master's actual_count is theirs.
+      actual_count:     ti.qty        ?? ti.products?.actual_count ?? 0,
+      restock:          ti.qty != null,
     }))
   }
 

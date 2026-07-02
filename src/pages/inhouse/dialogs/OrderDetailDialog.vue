@@ -31,7 +31,7 @@ const productName = (id: number | null) =>
   <v-dialog :model-value="modelValue" max-width="920" scrollable
     @update:model-value="emit('update:modelValue', $event)">
     <v-card rounded="lg" v-if="order">
-      <v-card-title class="pa-5 pb-2 d-flex justify-space-between align-center">
+      <v-card-title class="pa-4 pa-sm-5 pb-2 d-flex justify-space-between align-center">
         <div>
           <div class="text-h6 font-weight-bold">{{ order.order_no }}</div>
           <div class="text-caption text-medium-emphasis">
@@ -42,7 +42,7 @@ const productName = (id: number | null) =>
       </v-card-title>
       <v-divider />
 
-      <v-card-text class="pa-5">
+      <v-card-text class="pa-4 pa-sm-5">
         <!-- delivery progress -->
         <div class="d-flex justify-space-between text-body-2 mb-1">
           <span class="font-weight-medium">Delivery progress</span><span>{{ deliveredPct }}%</span>

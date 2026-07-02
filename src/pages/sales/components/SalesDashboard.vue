@@ -10,7 +10,7 @@ const {
 
 <template>
   <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
-    <div class="w-100" style="max-width: 1400px; margin: 0 auto">
+    <div class="mx-auto w-100">
 
       <div class="d-flex justify-end mb-2">
         <v-select

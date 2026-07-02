@@ -10,7 +10,7 @@ const {
 
 <template>
   <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
-    <div class="w-100" style="max-width: 1600px; margin: 0 auto">
+    <div class="mx-auto w-100">
 
       <!-- Date range filter -->
       <v-row dense class="mb-1">
@@ -27,7 +27,7 @@ const {
       </v-row>
 
       <v-card rounded="lg" elevation="1">
-        <v-card-title class="pa-5 text-h6 font-weight-bold">Expense Report</v-card-title>
+        <v-card-title class="pa-4 pa-sm-5 text-h6 font-weight-bold">Expense Report</v-card-title>
         <v-divider />
 
         <div v-if="!departmentGroups.length" class="text-center text-medium-emphasis pa-10">

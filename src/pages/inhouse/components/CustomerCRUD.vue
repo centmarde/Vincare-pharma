@@ -72,11 +72,11 @@ onMounted(init)
 
     <v-dialog v-model="showForm" max-width="520" persistent>
       <v-card rounded="lg">
-        <v-card-title class="pa-5 pb-2 text-h6 font-weight-bold">
+        <v-card-title class="pa-4 pa-sm-5 pb-2 text-h6 font-weight-bold">
           {{ editingId ? 'Edit' : 'New' }} Customer
         </v-card-title>
         <v-divider />
-        <v-card-text class="pa-5">
+        <v-card-text class="pa-4 pa-sm-5">
           <v-form ref="formRef">
             <v-text-field v-model="form.name" label="Name *" :rules="[rules.required]" variant="outlined" density="compact" class="mb-2" />
             <v-select v-model="form.agency_type" :items="agencyTypes" label="Type" variant="outlined" density="compact" class="mb-2" hide-details />

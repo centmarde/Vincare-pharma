@@ -47,6 +47,7 @@ async function saveAllItems(): Promise<boolean> {
       product_id: item.product_id!,
       sku: item.sku!.toString().trim(),
       actual_count: Number(item.actual_count),
+      restock: item.restock === true,
     }))
 
   if (!updates.length) return true

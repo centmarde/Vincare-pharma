@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { useExpenses, headers } from '../composables/useExpenses'
-import ExpenseFormDialog from './dialogs/ExpenseFormDialog.vue'
+import AddExpenseDialog from './dialogs/AddExpenseDialog.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
   expenses, cashAccounts, loading,
-  showFormDialog, category, department, orSiNo, amount, paidTo, paymentMethod, valueDate, remarks,
-  cashAccountId, canSubmit,
+  showFormDialog,
   showDeleteDialog,
   init, openFormDialog, handleSubmit, openDeleteDialog, confirmDelete,
 } = useExpenses()
@@ -60,6 +59,10 @@ onMounted(init)
           <v-chip size="small" variant="tonal" color="primary">{{ item.category }}</v-chip>
         </template>
 
+        <template #item.remarks="{ item }">
+          <span class="text-truncate d-inline-block" style="max-width: 200px">{{ item.remarks ?? '—' }}</span>
+        </template>
+
         <template #item.or_si_no="{ item }">
           {{ item.or_si_no ?? '—' }}
         </template>
@@ -89,29 +92,10 @@ onMounted(init)
 
     </v-card>
 
-    <ExpenseFormDialog
+    <AddExpenseDialog
       v-model="showFormDialog"
-      :category="category"
-      :department="department"
-      :or-si-no="orSiNo"
-      :amount="amount"
-      :paid-to="paidTo"
-      :payment-method="paymentMethod"
-      :value-date="valueDate"
-      :remarks="remarks"
-      :cash-account-id="cashAccountId"
-      :cash-accounts="cashAccounts"
-      :can-submit="canSubmit"
+      :accounts="cashAccounts"
       :loading="loading"
-      @update:category="category = $event"
-      @update:department="department = $event"
-      @update:or-si-no="orSiNo = $event"
-      @update:amount="amount = $event"
-      @update:paid-to="paidTo = $event"
-      @update:payment-method="paymentMethod = $event"
-      @update:value-date="valueDate = $event"
-      @update:remarks="remarks = $event"
-      @update:cash-account-id="cashAccountId = $event"
       @submit="handleSubmit"
     />
 

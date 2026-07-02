@@ -2,6 +2,7 @@ import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
+import { parseMonthYear, formatMonthYear, maskMonthYearInput } from '@/utils/helpers'
 import type { CanvassableOrder, Shortfall, CanvassQuote, CanvassSelection, CanvassCommitFn } from '@/utils/canvassTypes'
 
 const toast = useToast()
@@ -11,6 +12,10 @@ const toast = useToast()
 const MIN_MONTHS_TO_EXPIRY = 18
 // Soft cap: ordering beyond this multiple of the shortfall asks for confirmation.
 const MAX_QTY_MULTIPLE = 3
+// Batch expiry only ever needs month/year (matches how pharma packaging is
+// labeled, e.g. "EXP 06/2027") — entered as a masked "MM/YYYY" text field.
+// Clamp absurd far-future years on blur.
+const MAX_EXPIRY_YEARS_OUT = 15
 
 type CanvassRow = {
   product_id: number
@@ -22,12 +27,11 @@ type CanvassRow = {
   selected_supplier_id: number | null  // winner (auto = cheapest valid, overridable)
 }
 
-// Whole-month difference from today to the quoted expiry date.
+// Whole-month difference from today to the quoted "MM/YYYY" expiry.
 function monthsUntil(dateStr: string): number {
-  if (!dateStr) return 0
+  const exp = parseMonthYear(dateStr)
+  if (!exp) return 0
   const today = new Date()
-  const exp = new Date(dateStr)
-  if (Number.isNaN(exp.getTime())) return 0
   return (exp.getFullYear() - today.getFullYear()) * 12 + (exp.getMonth() - today.getMonth())
 }
 
@@ -94,6 +98,33 @@ export function useCanvass(
     if (!current || !current.is_valid) row.selected_supplier_id = recommendedSupplierId(row)
   }
 
+  // Live-mask the MM/YYYY field as the user types (auto-inserts the slash),
+  // then refresh the quote's derived fields.
+  function onExpiryInput(rowIdx: number, qIdx: number, raw: string) {
+    const row = rows.value[rowIdx]
+    const q = row?.quotes[qIdx]
+    if (!row || !q) return
+    q.expiry_date = maskMonthYearInput(raw)
+    onQuoteChange(rowIdx, qIdx)
+  }
+
+  // On blur, clamp an absurd far-future year. Leave partial/invalid text alone
+  // so the user can keep editing (it just won't pass the validity check).
+  function onExpiryBlur(rowIdx: number, qIdx: number) {
+    const row = rows.value[rowIdx]
+    const q = row?.quotes[qIdx]
+    if (!row || !q) return
+    const exp = parseMonthYear(q.expiry_date)
+    if (!exp) return
+    const max = new Date()
+    max.setFullYear(max.getFullYear() + MAX_EXPIRY_YEARS_OUT)
+    if (exp > max) {
+      toast.warning(`Batch expiry can't be more than ${MAX_EXPIRY_YEARS_OUT} years out.`)
+      q.expiry_date = formatMonthYear(max)
+      onQuoteChange(rowIdx, qIdx)
+    }
+  }
+
   // Cheapest valid quote's supplier (the system recommendation).
   function recommendedSupplierId(row: CanvassRow): number | null {
     const valid = row.quotes.filter((q) => q.is_valid)
@@ -110,6 +141,10 @@ export function useCanvass(
     if (row) row.selected_supplier_id = supplierId
   }
 
+  // Must be called on @blur, not @update:model-value — the latter fires on every
+  // keystroke, so clearing the field to type a new number briefly produces a
+  // value below shortfall_qty mid-edit, which used to toast-spam and clamp the
+  // field back before the user could finish typing.
   function validateQty(rowIdx: number) {
     const row = rows.value[rowIdx]
     if (!row) return
@@ -189,7 +224,7 @@ export function useCanvass(
   return {
     loading, rows, supplierOptions,
     addQuote, removeQuote, onQuoteChange, isRecommended, selectSupplier,
-    validateQty, bufferQty, lineTotal, recommendedSupplierId,
+    validateQty, onExpiryInput, onExpiryBlur, bufferQty, lineTotal, recommendedSupplierId,
     readyRows, canCommit, prPreview, commit, init,
     MIN_MONTHS_TO_EXPIRY,
   }

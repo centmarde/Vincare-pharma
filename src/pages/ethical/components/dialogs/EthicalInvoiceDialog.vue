@@ -161,7 +161,7 @@ async function handlePrint() {
 
       <v-divider />
 
-      <v-card-actions class="pa-4 justify-end" style="gap: 8px">
+      <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end ga-2">
         <v-btn variant="text" color="error" class="text-none" prepend-icon="mdi-printer" @click="handlePrint">
           Print
         </v-btn>
