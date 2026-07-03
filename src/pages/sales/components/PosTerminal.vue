@@ -126,7 +126,8 @@ onMounted(init)
                 density="compact"
                 variant="outlined"
                 hide-details
-                style="width: 72px"
+                class="input-number"
+                style="width: 90px"
                 @update:model-value="setQty(i, Number($event))"
               />
               <div class="text-body-2 font-weight-bold" style="width: 80px; text-align: right">
@@ -197,5 +198,14 @@ onMounted(init)
 <style scoped>
 .bg-surface-variant {
   min-height: 100%;
+}
+.input-number :deep(input[type="number"]) {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.input-number :deep(input[type="number"]::-webkit-outer-spin-button),
+.input-number :deep(input[type="number"]::-webkit-inner-spin-button) {
+  -webkit-appearance: none;
+  margin: 0;
 }
 </style>

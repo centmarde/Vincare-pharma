@@ -95,6 +95,7 @@ async function onMarkReceived() {
                   density="compact"
                   variant="outlined"
                   hide-details
+                  class="input-number"
                   style="width: 110px"
                 />
                 <span v-else>{{ item.received_qty ?? '—' }}</span>
@@ -137,3 +138,15 @@ async function onMarkReceived() {
     </v-card>
   </v-dialog>
 </template>
+
+<style scoped>
+.input-number :deep(input[type="number"]) {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.input-number :deep(input[type="number"]::-webkit-outer-spin-button),
+.input-number :deep(input[type="number"]::-webkit-inner-spin-button) {
+  -webkit-appearance: none;
+  margin: 0;
+}
+</style>

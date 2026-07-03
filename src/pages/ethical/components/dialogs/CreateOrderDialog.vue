@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useCreateOrder } from '../../composables/useCreateOrder'
+import { formatCurrency } from '@/utils/helpers'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean]; created: [] }>()
@@ -87,7 +88,7 @@ watch(() => internalValue.value, (v) => {
                 </td>
                 <td><v-text-field v-model.number="line.quantity" type="number" density="compact" class="text-right" /></td>
                 <td><v-text-field v-model.number="line.unit_price" type="number" density="compact" class="text-right" /></td>
-                <td class="text-right">{{ (line.quantity * line.unit_price).toFixed(2) }}</td>
+                <td class="text-right">{{ formatCurrency(line.quantity * line.unit_price) }}</td>
                 <td><v-btn size="x-small" icon="mdi-delete" @click="removeLine(i)" /></td>
               </tr>
             </tbody>
@@ -95,10 +96,10 @@ watch(() => internalValue.value, (v) => {
         </div>
 
         <div class="text-right space-y-2">
-          <div>Subtotal: {{ subtotal.toFixed(2) }}</div>
-          <div>Discount: {{ discount.toFixed(2) }}</div>
-          <div>Rebate: {{ rebate.toFixed(2) }}</div>
-          <div class="text-lg font-weight-bold">Total: {{ totalWithDiscount.toFixed(2) }}</div>
+          <div>Subtotal: {{ formatCurrency(subtotal) }}</div>
+          <div>Discount: {{ formatCurrency(discount) }}</div>
+          <div>Rebate: {{ formatCurrency(rebate) }}</div>
+          <div class="text-lg font-weight-bold">Total: {{ formatCurrency(totalWithDiscount) }}</div>
         </div>
       </v-card-text>
 

@@ -107,7 +107,7 @@ onMounted(init)
             <span class="text-caption">Order qty</span>
             <v-text-field
               v-model.number="row.order_qty" type="number" :min="row.shortfall_qty"
-              density="compact" variant="outlined" hide-details style="max-width:120px"
+              density="compact" variant="outlined" hide-details class="input-number" style="max-width:120px"
               @blur="validateQty(rowIdx)" />
             <v-chip v-if="bufferQty(row) > 0" color="info" size="x-small" label>+{{ bufferQty(row) }} buffer</v-chip>
           </div>
@@ -137,3 +137,15 @@ onMounted(init)
     </div>
   </div>
 </template>
+
+<style scoped>
+.input-number :deep(input[type="number"]) {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.input-number :deep(input[type="number"]::-webkit-outer-spin-button),
+.input-number :deep(input[type="number"]::-webkit-inner-spin-button) {
+  -webkit-appearance: none;
+  margin: 0;
+}
+</style>

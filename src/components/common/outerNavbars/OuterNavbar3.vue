@@ -141,8 +141,7 @@ function scrollToSection(sectionId: string) {
       :elevation="isScrolled ? 12 : 8"
       :height="xs ? 56 : 64"
       rounded="pill"
-      position="fixed"
-      class="mx-auto px-2"
+      class="mx-auto px-2 sticky-app-bar"
       :style="{
         top: isScrolled ? (xs ? '4px' : '10px') : xs ? '8px' : '20px',
         left: '50%',
@@ -415,5 +414,11 @@ function scrollToSection(sectionId: string) {
 </template>
 
 <style scoped>
-/* All styling handled by Vuetify components and utilities only */
+/* Vuetify's own layout system normally keeps a top-level v-app-bar
+   position: fixed, but that can be undermined by an ancestor that
+   establishes a new containing block (transform/filter/etc. from page
+   transitions). Force it explicitly so the bar never scrolls away. */
+.sticky-app-bar {
+  position: fixed !important;
+}
 </style>
