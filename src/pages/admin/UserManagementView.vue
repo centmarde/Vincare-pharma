@@ -6,13 +6,10 @@ import UserManagementTable from './components/UserManagementTable.vue'
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container fluid class="pa-6">
-        <v-row>
-          <v-col cols="12">
-            <UserManagementTable />
-          </v-col>
-        </v-row>
-      </v-container>
+			<v-container fluid class="px-2 px-sm-4 px-md-6">
+ <UserManagementTable />
+			</v-container>
+
     </template>
   </InnerLayoutWrapper>
 </template>

@@ -67,8 +67,7 @@ type FetchProductsOptions = {
   ascending?: boolean
   limit?: number
   offset?: number
-  eligibleIds?: number[]  // ← new option for filtering by eligible IDs
-  
+  eligibleIds?: number[]
 }
 
 export const useProductsDataStore = defineStore('productsData', () => {
@@ -98,7 +97,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
   const clearError = () => {
     error.value = ''
   }
-  const totalCount = ref(0)  // ← add this
+  const totalCount = ref(0)
 
   const startRealtime = () => {
     // Avoid double subscriptions
@@ -147,6 +146,17 @@ export const useProductsDataStore = defineStore('productsData', () => {
     await supabase.removeChannel(channel)
   }
 
+  const fetchEligibleProductIds = async (): Promise<number[]> => {
+    try {
+      const { data, error: rpcError } = await supabase.rpc('get_eligible_product_ids')
+      if (rpcError) throw rpcError
+      return (data || []).map((row: { product_id: number }) => row.product_id)
+    } catch (err) {
+      handleError(err, 'Failed to fetch eligible product IDs')
+      return []
+    }
+  }
+
   // Actions
   const fetchProducts = async (options: FetchProductsOptions = {}) => {
     loading.value = true
@@ -179,11 +189,19 @@ export const useProductsDataStore = defineStore('productsData', () => {
           `product_name.ilike.%${s}%,generic_name.ilike.%${s}%,barcode.ilike.%${s}%,sku.ilike.%${s}%`,
         )
       }
-      if (eligibleIds && eligibleIds.length > 0) {  // ← here
+      if (eligibleIds && eligibleIds.length > 0) {
         q = q.in('id', eligibleIds)
       }
 
-      q = q.order(orderBy as string, { ascending })
+      // When sorting by stock, use reorder_level percentage (stock health) ordering
+      if (orderBy === 'current_stock') {
+        // Order by reorder_level descending first (prioritize items needing reorder),
+        // then by current_stock as requested (asc/desc)
+        q = q.order('reorder_level', { ascending: false, nullsFirst: false })
+        q = q.order(orderBy as string, { ascending })
+      } else {
+        q = q.order(orderBy as string, { ascending })
+      }
 
       if (typeof limit === 'number' && typeof offset === 'number') {
         q = q.range(offset, offset + limit - 1)
@@ -192,12 +210,12 @@ export const useProductsDataStore = defineStore('productsData', () => {
       }
 
 
-      const { data, count,  error: fetchError } = await q
+      const { data, count, error: fetchError } = await q
 
       if (fetchError) throw fetchError
 
       products.value = (data || []) as ProductType[]
-      totalCount.value = count ?? 0  // ← must be here
+      totalCount.value = count ?? 0
       return products.value
     } catch (err) {
       handleError(err, 'Failed to fetch products')
@@ -357,6 +375,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     totalCount,
 
     // Actions
+    fetchEligibleProductIds,
     fetchProducts,
     fetchProductById,
     createProduct,
