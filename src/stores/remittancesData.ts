@@ -6,6 +6,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useSalesDataStore } from '@/stores/salesData'
+import { nextDocNumber } from '@/utils/helpers'
 import type { OutletType } from '@/stores/outletsData'
 
 const toast = useToast()
@@ -146,6 +147,10 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
     }
   }
 
+  // Snapshot expected cash, create the remittance row + remittance_details, and
+  // tag the swept sales (was remittance_submit). Best-effort, not atomic: a
+  // failure after the header insert can leave a remittance with no tagged sales
+  // (accepted trade-off, JS-over-RPC convention).
   const submitRemittance = async (payload: { outletId: number; actualAmount: number; notes?: string }) => {
     loading.value = true
     clearError()
@@ -157,19 +162,85 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
       return { success: false }
     }
 
-    const { error: rpcError } = await supabase.rpc('remittance_submit', {
-      p_outlet_id: payload.outletId,
-      p_actual:    payload.actualAmount,
-      p_notes:     payload.notes ?? null,
-      p_user:      user.id,
-    })
+    const { data: unremitted, error: sumError } = await supabase
+      .from('transactions')
+      .select('total_amount')
+      .eq('transaction_type', 'sale')
+      .eq('status', 'completed')
+      .is('remittance_id', null)
+      .eq('outlet_id', payload.outletId)
 
-    if (rpcError) {
-      handleError(rpcError, 'Failed to submit remittance.')
-      toast.error(rpcError.message || 'Failed to submit remittance.')
+    if (sumError) {
+      handleError(sumError, 'Failed to compute expected amount.')
+      toast.error(sumError.message || 'Failed to compute expected amount.')
       loading.value = false
       return { success: false }
     }
+    const rows = (unremitted || []) as { total_amount: number | null }[]
+    if (rows.length === 0) {
+      toast.error('No unremitted cash sales to remit.')
+      loading.value = false
+      return { success: false }
+    }
+    const expected = rows.reduce((sum, r) => sum + (r.total_amount ?? 0), 0)
+
+    const year = new Date().getFullYear().toString()
+    const { data: existingRemittances } = await supabase
+      .from('transactions')
+      .select('reference_no')
+      .like('reference_no', `RM-${year}-%`)
+    const remittanceNo = nextDocNumber((existingRemittances ?? []).map(r => r.reference_no), `RM-${year}-`)
+
+    const { data: created, error: insertError } = await supabase
+      .from('transactions')
+      .insert({
+        reference_no: remittanceNo,
+        transaction_type: 'remittance',
+        status: 'submitted',
+        outlet_id: payload.outletId,
+        total_amount: expected,
+        remarks: payload.notes || null,
+        created_by: user.id,
+      })
+      .select('id')
+      .single()
+
+    if (insertError || !created) {
+      handleError(insertError, 'Failed to submit remittance.')
+      toast.error(insertError?.message || 'Failed to submit remittance.')
+      loading.value = false
+      return { success: false }
+    }
+
+    const { error: detailsError } = await supabase
+      .from('remittance_details')
+      .insert({ transaction_id: created.id, actual_amount: payload.actualAmount })
+    if (detailsError) {
+      handleError(detailsError, 'Failed to save remittance details.')
+      toast.error(detailsError.message || 'Failed to save remittance details.')
+      loading.value = false
+      return { success: false }
+    }
+
+    const { error: tagError } = await supabase
+      .from('transactions')
+      .update({ remittance_id: created.id })
+      .eq('transaction_type', 'sale')
+      .eq('status', 'completed')
+      .is('remittance_id', null)
+      .eq('outlet_id', payload.outletId)
+    if (tagError) {
+      handleError(tagError, 'Failed to tag remitted sales.')
+      toast.error(tagError.message || 'Failed to tag remitted sales.')
+      loading.value = false
+      return { success: false }
+    }
+
+    const { error: logError } = await supabase.from('logs').insert({
+      action: 'remitted', description: `Remittance ${remittanceNo} submitted (${rows.length} sales)`,
+      module: 'pos', created_by: user.id, transaction_id: created.id,
+    })
+    if (logError) console.warn('submitRemittance: activity log insert failed:', logError.message)
 
     toast.success('Remittance submitted.')
     await Promise.all([fetchRemittances(), salesStore.fetchSales()])
