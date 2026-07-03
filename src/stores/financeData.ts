@@ -166,6 +166,7 @@ export type ARAgingRow = {
   id: number
   source: 'ethical_order' | 'inhouse_order'
   reference_no: string | null
+  customer_id: number | null
   customer_name: string | null
   total_amount: number
   amount_paid: number
@@ -921,10 +922,10 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     try {
       const [ethicalRes, inhouseRes] = await Promise.all([
         supabase.from('transactions')
-          .select('id, reference_no, total_amount, ethical_details(amount_paid, due_date), customer:customer_id(name)')
+          .select('id, reference_no, total_amount, customer_id, ethical_details(amount_paid, due_date), customer:customer_id(name)')
           .eq('transaction_type', 'ethical_order').in('status', ['invoiced', 'partial']),
         supabase.from('transactions')
-          .select('id, reference_no, total_amount, inhouse_details(amount_paid), status, customer:customer_id(name)')
+          .select('id, reference_no, total_amount, customer_id, inhouse_details(amount_paid), status, customer:customer_id(name)')
           .eq('transaction_type', 'inhouse_order').not('status', 'in', '("paid","cancelled")'),
       ])
       if (ethicalRes.error) throw ethicalRes.error
@@ -941,7 +942,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         const daysOverdue = dueDate ? Math.floor((now - new Date(dueDate).getTime()) / 86400000) : null
         rows.push({
           id: r.id, source: 'ethical_order', reference_no: r.reference_no,
-          customer_name: r.customer?.name ?? null, total_amount: r.total_amount ?? 0,
+          customer_id: r.customer_id ?? null, customer_name: r.customer?.name ?? null, total_amount: r.total_amount ?? 0,
           amount_paid: amountPaid, balance, due_date: dueDate,
           days_overdue: daysOverdue, bucket: bucketFor(daysOverdue),
         })
@@ -954,7 +955,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         // No due_date convention exists yet for in-house orders.
         rows.push({
           id: r.id, source: 'inhouse_order', reference_no: r.reference_no,
-          customer_name: r.customer?.name ?? null, total_amount: r.total_amount ?? 0,
+          customer_id: r.customer_id ?? null, customer_name: r.customer?.name ?? null, total_amount: r.total_amount ?? 0,
           amount_paid: amountPaid, balance, due_date: null,
           days_overdue: null, bucket: 'no-term',
         })

@@ -60,36 +60,32 @@ const submitNewAccount = () => {
           No {{ group.meta.title }} accounts yet.
         </v-card>
 
-        <v-row v-else dense>
-          <v-col v-for="account in group.accounts" :key="account.id" cols="12" sm="6" md="4">
-            <v-card
-              rounded="lg"
-              elevation="1"
-              class="pa-4 h-100 d-flex flex-column border-s-lg"
-              :class="[`border-${group.meta.color}`, { 'account-inactive': !account.is_active }]"
-            >
-              <div class="d-flex justify-space-between align-center mb-2">
-                <div class="d-flex align-center ga-2">
+        <v-card v-else rounded="lg" elevation="1" border>
+          <v-list lines="two" density="comfortable" class="py-0">
+            <template v-for="(account, i) in group.accounts" :key="account.id">
+              <v-divider v-if="i > 0" />
+              <v-list-item
+                :class="{ 'account-inactive': !account.is_active }"
+                :title="account.name"
+                :subtitle="`Opening balance: ${formatCurrency(account.opening_balance)}`"
+              >
+                <template #prepend>
                   <v-avatar size="32" :color="`${group.meta.color}-lighten-5`" rounded="lg">
                     <v-icon :icon="group.meta.icon" :color="group.meta.color" size="18" />
                   </v-avatar>
-                  <div>
-                    <div class="text-body-2 font-weight-medium">{{ account.name }}</div>
-                    <div class="text-caption text-medium-emphasis">{{ group.meta.description }}</div>
+                </template>
+                <template #append>
+                  <div class="d-flex align-center ga-3">
+                    <v-chip v-if="!account.is_active" color="grey" size="small" variant="tonal">
+                      Inactive
+                    </v-chip>
+                    <span class="text-h6 font-weight-bold">{{ formatCurrency(account.balance) }}</span>
                   </div>
-                </div>
-                <v-chip v-if="!account.is_active" color="grey" size="small" variant="tonal">
-                  Inactive
-                </v-chip>
-              </div>
-
-              <div class="text-h5 font-weight-bold mt-1">{{ formatCurrency(account.balance) }}</div>
-              <div class="text-caption text-medium-emphasis">
-                Opening balance: {{ formatCurrency(account.opening_balance) }}
-              </div>
-            </v-card>
-          </v-col>
-        </v-row>
+                </template>
+              </v-list-item>
+            </template>
+          </v-list>
+        </v-card>
       </div>
 
     <!-- Add cash account dialog -->

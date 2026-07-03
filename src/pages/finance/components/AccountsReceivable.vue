@@ -2,7 +2,16 @@
 import { useAccountsReceivable, arHeaders } from '../composables/useAccountsReceivable'
 import { formatCurrency } from '@/utils/helpers'
 
-const { arAging, loading, totalReceivable, bucketTotals, overdueReceivable } = useAccountsReceivable()
+const { loading, totalReceivable, bucketTotals, overdueReceivable, customerJackets } = useAccountsReceivable()
+
+const bucketColor: Record<string, string> = {
+  current: 'success',
+  'no-term': 'grey',
+  '1-30': 'warning',
+  '31-60': 'warning',
+  '61-90': 'error',
+  '90+': 'error',
+}
 
 const bucketLabels: Record<string, string> = {
   current: 'Current',
@@ -47,53 +56,67 @@ const bucketLabels: Record<string, string> = {
         </v-col>
       </v-row>
 
-      <!-- AR ledger -->
+      <!-- AR ledger, grouped into per-customer jackets -->
       <v-card rounded="lg" elevation="1">
         <v-card-title class="pa-4 pa-sm-5 text-h6 font-weight-bold">Accounts Receivable</v-card-title>
         <v-divider />
 
-        <v-data-table
-          :headers="arHeaders"
-          :items="arAging"
-          :loading="loading"
-          loading-text="Loading accounts receivable..."
-          no-data-text="No outstanding receivables."
-          hover
-        >
-          <template #item.source="{ item }">
-            <v-chip size="small" variant="tonal">{{ item.source === 'ethical_order' ? 'Ethical' : 'In-House' }}</v-chip>
-          </template>
+        <div v-if="loading" class="pa-6 text-center text-caption text-medium-emphasis">
+          Loading accounts receivable...
+        </div>
+        <div v-else-if="!customerJackets.length" class="pa-6 text-center text-caption text-medium-emphasis">
+          No outstanding receivables.
+        </div>
 
-          <template #item.customer_name="{ item }">
-            {{ item.customer_name ?? '—' }}
-          </template>
+        <v-expansion-panels v-else variant="accordion" multiple>
+          <v-expansion-panel v-for="jacket in customerJackets" :key="jacket.key">
+            <v-expansion-panel-title>
+              <div class="d-flex align-center ga-3 flex-grow-1 pr-3">
+                <span class="font-weight-medium">{{ jacket.customerName }}</span>
+                <v-chip size="small" variant="tonal">{{ jacket.docCount }} open doc{{ jacket.docCount === 1 ? '' : 's' }}</v-chip>
+                <v-spacer />
+                <v-chip size="small" variant="tonal" :color="bucketColor[jacket.worstBucket]">
+                  {{ bucketLabels[jacket.worstBucket] }}
+                </v-chip>
+                <span class="font-weight-bold">{{ formatCurrency(jacket.totalBalance) }}</span>
+              </div>
+            </v-expansion-panel-title>
+            <v-expansion-panel-text class="pa-0">
+              <v-data-table
+                :headers="arHeaders"
+                :items="jacket.rows"
+                hide-default-footer
+                hover
+              >
+                <template #item.source="{ item }">
+                  <v-chip size="small" variant="tonal">{{ item.source === 'ethical_order' ? 'Ethical' : 'In-House' }}</v-chip>
+                </template>
 
-          <template #item.total_amount="{ item }">
-            {{ formatCurrency(item.total_amount) }}
-          </template>
+                <template #item.total_amount="{ item }">
+                  {{ formatCurrency(item.total_amount) }}
+                </template>
 
-          <template #item.amount_paid="{ item }">
-            {{ formatCurrency(item.amount_paid) }}
-          </template>
+                <template #item.amount_paid="{ item }">
+                  {{ formatCurrency(item.amount_paid) }}
+                </template>
 
-          <template #item.balance="{ item }">
-            <span class="font-weight-bold">{{ formatCurrency(item.balance) }}</span>
-          </template>
+                <template #item.balance="{ item }">
+                  <span class="font-weight-bold">{{ formatCurrency(item.balance) }}</span>
+                </template>
 
-          <template #item.days_overdue="{ item }">
-            {{ item.days_overdue ?? '—' }}
-          </template>
+                <template #item.days_overdue="{ item }">
+                  {{ item.days_overdue ?? '—' }}
+                </template>
 
-          <template #item.bucket="{ item }">
-            <v-chip
-              size="small"
-              variant="tonal"
-              :color="item.bucket === 'current' ? 'success' : item.bucket === 'no-term' ? 'grey' : 'warning'"
-            >
-              {{ bucketLabels[item.bucket] }}
-            </v-chip>
-          </template>
-        </v-data-table>
+                <template #item.bucket="{ item }">
+                  <v-chip size="small" variant="tonal" :color="bucketColor[item.bucket]">
+                    {{ bucketLabels[item.bucket] }}
+                  </v-chip>
+                </template>
+              </v-data-table>
+            </v-expansion-panel-text>
+          </v-expansion-panel>
+        </v-expansion-panels>
       </v-card>
 
     </div>
