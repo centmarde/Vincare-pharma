@@ -4,6 +4,7 @@ import { useOrderDetail } from '../../composables/useOrderDetail'
 import { useEthicalDataStore } from '@/stores/ethicalData'
 import SupplierCanvass from '@/components/canvass/SupplierCanvass.vue'
 import EthicalInvoiceDialog from './EthicalInvoiceDialog.vue'
+import DeliveryReceiptDialog from '@/components/deliveryReceipts/DeliveryReceiptDialog.vue'
 
 const props = defineProps<{ modelValue: boolean; orderId: number | null }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
@@ -14,15 +15,20 @@ const internalValue = computed({
 })
 
 const showInvoice = ref(false)
+const showReceipt = ref(false)
 
 const ethical = useEthicalDataStore()
 const order = computed(() => ethical.currentOrder)
 
 const {
   loading, collectionAmount, collectionMethod, collectionReference,
+  receivedBy, issuedReceipt, canIssueDR,
   isInvoiced, isPartial, isPaid, isAwaitingStock, isCancellable, isOverdue, balance, shortfall, collections,
-  recordCollection, cancelOrder, markCommissionPaid, recheck,
+  recordCollection, cancelOrder, markCommissionPaid, recheck, issueDR,
 } = useOrderDetail(() => order.value)
+
+// Pop the printable DR as soon as one is issued.
+watch(issuedReceipt, (dr) => { if (dr) showReceipt.value = true })
 
 const productName = (id: number) =>
   order.value?.items?.find((i) => i.product_id === id)?.product?.product_name ?? `#${id}`
@@ -197,6 +203,25 @@ watch(
             </tr>
           </tbody>
         </v-table>
+
+        <v-divider class="my-4" />
+
+        <h4 class="mb-2">Delivery Receipt</h4>
+        <div class="text-caption text-medium-emphasis mb-2">
+          Issue a signed proof-of-delivery for the fulfilled quantities. Re-issue for a reprint or second copy.
+        </div>
+        <v-row>
+          <v-col cols="12" sm="6">
+            <v-text-field v-model="receivedBy" label="Received by (consignee)" placeholder="Printed name on the DR"
+              variant="outlined" density="compact" hide-details />
+          </v-col>
+          <v-col cols="12" sm="auto" class="d-flex align-center">
+            <v-btn color="teal" class="text-none font-weight-bold" elevation="0" prepend-icon="mdi-truck-check"
+              :disabled="!canIssueDR" :loading="loading" @click="issueDR">
+              Issue Delivery Receipt
+            </v-btn>
+          </v-col>
+        </v-row>
       </v-card-text>
 
       <v-card-actions>
@@ -216,4 +241,5 @@ watch(
   </v-dialog>
 
   <EthicalInvoiceDialog v-model="showInvoice" :order="order ?? null" />
+  <DeliveryReceiptDialog v-model="showReceipt" :receipt="issuedReceipt" />
 </template>

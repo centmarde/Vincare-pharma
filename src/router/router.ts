@@ -25,6 +25,7 @@ import SalesHistoryView from '@/pages/sales/SalesHistoryView.vue'
 import OutletsView from '@/pages/sales/OutletsView.vue'
 import InhouseOrdersView from '@/pages/inhouse/InhouseOrdersView.vue'
 import CustomersView from '@/pages/inhouse/CustomersView.vue'
+import DeliveryReceiptsView from '@/pages/inhouse/DeliveryReceiptsView.vue'
 import EthicalOrdersView from '@/pages/ethical/EthicalOrdersView.vue'
 import EthicalCustomersView from '@/pages/ethical/CustomersView.vue'
 import EthicalAgentsView from '@/pages/ethical/AgentsView.vue'
@@ -160,6 +161,18 @@ const routes = setupLayouts([
   {
     path: '/inhouse/customers',
     component: CustomersView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/inhouse/delivery-receipts',
+    component: DeliveryReceiptsView,
+    meta: { requiresAuth: true },
+  },
+  {
+    // Same unified registry (shows both sources); a separate route so Ethical
+    // access can be granted independently of In-House.
+    path: '/ethical/delivery-receipts',
+    component: DeliveryReceiptsView,
     meta: { requiresAuth: true },
   },
   {

@@ -211,6 +211,12 @@ export const navigationConfig: NavigationGroup[] = [
         permission: 'inhouse.orders.view',
       },
       {
+        title: 'Delivery Receipts',
+        icon: 'mdi-truck-check',
+        route: '/inhouse/delivery-receipts',
+        permission: 'inhouse.deliveryReceipts.view',
+      },
+      {
         title: 'Customers',
         icon: 'mdi-account-tie',
         route: '/inhouse/customers',
@@ -246,6 +252,12 @@ export const navigationConfig: NavigationGroup[] = [
         icon: 'mdi-percent',
         route: '/ethical/commissions',
         permission: 'ethical.commissions.view',
+      },
+      {
+        title: 'Delivery Receipts',
+        icon: 'mdi-truck-check',
+        route: '/ethical/delivery-receipts',
+        permission: 'ethical.deliveryReceipts.view',
       },
     ],
   },

@@ -2,17 +2,22 @@ import { ref, computed, watch } from 'vue'
 import { useToast } from 'vue-toastification'
 import { useEthicalDataStore } from '@/stores/ethicalData'
 import type { EthicalOrderType, CollectionType, Shortfall } from '@/stores/ethicalData'
+import { useDeliveryReceiptsDataStore, type DeliveryReceiptType } from '@/stores/deliveryReceiptsData'
 
 const toast = useToast()
 
 export function useOrderDetail(order: () => EthicalOrderType | undefined) {
   const ethical = useEthicalDataStore()
+  const drStore = useDeliveryReceiptsDataStore()
 
   const loading = ref(false)
   const collectionAmount = ref(0)
   const collectionMethod = ref('')
   const collectionReference = ref('')
   const collectionRemarks = ref('')
+  // delivery receipt: consignee's printed name + the DR to print once issued
+  const receivedBy = ref('')
+  const issuedReceipt = ref<DeliveryReceiptType | null>(null)
 
   const isInvoiced = computed(() => order()?.status === 'invoiced')
   const isPartial = computed(() => order()?.status === 'partial')
@@ -48,12 +53,35 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
   watch(
     () => order(),
     async (o) => {
+      receivedBy.value = ''
+      issuedReceipt.value = null
       if (o?.id) {
         await ethical.fetchCollections(o.id)
       }
     },
     { immediate: true },
   )
+
+  // A DR can be issued once any quantity has been fulfilled (not cancelled).
+  const canIssueDR = computed(() => {
+    const o = order()
+    if (!o || o.status === 'cancelled') return false
+    return (o.items ?? []).some((it) => (it.delivered_qty ?? 0) > 0)
+  })
+
+  async function issueDR() {
+    const o = order()
+    if (!o?.id) return
+    loading.value = true
+    const result = await ethical.issueDeliveryReceipt({
+      orderId: o.id,
+      receivedBy: receivedBy.value || undefined,
+    })
+    if (result.success && result.drId) {
+      issuedReceipt.value = await drStore.fetchDeliveryReceiptById(result.drId)
+    }
+    loading.value = false
+  }
 
   async function recordCollection() {
     const o = order()
@@ -109,6 +137,9 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
     collectionMethod,
     collectionReference,
     collectionRemarks,
+    receivedBy,
+    issuedReceipt,
+    canIssueDR,
     isInvoiced,
     isPartial,
     isPaid,
@@ -122,5 +153,6 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
     cancelOrder,
     markCommissionPaid,
     recheck,
+    issueDR,
   }
 }

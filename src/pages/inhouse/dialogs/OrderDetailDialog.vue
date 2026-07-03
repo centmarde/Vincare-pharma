@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue'
 import { useOrderDetail } from '../composables/useOrderDetail'
 import SupplierCanvass from '@/components/canvass/SupplierCanvass.vue'
+import DeliveryReceiptDialog from '@/components/deliveryReceipts/DeliveryReceiptDialog.vue'
 import { useInhouseDataStore, type InhouseOrderType } from '@/stores/inhouseData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
@@ -17,11 +19,16 @@ const emit = defineEmits<{
 
 const {
   loading, rounds, shortfall, payments, lineEdits, lineProductEdits, lineCostEdits, productOptions, offerNote, deliverQtys,
+  receivedBy, issuedReceipt,
   payAmount, payReference, payRemarks,
   items, isNegotiating, isAwaitingStock, isReady, isDelivered, isPartiallyPaid, isPaid, canRecordPayment,
   proposedTotal, proposedCost, proposedProfit, proposedMarginPct, deliveredPct, remaining, balance, paidPct,
   onLineProductChange, recordCounter, agree, recheck, deliver, recordPayment,
 } = useOrderDetail(() => props.order, () => emit('changed'))
+
+// Pop the printable DR as soon as one is issued by a delivery.
+const showReceipt = ref(false)
+watch(issuedReceipt, (dr) => { if (dr) showReceipt.value = true })
 
 const productName = (id: number | null) =>
   items.value.find((i) => i.product_id === id)?.product?.product_name ?? `#${id}`
@@ -159,8 +166,15 @@ const productName = (id: number | null) =>
               </tbody>
             </v-table>
 
-            <div v-if="isReady" class="d-flex justify-end mt-2">
-              <v-btn color="teal" size="small" class="text-none font-weight-bold" elevation="0" :loading="loading" @click="deliver">Record Delivery</v-btn>
+            <div v-if="isReady" class="mt-3">
+              <v-row dense align="center" justify="end">
+                <v-col cols="12" sm="6">
+                  <v-text-field v-model="receivedBy" label="Received by (consignee)" placeholder="Printed name on the DR" variant="outlined" density="compact" hide-details />
+                </v-col>
+                <v-col cols="12" sm="auto" class="d-flex justify-end">
+                  <v-btn color="teal" size="small" class="text-none font-weight-bold" elevation="0" :loading="loading" @click="deliver">Record Delivery &amp; Issue DR</v-btn>
+                </v-col>
+              </v-row>
             </div>
           </v-card-text>
         </v-card>
@@ -219,5 +233,8 @@ const productName = (id: number | null) =>
         </v-card>
       </v-card-text>
     </v-card>
+
+    <!-- Printable Delivery Receipt, auto-opened after a delivery is recorded -->
+    <DeliveryReceiptDialog v-model="showReceipt" :receipt="issuedReceipt" />
   </v-dialog>
 </template>

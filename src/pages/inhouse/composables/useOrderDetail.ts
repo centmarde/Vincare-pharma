@@ -2,11 +2,13 @@ import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useInhouseDataStore } from '@/stores/inhouseData'
 import type { InhouseOrderType, Shortfall, NegotiationRound } from '@/stores/inhouseData'
+import { useDeliveryReceiptsDataStore, type DeliveryReceiptType } from '@/stores/deliveryReceiptsData'
 import { useProductsDataStore } from '@/stores/productsData'
 import type { CollectionType } from '@/stores/ethicalData'
 
 export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: () => void) {
   const store = useInhouseDataStore()
+  const drStore = useDeliveryReceiptsDataStore()
   const productsStore = useProductsDataStore()
   const { products } = storeToRefs(productsStore)
   if (!products.value.length) void productsStore.fetchProducts()
@@ -23,8 +25,11 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   const lineProductEdits = ref<Record<number, number | null>>({})
   const lineCostEdits = ref<Record<number, number>>({})
   const offerNote = ref('')
-  // fulfillment panel: qty to deliver now, per line
+  // fulfillment panel: qty to deliver now, per line + the consignee's printed name
   const deliverQtys = ref<Record<number, number>>({})
+  const receivedBy = ref('')
+  // set after a successful delivery so the parent can pop the printable DR
+  const issuedReceipt = ref<DeliveryReceiptType | null>(null)
   // payment panel: government POs are often paid in tranches, not lump-sum
   const payAmount = ref<number | null>(null)
   const payReference = ref('')
@@ -85,6 +90,8 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     lineProductEdits.value = {}
     lineCostEdits.value = {}
     deliverQtys.value = {}
+    receivedBy.value = ''
+    issuedReceipt.value = null
     offerNote.value = ''
     payReference.value = ''
     payRemarks.value = ''
@@ -157,7 +164,11 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
       .filter((l) => l.qty > 0)
     if (!lines.length) return
     loading.value = true
-    const result = await store.deliver(o.id, lines)
+    const result = await store.deliver(o.id, lines, { receivedBy: receivedBy.value || undefined })
+    if (result.success && result.drId) {
+      // Pull the freshly-issued DR so the parent dialog can print it.
+      issuedReceipt.value = await drStore.fetchDeliveryReceiptById(result.drId)
+    }
     loading.value = false
     if (result.success) onChanged()
   }
@@ -182,6 +193,7 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
 
   return {
     loading, rounds, shortfall, payments, lineEdits, lineProductEdits, lineCostEdits, productOptions, offerNote, deliverQtys,
+    receivedBy, issuedReceipt,
     payAmount, payReference, payRemarks,
     items, status, isNegotiating, isAwaitingStock, isReady, isDelivered, isPartiallyPaid, isPaid, canRecordPayment,
     proposedTotal, proposedCost, proposedProfit, proposedMarginPct, deliveredPct, remaining, balance, paidPct,

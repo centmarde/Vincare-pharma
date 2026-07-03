@@ -241,21 +241,32 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     return (data ?? []) as Shortfall[]
   }
 
-  const deliver = async (orderId: number, lines: { item_id: number; qty: number }[]) => {
+  // Recording a delivery also issues a numbered Delivery Receipt (DR-YYYY-###,
+  // generated server-side); returns it so the caller can print immediately.
+  const deliver = async (
+    orderId: number,
+    lines: { item_id: number; qty: number }[],
+    opts: { receivedBy?: string; remarks?: string } = {},
+  ) => {
     loading.value = true
     clearError()
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
 
-    const { error: rpcError } = await supabase.rpc('inhouse_deliver', { p_id: orderId, p_lines: lines, p_user: user.id })
+    const { data, error: rpcError } = await supabase.rpc('inhouse_deliver', {
+      p_id: orderId, p_lines: lines,
+      p_received_by: opts.receivedBy ?? null, p_remarks: opts.remarks ?? null,
+      p_user: user.id,
+    })
     if (rpcError) {
       handleError(rpcError, 'Failed to record delivery.'); toast.error(rpcError.message || 'Failed to record delivery.')
       loading.value = false; return { success: false }
     }
-    toast.success('Delivery recorded.')
+    const result = (data ?? {}) as { dr_id?: number; dr_no?: string }
+    toast.success(result.dr_no ? `Delivery recorded — ${result.dr_no} issued.` : 'Delivery recorded.')
     await fetchOrders()
     loading.value = false
-    return { success: true }
+    return { success: true, drId: result.dr_id, drNo: result.dr_no }
   }
 
   // Government POs are commonly paid in tranches, not lump-sum — each call

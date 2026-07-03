@@ -273,6 +273,39 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     return { success: true, collectionId }
   }
 
+  // Issue a Delivery Receipt for the fulfilled quantities. Document-only (stock
+  // already moved at invoice) via ethical_issue_dr; re-issuable (a reprint is a
+  // fresh DR number). Returns the DR so the caller can print it immediately.
+  const issueDeliveryReceipt = async (payload: {
+    orderId: number
+    receivedBy?: string
+    remarks?: string
+  }) => {
+    loading.value = true
+    clearError()
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
+
+    const { data, error: rpcError } = await supabase.rpc('ethical_issue_dr', {
+      p_id:          payload.orderId,
+      p_received_by: payload.receivedBy ?? null,
+      p_remarks:     payload.remarks ?? null,
+      p_user:        user.id,
+    })
+
+    if (rpcError || !data) {
+      handleError(rpcError, 'Failed to issue delivery receipt.')
+      toast.error(rpcError?.message || 'Failed to issue delivery receipt.')
+      loading.value = false
+      return { success: false }
+    }
+
+    const result = data as { dr_id: number; dr_no: string }
+    toast.success(`${result.dr_no} issued.`)
+    loading.value = false
+    return { success: true, drId: result.dr_id, drNo: result.dr_no }
+  }
+
   const cancelOrder = async (orderId: number, reason: string) => {
     loading.value = true
     clearError()
@@ -424,7 +457,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
   return {
     orders, currentOrder, collections, commissionSummary, loading, error,
     fetchOrders, fetchOrderById, createOrder, recordCollection, cancelOrder,
-    recheckStock, canvassToPRs,
+    recheckStock, canvassToPRs, issueDeliveryReceipt,
     fetchCollections, markCommissionPaid, fetchCommissionSummary,
     startRealtime, stopRealtime, clearError, resetStore,
   }
