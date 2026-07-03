@@ -114,27 +114,30 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
 
   // ─── Mappers ────────────────────────────────────────────────────
   function mapTransactionItems(transactionItems: any[]): PRItem[] {
-    return transactionItems.map((ti: any, index: number) => ({
-      id:               ti.id,
-      no:               index + 1,
-      unit:             ti.products?.unit           ?? '—',
-      item_description: ti.products?.product_name   ?? '—',
-      // Prefer the requisition line's own qty/price (what canvass-raised PRs
-      // from In-House/Ethical write to transaction_items); fall back to the
-      // product master for manual PRs, which store qty/cost there instead.
-      qty:              ti.qty        ?? ti.products?.current_stock ?? 0,
-      offer_per_unit:   ti.products?.selling_price ?? 0,
-      cost_per_unit:    ti.unit_price ?? ti.products?.cost_price    ?? 0,
-      product_id:       ti.product_id,
-      sku:              ti.products?.sku             ?? null,
-      supplier_name:    ti.products?.suppliers?.name ?? '—',
-      // Canvass lines restock an existing warehouse product: pre-fill the
-      // receive dialog's Actual Count with the ordered qty, not the product
-      // master's count from a previous receipt. Manual PR lines own a
-      // freshly-minted product, so the master's actual_count is theirs.
-      actual_count:     ti.qty        ?? ti.products?.actual_count ?? 0,
-      restock:          ti.qty != null,
-    }))
+    return transactionItems.map((ti: any, index: number) => {
+      // Line values live in transaction_item_details now (1:1). Canvass-raised
+      // PRs write them there; manual PRs leave them null and store qty/cost on
+      // the product master instead — hence the product-master fallback below.
+      const d = ti.transaction_item_details ?? {}
+      return {
+        id:               ti.id,
+        no:               index + 1,
+        unit:             ti.products?.unit           ?? '—',
+        item_description: ti.products?.product_name   ?? '—',
+        qty:              d.qty        ?? ti.products?.current_stock ?? 0,
+        offer_per_unit:   ti.products?.selling_price ?? 0,
+        cost_per_unit:    d.unit_price ?? ti.products?.cost_price    ?? 0,
+        product_id:       ti.product_id,
+        sku:              ti.products?.sku             ?? null,
+        supplier_name:    ti.products?.suppliers?.name ?? '—',
+        // Canvass lines restock an existing warehouse product: pre-fill the
+        // receive dialog's Actual Count with the ordered qty, not the product
+        // master's count from a previous receipt. Manual PR lines own a
+        // freshly-minted product, so the master's actual_count is theirs.
+        actual_count:     d.qty        ?? ti.products?.actual_count ?? 0,
+        restock:          d.qty != null,
+      }
+    })
   }
 
   function resolveUserNames(createdBy: string | null, approvedBy: string | null) {
@@ -258,7 +261,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       .select(`
         *,
         transaction_items (
-          id, product_id, qty, unit_price, cost_price,
+          id, product_id, transaction_item_details ( qty, unit_price, cost_price ),
           products ( id, product_name, unit, cost_price, selling_price, current_stock, sku, supplier_id, actual_count, suppliers ( name ) )
         )
       `)
@@ -287,7 +290,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       .select(`
         *,
         transaction_items (
-          id, product_id, qty, unit_price, cost_price,
+          id, product_id, transaction_item_details ( qty, unit_price, cost_price ),
           products ( id, product_name, unit, cost_price, selling_price, current_stock, sku, supplier_id, actual_count, suppliers ( name ) )
         )
       `)

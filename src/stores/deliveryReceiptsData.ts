@@ -35,7 +35,7 @@ export type DeliveryReceiptType = {
 }
 
 const SELECT_DR =
-  '*, transaction_items(id, product_id, qty, product:product_id(*)), ' +
+  '*, transaction_items(id, product_id, transaction_item_details(qty), product:product_id(*)), ' +
   'parent:parent_transaction_id(reference_no, po_no, transaction_type, customer:customer_id(name))'
 
 function mapDR(row: any): DeliveryReceiptType {
@@ -54,7 +54,7 @@ function mapDR(row: any): DeliveryReceiptType {
     items: (row.transaction_items ?? []).map((li: any) => ({
       id:         li.id,
       product_id: li.product_id,
-      qty:        li.qty,
+      qty:        li.transaction_item_details?.qty,
       product:    li.product,
     })),
   }

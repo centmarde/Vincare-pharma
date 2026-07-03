@@ -165,7 +165,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       no:               index + 1,
       unit:             ti.products?.unit          ?? '—',
       item_description: ti.products?.product_name  ?? '—',
-      qty:              ti.qty                      ?? 0,
+      qty:              ti.transaction_item_details?.qty ?? 0,
       offer_per_unit:   ti.products?.selling_price  ?? 0,
       cost_per_unit:    ti.products?.cost_price     ?? 0,
       product_id:       ti.product_id,
@@ -416,16 +416,26 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       return { success: false }
     }
 
-    const { error: itemsError } = await supabase
+    const { data: createdItems, error: itemsError } = await supabase
       .from('transaction_items')
-      .insert(items.value.map((item, index) => ({
+      .insert(items.value.map((_, index) => ({
         transaction_id: txData.id,
         product_id:     productData[index].id,
-        qty:            item.qty,
       })))
+      .select('id')
 
-    if (itemsError) {
+    if (itemsError || !createdItems) {
       handleError(itemsError, 'Failed to save transaction items.')
+      toast.error('Failed to save transaction items. Please try again.')
+      loading.value = false
+      return { success: false }
+    }
+
+    const { error: itemDetailsError } = await supabase.from('transaction_item_details').insert(
+      createdItems.map((row, index) => ({ transaction_item_id: row.id, qty: items.value[index].qty })),
+    )
+    if (itemDetailsError) {
+      handleError(itemDetailsError, 'Failed to save transaction items.')
       toast.error('Failed to save transaction items. Please try again.')
       loading.value = false
       return { success: false }
@@ -536,7 +546,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       .select(`
         *,
         transaction_items (
-          id, product_id, qty,
+          id, product_id, transaction_item_details ( qty ),
           products ( id, product_name, unit, cost_price, selling_price, current_stock, sku, supplier_id, actual_count, suppliers ( name ) )
         )
       `)
@@ -566,7 +576,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       .select(`
         *,
         transaction_items (
-          id, product_id, qty,
+          id, product_id, transaction_item_details ( qty ),
           products ( id, product_name, unit, cost_price, selling_price, current_stock, sku, supplier_id, actual_count, suppliers ( name ) )
         )
       `)

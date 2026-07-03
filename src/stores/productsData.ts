@@ -28,16 +28,6 @@ export type ProductType = {
   cost_per_unit: number | null
   no: number | null
   actual_count: number | null
-  // Phase-2 columns mirrored from transaction_items (20260703000002). Nullable
-  // placeholders — no writer yet; present so products can carry line-item values
-  // directly in a later phase. cost_price above is the shared one.
-  qty: number | null
-  unit_price: number | null
-  line_total: number | null
-  received_qty: number | null
-  delivered_qty: number | null
-  stock_sources: Record<string, unknown> | null
-  supplier_quotes: Record<string, unknown> | null
   // Joined supplier data (via FK)
   suppliers: SupplierType | null
 }
@@ -62,15 +52,6 @@ export type CreateProductData = {
   cost_per_unit?: number | null
   no?: number | null
   actual_count?: number | null
-  // Phase-2 columns mirrored from transaction_items (20260703000002); optional,
-  // not surfaced in the product form yet.
-  qty?: number | null
-  unit_price?: number | null
-  line_total?: number | null
-  received_qty?: number | null
-  delivered_qty?: number | null
-  stock_sources?: Record<string, unknown> | null
-  supplier_quotes?: Record<string, unknown> | null
 }
 
 export type UpdateProductData = CreateProductData

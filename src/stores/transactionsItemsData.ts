@@ -6,13 +6,13 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import type { ProductType } from '@/stores/productsData'
 import type { TransactionType } from '@/stores/transactionsData'
 
-// Matches `public.transaction_items` schema (with FK joins)
+// Matches `public.transaction_items` schema — now a pure link table. All line
+// value fields (qty/unit_price/…) moved to transaction_item_details (1:1).
 export type TransactionItemType = {
   id: number
   created_at: string
   transaction_id: number | null
   product_id: number | null
-  qty: number | null
   // Joined FK data
   transaction?: TransactionType | null
   product?: ProductType | null
@@ -21,7 +21,6 @@ export type TransactionItemType = {
 export type CreateTransactionItemData = {
   transaction_id?: number | null
   product_id?: number | null
-  qty?: number | null
 }
 
 export type UpdateTransactionItemData = Partial<CreateTransactionItemData>
