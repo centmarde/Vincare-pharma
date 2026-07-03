@@ -284,9 +284,12 @@ export const useFinanceDataStore = defineStore('financeData', () => {
 
   // ─── Expenses (transaction_type='expense') ──────────────────────────────────
 
-  // Finance-only fields live in the finance_details extension table
-  // (20260702000004); the dormant core columns are kept as a read fallback for
-  // rows that predate the backfill.
+  // Scalar finance fields (category/paid_to/department/or_si_no) live in the
+  // finance_details extension table (20260702000004). The two ENTITY FKs
+  // (cash_account_id, funding_account_id) were moved back onto the transactions
+  // hub in 20260702000009 — read them off the row, join the account by name at
+  // top level. finance_details.cash_account_id is a dormant fallback for rows
+  // not yet backfilled.
   function mapExpenseRow(row: any): ExpenseType {
     const details = row.finance_details ?? {}
     return {
@@ -302,8 +305,8 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       paid_at: row.paid_at,
       remarks: row.remarks,
       created_by: row.created_by,
-      cash_account_id: details.cash_account_id ?? row.cash_account_id ?? null,
-      cash_account_name: details.cash_account?.name ?? null,
+      cash_account_id: row.cash_account_id ?? details.cash_account_id ?? null,
+      cash_account_name: row.cash_account?.name ?? null,
     }
   }
 
@@ -312,11 +315,12 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     clearError()
     try {
       // Category filter lives on the extension table, so filtering needs the
-      // inner-join embed variant to drop non-matching parents.
+      // inner-join embed variant to drop non-matching parents. cash_account_id
+      // is on the hub now (20260702000009), so its name join is top-level.
       let q = supabase.from('transactions')
         .select(options.category
-          ? '*, finance_details!inner(*, cash_account:cash_account_id(name))'
-          : '*, finance_details(*, cash_account:cash_account_id(name))')
+          ? '*, cash_account:cash_account_id(name), finance_details!inner(*)'
+          : '*, cash_account:cash_account_id(name), finance_details(*)')
         .eq('transaction_type', 'expense')
       if (options.category) q = q.eq('finance_details.category', options.category)
       q = applyDateRange(q, 'paid_at', options)
@@ -434,16 +438,17 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     return { success: true }
   }
 
+  // Both account FKs are on the transactions hub now (20260702000009); a
+  // replenishment no longer writes a finance_details row at all.
   function mapReplenishmentRow(row: any): PettyCashReplenishmentType {
-    const details = row.finance_details ?? {}
     return {
       id: row.id,
       created_at: row.created_at,
       reference_no: row.reference_no,
-      cash_account_id: details.cash_account_id ?? row.cash_account_id ?? null,
-      cash_account_name: details.cash_account?.name ?? null,
-      funding_account_id: details.funding_account_id ?? row.funding_account_id ?? null,
-      funding_account_name: details.funding_account?.name ?? null,
+      cash_account_id: row.cash_account_id ?? null,
+      cash_account_name: row.cash_account?.name ?? null,
+      funding_account_id: row.funding_account_id ?? null,
+      funding_account_name: row.funding_account?.name ?? null,
       amount: row.total_amount ?? 0,
       status: row.status,
       approved_at: row.approved_at,
@@ -458,7 +463,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     clearError()
     try {
       const { data, error: fetchError } = await supabase.from('transactions')
-        .select('*, finance_details(cash_account_id, funding_account_id, cash_account:cash_account_id(name), funding_account:funding_account_id(name))')
+        .select('*, cash_account:cash_account_id(name), funding_account:funding_account_id(name)')
         .eq('transaction_type', 'petty_cash_replenishment')
         .order('created_at', { ascending: false })
       if (fetchError) throw fetchError
@@ -477,19 +482,21 @@ export const useFinanceDataStore = defineStore('financeData', () => {
   // review what they're about to submit before committing.
   const previewPettyCashLiquidation = async (cashAccountId: number) => {
     try {
+      // cash_account_id filters on the hub now (20260702000009); the scalar
+      // fields (category/paid_to/or_si_no) still come from finance_details.
       const { data: lastApproved } = await supabase.from('transactions')
-        .select('approved_at, finance_details!inner(cash_account_id)')
+        .select('approved_at')
         .eq('transaction_type', 'petty_cash_replenishment')
-        .eq('finance_details.cash_account_id', cashAccountId)
+        .eq('cash_account_id', cashAccountId)
         .eq('status', 'approved')
         .order('approved_at', { ascending: false })
         .limit(1)
         .maybeSingle()
 
       let q = supabase.from('transactions')
-        .select('reference_no, total_amount, paid_at, finance_details!inner(category, paid_to, or_si_no, cash_account_id)')
+        .select('reference_no, total_amount, paid_at, finance_details(category, paid_to, or_si_no)')
         .eq('transaction_type', 'expense')
-        .eq('finance_details.cash_account_id', cashAccountId)
+        .eq('cash_account_id', cashAccountId)
       if (lastApproved?.approved_at) q = q.gt('created_at', lastApproved.approved_at)
       q = q.order('paid_at', { ascending: true })
 

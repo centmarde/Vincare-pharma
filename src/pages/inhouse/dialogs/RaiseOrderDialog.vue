@@ -47,7 +47,7 @@ onMounted(init)
           <thead>
             <tr>
               <th class="text-left">Product</th>
-              <th class="text-right" style="width:90px">Qty</th>
+              <th class="text-right" style="width:100px">Qty</th>
               <th class="text-right" style="width:130px">Offer/Unit</th>
               <th class="text-right" style="width:130px">Cost/Unit</th>
               <th class="text-right" style="width:120px">Offer Total</th>
@@ -60,7 +60,7 @@ onMounted(init)
                 <v-select v-model="line.product_id" :items="productOptions" placeholder="Select"
                   variant="outlined" density="compact" hide-details @update:model-value="onProductChange(i)" />
               </td>
-              <td><v-text-field v-model.number="line.qty" type="number" min="1" variant="outlined" density="compact" hide-details /></td>
+              <td><v-text-field v-model.number="line.qty" type="number" min="1" variant="outlined" density="compact" hide-details class="input-number" /></td>
               <td><v-text-field v-model.number="line.offer_unit" type="number" min="0" prefix="₱" variant="outlined" density="compact" hide-details /></td>
               <td><v-text-field v-model.number="line.cost_unit" type="number" min="0" prefix="₱" variant="outlined" density="compact" hide-details /></td>
               <td class="text-right">{{ formatCurrency(line.qty * line.offer_unit) }}</td>
@@ -95,4 +95,13 @@ onMounted(init)
 
 <style scoped>
 .lbl { display:block; font-size:.8rem; font-weight:600; color:#424242; margin-bottom:4px; }
+.input-number :deep(input[type="number"]) {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.input-number :deep(input[type="number"]::-webkit-outer-spin-button),
+.input-number :deep(input[type="number"]::-webkit-inner-spin-button) {
+  -webkit-appearance: none;
+  margin: 0;
+}
 </style>

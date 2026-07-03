@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useDisplay } from 'vuetify'
+import { formatCurrency } from '@/utils/helpers'
 import { useProductsWidget } from '@/composables/useProductsWidget'
 import { useTheme } from '@/stores/useTheme'
 import ProductMobile from '../products/mobile/ProductMobile.vue'
@@ -158,11 +159,11 @@ function stockColor(item: any) {
         @update:options="handleTableOptions"
       >
         <template #[`item.selling_price`]="{ value }">
-          <span v-if="value != null">${{ Number(value).toFixed(2) }}</span>
+          <span v-if="value != null">{{ formatCurrency(Number(value)) }}</span>
           <span v-else class="text-grey">-</span>
         </template>
         <template #[`item.cost_price`]="{ value }">
-          <span v-if="value != null">${{ Number(value).toFixed(2) }}</span>
+          <span v-if="value != null">{{ formatCurrency(Number(value)) }}</span>
           <span v-else class="text-grey">-</span>
         </template>
         <template #[`item.current_stock`]="{ item }">

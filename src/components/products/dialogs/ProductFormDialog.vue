@@ -103,13 +103,13 @@ function onExpiryBlur() {
               <v-text-field v-model="productForm.sku" label="SKU" prepend-inner-icon="mdi-tag" variant="outlined" density="comfortable" :rules="[rules.required]" required></v-text-field>
             </v-col>
             <v-col cols="12" :sm="mobile ? 12 : 6">
-              <v-text-field v-model.number="productForm.actual_count" label="Current Stock" type="number" prepend-inner-icon="mdi-numeric" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
+              <v-text-field v-model.number="productForm.current_stock" label="Current Stock" type="number" prepend-inner-icon="mdi-numeric" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
             </v-col>
             <v-col cols="12" :sm="mobile ? 12 : 6">
-              <v-text-field v-model.number="productForm.cost_price" label="Cost Price" type="number" step="0.01" prepend-inner-icon="mdi-currency-usd" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
+              <v-text-field v-model.number="productForm.cost_price" label="Cost Price" type="number" step="0.01" prepend-inner-icon="mdi-currency-php" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
             </v-col>
             <v-col cols="12" :sm="mobile ? 12 : 6">
-              <v-text-field v-model.number="productForm.selling_price" label="Selling Price" type="number" step="0.01" prepend-inner-icon="mdi-currency-usd" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
+              <v-text-field v-model.number="productForm.selling_price" label="Selling Price" type="number" step="0.01" prepend-inner-icon="mdi-currency-php" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
             </v-col>
             <v-col cols="12" :sm="mobile ? 12 : 6">
               <v-text-field v-model="productForm.category" label="Category" prepend-inner-icon="mdi-shape" variant="outlined" density="comfortable"></v-text-field>
@@ -136,7 +136,7 @@ function onExpiryBlur() {
               <v-text-field v-model.number="productForm.offer_per_unit" label="Offer Per Unit" type="number" step="0.01" prepend-inner-icon="mdi-percent" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
             </v-col>
             <v-col cols="12" :sm="mobile ? 12 : 6">
-              <v-text-field v-model.number="productForm.cost_per_unit" label="Cost Per Unit" type="number" step="0.01" prepend-inner-icon="mdi-currency-usd" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
+              <v-text-field v-model.number="productForm.cost_per_unit" label="Cost Per Unit" type="number" step="0.01" prepend-inner-icon="mdi-currency-php" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
             </v-col>
             <v-col cols="12" :sm="mobile ? 12 : 6">
               <v-select v-model="productForm.unit" label="Unit" prepend-inner-icon="mdi-counter" variant="outlined" density="comfortable" :items="['Box', 'Pcs', 'Set', 'Unit', 'Kg', 'M']" clearable ></v-select>
