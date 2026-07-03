@@ -380,20 +380,22 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     }
   }
 
+  // Single-table update — done in JS per the "no RPC under ~10 round-trips"
+  // convention (was ethical_mark_commission_paid, one `update collections`).
   const markCommissionPaid = async (collectionId: number) => {
     loading.value = true
     clearError()
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
 
-    const { error: rpcError } = await supabase.rpc('ethical_mark_commission_paid', {
-      p_collection_id: collectionId,
-      p_user:          user.id,
-    })
+    const { error: updateError } = await supabase
+      .from('collections')
+      .update({ commission_status: 'paid', commission_paid_at: new Date().toISOString() })
+      .eq('id', collectionId)
 
-    if (rpcError) {
-      handleError(rpcError, 'Failed to mark commission as paid.')
-      toast.error(rpcError.message || 'Failed to mark commission as paid.')
+    if (updateError) {
+      handleError(updateError, 'Failed to mark commission as paid.')
+      toast.error(updateError.message || 'Failed to mark commission as paid.')
       loading.value = false
       return { success: false }
     }

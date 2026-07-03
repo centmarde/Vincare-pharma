@@ -206,19 +206,43 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
     return true
   }
 
+  // Status flip + activity log — done in JS per the "no RPC under ~10 round-trips"
+  // convention (was transfer_reject). The .eq('status','pending_approval') guard
+  // reproduces the RPC's "not pending" rejection; the log is best-effort (a failed
+  // log doesn't roll back the status, accepted per the convention — non-financial).
   const rejectTransfer = async (transferId: number) => {
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); return false }
 
     loading.value = true
-    const { error: rpcError } = await supabase.rpc('transfer_reject', { p_id: transferId, p_user: user.id })
-    loading.value = false
+    const nowIso = new Date().toISOString()
+    const { data: updated, error: updateError } = await supabase
+      .from('transactions')
+      .update({ status: 'rejected', approved_by: user.id, approved_at: nowIso, updated_at: nowIso })
+      .eq('id', transferId)
+      .eq('transaction_type', 'stock_transfer')
+      .eq('status', 'pending_approval')
+      .select('id')
 
-    if (rpcError) {
-      handleError(rpcError, 'Failed to reject stock transfer.')
-      toast.error(rpcError.message || 'Failed to reject stock transfer.')
+    if (updateError) {
+      loading.value = false
+      handleError(updateError, 'Failed to reject stock transfer.')
+      toast.error(updateError.message || 'Failed to reject stock transfer.')
       return false
     }
+    if (!updated || updated.length === 0) {
+      loading.value = false
+      toast.error('Transfer is not pending approval.')
+      return false
+    }
+
+    const { error: logError } = await supabase.from('logs').insert({
+      action: 'rejected', description: 'Stock transfer rejected',
+      module: 'warehouse', created_by: user.id, transaction_id: transferId,
+    })
+    if (logError) console.warn('rejectTransfer: activity log insert failed:', logError.message)
+
+    loading.value = false
     toast.success('Stock transfer rejected.')
     await fetchTransfers()
     return true

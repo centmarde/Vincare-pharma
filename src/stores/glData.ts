@@ -199,16 +199,33 @@ export const useGLDataStore = defineStore('glData', () => {
     return { success: true, entryId }
   }
 
+  // Draft→posted status flip — done in JS per the "no RPC under ~10 round-trips"
+  // convention (was gl_approve_manual_entry, no balance re-check in SQL). The
+  // .eq('status','draft').eq('reference_type','manual') guards reproduce the RPC's
+  // validation and mean an already-posted entry is a no-op (the GL immutability
+  // trigger only blocks updating rows whose OLD status is already 'posted').
   const approveManualEntry = async (entryId: number) => {
     loading.value = true
     clearError()
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
 
-    const { error: rpcError } = await supabase.rpc('gl_approve_manual_entry', { p_entry_id: entryId, p_user: user.id })
-    if (rpcError) {
-      handleError(rpcError, 'Failed to approve entry.')
-      toast.error(rpcError.message || 'Failed to approve entry.')
+    const { data: updated, error: updateError } = await supabase
+      .from('journal_entries')
+      .update({ status: 'posted', posted_at: new Date().toISOString(), posted_by: user.id })
+      .eq('id', entryId)
+      .eq('reference_type', 'manual')
+      .eq('status', 'draft')
+      .select('id')
+
+    if (updateError) {
+      handleError(updateError, 'Failed to approve entry.')
+      toast.error(updateError.message || 'Failed to approve entry.')
+      loading.value = false
+      return { success: false }
+    }
+    if (!updated || updated.length === 0) {
+      toast.error('Entry is not a pending manual draft.')
       loading.value = false
       return { success: false }
     }
