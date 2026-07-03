@@ -4,6 +4,8 @@ import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
+import { useGLDataStore } from '@/stores/glData'
+import { nextDocNumber } from '@/utils/helpers'
 
 const toast = useToast()
 
@@ -253,8 +255,16 @@ function applyDateRange<T>(q: T, column: string, range?: DateRange): T {
   return query
 }
 
+// classification -> GL asset account code (was the gl_cash_code SQL helper).
+function glCashCode(classification: CashClassification): string {
+  if (classification === 'PETTY_CASH') return '1010'      // Cash on Hand
+  if (classification === 'TIME_INVESTMENT') return '1100' // Other Investment
+  return '1020'                                           // Cash in Bank (CASA / default)
+}
+
 export const useFinanceDataStore = defineStore('financeData', () => {
   const authStore = useAuthUserStore()
+  const glStore = useGLDataStore()
 
   const expenses: Ref<ExpenseType[]> = ref([])
   const cashAccounts: Ref<CashAccountType[]> = ref([])
@@ -339,6 +349,10 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     }
   }
 
+  // Header + finance_details + cash account debit (was record_expense).
+  // Best-effort, not atomic: a failure after the header insert can leave an
+  // expense with no cash deduction or vice versa (accepted trade-off,
+  // JS-over-RPC convention).
   const recordExpense = async (payload: {
     category: ExpenseCategory
     amount: number
@@ -355,30 +369,75 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
 
-    const { data: expenseId, error: rpcError } = await supabase.rpc('record_expense', {
-      p_category: payload.category,
-      p_amount: payload.amount,
-      p_paid_to: payload.paidTo ?? null,
-      p_payment_method: payload.paymentMethod ?? null,
-      p_value_date: payload.valueDate ?? null,
-      p_remarks: payload.remarks ?? null,
-      p_user: user.id,
-      p_department: payload.department ?? null,
-      p_or_si_no: payload.orSiNo ?? null,
-      p_cash_account_id: payload.cashAccountId,
-    })
+    if (payload.amount <= 0) {
+      toast.error('Expense amount must be positive.'); loading.value = false; return { success: false }
+    }
+    if (!EXPENSE_CATEGORIES.some(c => c.value === payload.category)) {
+      toast.error(`Invalid expense category: ${payload.category}`); loading.value = false; return { success: false }
+    }
+    if (!payload.cashAccountId) {
+      toast.error('A cash account must be selected.'); loading.value = false; return { success: false }
+    }
 
-    if (rpcError || !expenseId) {
-      handleError(rpcError, 'Failed to record expense.')
-      toast.error(rpcError?.message || 'Failed to record expense.')
+    const { data: account, error: accountError } = await supabase
+      .from('cash_accounts').select('balance').eq('id', payload.cashAccountId).maybeSingle()
+    if (accountError || !account) {
+      toast.error(`Cash account ${payload.cashAccountId} not found.`); loading.value = false; return { success: false }
+    }
+    if (payload.amount > account.balance + 0.005) {
+      toast.error(`Insufficient balance in the selected account (available: ${account.balance}).`)
+      loading.value = false; return { success: false }
+    }
+
+    const year = new Date().getFullYear().toString()
+    const { data: existingExpenses } = await supabase
+      .from('transactions')
+      .select('reference_no')
+      .like('reference_no', `EXP-${year}-%`)
+    const expenseNo = nextDocNumber((existingExpenses ?? []).map(r => r.reference_no), `EXP-${year}-`)
+
+    const { data: created, error: insertError } = await supabase
+      .from('transactions')
+      .insert({
+        reference_no: expenseNo, transaction_type: 'expense', status: 'recorded',
+        payment_method: payload.paymentMethod || null, subtotal: payload.amount, total_amount: payload.amount,
+        paid_at: payload.valueDate || new Date().toISOString().slice(0, 10),
+        remarks: payload.remarks || null, created_by: user.id, cash_account_id: payload.cashAccountId,
+      })
+      .select('id')
+      .single()
+    if (insertError || !created) {
+      handleError(insertError, 'Failed to record expense.')
+      toast.error(insertError?.message || 'Failed to record expense.')
       loading.value = false
       return { success: false }
     }
 
+    const { error: detailsError } = await supabase.from('finance_details').insert({
+      transaction_id: created.id, category: payload.category,
+      paid_to: payload.paidTo || null, department: payload.department || null, or_si_no: payload.orSiNo || null,
+    })
+    if (detailsError) {
+      handleError(detailsError, 'Failed to save expense details.')
+      toast.error(detailsError.message || 'Failed to save expense details.')
+      loading.value = false
+      return { success: false }
+    }
+
+    const { error: balanceError } = await supabase
+      .from('cash_accounts').update({ balance: account.balance - payload.amount }).eq('id', payload.cashAccountId)
+    if (balanceError) console.warn('recordExpense: cash account balance update failed:', balanceError.message)
+
+    const { error: logError } = await supabase.from('logs').insert({
+      created_by: user.id, action: 'expense_record',
+      description: `${expenseNo} | ${payload.category} | ${payload.amount}`, module: 'finance', transaction_id: created.id,
+    })
+    if (logError) console.warn('recordExpense: activity log insert failed:', logError.message)
+
     toast.success('Expense recorded.')
     await Promise.all([fetchExpenses(), fetchCashAccounts()])
     loading.value = false
-    return { success: true, expenseId }
+    return { success: true, expenseId: created.id }
   }
 
   // ─── Cash accounts (Petty Cash + Bank) ───────────────────────────────────────
@@ -400,13 +459,11 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     }
   }
 
-  // Plain master-data insert, same shape as suppliersData.createSupplier — no
-  // money moves here, so no RPC is needed (only balance-mutating actions go
-  // through SECURITY DEFINER functions).
-  // Booking an account posts its opening balance to the GL (DR cash / CR Owner's
-  // Capital) inside the RPC — an opening balance is an accounting event, so this
-  // is a SECURITY DEFINER RPC like every other GL-affecting action, not a plain
-  // insert. See 20260702000006_cash_account_opening_gl.sql.
+  // Booking an account posts its opening balance to the GL (DR cash / CR
+  // Owner's Capital) — an opening balance is an accounting event (was
+  // cash_account_open). Best-effort, not atomic: a failure after the account
+  // insert can leave an account with no opening journal entry (accepted
+  // trade-off, JS-over-RPC convention). See 20260702000006_cash_account_opening_gl.sql.
   const createCashAccount = async (payload: {
     name: string
     classification: CashClassification
@@ -418,22 +475,52 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
 
-    const { data, error: rpcError } = await supabase.rpc('cash_account_open', {
-      p_name: payload.name,
-      p_classification: payload.classification,
-      p_opening_balance: payload.openingBalance,
-      p_is_active: payload.isActive,
-      p_user: user.id,
-    })
+    const name = payload.name.trim()
+    if (!name) { toast.error('Account name is required.'); loading.value = false; return { success: false } }
+    if (!['CASA', 'TIME_INVESTMENT', 'PETTY_CASH'].includes(payload.classification)) {
+      toast.error(`Invalid classification: ${payload.classification}`); loading.value = false; return { success: false }
+    }
+    const openingBalance = payload.openingBalance ?? 0
+    if (openingBalance < 0) { toast.error('Opening balance cannot be negative.'); loading.value = false; return { success: false } }
 
-    if (rpcError || !data) {
-      handleError(rpcError, 'Failed to add cash account.')
-      toast.error(rpcError?.message || 'Failed to add cash account.')
+    const accountType = payload.classification === 'PETTY_CASH' ? 'petty_cash' : 'bank'
+    const floatAmount = payload.classification === 'PETTY_CASH' ? openingBalance : null
+
+    const { data: created, error: insertError } = await supabase
+      .from('cash_accounts')
+      .insert({
+        name, account_type: accountType, classification: payload.classification,
+        float_amount: floatAmount, opening_balance: openingBalance, balance: openingBalance,
+        is_active: payload.isActive ?? true,
+      })
+      .select('*')
+      .single()
+    if (insertError || !created) {
+      handleError(insertError, 'Failed to add cash account.')
+      toast.error(insertError?.message || 'Failed to add cash account.')
       loading.value = false
       return { success: false }
     }
 
-    cashAccounts.value.push(data as CashAccountType)
+    if (openingBalance !== 0) {
+      const result = await glStore.postJournalEntry(
+        new Date().toISOString().slice(0, 10), 'manual', created.id, `Opening balance: ${name}`,
+        [
+          { account_code: glCashCode(payload.classification), debit: openingBalance, credit: 0 },
+          { account_code: '3010', debit: 0, credit: openingBalance },
+        ],
+        user.id,
+      )
+      if (!result.success) console.warn('createCashAccount: opening journal entry failed:', result.error)
+    }
+
+    const { error: logError } = await supabase.from('logs').insert({
+      created_by: user.id, action: 'cash_account_open',
+      description: `${name} | ${payload.classification} | opening ${openingBalance}`, module: 'finance', transaction_id: null,
+    })
+    if (logError) console.warn('createCashAccount: activity log insert failed:', logError.message)
+
+    cashAccounts.value.push(created as CashAccountType)
     toast.success('Cash account added.')
     loading.value = false
     return { success: true }
@@ -519,6 +606,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     }
   }
 
+  // Was request_petty_cash_replenishment.
   const requestReplenishment = async (payload: {
     pettyCashAccountId: number
     fundingAccountId: number
@@ -529,39 +617,120 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
 
-    const { data: requestId, error: rpcError } = await supabase.rpc('request_petty_cash_replenishment', {
-      p_petty_cash_account_id: payload.pettyCashAccountId,
-      p_funding_account_id: payload.fundingAccountId,
-      p_user: user.id,
-      p_remarks: payload.remarks ?? null,
-    })
+    const { data: pettyAccount, error: pettyError } = await supabase
+      .from('cash_accounts').select('account_type, float_amount, balance')
+      .eq('id', payload.pettyCashAccountId).maybeSingle()
+    if (pettyError || !pettyAccount || !['petty_cash', 'revolving_fund'].includes(pettyAccount.account_type)) {
+      toast.error(`Petty cash / revolving fund account ${payload.pettyCashAccountId} not found.`)
+      loading.value = false; return { success: false }
+    }
+    const { data: fundingAccount } = await supabase
+      .from('cash_accounts').select('id').eq('id', payload.fundingAccountId).eq('account_type', 'bank').maybeSingle()
+    if (!fundingAccount) {
+      toast.error(`Funding bank account ${payload.fundingAccountId} not found.`)
+      loading.value = false; return { success: false }
+    }
 
-    if (rpcError || !requestId) {
-      handleError(rpcError, 'Failed to request replenishment.')
-      toast.error(rpcError?.message || 'Failed to request replenishment.')
+    const shortfall = (pettyAccount.float_amount ?? 0) - pettyAccount.balance
+    if (shortfall <= 0) {
+      toast.error(`Account is already at or above its float (balance: ${pettyAccount.balance}, float: ${pettyAccount.float_amount}).`)
+      loading.value = false; return { success: false }
+    }
+
+    const prefix = pettyAccount.account_type === 'revolving_fund' ? 'RVF' : 'PCR'
+    const year = new Date().getFullYear().toString()
+    const { data: existingRequests } = await supabase
+      .from('transactions')
+      .select('reference_no')
+      .like('reference_no', `${prefix}-${year}-%`)
+    const requestNo = nextDocNumber((existingRequests ?? []).map(r => r.reference_no), `${prefix}-${year}-`)
+
+    const { data: created, error: insertError } = await supabase
+      .from('transactions')
+      .insert({
+        reference_no: requestNo, transaction_type: 'petty_cash_replenishment', status: 'pending_approval',
+        total_amount: shortfall, subtotal: shortfall, remarks: payload.remarks || null, created_by: user.id,
+        cash_account_id: payload.pettyCashAccountId, funding_account_id: payload.fundingAccountId,
+      })
+      .select('id')
+      .single()
+    if (insertError || !created) {
+      handleError(insertError, 'Failed to request replenishment.')
+      toast.error(insertError?.message || 'Failed to request replenishment.')
       loading.value = false
       return { success: false }
     }
 
+    const { error: logError } = await supabase.from('logs').insert({
+      created_by: user.id, action: 'petty_cash_replenish_request',
+      description: `${requestNo} | requested ${shortfall}`, module: 'finance', transaction_id: created.id,
+    })
+    if (logError) console.warn('requestReplenishment: activity log insert failed:', logError.message)
+
     toast.success('Replenishment request submitted for approval.')
     await fetchReplenishmentRequests()
     loading.value = false
-    return { success: true, requestId }
+    return { success: true, requestId: created.id }
   }
 
+  // Was approve_petty_cash_replenishment. Best-effort, not atomic: a failure
+  // partway through the two balance updates can leave funds moved from the
+  // funding account but not yet into petty cash (accepted trade-off,
+  // JS-over-RPC convention).
   const approveReplenishment = async (id: number) => {
     loading.value = true
     clearError()
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
 
-    const { error: rpcError } = await supabase.rpc('approve_petty_cash_replenishment', { p_id: id, p_user: user.id })
-    if (rpcError) {
-      handleError(rpcError, 'Failed to approve replenishment.')
-      toast.error(rpcError.message || 'Failed to approve replenishment.')
+    const { data: request, error: fetchError } = await supabase
+      .from('transactions')
+      .select('reference_no, total_amount, cash_account_id, funding_account_id')
+      .eq('id', id).eq('transaction_type', 'petty_cash_replenishment').eq('status', 'pending_approval')
+      .maybeSingle()
+    if (fetchError || !request) {
+      toast.error(`Pending replenishment request ${id} not found.`); loading.value = false; return { success: false }
+    }
+    if (!request.cash_account_id || !request.funding_account_id) {
+      toast.error(`Replenishment request ${id} has no cash/funding account details.`)
+      loading.value = false; return { success: false }
+    }
+
+    const { data: fundingAccount } = await supabase
+      .from('cash_accounts').select('balance').eq('id', request.funding_account_id).maybeSingle()
+    const amount = request.total_amount ?? 0
+    if (!fundingAccount || amount > fundingAccount.balance + 0.005) {
+      toast.error(`Insufficient balance in funding account (available: ${fundingAccount?.balance ?? 0}).`)
+      loading.value = false; return { success: false }
+    }
+
+    const { error: fundingError } = await supabase
+      .from('cash_accounts').update({ balance: fundingAccount.balance - amount }).eq('id', request.funding_account_id)
+    if (fundingError) {
+      handleError(fundingError, 'Failed to approve replenishment.')
+      toast.error(fundingError.message || 'Failed to approve replenishment.')
       loading.value = false
       return { success: false }
     }
+
+    const { data: pettyAccount } = await supabase
+      .from('cash_accounts').select('balance').eq('id', request.cash_account_id).maybeSingle()
+    const { error: pettyError } = await supabase
+      .from('cash_accounts').update({ balance: (pettyAccount?.balance ?? 0) + amount }).eq('id', request.cash_account_id)
+    if (pettyError) console.warn('approveReplenishment: petty account balance update failed:', pettyError.message)
+
+    const nowIso = new Date().toISOString()
+    const { error: statusError } = await supabase
+      .from('transactions')
+      .update({ status: 'approved', approved_by: user.id, approved_at: nowIso, updated_at: nowIso })
+      .eq('id', id)
+    if (statusError) console.warn('approveReplenishment: status flip failed:', statusError.message)
+
+    const { error: logError } = await supabase.from('logs').insert({
+      created_by: user.id, action: 'petty_cash_replenish_approve',
+      description: `${request.reference_no} | ${amount}`, module: 'finance', transaction_id: id,
+    })
+    if (logError) console.warn('approveReplenishment: activity log insert failed:', logError.message)
 
     toast.success('Replenishment approved.')
     await Promise.all([fetchReplenishmentRequests(), fetchCashAccounts()])
@@ -569,21 +738,40 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     return { success: true }
   }
 
+  // Was reject_petty_cash_replenishment.
   const rejectReplenishment = async (id: number, reason: string) => {
     loading.value = true
     clearError()
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
 
-    const { error: rpcError } = await supabase.rpc('reject_petty_cash_replenishment', {
-      p_id: id, p_user: user.id, p_reason: reason,
-    })
-    if (rpcError) {
-      handleError(rpcError, 'Failed to reject replenishment.')
-      toast.error(rpcError.message || 'Failed to reject replenishment.')
+    const { data: request, error: fetchError } = await supabase
+      .from('transactions')
+      .select('reference_no, remarks')
+      .eq('id', id).eq('transaction_type', 'petty_cash_replenishment').eq('status', 'pending_approval')
+      .maybeSingle()
+    if (fetchError || !request) {
+      toast.error(`Pending replenishment request ${id} not found.`); loading.value = false; return { success: false }
+    }
+
+    const nowIso = new Date().toISOString()
+    const newRemarks = `${request.remarks ? request.remarks + ' | ' : ''}Rejected: ${reason ?? ''}`
+    const { error: statusError } = await supabase
+      .from('transactions')
+      .update({ status: 'rejected', approved_by: user.id, approved_at: nowIso, updated_at: nowIso, remarks: newRemarks })
+      .eq('id', id)
+    if (statusError) {
+      handleError(statusError, 'Failed to reject replenishment.')
+      toast.error(statusError.message || 'Failed to reject replenishment.')
       loading.value = false
       return { success: false }
     }
+
+    const { error: logError } = await supabase.from('logs').insert({
+      created_by: user.id, action: 'petty_cash_replenish_reject',
+      description: `${request.reference_no} | ${reason ?? ''}`, module: 'finance', transaction_id: id,
+    })
+    if (logError) console.warn('rejectReplenishment: activity log insert failed:', logError.message)
 
     toast.success('Replenishment request rejected.')
     await fetchReplenishmentRequests()
@@ -591,16 +779,44 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     return { success: true }
   }
 
+  // Was delete_expense. Reverses the cash deduction record_expense made
+  // (expenses recorded before cash accounts existed have no cash_account_id —
+  // nothing to restore for those). finance_details row cascades on delete.
   const deleteExpense = async (id: number) => {
     loading.value = true
     clearError()
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
 
-    const { error: rpcError } = await supabase.rpc('delete_expense', { p_id: id, p_user: user.id })
-    if (rpcError) {
-      handleError(rpcError, 'Failed to delete expense.')
-      toast.error(rpcError.message || 'Failed to delete expense.')
+    const { data: expense, error: fetchError } = await supabase
+      .from('transactions')
+      .select('reference_no, total_amount, cash_account_id')
+      .eq('id', id).eq('transaction_type', 'expense')
+      .maybeSingle()
+    if (fetchError || !expense) {
+      toast.error(`Expense ${id} not found.`); loading.value = false; return { success: false }
+    }
+
+    if (expense.cash_account_id && (expense.total_amount ?? 0) > 0) {
+      const { data: account } = await supabase
+        .from('cash_accounts').select('balance').eq('id', expense.cash_account_id).maybeSingle()
+      if (account) {
+        const { error: balanceError } = await supabase
+          .from('cash_accounts').update({ balance: account.balance + (expense.total_amount ?? 0) }).eq('id', expense.cash_account_id)
+        if (balanceError) console.warn('deleteExpense: cash account balance restore failed:', balanceError.message)
+      }
+    }
+
+    const { error: logError } = await supabase.from('logs').insert({
+      created_by: user.id, action: 'expense_delete', description: expense.reference_no ?? String(id),
+      module: 'finance', transaction_id: id,
+    })
+    if (logError) console.warn('deleteExpense: activity log insert failed:', logError.message)
+
+    const { error: deleteError } = await supabase.from('transactions').delete().eq('id', id).eq('transaction_type', 'expense')
+    if (deleteError) {
+      handleError(deleteError, 'Failed to delete expense.')
+      toast.error(deleteError.message || 'Failed to delete expense.')
       loading.value = false
       return { success: false }
     }
@@ -651,6 +867,9 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     }
   }
 
+  // Was record_supplier_payment. Best-effort, not atomic: a failure after the
+  // header insert can leave a payment recorded with no suppliers.balance
+  // decrement (accepted trade-off, JS-over-RPC convention).
   const recordSupplierPayment = async (payload: {
     supplierId: number
     amount: number
@@ -664,27 +883,69 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
 
-    const { data: paymentId, error: rpcError } = await supabase.rpc('record_supplier_payment', {
-      p_supplier_id: payload.supplierId,
-      p_amount: payload.amount,
-      p_payment_method: payload.paymentMethod ?? null,
-      p_reference_no: payload.referenceNo ?? null,
-      p_value_date: payload.valueDate ?? null,
-      p_remarks: payload.remarks ?? null,
-      p_user: user.id,
-    })
+    if (payload.amount <= 0) {
+      toast.error('Payment amount must be positive.'); loading.value = false; return { success: false }
+    }
+    const { data: supplier, error: supplierError } = await supabase
+      .from('suppliers').select('id, balance').eq('id', payload.supplierId).maybeSingle()
+    if (supplierError || !supplier) {
+      toast.error(`Supplier ${payload.supplierId} not found.`); loading.value = false; return { success: false }
+    }
 
-    if (rpcError || !paymentId) {
-      handleError(rpcError, 'Failed to record supplier payment.')
-      toast.error(rpcError?.message || 'Failed to record supplier payment.')
+    const [receivedRes, paidRes] = await Promise.all([
+      supabase.from('transactions').select('total_amount').eq('transaction_type', 'stock_in').eq('supplier_id', payload.supplierId),
+      supabase.from('transactions').select('total_amount').eq('transaction_type', 'supplier_payment').eq('supplier_id', payload.supplierId),
+    ])
+    const received = (receivedRes.data ?? []).reduce((sum, r) => sum + (r.total_amount ?? 0), 0)
+    const paid = (paidRes.data ?? []).reduce((sum, r) => sum + (r.total_amount ?? 0), 0)
+    const outstanding = received - paid
+    if (payload.amount > outstanding + 0.005) {
+      toast.error(`Payment (${payload.amount}) exceeds outstanding balance (${outstanding}).`)
+      loading.value = false; return { success: false }
+    }
+
+    const year = new Date().getFullYear().toString()
+    const { data: existingPayments } = await supabase
+      .from('transactions')
+      .select('reference_no')
+      .like('reference_no', `SP-${year}-%`)
+    const paymentNo = nextDocNumber((existingPayments ?? []).map(r => r.reference_no), `SP-${year}-`)
+
+    let remarks = payload.remarks || ''
+    if (payload.referenceNo) remarks = `${remarks} | Ref: ${payload.referenceNo}`.replace(/^\s*\|\s*/, '')
+
+    const { data: created, error: insertError } = await supabase
+      .from('transactions')
+      .insert({
+        reference_no: paymentNo, transaction_type: 'supplier_payment', status: 'recorded',
+        supplier_id: payload.supplierId, payment_method: payload.paymentMethod || null,
+        subtotal: payload.amount, total_amount: payload.amount,
+        paid_at: payload.valueDate || new Date().toISOString().slice(0, 10),
+        remarks: remarks || null, created_by: user.id,
+      })
+      .select('id')
+      .single()
+    if (insertError || !created) {
+      handleError(insertError, 'Failed to record supplier payment.')
+      toast.error(insertError?.message || 'Failed to record supplier payment.')
       loading.value = false
       return { success: false }
     }
 
+    const { error: balanceError } = await supabase
+      .from('suppliers').update({ balance: (supplier.balance ?? 0) - payload.amount }).eq('id', payload.supplierId)
+    if (balanceError) console.warn('recordSupplierPayment: supplier balance update failed:', balanceError.message)
+
+    const { error: logError } = await supabase.from('logs').insert({
+      created_by: user.id, action: 'supplier_payment',
+      description: `${paymentNo} | supplier ${payload.supplierId} | ${payload.amount}`, module: 'finance', transaction_id: created.id,
+    })
+    if (logError) console.warn('recordSupplierPayment: activity log insert failed:', logError.message)
+
     toast.success('Supplier payment recorded.')
     await Promise.all([fetchSupplierPayments(), fetchSupplierAP()])
     loading.value = false
-    return { success: true, paymentId }
+    return { success: true, paymentId: created.id }
   }
 
   const fetchSupplierAP = async () => {
@@ -745,27 +1006,35 @@ export const useFinanceDataStore = defineStore('financeData', () => {
   // 24h-bounded query instead of the full transaction history.
 
   const todayStr = () => new Date().toISOString().slice(0, 10)
+  const addDaysStr = (dateStr: string, days: number) => {
+    const d = new Date(`${dateStr}T00:00:00Z`)
+    d.setUTCDate(d.getUTCDate() + days)
+    return d.toISOString().slice(0, 10)
+  }
+  const minDateStr = (a: string, b: string) => (a < b ? a : b)
 
-  const fetchTodayPnLSlice = async () => {
-    const today = todayStr()
-    const todayStart = today + 'T00:00:00'
-    const todayEnd   = today + 'T23:59:59.999'
+  // One day's revenue/cogs/opex slice — was finance_refresh_daily_summary's
+  // SELECT logic. Shared by refreshDailySummary (persists to the cache) and
+  // fetchTodayPnLSlice (today only, deliberately never cached — see below).
+  const computeDaySlice = async (date: string) => {
+    const dayStart = date + 'T00:00:00'
+    const dayEnd   = date + 'T23:59:59.999'
 
     const [saleRes, collectionRes, stockInRes, expenseRes] = await Promise.all([
       supabase.from('transactions')
         .select('total_amount, pos_sale_details(voided_at)')
         .eq('transaction_type', 'sale').eq('status', 'completed')
-        .gte('created_at', todayStart).lte('created_at', todayEnd),
-      // All today's collections — we'll split by transaction_type in JS
+        .gte('created_at', dayStart).lte('created_at', dayEnd),
+      // All that day's collections — we'll split by transaction_type in JS
       supabase.from('collections')
         .select('amount, transaction:transaction_id!inner(transaction_type)')
-        .gte('created_at', todayStart).lte('created_at', todayEnd),
+        .gte('created_at', dayStart).lte('created_at', dayEnd),
       supabase.from('transactions').select('total_amount')
         .eq('transaction_type', 'stock_in')
-        .gte('updated_at', todayStart).lte('updated_at', todayEnd),
+        .gte('updated_at', dayStart).lte('updated_at', dayEnd),
       supabase.from('transactions').select('total_amount')
         .eq('transaction_type', 'expense')
-        .gte('paid_at', todayStart).lte('paid_at', todayEnd),
+        .gte('paid_at', dayStart).lte('paid_at', dayEnd),
     ])
     if (saleRes.error) throw saleRes.error
     if (collectionRes.error) throw collectionRes.error
@@ -794,6 +1063,72 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     }
   }
 
+  const fetchTodayPnLSlice = () => computeDaySlice(todayStr())
+
+  // Persist one day's slice into the finance_daily_summary cache — was
+  // finance_refresh_daily_summary.
+  const refreshDailySummary = async (date: string) => {
+    const slice = await computeDaySlice(date)
+    await supabase.from('finance_daily_summary').upsert({
+      summary_date: date,
+      revenue_pos: slice.revenuePos,
+      revenue_ethical: slice.revenueEthical,
+      revenue_inhouse: slice.revenueInhouse,
+      cogs: slice.cogs,
+      opex: slice.opex,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'summary_date' })
+  }
+
+  // Cache every CLOSED day (strictly before today) with activity in
+  // [dateFrom, dateTo] that isn't cached yet — was finance_backfill_daily_summary.
+  // Never touches today; fetchPnL always recomputes today live via
+  // fetchTodayPnLSlice instead.
+  const backfillDailySummaries = async (dateFrom: string | null, dateTo: string | null) => {
+    const yesterday = addDaysStr(todayStr(), -1)
+    const from = dateFrom ?? '1970-01-01'
+    const to = dateTo ? minDateStr(dateTo, yesterday) : yesterday
+    if (to < from) return
+
+    const fromTs = from + 'T00:00:00'
+    const toTs = to + 'T23:59:59.999'
+
+    const [saleRes, ethicalColRes, inhouseColRes, stockInRes, expenseRes, cachedRes] = await Promise.all([
+      supabase.from('transactions').select('created_at')
+        .eq('transaction_type', 'sale').eq('status', 'completed')
+        .gte('created_at', fromTs).lte('created_at', toTs),
+      supabase.from('collections').select('created_at, transaction:transaction_id!inner(transaction_type)')
+        .eq('transaction.transaction_type', 'ethical_order')
+        .gte('created_at', fromTs).lte('created_at', toTs),
+      supabase.from('collections').select('created_at, transaction:transaction_id!inner(transaction_type)')
+        .eq('transaction.transaction_type', 'inhouse_order')
+        .gte('created_at', fromTs).lte('created_at', toTs),
+      supabase.from('transactions').select('updated_at')
+        .eq('transaction_type', 'stock_in')
+        .gte('updated_at', fromTs).lte('updated_at', toTs),
+      supabase.from('transactions').select('paid_at')
+        .eq('transaction_type', 'expense')
+        .gte('paid_at', fromTs).lte('paid_at', toTs),
+      supabase.from('finance_daily_summary').select('summary_date'),
+    ])
+    for (const res of [saleRes, ethicalColRes, inhouseColRes, stockInRes, expenseRes, cachedRes]) {
+      if (res.error) throw res.error
+    }
+
+    const activeDays = new Set<string>()
+    for (const r of (saleRes.data ?? []) as any[]) activeDays.add(r.created_at.slice(0, 10))
+    for (const r of (ethicalColRes.data ?? []) as any[]) activeDays.add(r.created_at.slice(0, 10))
+    for (const r of (inhouseColRes.data ?? []) as any[]) activeDays.add(r.created_at.slice(0, 10))
+    for (const r of (stockInRes.data ?? []) as any[]) activeDays.add(r.updated_at.slice(0, 10))
+    for (const r of (expenseRes.data ?? []) as any[]) activeDays.add(r.paid_at.slice(0, 10))
+
+    const cachedDays = new Set((cachedRes.data ?? []).map((r: any) => r.summary_date as string))
+
+    for (const day of activeDays) {
+      if (!cachedDays.has(day)) await refreshDailySummary(day)
+    }
+  }
+
   const fetchPnL = async (range: DateRange = {}) => {
     loading.value = true
     clearError()
@@ -803,11 +1138,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
 
       // Backfill any past days in range that aren't cached yet, then sum the
       // cache directly — O(days with activity), not O(all-time transactions).
-      const { error: backfillError } = await supabase.rpc('finance_backfill_daily_summary', {
-        p_date_from: range.dateFrom ?? null,
-        p_date_to: range.dateTo ?? null,
-      })
-      if (backfillError) throw backfillError
+      await backfillDailySummaries(range.dateFrom ?? null, range.dateTo ?? null)
 
       let historicalQ = supabase.from('finance_daily_summary')
         .select('revenue_pos, revenue_ethical, revenue_inhouse, cogs, opex')
@@ -1055,12 +1386,13 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       // Fetch voided POS sale IDs from pos_sale_details (hub redesign) so we
       // can exclude them in the reconciliation loop without breaking the nested
       // transaction_items join (PostgREST can't express NOT EXISTS through !inner).
+      // Line values now live in the 1:1 transaction_item_details embed.
       const [stockInRes, transferRes, saleRes, ethicalRes, inhouseRes, warehouseRes, outletRes, voidedPsdRes] = await Promise.all([
-        supabase.from('transaction_items').select('product_id, qty, transaction:transaction_id!inner(transaction_type)').eq('transaction.transaction_type', 'stock_in'),
-        supabase.from('transaction_items').select('product_id, qty, received_qty, transaction:transaction_id!inner(transaction_type, status, outlet)').eq('transaction.transaction_type', 'stock_transfer'),
-        supabase.from('transaction_items').select('product_id, qty, transaction_id, transaction:transaction_id!inner(transaction_type, status, outlet)').eq('transaction.transaction_type', 'sale'),
-        supabase.from('transaction_items').select('product_id, stock_sources, transaction:transaction_id!inner(transaction_type, status)').eq('transaction.transaction_type', 'ethical_order'),
-        supabase.from('transaction_items').select('product_id, delivered_qty, transaction:transaction_id!inner(transaction_type)').eq('transaction.transaction_type', 'inhouse_order'),
+        supabase.from('transaction_items').select('product_id, transaction_item_details(qty), transaction:transaction_id!inner(transaction_type)').eq('transaction.transaction_type', 'stock_in'),
+        supabase.from('transaction_items').select('product_id, transaction_item_details(qty, received_qty), transaction:transaction_id!inner(transaction_type, status, outlet)').eq('transaction.transaction_type', 'stock_transfer'),
+        supabase.from('transaction_items').select('product_id, transaction_id, transaction_item_details(qty), transaction:transaction_id!inner(transaction_type, status, outlet)').eq('transaction.transaction_type', 'sale'),
+        supabase.from('transaction_items').select('product_id, transaction_item_details(stock_sources), transaction:transaction_id!inner(transaction_type, status)').eq('transaction.transaction_type', 'ethical_order'),
+        supabase.from('transaction_items').select('product_id, transaction_item_details(delivered_qty), transaction:transaction_id!inner(transaction_type)').eq('transaction.transaction_type', 'inhouse_order'),
         supabase.from('products').select('id, product_name, current_stock'),
         supabase.from('outlet_stock').select('product_id, outlet, quantity, product:product_id(product_name)'),
         supabase.from('pos_sale_details').select('transaction_id').not('voided_at', 'is', null),
@@ -1075,26 +1407,27 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       const bump = (map: Map<number, number>, pid: number, delta: number) => map.set(pid, (map.get(pid) ?? 0) + delta)
 
       for (const r of (stockInRes.data || []) as any[]) {
-        if (r.product_id != null) bump(expectedWarehouse, r.product_id, r.qty ?? 0)
+        if (r.product_id != null) bump(expectedWarehouse, r.product_id, r.transaction_item_details?.qty ?? 0)
       }
       for (const r of (transferRes.data || []) as any[]) {
         const t = r.transaction
         if (!t || !['approved', 'completed'].includes(t.status)) continue
-        if (r.product_id != null) bump(expectedWarehouse, r.product_id, -(r.qty ?? 0))
+        const d = r.transaction_item_details ?? {}
+        if (r.product_id != null) bump(expectedWarehouse, r.product_id, -(d.qty ?? 0))
         if (t.status === 'completed' && r.product_id != null && (t.outlet === 'EXELMED' || t.outlet === 'ETHICAL')) {
-          bump(expectedOutlet[t.outlet as 'EXELMED' | 'ETHICAL'], r.product_id, r.received_qty ?? 0)
+          bump(expectedOutlet[t.outlet as 'EXELMED' | 'ETHICAL'], r.product_id, d.received_qty ?? 0)
         }
       }
       for (const r of (saleRes.data || []) as any[]) {
         const t = r.transaction
         if (!t || t.status !== 'completed') continue
         if (voidedByPsd.has(r.transaction_id)) continue
-        if (r.product_id != null && t.outlet === 'EXELMED') bump(expectedOutlet.EXELMED, r.product_id, -(r.qty ?? 0))
+        if (r.product_id != null && t.outlet === 'EXELMED') bump(expectedOutlet.EXELMED, r.product_id, -(r.transaction_item_details?.qty ?? 0))
       }
       for (const r of (ethicalRes.data || []) as any[]) {
         const t = r.transaction
         if (!t || t.status === 'cancelled') continue
-        const sources = r.stock_sources || {}
+        const sources = r.transaction_item_details?.stock_sources || {}
         if (r.product_id != null) {
           if (sources.ethical) bump(expectedOutlet.ETHICAL, r.product_id, -sources.ethical)
           if (sources.exelmed) bump(expectedOutlet.EXELMED, r.product_id, -sources.exelmed)
@@ -1102,7 +1435,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         }
       }
       for (const r of (inhouseRes.data || []) as any[]) {
-        if (r.product_id != null) bump(expectedWarehouse, r.product_id, -(r.delivered_qty ?? 0))
+        if (r.product_id != null) bump(expectedWarehouse, r.product_id, -(r.transaction_item_details?.delivered_qty ?? 0))
       }
 
       const rows: StockReconRow[] = []
@@ -1139,27 +1472,18 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     }
   }
 
-  // ─── GL: projection + authoritative financial statements ────────────────────
-
-  const runGLProjection = async (dateFrom?: string, dateTo?: string) => {
-    const { error: err } = await supabase.rpc('gl_project_events', {
-      p_date_from: dateFrom ?? null,
-      p_date_to:   dateTo   ?? null,
-    })
-    if (err) console.warn('GL projection warning:', err.message)
-  }
+  // ─── GL: authoritative financial statements ──────────────────────────────
+  // Delegates entirely to glData.ts (the store that owns GL logic) — this
+  // store never calls Supabase for GL statements itself, matching the layer
+  // rule that only one store owns each Supabase call. glStore's fetch*
+  // actions already run the ledger projection before computing, so there's
+  // no separate runGLProjection step here anymore.
 
   const fetchIncomeStatement = async (range: DateRange = {}) => {
     loading.value = true
     clearError()
     try {
-      await runGLProjection(range.dateFrom, range.dateTo)
-      const { data, error: err } = await supabase.rpc('gl_income_statement', {
-        p_from: range.dateFrom ?? null,
-        p_to:   range.dateTo   ?? null,
-      })
-      if (err) throw err
-      incomeStatement.value = data as GLIncomeStatement
+      incomeStatement.value = (await glStore.fetchIncomeStatement(range.dateFrom, range.dateTo)) as GLIncomeStatement | null
       return incomeStatement.value
     } catch (err) {
       handleError(err, 'Failed to fetch income statement')
@@ -1173,12 +1497,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     loading.value = true
     clearError()
     try {
-      await runGLProjection(undefined, asOf)
-      const { data, error: err } = await supabase.rpc('gl_balance_sheet', {
-        p_as_of: asOf ?? null,
-      })
-      if (err) throw err
-      balanceSheet.value = data as GLBalanceSheet
+      balanceSheet.value = (await glStore.fetchBalanceSheet(asOf)) as GLBalanceSheet | null
       return balanceSheet.value
     } catch (err) {
       handleError(err, 'Failed to fetch balance sheet')
@@ -1192,12 +1511,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     loading.value = true
     clearError()
     try {
-      await runGLProjection(undefined, asOf)
-      const { data, error: err } = await supabase.rpc('gl_trial_balance', {
-        p_as_of: asOf ?? null,
-      })
-      if (err) throw err
-      trialBalance.value = (data || []) as TrialBalanceLine[]
+      trialBalance.value = (await glStore.fetchTrialBalance(asOf)) as TrialBalanceLine[]
       return trialBalance.value
     } catch (err) {
       handleError(err, 'Failed to fetch trial balance')
@@ -1236,7 +1550,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     fetchSupplierPayments, recordSupplierPayment, fetchSupplierAP,
     fetchPnL,
     fetchRemittanceDiscrepancies, fetchARAging, fetchCommissionLiability, fetchStockReconciliation,
-    runGLProjection, fetchIncomeStatement, fetchBalanceSheet, fetchTrialBalance,
+    fetchIncomeStatement, fetchBalanceSheet, fetchTrialBalance,
     clearError, resetStore,
   }
 })
