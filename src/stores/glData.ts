@@ -322,8 +322,9 @@ export const useGLDataStore = defineStore('glData', () => {
   // Draft→posted status flip — done in JS per the "no RPC under ~10 round-trips"
   // convention (was gl_approve_manual_entry, no balance re-check in SQL). The
   // .eq('status','draft').eq('reference_type','manual') guards reproduce the RPC's
-  // validation and mean an already-posted entry is a no-op (the GL immutability
-  // trigger only blocks updating rows whose OLD status is already 'posted').
+  // validation and mean an already-posted entry is a no-op. Immutability is now
+  // enforced here in JS only — the DB guard trigger/function were dropped
+  // (20260704000003) so this is the sole gate keeping posted entries unedited.
   const approveManualEntry = async (entryId: number) => {
     loading.value = true
     clearError()
@@ -354,14 +355,14 @@ export const useGLDataStore = defineStore('glData', () => {
     return { success: true }
   }
 
-  // Was gl_reverse_entry. Previously kept as an RPC because flipping a posted
-  // row's status was blocked by the immutability trigger unless a
-  // transaction-scoped session GUC was set in the same statement — impossible
-  // across separate sequential JS/PostgREST calls. Migration
-  // 20260704000000_gl_reverse_entry_to_js.sql replaced that GUC escape hatch
-  // with a narrow, hardcoded trigger exception that allows ONLY the exact
-  // transition status:'posted'->'reversed' with no other column changed
-  // (every other mutation to a posted row is still blocked, same as before).
+  // Was gl_reverse_entry. Immutability used to be a DB trigger, so flipping a
+  // posted row's status needed either a SECURITY DEFINER RPC or a
+  // transaction-scoped session GUC to satisfy the guard. That guard
+  // (gl_guard_posted_immutable + its two triggers) was dropped in
+  // 20260704000003 — the DB no longer blocks the update, and the invariant
+  // "only posted->reversed, and never edit a posted entry's content" is
+  // enforced entirely by the checks in this function (status must be 'posted',
+  // no duplicate reversal, .eq('status','posted') on the flip).
   // Best-effort, not atomic: a failure after the reversal entry+lines insert
   // but before the original's status flip can leave a posted reversal
   // pointing at an original that's still 'posted' (accepted trade-off,

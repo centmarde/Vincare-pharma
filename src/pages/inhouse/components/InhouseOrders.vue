@@ -31,6 +31,7 @@ onMounted(init)
 
       <v-data-table :headers="headers" :items="filtered" :loading="loading" no-data-text="No in-house orders yet." hover>
         <template #item.order_no="{ item }"><span class="font-weight-medium">{{ item.order_no }}</span></template>
+        <template #item.po_no="{ item }">{{ item.po_no ?? '—' }}</template>
         <template #item.govt_po_no="{ item }">{{ item.govt_po_no ?? '—' }}</template>
         <template #item.customer="{ item }">{{ item.customer?.name ?? '—' }}</template>
         <template #item.total_amount="{ item }">{{ formatCurrency(item.total_amount ?? 0) }}</template>
