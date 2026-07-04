@@ -74,6 +74,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
   // State
   const products: Ref<ProductType[]> = ref([])
   const currentProduct: Ref<ProductType | undefined> = ref(undefined)
+  const eligibleProductIds: Ref<Set<number>> = ref(new Set())
   const loading = ref(false)
   const error: Ref<string> = ref('')
 
@@ -322,20 +323,66 @@ export const useProductsDataStore = defineStore('productsData', () => {
   }
 
   const updateProductSkuAndCount = async (
-    updates: { product_id: number; sku: string; actual_count: number }[]
+    updates: { product_id: number; sku: string; actual_count: number; restock?: boolean }[]
   ): Promise<boolean> => {
     if (!updates.length) return true
     clearError()
 
     try {
-      for (const { product_id, sku, actual_count } of updates) {
-        const result = await updateProduct(product_id, { sku, actual_count })
+      for (const { product_id, sku, actual_count, restock } of updates) {
+        // Manual PR lines own a freshly-minted product, so the counted amount
+        // IS the stock. Canvass-raised lines (restock) receive into an existing
+        // warehouse product — add to its current stock instead of overwriting.
+        let newStock = actual_count
+        if (restock) {
+          const { data, error: stockError } = await supabase
+            .from('products')
+            .select('current_stock')
+            .eq('id', product_id)
+            .single()
+          if (stockError) throw stockError
+          newStock = (data?.current_stock ?? 0) + actual_count
+        }
+
+        const result = await updateProduct(product_id, { sku, actual_count, current_stock: newStock })
         if (!result) throw new Error(`Failed to update product ID ${product_id}`)
       }
       return true
     } catch (err) {
       handleError(err, 'Failed saving product information.')
       return false
+    }
+  }
+
+  const fetchEligibleProductIds = async () => {
+    loading.value = true
+    clearError()
+
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('transactions')
+        .select('transaction_items!inner(product_id)')
+        .eq('transaction_type', 'stock_in')
+
+      if (fetchError) throw fetchError
+
+      const productIds = new Set<number>()
+      for (const tx of (data || []) as any[]) {
+        if (Array.isArray(tx.transaction_items)) {
+          for (const item of tx.transaction_items) {
+            if (item.product_id) productIds.add(item.product_id)
+          }
+        }
+      }
+
+      eligibleProductIds.value = productIds
+      return eligibleProductIds.value
+    } catch (err) {
+      handleError(err, 'Failed to fetch eligible products')
+      eligibleProductIds.value = new Set()
+      return eligibleProductIds.value
+    } finally {
+      loading.value = false
     }
   }
 
@@ -363,6 +410,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     // State
     products,
     currentProduct,
+    eligibleProductIds,
     loading,
     error,
 
@@ -382,6 +430,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     updateProduct,
     deleteProduct,
     updateProductSkuAndCount,
+    fetchEligibleProductIds,
     clearError,
     resetStore,
 

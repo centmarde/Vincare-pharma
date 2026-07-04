@@ -50,7 +50,7 @@ export function useProductsWidget() {
   const searchQuery = ref('')
   const itemsPerPage = ref(10)
   const page = ref(1)
-  const sortBy = ref([{ key: 'actual_count', order: 'asc' as 'asc' | 'desc' }])
+  const sortBy = ref([{ key: 'current_stock', order: 'asc' as 'asc' | 'desc' }])
 
   // Expanded rows
   const expanded = ref<string[]>([])
@@ -68,7 +68,7 @@ export function useProductsWidget() {
     { title: 'ID', key: 'id', sortable: true },
     { title: 'Product Name', key: 'product_name', sortable: true },
     { title: 'SKU', key: 'sku', sortable: true },
-    { title: 'Stock', key: 'actual_count', sortable: true },
+    { title: 'Stock', key: 'current_stock', sortable: true },
     { title: 'Selling Price', key: 'selling_price', sortable: true },
     { title: 'Cost Price', key: 'cost_price', sortable: true },
     { title: 'Batch No.', key: 'batch_no' },
@@ -88,7 +88,7 @@ export function useProductsWidget() {
 
   const lowStockProducts = computed(() =>
     products.value.filter(p => {
-      const stock = p.actual_count ?? 0
+      const stock = p.current_stock ?? 0
       const reorder = p.reorder_level ?? 0
       return reorder > 0 && stock <= reorder
     })

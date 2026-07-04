@@ -1,0 +1,245 @@
+<script setup lang="ts">
+import { computed, ref, watch } from 'vue'
+import { useOrderDetail } from '../../composables/useOrderDetail'
+import { useEthicalDataStore } from '@/stores/ethicalData'
+import SupplierCanvass from '@/components/canvass/SupplierCanvass.vue'
+import EthicalInvoiceDialog from './EthicalInvoiceDialog.vue'
+import DeliveryReceiptDialog from '@/components/deliveryReceipts/DeliveryReceiptDialog.vue'
+
+const props = defineProps<{ modelValue: boolean; orderId: number | null }>()
+const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
+
+const internalValue = computed({
+  get: () => props.modelValue,
+  set: (v) => emit('update:modelValue', v),
+})
+
+const showInvoice = ref(false)
+const showReceipt = ref(false)
+
+const ethical = useEthicalDataStore()
+const order = computed(() => ethical.currentOrder)
+
+const {
+  loading, collectionAmount, collectionMethod, collectionReference,
+  receivedBy, issuedReceipt, canIssueDR,
+  isInvoiced, isPartial, isPaid, isAwaitingStock, isCancellable, isOverdue, balance, shortfall, collections,
+  recordCollection, cancelOrder, markCommissionPaid, recheck, issueDR,
+} = useOrderDetail(() => order.value)
+
+// Pop the printable DR as soon as one is issued.
+watch(issuedReceipt, (dr) => { if (dr) showReceipt.value = true })
+
+const productName = (id: number) =>
+  order.value?.items?.find((i) => i.product_id === id)?.product?.product_name ?? `#${id}`
+
+const statusMeta = (status: string | null) => {
+  const map: Record<string, { label: string; color: string }> = {
+    invoiced: { label: 'Invoiced', color: 'warning' },
+    partial: { label: 'Partial', color: 'info' },
+    paid: { label: 'Paid', color: 'success' },
+    cancelled: { label: 'Cancelled', color: 'error' },
+  }
+  return map[status ?? ''] ?? { label: '—', color: 'grey' }
+}
+
+watch(
+  () => props.orderId,
+  async (id) => {
+    if (id && internalValue.value) {
+      ethical.currentOrder = await ethical.fetchOrderById(id) || undefined
+    }
+  },
+  { immediate: true },
+)
+</script>
+
+<template>
+  <v-dialog v-model="internalValue" persistent max-width="1000px">
+    <v-card v-if="order">
+      <v-card-title>
+        Order {{ order.order_no }}
+        <v-spacer />
+        <v-chip :color="statusMeta(order.status).color" label>{{ statusMeta(order.status).label }}</v-chip>
+        <v-btn icon="mdi-close" @click="internalValue = false" />
+      </v-card-title>
+
+      <v-card-text>
+        <v-row class="mb-2">
+          <v-col>Customer: <strong>{{ order.customer?.name }}</strong></v-col>
+          <v-col>Agent: <strong>{{ order.agent?.name }}</strong></v-col>
+          <v-col>Due Date: <strong :class="{ 'text-error': isOverdue }">{{ order.due_date ? new Date(order.due_date).toLocaleDateString() : '—' }}</strong></v-col>
+        </v-row>
+        <v-row class="mb-4">
+          <v-col>TIN: <strong>{{ order.customer?.tin_number || '—' }}</strong></v-col>
+          <v-col>
+            <v-chip size="small" :color="order.customer?.is_vat_registered ? 'primary' : 'grey'" variant="tonal">
+              {{ order.customer?.is_vat_registered ? 'VAT-Registered' : 'Non-VAT' }}
+            </v-chip>
+          </v-col>
+          <v-col />
+        </v-row>
+
+        <v-divider class="my-4" />
+
+        <h4 class="mb-2">Line Items</h4>
+        <v-table dense>
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th class="text-right">Qty</th>
+              <th class="text-right">Unit Price</th>
+              <th class="text-right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in order.items" :key="item.id">
+              <td>{{ item.product?.product_name }}</td>
+              <td class="text-right">{{ item.quantity }}</td>
+              <td class="text-right">{{ item.unit_price.toFixed(2) }}</td>
+              <td class="text-right">{{ item.line_total.toFixed(2) }}</td>
+            </tr>
+          </tbody>
+        </v-table>
+
+        <div class="text-right mt-4 space-y-1">
+          <div>Subtotal: {{ order.subtotal?.toFixed(2) }}</div>
+          <div v-if="order.discount_amount">Discount: {{ order.discount_amount.toFixed(2) }}</div>
+          <div v-if="order.rebate_amount">Rebate: {{ order.rebate_amount.toFixed(2) }}</div>
+          <div><strong>Invoice Total: {{ order.total_amount?.toFixed(2) }}</strong></div>
+          <div>Amount Paid: {{ order.amount_paid?.toFixed(2) }}</div>
+          <div class="text-lg font-weight-bold">Balance: {{ balance.toFixed(2) }}</div>
+        </div>
+
+        <v-card v-if="isAwaitingStock" variant="outlined" rounded="lg" class="my-4 bg-orange-lighten-5">
+          <v-card-title class="text-subtitle-2 font-weight-bold pa-3">Insufficient Stock</v-card-title>
+          <v-divider />
+          <v-card-text class="pa-3">
+            <div class="text-caption text-medium-emphasis mb-2">
+              Ethical, Exelmed, and warehouse stock combined still can't cover the following — canvass suppliers below to raise Purchase Requisitions, then re-check once stock arrives.
+            </div>
+            <v-table density="compact">
+              <thead><tr><th class="text-left">Product</th><th class="text-right">Ordered</th><th class="text-right">On hand</th><th class="text-right">Needed</th></tr></thead>
+              <tbody>
+                <tr v-for="s in shortfall" :key="s.product_id">
+                  <td>{{ productName(s.product_id) }}</td><td class="text-right">{{ s.ordered }}</td>
+                  <td class="text-right">{{ s.on_hand }}</td><td class="text-right text-error font-weight-bold">{{ s.needed }}</td>
+                </tr>
+              </tbody>
+            </v-table>
+            <v-btn variant="text" size="small" color="info" class="text-none mt-1" @click="recheck">Re-check stock</v-btn>
+
+            <v-divider class="my-3" />
+            <div class="text-subtitle-2 font-weight-bold mb-2">Supplier Canvass</div>
+            <SupplierCanvass :order="order" :shortfall="shortfall" :commit-fn="ethical.canvassToPRs" @created="recheck" />
+          </v-card-text>
+        </v-card>
+
+        <v-divider class="my-4" />
+
+        <h4 class="mb-2">Record Collection</h4>
+        <v-row>
+          <v-col>
+            <v-text-field
+              v-model.number="collectionAmount"
+              label="Amount"
+              type="number"
+              :max="balance"
+              :disabled="isPaid"
+            />
+          </v-col>
+          <v-col>
+            <v-text-field v-model="collectionMethod" label="Payment Method" :disabled="isPaid" />
+          </v-col>
+          <v-col>
+            <v-text-field v-model="collectionReference" label="Ref No" :disabled="isPaid" />
+          </v-col>
+          <v-col class="d-flex align-center">
+            <v-btn
+              color="success"
+              :disabled="isPaid || collectionAmount <= 0"
+              :loading="loading"
+              @click="recordCollection"
+            >
+              Record
+            </v-btn>
+          </v-col>
+        </v-row>
+
+        <v-divider class="my-4" />
+
+        <h4 class="mb-2">Collections History</h4>
+        <v-table dense>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th class="text-right">Amount</th>
+              <th>Method</th>
+              <th class="text-right">Commission</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="c in collections" :key="c.id">
+              <td>{{ c.created_at ? new Date(c.created_at).toLocaleDateString() : '—' }}</td>
+              <td class="text-right">{{ c.amount?.toFixed(2) }}</td>
+              <td>{{ c.payment_method || '—' }}</td>
+              <td class="text-right">{{ c.commission_amount?.toFixed(2) }}</td>
+              <td>
+                <v-chip size="x-small" :color="c.commission_status === 'paid' ? 'success' : 'warning'">
+                  {{ c.commission_status }}
+                </v-chip>
+              </td>
+              <td>
+                <v-btn
+                  v-if="c.commission_status === 'unpaid'"
+                  size="x-small"
+                  @click="markCommissionPaid(c)"
+                >
+                  Mark Paid
+                </v-btn>
+              </td>
+            </tr>
+          </tbody>
+        </v-table>
+
+        <v-divider class="my-4" />
+
+        <h4 class="mb-2">Delivery Receipt</h4>
+        <div class="text-caption text-medium-emphasis mb-2">
+          Issue a signed proof-of-delivery for the fulfilled quantities. Re-issue for a reprint or second copy.
+        </div>
+        <v-row>
+          <v-col cols="12" sm="6">
+            <v-text-field v-model="receivedBy" label="Received by (consignee)" placeholder="Printed name on the DR"
+              variant="outlined" density="compact" hide-details />
+          </v-col>
+          <v-col cols="12" sm="auto" class="d-flex align-center">
+            <v-btn color="teal" class="text-none font-weight-bold" elevation="0" prepend-icon="mdi-truck-check"
+              :disabled="!canIssueDR" :loading="loading" @click="issueDR">
+              Issue Delivery Receipt
+            </v-btn>
+          </v-col>
+        </v-row>
+      </v-card-text>
+
+      <v-card-actions>
+        <v-btn
+          v-if="isCancellable"
+          color="error"
+          :loading="loading"
+          @click="cancelOrder"
+        >
+          Cancel Order
+        </v-btn>
+        <v-spacer />
+        <v-btn variant="text" prepend-icon="mdi-printer" @click="showInvoice = true">Print Invoice</v-btn>
+        <v-btn @click="internalValue = false">Close</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+
+  <EthicalInvoiceDialog v-model="showInvoice" :order="order ?? null" />
+  <DeliveryReceiptDialog v-model="showReceipt" :receipt="issuedReceipt" />
+</template>

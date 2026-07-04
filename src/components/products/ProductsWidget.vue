@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useDisplay } from 'vuetify'
+import { formatCurrency } from '@/utils/helpers'
 import { useProductsWidget } from '@/components/products/composables/useProductsWidget.ts'
 import { useTheme } from '@/stores/useTheme'
 import ProductMobile from './mobile/ProductMobile.vue'
@@ -52,7 +53,7 @@ const isDark = computed<'light' | 'dark'>(() => getCurrentTheme())
 
 // Theme-aware stock color logic
 function stockColor(item: any) {
-  const stock = item.actual_count ?? 0
+  const stock = item.current_stock ?? 0
   const isOutOfStock = stock <= 0
   const isLowStock = item.reorder_level && stock <= item.reorder_level
 
@@ -132,12 +133,12 @@ function stockColor(item: any) {
               <v-list-item
                 v-for="p in lowStockProducts"
                 :key="p.id"
-                :prepend-icon="(p.actual_count ?? 0) <= 0 ? 'mdi-close-circle' : 'mdi-alert'"
+                :prepend-icon="(p.current_stock ?? 0) <= 0 ? 'mdi-close-circle' : 'mdi-alert'"
                 density="compact"
               >
                 <v-list-item-title class="text-body-2">{{ p.product_name }}</v-list-item-title>
                 <v-list-item-subtitle class="text-caption">
-                  {{ p.actual_count ?? 0 }} units left · reorder at {{ p.reorder_level }}
+                  {{ p.current_stock ?? 0 }} units left · reorder at {{ p.reorder_level }}
                 </v-list-item-subtitle>
               </v-list-item>
             </v-list>
@@ -175,16 +176,16 @@ function stockColor(item: any) {
         @update:options="handleTableOptions"
       >
         <template #[`item.selling_price`]="{ value }">
-          <span v-if="value != null">${{ Number(value).toFixed(2) }}</span>
+          <span v-if="value != null">{{ formatCurrency(Number(value)) }}</span>
           <span v-else class="text-grey">-</span>
         </template>
         <template #[`item.cost_price`]="{ value }">
-          <span v-if="value != null">${{ Number(value).toFixed(2) }}</span>
+          <span v-if="value != null">{{ formatCurrency(Number(value)) }}</span>
           <span v-else class="text-grey">-</span>
         </template>
-        <template #[`item.actual_count`]="{ item }">
+        <template #[`item.current_stock`]="{ item }">
           <v-chip :color="stockColor(item)" size="small" variant="outlined">
-            {{ item.actual_count ?? 0 }}
+            {{ item.current_stock ?? 0 }}
           </v-chip>
         </template>
         <template #[`expanded-row`]="{ item }">

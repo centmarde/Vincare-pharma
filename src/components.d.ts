@@ -9,6 +9,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     BottomBar: typeof import('./components/common/BottomBar.vue')['default']
+    DeliveryReceiptDialog: typeof import('./components/deliveryReceipts/DeliveryReceiptDialog.vue')['default']
     InnerNavBar: typeof import('./components/common/InnerNavBar.vue')['default']
     InsideNavbar1: typeof import('./components/common/insideNavbar/InsideNavbar1.vue')['default']
     InsideNavbar2: typeof import('./components/common/insideNavbar/InsideNavbar2.vue')['default']
@@ -31,5 +32,6 @@ declare module 'vue' {
     Sidebar: typeof import('./components/common/sideBar/Sidebar.vue')['default']
     SlugName: typeof import('./components/common/insideNavbar/SlugName.vue')['default']
     StockStatusCards: typeof import('./components/products/StockStatusCards.vue')['default']
+    SupplierCanvass: typeof import('./components/canvass/SupplierCanvass.vue')['default']
   }
 }
