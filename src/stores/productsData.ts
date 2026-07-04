@@ -17,6 +17,7 @@ export type ProductType = {
   unit: string | null
   cost_price: number | null
   selling_price: number | null
+  qty_stock_in: number | null
   current_stock: number | null
   reorder_level: number | null
   supplier_id: number | null
@@ -365,7 +366,11 @@ export const useProductsDataStore = defineStore('productsData', () => {
 
     try {
       for (const { product_id, sku, actual_count } of updates) {
-        const result = await updateProduct(product_id, { sku, actual_count })
+        const result = await updateProduct(product_id, {
+          sku,
+          actual_count,
+          current_stock: actual_count,
+        })
         if (!result) throw new Error(`Failed to update product ID ${product_id}`)
       }
       return true

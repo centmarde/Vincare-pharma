@@ -119,7 +119,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       no:               index + 1,
       unit:             ti.products?.unit           ?? '—',
       item_description: ti.products?.product_name   ?? '—',
-      qty:              ti.products?.current_stock   ?? 0,
+      qty:              ti.products?.qty_stock_in   ?? 0,
       offer_per_unit:   ti.products?.selling_price   ?? 0,
       cost_per_unit:    ti.products?.cost_price      ?? 0,
       product_id:       ti.product_id,
@@ -199,32 +199,72 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       return { success: false }
     }
 
-    const productInserts = items.value.map(item => ({
-      product_name:  item.item_description,
-      unit:          item.unit,
-      cost_price:    item.cost_per_unit,
-      selling_price: item.offer_per_unit,
-      current_stock: item.qty,
-      supplier_id:   item.supplier_id ? Number(item.supplier_id) : null,
-      status:        'active',
-      expiry_date:   item.expiry_date ?? null,
-    }))
+    // ─── Check for existing products (matched by product_name + supplier_id) ──
+    const names = [...new Set(items.value.map(i => i.item_description))]
+    const { data: existingProducts, error: existingError } = await supabase
+      .from('products')
+      .select('id, product_name, supplier_id')
+      .in('product_name', names)
 
-    const { data: productData, error: productError } = await supabase
-      .from('products').insert(productInserts).select('id')
-
-    if (productError || !productData) {
-      handleError(productError, 'Failed to save products.')
-      toast.error('Failed to save products. Please try again.')
+    if (existingError) {
+      handleError(existingError, 'Failed to check existing products.')
+      toast.error('Failed to check existing products. Please try again.')
       loading.value = false
       return { success: false }
+    }
+
+    const findExisting = (name: string, supplierId: number | null) =>
+      (existingProducts || []).find(
+        p => p.product_name === name && (p.supplier_id ?? null) === (supplierId ?? null)
+      )
+
+    // One slot per PR item: existing product id, or null if it needs to be created
+    const productIdByIndex: (number | null)[] = items.value.map(item => {
+      const supplierId = item.supplier_id ? Number(item.supplier_id) : null
+      const match = findExisting(item.item_description, supplierId)
+      return match ? match.id : null
+    })
+
+    // ─── Only insert products that don't already exist ──
+    const newItemIndexes = productIdByIndex
+      .map((id, idx) => (id === null ? idx : -1))
+      .filter(idx => idx !== -1)
+
+    if (newItemIndexes.length) {
+      const productInserts = newItemIndexes.map(idx => {
+        const item = items.value[idx]
+        return {
+          product_name:  item.item_description,
+          unit:          item.unit,
+          cost_price:    item.cost_per_unit,
+          selling_price: item.offer_per_unit,
+          qty_stock_in:  item.qty,
+          supplier_id:   item.supplier_id ? Number(item.supplier_id) : null,
+          status:        'active',
+          expiry_date:   item.expiry_date ?? null,
+        }
+      })
+
+      const { data: productData, error: productError } = await supabase
+        .from('products').insert(productInserts).select('id')
+
+      if (productError || !productData) {
+        handleError(productError, 'Failed to save products.')
+        toast.error('Failed to save products. Please try again.')
+        loading.value = false
+        return { success: false }
+      }
+
+      newItemIndexes.forEach((idx, i) => {
+        productIdByIndex[idx] = productData[i].id
+      })
     }
 
     const { error: itemsError } = await supabase
       .from('transaction_items')
       .insert(items.value.map((_, index) => ({
         transaction_id: txData.id,
-        product_id:     productData[index].id,
+        product_id:     productIdByIndex[index]!,
       })))
 
     if (itemsError) {
@@ -252,7 +292,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         *,
         transaction_items (
           id, product_id,
-          products ( id, product_name, unit, cost_price, selling_price, current_stock, sku, supplier_id, actual_count, suppliers ( name ) )
+          products ( id, product_name, unit, cost_price, selling_price, qty_stock_in, sku, supplier_id, actual_count, suppliers ( name ) )
         )
       `)
       .not('requisition_no', 'is', null)
@@ -281,7 +321,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         *,
         transaction_items (
           id, product_id,
-          products ( id, product_name, unit, cost_price, selling_price, current_stock, sku, supplier_id, actual_count, suppliers ( name ) )
+          products ( id, product_name, unit, cost_price, selling_price, qty_stock_in, sku, supplier_id, actual_count, suppliers ( name ) )
         )
       `)
       .eq('id', requisitionId)
