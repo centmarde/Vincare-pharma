@@ -28,7 +28,6 @@ export type ProductType = {
   offer_per_unit: number | null
   cost_per_unit: number | null
   no: number | null
-  actual_count: number | null
   // Joined supplier data (via FK)
   suppliers: SupplierType | null
 }
@@ -52,7 +51,6 @@ export type CreateProductData = {
   offer_per_unit?: number | null
   cost_per_unit?: number | null
   no?: number | null
-  actual_count?: number | null
 }
 
 export type UpdateProductData = CreateProductData
@@ -83,6 +81,13 @@ export type ProductPickerResult = {
   supplier_name: string | null
   supplier_is_active: boolean | null
   total_count: number
+}
+
+export type ReceiveStockUpdate ={
+  transaction_item_id: number
+  product_id: number
+  sku: string | null
+  actual_count_stock_in: number 
 }
 
 export const useProductsDataStore = defineStore('productsData', () => {
@@ -359,23 +364,38 @@ export const useProductsDataStore = defineStore('productsData', () => {
   }
 
   const updateProductSkuAndCount = async (
-    updates: { product_id: number; sku: string; actual_count: number }[]
+    updates: ReceiveStockUpdate[]
   ): Promise<boolean> => {
     if (!updates.length) return true
     clearError()
 
     try {
-      for (const { product_id, sku, actual_count } of updates) {
+      for (const { transaction_item_id, product_id, sku, actual_count_stock_in } of updates) {
+        // 1. Record the actual delivered qty on the transaction line
+        const { error: tiError } = await supabase
+          .from('transaction_items')
+          .update({ actual_count_stock_in })
+          .eq('id', transaction_item_id)
+
+        if (tiError) throw tiError
+
+        // 2. Fetch current product stock so we can increment it correctly
+        const product = await fetchProductById(product_id)
+        if (!product) throw new Error(`Failed to fetch product ID ${product_id}`)
+
+        const newStock = (product.current_stock ?? 0) + actual_count_stock_in
+
+        // 3. Update product: new stock total, and sku if provided
         const result = await updateProduct(product_id, {
-          sku,
-          actual_count,
-          current_stock: actual_count,
+          current_stock: newStock,
+          ...(sku ? { sku } : {}),
         })
+
         if (!result) throw new Error(`Failed to update product ID ${product_id}`)
       }
       return true
     } catch (err) {
-      handleError(err, 'Failed saving product information.')
+      handleError(err, 'Failed saving received stock information.')
       return false
     }
   }

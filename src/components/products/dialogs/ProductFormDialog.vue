@@ -62,7 +62,7 @@ const form = defineModel<any>('form')
               <v-text-field v-model="productForm.sku" label="SKU" prepend-inner-icon="mdi-tag" variant="outlined" density="comfortable"></v-text-field>
             </v-col>
             <v-col cols="12" :sm="mobile ? 12 : 6">
-              <v-text-field v-model.number="productForm.actual_count" label="Current Stock" type="number" prepend-inner-icon="mdi-numeric" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
+              <v-text-field v-model.number="productForm.current_stock" label="Current Stock" type="number" prepend-inner-icon="mdi-numeric" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
             </v-col>
             <v-col cols="12" :sm="mobile ? 12 : 6">
               <v-text-field v-model.number="productForm.cost_price" label="Cost Price" type="number" step="0.01" prepend-inner-icon="mdi-currency-usd" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>

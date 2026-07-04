@@ -20,7 +20,7 @@ export type PRItem = {
   product_id?:      number
   sku?:             string | null
   supplier_name?:   string | null
-  actual_count?:    number | null
+  actual_count_stock_in?: number | null
 }
 
 export type RequisitionItemType = {
@@ -31,7 +31,7 @@ export type RequisitionItemType = {
   offer_per_unit:   number
   cost_per_unit:    number
   supplier_id:      string | null
-  actual_count?:    number
+  actual_count_stock_in?:    number | null
   expiry_date?:     string | null
 }
 
@@ -50,7 +50,7 @@ export type PR = {
   updated_at:      string | null
   requester_name?: string
   reviewer_name?:  string
-  actual_count?:   number | null
+  actual_count_stock_in?:   number | null
   items:           PRItem[]
 }
 
@@ -119,13 +119,13 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       no:               index + 1,
       unit:             ti.products?.unit           ?? '—',
       item_description: ti.products?.product_name   ?? '—',
-      qty:              ti.products?.qty_stock_in   ?? 0,
+      qty:              ti.qty_stock_in   ?? 0,
       offer_per_unit:   ti.products?.selling_price   ?? 0,
       cost_per_unit:    ti.products?.cost_price      ?? 0,
       product_id:       ti.product_id,
       sku:              ti.products?.sku             ?? null,
       supplier_name:    ti.products?.suppliers?.name ?? '—',
-      actual_count:     ti.products?.actual_count    ?? 0,
+      actual_count_stock_in:  ti.actual_count_stock_in      ?? null,
     }))
   }
 
@@ -157,7 +157,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       updated_at:     tx.updated_at,
       requester_name: names.requester_name,
       reviewer_name:  names.reviewer_name,
-      actual_count:   tx.actual_count,
+      actual_count_stock_in:   tx.actual_count_stock_in,
       items:          prItems,
     }
   }
@@ -238,10 +238,10 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
           unit:          item.unit,
           cost_price:    item.cost_per_unit,
           selling_price: item.offer_per_unit,
-          qty_stock_in:  item.qty,
           supplier_id:   item.supplier_id ? Number(item.supplier_id) : null,
           status:        'active',
           expiry_date:   item.expiry_date ?? null,
+          current_stock: 0,
         }
       })
 
@@ -262,9 +262,10 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
 
     const { error: itemsError } = await supabase
       .from('transaction_items')
-      .insert(items.value.map((_, index) => ({
+      .insert(items.value.map((item, index) => ({
         transaction_id: txData.id,
         product_id:     productIdByIndex[index]!,
+        qty_stock_in:    item.qty,
       })))
 
     if (itemsError) {
@@ -291,8 +292,8 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       .select(`
         *,
         transaction_items (
-          id, product_id,
-          products ( id, product_name, unit, cost_price, selling_price, qty_stock_in, sku, supplier_id, actual_count, suppliers ( name ) )
+          id, product_id, qty_stock_in, actual_count_stock_in,
+          products ( id, product_name, unit, cost_price, selling_price, sku, supplier_id, suppliers ( name ) )
         )
       `)
       .not('requisition_no', 'is', null)
@@ -320,8 +321,8 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       .select(`
         *,
         transaction_items (
-          id, product_id,
-          products ( id, product_name, unit, cost_price, selling_price, qty_stock_in, sku, supplier_id, actual_count, suppliers ( name ) )
+          id, product_id, qty_stock_in, actual_count_stock_in,
+          products ( id, product_name, unit, cost_price, selling_price, sku, supplier_id, suppliers ( name ) )
         )
       `)
       .eq('id', requisitionId)

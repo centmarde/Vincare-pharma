@@ -179,7 +179,7 @@ const {
           </tbody>
           <tfoot>
             <tr class="po-table-total bg-grey-lighten-3">
-              <td colspan="5" class="text-right font-weight-bold">TOTAL</td>
+              <td colspan="6" class="text-right font-weight-bold">TOTAL</td>
               <td class="text-right font-weight-bold text-subtitle-1">{{ formatCurrency(declaredValue) }}</td>
             </tr>
           </tfoot>
