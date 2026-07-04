@@ -6,7 +6,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useCanvassDataStore } from '@/stores/canvassData'
-import { nextDocNumber } from '@/utils/helpers'
+import { generateIHNumber, generateDRNumber } from '@/utils/generativeHelpers'
 import type { ProductType } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
 import type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult } from '@/utils/canvassTypes'
@@ -171,12 +171,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const subtotal = payload.lines.reduce((sum, l) => sum + l.qty * l.unit_price, 0)
 
-    const year = new Date().getFullYear().toString()
-    const { data: existingOrders } = await supabase
-      .from('transactions')
-      .select('reference_no')
-      .like('reference_no', `IH-${year}-%`)
-    const orderNo = nextDocNumber((existingOrders ?? []).map(r => r.reference_no), `IH-${year}-`)
+    const orderNo = await generateIHNumber()
 
     const { data: created, error: insertError } = await supabase
       .from('transactions')
@@ -452,12 +447,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       loading.value = false; return { success: false }
     }
 
-    const year = new Date().getFullYear().toString()
-    const { data: existingDRs } = await supabase
-      .from('transactions')
-      .select('reference_no')
-      .like('reference_no', `DR-${year}-%`)
-    const drNo = nextDocNumber((existingDRs ?? []).map(r => r.reference_no), `DR-${year}-`)
+    const drNo = await generateDRNumber()
 
     const { data: dr, error: drError } = await supabase
       .from('transactions')
