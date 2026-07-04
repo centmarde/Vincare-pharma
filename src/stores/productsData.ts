@@ -70,12 +70,28 @@ type FetchProductsOptions = {
   eligibleIds?: number[]
 }
 
+export type ProductPickerResult = {
+  id: number
+  product_name: string | null
+  unit: string | null
+  current_stock: number | null
+  reorder_level: number | null
+  cost_price: number | null
+  selling_price: number | null
+  supplier_id: number | null
+  supplier_name: string | null
+  supplier_is_active: boolean | null
+  total_count: number
+}
+
 export const useProductsDataStore = defineStore('productsData', () => {
   // State
   const products: Ref<ProductType[]> = ref([])
   const currentProduct: Ref<ProductType | undefined> = ref(undefined)
   const loading = ref(false)
   const error: Ref<string> = ref('')
+  const pickerProducts = ref<ProductPickerResult[]>([])
+  const pickerTotalCount = ref(0)
 
   // Realtime
   const realtimeChannel: Ref<RealtimeChannel | null> = ref(null)
@@ -248,6 +264,26 @@ export const useProductsDataStore = defineStore('productsData', () => {
     }
   }
 
+  async function fetchProductPicker({ search = '', limit = 15 }: { search?: string; limit?: number }) {
+    loading.value = true
+
+    const { data, error } = await supabase.rpc('search_products_with_sku', {
+      search_term: search,
+      page_limit: limit,
+    })
+
+    loading.value = false
+
+    if (error) {
+      console.error(error)
+      return
+    }
+
+    pickerProducts.value = (data ?? []) as ProductPickerResult[]
+    pickerTotalCount.value = data?.[0]?.total_count ?? 0
+  }
+
+
   const createProduct = async (productData: CreateProductData) => {
     loading.value = true
     clearError()
@@ -365,6 +401,8 @@ export const useProductsDataStore = defineStore('productsData', () => {
     currentProduct,
     loading,
     error,
+    pickerProducts,
+    pickerTotalCount,
 
     // Computed
     productsCount,
@@ -378,6 +416,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     fetchEligibleProductIds,
     fetchProducts,
     fetchProductById,
+    fetchProductPicker,
     createProduct,
     updateProduct,
     deleteProduct,

@@ -32,6 +32,7 @@ export type RequisitionItemType = {
   cost_per_unit:    number
   supplier_id:      string | null
   actual_count?:    number
+  expiry_date?:     string | null
 }
 
 export type PR = {
@@ -206,6 +207,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       current_stock: item.qty,
       supplier_id:   item.supplier_id ? Number(item.supplier_id) : null,
       status:        'active',
+      expiry_date:   item.expiry_date ?? null,
     }))
 
     const { data: productData, error: productError } = await supabase
