@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted } from 'vue'
 import type { Role, CreateRoleData } from '@/stores/roles'
-import { getNavigationWithSelection, getAllPermissions } from '@/utils/navigation'
+import {
+  getNavigationWithSelection,
+  getAllPermissions,
+  isSelectableNavigationItem,
+  type SelectableNavigationChild,
+} from '@/utils/navigation'
 import { useRoleEditFetchDialog } from '../composables/roleEditFetchDialog'
 
 interface Props {
@@ -43,10 +48,14 @@ const localFormData = computed({
   set: (value) => emit('update:formData', value),
 })
 
-// Page control data - dynamically generated from navigation config
-const adminGroupExpanded = ref(true)
-const organizationGroupExpanded = ref(true)
-const myAccountGroupExpanded = ref(true)
+// Page control data - dynamically generated from navigation config.
+// Expansion state per group/sub-group title, all expanded by default.
+// Keyed by a single reactive map (not one ref per title) so toggling a
+// title always reads/writes the same ref instance — returning a fresh
+// `ref(true)` per call (the old approach for any unlisted title) meant a
+// toggle's write and the template's read landed on different refs, so the
+// section never actually stayed open/closed and just flickered.
+const groupExpansion = ref<Record<string, boolean>>({})
 
 // Selected permissions for the role - initialized from current role permissions when editing
 const selectedPermissions = ref<string[]>([])
@@ -83,12 +92,11 @@ watch(
 // Get navigation groups with selection state
 const navigationGroups = computed(() => getNavigationWithSelection(selectedPermissions.value))
 
-// Helper function to get group expansion state
-const getGroupExpansion = (groupTitle: string) => {
-  if (groupTitle === 'Admin Controls') return adminGroupExpanded
-  if (groupTitle === 'My Organization') return organizationGroupExpanded
-  if (groupTitle === 'My Account') return myAccountGroupExpanded
-  return ref(true)
+// Whether a group/sub-group is expanded — defaults to true until toggled.
+const isGroupExpanded = (groupTitle: string) => groupExpansion.value[groupTitle] ?? true
+
+const toggleGroupExpanded = (groupTitle: string) => {
+  groupExpansion.value[groupTitle] = !isGroupExpanded(groupTitle)
 }
 
 // Handle permission toggle
@@ -103,6 +111,28 @@ const togglePermission = (permission: string, selected: boolean) => {
       selectedPermissions.value.splice(index, 1)
     }
   }
+}
+
+// A sub-group (e.g. "Income Statement Controls") is rendered in this dialog
+// as a single bundle checkbox rather than its individual pages — checking it
+// grants every page nested inside in one action.
+type SelectableSubGroup = Extract<SelectableNavigationChild, { children: SelectableNavigationChild[] }>
+
+const subgroupLeaves = (child: SelectableSubGroup) => child.children.filter(isSelectableNavigationItem)
+
+const isSubgroupFullySelected = (child: SelectableSubGroup) => {
+  const leaves = subgroupLeaves(child)
+  return leaves.length > 0 && leaves.every((item) => item.selected)
+}
+
+const isSubgroupPartiallySelected = (child: SelectableSubGroup) => {
+  const leaves = subgroupLeaves(child)
+  const selectedCount = leaves.filter((item) => item.selected).length
+  return selectedCount > 0 && selectedCount < leaves.length
+}
+
+const toggleSubgroup = (child: SelectableSubGroup, value: boolean) => {
+  subgroupLeaves(child).forEach((item) => togglePermission(item.permission || item.route, value))
 }
 
 const closeDialog = () => {
@@ -169,14 +199,10 @@ const handleDelete = () => {
               >
                 <!-- Group Header -->
                 <v-list-item
-                  @click="
-                    getGroupExpansion(group.title).value = !getGroupExpansion(group.title).value
-                  "
+                  @click="toggleGroupExpanded(group.title)"
                   class="mb-1 rounded-lg group-header pa-2"
                   :prepend-icon="group.icon"
-                  :append-icon="
-                    getGroupExpansion(group.title).value ? 'mdi-chevron-up' : 'mdi-chevron-down'
-                  "
+                  :append-icon="isGroupExpanded(group.title) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
                   density="compact"
                 >
                   <v-list-item-title class="font-weight-medium text-body-2">
@@ -186,33 +212,57 @@ const handleDelete = () => {
 
                 <!-- Collapsible Children -->
                 <v-expand-transition>
-                  <div v-show="getGroupExpansion(group.title).value" class="group-children">
-                    <v-list-item
-                      v-for="child in group.children"
-                      :key="child.title"
-                      class="mb-1 rounded-lg ml-4 pa-1"
-                      density="compact"
-                    >
-                      <template #prepend>
-                        <v-checkbox
-                          :model-value="child.selected"
-                          @update:model-value="
-                            (value) => togglePermission(child.permission || child.route, !!value)
-                          "
-                          hide-details
-                          density="compact"
-                          class="mr-2"
-                          :disabled="!(child.permission || child.route)"
-                        />
-                        <v-icon :icon="child.icon" size="20" class="mr-2" />
-                      </template>
-                      <v-list-item-title class="text-body-2">
-                        {{ child.title }}
-                      </v-list-item-title>
-                      <v-list-item-subtitle class="text-caption" v-if="child.route">
-                        {{ child.route }}
-                      </v-list-item-subtitle>
-                    </v-list-item>
+                  <div v-show="isGroupExpanded(group.title)" class="group-children">
+                    <template v-for="child in group.children" :key="child.title">
+                      <!-- Leaf item: a checkable permission -->
+                      <v-list-item
+                        v-if="isSelectableNavigationItem(child)"
+                        class="mb-1 rounded-lg ml-4 pa-1"
+                        density="compact"
+                      >
+                        <template #prepend>
+                          <v-checkbox
+                            :model-value="child.selected"
+                            @update:model-value="
+                              (value) => togglePermission(child.permission || child.route, !!value)
+                            "
+                            hide-details
+                            density="compact"
+                            class="mr-2"
+                            :disabled="!(child.permission || child.route)"
+                          />
+                          <v-icon :icon="child.icon" size="20" class="mr-2" />
+                        </template>
+                        <v-list-item-title class="text-body-2">
+                          {{ child.title }}
+                        </v-list-item-title>
+                        <v-list-item-subtitle class="text-caption" v-if="child.route">
+                          {{ child.route }}
+                        </v-list-item-subtitle>
+                      </v-list-item>
+
+                      <!-- Sub-group: bundled into a single checkbox — checking it grants
+                           every page nested inside, no per-page breakdown shown -->
+                      <v-list-item v-else class="mb-1 rounded-lg ml-4 pa-1" density="compact">
+                        <template #prepend>
+                          <v-checkbox
+                            :model-value="isSubgroupFullySelected(child)"
+                            :indeterminate="isSubgroupPartiallySelected(child)"
+                            @update:model-value="(value) => toggleSubgroup(child, !!value)"
+                            hide-details
+                            density="compact"
+                            class="mr-2"
+                          />
+                          <v-icon :icon="child.icon" size="20" class="mr-2" />
+                        </template>
+                        <v-list-item-title class="text-body-2 font-weight-medium">
+                          {{ child.title }}
+                        </v-list-item-title>
+                        <v-list-item-subtitle class="text-caption">
+                          Includes {{ subgroupLeaves(child).length }} pages
+                        </v-list-item-subtitle>
+                      </v-list-item>
+                    </template>
                   </div>
                 </v-expand-transition>
               </div>
@@ -288,6 +338,20 @@ const handleDelete = () => {
 
 .group-header:hover {
   background-color: rgba(var(--v-theme-primary), 0.08) !important;
+}
+
+.subgroup-header {
+  background-color: transparent !important;
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.subgroup-header:hover {
+  background-color: rgba(var(--v-theme-primary), 0.06) !important;
+}
+
+.subgroup-section {
+  margin-bottom: 4px;
 }
 
 .admin-children,

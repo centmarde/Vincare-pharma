@@ -94,6 +94,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
   // State
   const products: Ref<ProductType[]> = ref([])
   const currentProduct: Ref<ProductType | undefined> = ref(undefined)
+  const eligibleProductIds: Ref<Set<number>> = ref(new Set())
   const loading = ref(false)
   const error: Ref<string> = ref('')
   const pickerProducts = ref<ProductPickerResult[]>([])
@@ -424,6 +425,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     // State
     products,
     currentProduct,
+    eligibleProductIds,
     loading,
     error,
     pickerProducts,

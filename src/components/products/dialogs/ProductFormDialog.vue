@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue'
+import { parseMonthYear, formatMonthYear, maskMonthYearInput } from '@/utils/helpers'
 import type { CreateProductData, UpdateProductData } from '@/stores/productsData'
 
 const props = defineProps<{
@@ -20,6 +22,45 @@ const emit = defineEmits<{
 }>()
 
 const form = defineModel<any>('form')
+
+// Batch expiry only ever needs month/year (e.g. "04/2026") — entered as a
+// masked MM/YYYY text field. products.expiry_date is a native Postgres `date`
+// column (day required), so a valid MM/YYYY commits as "YYYY-MM-01".
+// A local text ref holds what the user types so partial input stays visible
+// (a computed proxy backed by the parsed date would erase incomplete text).
+const EXPIRY_YEARS_BACK = 10
+const EXPIRY_YEARS_OUT = 15
+const expiryText = ref('')
+
+// Keep the field in sync when the form's date changes externally (e.g. the
+// dialog opens in edit mode).
+watch(() => props.productForm.expiry_date, (value) => {
+  const d = value ? new Date(value) : null
+  expiryText.value = d && !Number.isNaN(d.getTime()) ? formatMonthYear(d) : ''
+}, { immediate: true })
+
+function commitExpiry(date: Date | null) {
+  props.productForm.expiry_date = date
+    ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`
+    : null
+}
+
+function onExpiryInput(raw: string) {
+  expiryText.value = maskMonthYearInput(raw)
+  const d = parseMonthYear(expiryText.value)
+  if (d) commitExpiry(d)          // commit as soon as it's a complete valid MM/YYYY
+}
+
+function onExpiryBlur() {
+  if (!expiryText.value) { commitExpiry(null); return }
+  const d = parseMonthYear(expiryText.value)
+  if (!d) return                  // partial/invalid — leave text for the user to finish
+  const max = new Date(); max.setFullYear(max.getFullYear() + EXPIRY_YEARS_OUT)
+  const min = new Date(); min.setFullYear(min.getFullYear() - EXPIRY_YEARS_BACK)
+  const clamped = d > max ? max : d < min ? min : d
+  expiryText.value = formatMonthYear(clamped)
+  commitExpiry(clamped)
+}
 </script>
 
 <template>
@@ -59,16 +100,16 @@ const form = defineModel<any>('form')
               <v-text-field v-model="productForm.barcode" label="Barcode" prepend-inner-icon="mdi-barcode" variant="outlined" density="comfortable"></v-text-field>
             </v-col>
             <v-col cols="12" :sm="mobile ? 12 : 6">
-              <v-text-field v-model="productForm.sku" label="SKU" prepend-inner-icon="mdi-tag" variant="outlined" density="comfortable"></v-text-field>
+              <v-text-field v-model="productForm.sku" label="SKU" prepend-inner-icon="mdi-tag" variant="outlined" density="comfortable" :rules="[rules.required]" required></v-text-field>
             </v-col>
             <v-col cols="12" :sm="mobile ? 12 : 6">
               <v-text-field v-model.number="productForm.current_stock" label="Current Stock" type="number" prepend-inner-icon="mdi-numeric" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
             </v-col>
             <v-col cols="12" :sm="mobile ? 12 : 6">
-              <v-text-field v-model.number="productForm.cost_price" label="Cost Price" type="number" step="0.01" prepend-inner-icon="mdi-currency-usd" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
+              <v-text-field v-model.number="productForm.cost_price" label="Cost Price" type="number" step="0.01" prepend-inner-icon="mdi-currency-php" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
             </v-col>
             <v-col cols="12" :sm="mobile ? 12 : 6">
-              <v-text-field v-model.number="productForm.selling_price" label="Selling Price" type="number" step="0.01" prepend-inner-icon="mdi-currency-usd" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
+              <v-text-field v-model.number="productForm.selling_price" label="Selling Price" type="number" step="0.01" prepend-inner-icon="mdi-currency-php" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
             </v-col>
             <v-col cols="12" :sm="mobile ? 12 : 6">
               <v-text-field v-model="productForm.category" label="Category" prepend-inner-icon="mdi-shape" variant="outlined" density="comfortable"></v-text-field>
@@ -80,7 +121,7 @@ const form = defineModel<any>('form')
               <v-text-field v-model.number="productForm.batch_no" label="Batch No." type="number" prepend-inner-icon="mdi-numeric" variant="outlined" density="comfortable"></v-text-field>
             </v-col>
             <v-col cols="12" :sm="mobile ? 12 : 6">
-              <v-text-field v-model="productForm.expiry_date" label="Expiry Date" type="date" prepend-inner-icon="mdi-calendar-clock" variant="outlined" density="comfortable"></v-text-field>
+              <v-text-field :model-value="expiryText" label="Expiry Date" placeholder="MM/YYYY" maxlength="7" inputmode="numeric" prepend-inner-icon="mdi-calendar-clock" variant="outlined" density="comfortable" @update:model-value="onExpiryInput" @blur="onExpiryBlur"></v-text-field>
             </v-col>
             <v-col cols="12" :sm="mobile ? 12 : 6">
               <v-text-field v-model.number="productForm.reorder_level" label="Reorder Level" type="number" step="0.01" prepend-inner-icon="mdi-alert" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
@@ -95,7 +136,7 @@ const form = defineModel<any>('form')
               <v-text-field v-model.number="productForm.offer_per_unit" label="Offer Per Unit" type="number" step="0.01" prepend-inner-icon="mdi-percent" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
             </v-col>
             <v-col cols="12" :sm="mobile ? 12 : 6">
-              <v-text-field v-model.number="productForm.cost_per_unit" label="Cost Per Unit" type="number" step="0.01" prepend-inner-icon="mdi-currency-usd" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
+              <v-text-field v-model.number="productForm.cost_per_unit" label="Cost Per Unit" type="number" step="0.01" prepend-inner-icon="mdi-currency-php" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
             </v-col>
             <v-col cols="12" :sm="mobile ? 12 : 6">
               <v-select v-model="productForm.unit" label="Unit" prepend-inner-icon="mdi-counter" variant="outlined" density="comfortable" :items="['Box', 'Pcs', 'Set', 'Unit', 'Kg', 'M']" clearable ></v-select>

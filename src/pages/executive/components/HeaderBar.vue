@@ -2,7 +2,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchRandomVerse, type BibleVerse } from '../composables/bibleVerse'
-import { navigationConfig } from '@/utils/navigation'
+import { navigationConfig, flattenNavigationItems } from '@/utils/navigation'
+import type { NavigationChild } from '@/utils/navigation'
 
 const router = useRouter()
 
@@ -24,18 +25,16 @@ interface NavSearchItem {
 
 // Flatten navigation items into a searchable list for v-autocomplete
 const navItems = computed<NavSearchItem[]>(() => {
-  const items: NavSearchItem[] = []
+  const allChildren: NavigationChild[] = []
   for (const group of navigationConfig) {
-    for (const child of group.children) {
-      items.push({
-        title: child.title,
-        icon: child.icon,
-        route: child.route,
-        group: group.title,
-      })
-    }
+    allChildren.push(...group.children)
   }
-  return items
+  return flattenNavigationItems(allChildren).map(item => ({
+    title: item.title,
+    icon: item.icon,
+    route: item.route,
+    group: item.keywords || '',
+  }))
 })
 
 function goToRoute(route: string | null) {
