@@ -354,38 +354,6 @@ export const useProductsDataStore = defineStore('productsData', () => {
     }
   }
 
-  const fetchEligibleProductIds = async () => {
-    loading.value = true
-    clearError()
-
-    try {
-      const { data, error: fetchError } = await supabase
-        .from('transactions')
-        .select('transaction_items!inner(product_id)')
-        .eq('transaction_type', 'stock_in')
-
-      if (fetchError) throw fetchError
-
-      const productIds = new Set<number>()
-      for (const tx of (data || []) as any[]) {
-        if (Array.isArray(tx.transaction_items)) {
-          for (const item of tx.transaction_items) {
-            if (item.product_id) productIds.add(item.product_id)
-          }
-        }
-      }
-
-      eligibleProductIds.value = productIds
-      return eligibleProductIds.value
-    } catch (err) {
-      handleError(err, 'Failed to fetch eligible products')
-      eligibleProductIds.value = new Set()
-      return eligibleProductIds.value
-    } finally {
-      loading.value = false
-    }
-  }
-
   const upsertProductLocal = (product: ProductType) => {
     const idx = products.value.findIndex((p) => p.id === product.id)
     if (idx === -1) products.value.unshift(product)
@@ -430,7 +398,6 @@ export const useProductsDataStore = defineStore('productsData', () => {
     updateProduct,
     deleteProduct,
     updateProductSkuAndCount,
-    fetchEligibleProductIds,
     clearError,
     resetStore,
 
