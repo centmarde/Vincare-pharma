@@ -6,6 +6,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useCanvassDataStore } from '@/stores/canvassData'
+import { useDeliveryReceiptsDataStore } from '@/stores/deliveryReceiptsData'
 import { nextDocNumber } from '@/utils/helpers'
 import type { ProductType } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
@@ -140,6 +141,7 @@ function mapRow(row: any): EthicalOrderType {
 export const useEthicalDataStore = defineStore('ethicalData', () => {
   const authStore = useAuthUserStore()
   const canvassStore = useCanvassDataStore()
+  const drStore = useDeliveryReceiptsDataStore()
 
   const orders: Ref<EthicalOrderType[]> = ref([])
   const currentOrder: Ref<EthicalOrderType | undefined> = ref(undefined)
@@ -459,7 +461,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
 
     const { data: order, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, customer_id')
+      .select('id, status, customer_id, reference_no')
       .eq('id', payload.orderId)
       .eq('transaction_type', 'ethical_order')
       .maybeSingle()
@@ -491,42 +493,19 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
       unit_price: (row.transaction_item_details as unknown as { unit_price: number | null }).unit_price,
     }))
 
-    const year = new Date().getFullYear().toString()
-    const { data: existingDRs } = await supabase
-      .from('transactions')
-      .select('reference_no')
-      .like('reference_no', `DR-${year}-%`)
-    const drNo = nextDocNumber((existingDRs ?? []).map(r => r.reference_no), `DR-${year}-`)
-
-    const { data: dr, error: drError } = await supabase
-      .from('transactions')
-      .insert({
-        reference_no: drNo, transaction_type: 'delivery_receipt', parent_transaction_id: payload.orderId,
-        customer_id: order.customer_id, remarks: payload.receivedBy || null, created_by: user.id,
-      })
-      .select('id')
-      .single()
-    if (drError || !dr) {
-      handleError(drError, 'Failed to issue delivery receipt.')
-      toast.error(drError?.message || 'Failed to issue delivery receipt.')
+    // Document-only DR (no stock movement) into the dedicated tables via drStore.
+    const dr = await drStore.createDeliveryReceipt({
+      orderId: payload.orderId, orderNo: order.reference_no, source: 'ethical_order', customerId: order.customer_id,
+      poNo: null, receivedBy: payload.receivedBy || null,
+      lines: fulfilledItems.map(item => ({
+        product_id: item.product_id, qty: item.delivered_qty, unit_price: item.unit_price,
+      })),
+    }, user.id)
+    if (!dr.success) {
+      toast.error('Failed to issue delivery receipt.')
       loading.value = false; return { success: false }
     }
-
-    const { data: drItems, error: linesError } = await supabase
-      .from('transaction_items')
-      .insert(fulfilledItems.map(item => ({ transaction_id: dr.id, product_id: item.product_id })))
-      .select('id')
-    if (linesError || !drItems) {
-      console.warn('issueDeliveryReceipt: DR lines insert failed:', linesError?.message)
-    } else {
-      const { error: lineDetailsError } = await supabase.from('transaction_item_details').insert(
-        drItems.map((row, i) => ({
-          transaction_item_id: row.id, qty: fulfilledItems[i].delivered_qty,
-          unit_price: fulfilledItems[i].unit_price, line_total: (fulfilledItems[i].unit_price ?? 0) * fulfilledItems[i].delivered_qty,
-        })),
-      )
-      if (lineDetailsError) console.warn('issueDeliveryReceipt: DR line details insert failed:', lineDetailsError.message)
-    }
+    const drNo = dr.drNo!
 
     const { error: logError } = await supabase.from('logs').insert({
       created_by: user.id, action: 'deliver', description: `Delivery receipt ${drNo} issued`,
@@ -536,7 +515,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
 
     toast.success(`${drNo} issued.`)
     loading.value = false
-    return { success: true, drId: dr.id, drNo }
+    return { success: true, drId: dr.drId, drNo }
   }
 
   // Restore branch + warehouse stock from stock_sources, only for invoiced,
