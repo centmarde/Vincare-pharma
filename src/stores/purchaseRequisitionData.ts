@@ -1,5 +1,5 @@
-import { useTransactionsDataStore } from './transactionsData'
 import { generateDocNumber, getLatestReferenceNo } from '@/utils/helpers'
+import type { TransactionRPCRow } from './transactionsData'
 import { useAuthUserStore } from './authUser'
 import { useToast } from 'vue-toastification'
 import { supabase } from '@/lib/supabase'
@@ -20,8 +20,7 @@ export type PRItem = {
   product_id?:      number
   sku?:             string | null
   supplier_name?:   string | null
-  actual_count?:    number | null
-  restock?:         boolean
+  actual_count_stock_in?: number | null
 }
 
 export type RequisitionItemType = {
@@ -32,7 +31,8 @@ export type RequisitionItemType = {
   offer_per_unit:   number
   cost_per_unit:    number
   supplier_id:      string | null
-  actual_count?:    number
+  actual_count_stock_in?:    number | null
+  expiry_date?:     string | null
 }
 
 export type PR = {
@@ -50,7 +50,7 @@ export type PR = {
   updated_at:      string | null
   requester_name?: string
   reviewer_name?:  string
-  actual_count?:   number | null
+  actual_count_stock_in?:   number | null
   items:           PRItem[]
 }
 
@@ -65,7 +65,6 @@ export type PurchaseRequisitionType = {
 
 export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData', () => {
   const authStore         = useAuthUserStore()
-  const transactionsStore = useTransactionsDataStore()
 
   // ─── State ──────────────────────────────────────────────────────
   const loading:             Ref<boolean>                = ref(false)
@@ -100,30 +99,19 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
 
   // ─── Mappers ────────────────────────────────────────────────────
   function mapTransactionItems(transactionItems: any[]): PRItem[] {
-    return transactionItems.map((ti: any, index: number) => {
-      // Line values live in transaction_item_details now (1:1). Canvass-raised
-      // PRs write them there; manual PRs leave them null and store qty/cost on
-      // the product master instead — hence the product-master fallback below.
-      const d = ti.transaction_item_details ?? {}
-      return {
-        id:               ti.id,
-        no:               index + 1,
-        unit:             ti.products?.unit           ?? '—',
-        item_description: ti.products?.product_name   ?? '—',
-        qty:              d.qty        ?? ti.products?.current_stock ?? 0,
-        offer_per_unit:   ti.products?.selling_price ?? 0,
-        cost_per_unit:    d.unit_price ?? ti.products?.cost_price    ?? 0,
-        product_id:       ti.product_id,
-        sku:              ti.products?.sku             ?? null,
-        supplier_name:    ti.products?.suppliers?.name ?? '—',
-        // Canvass lines restock an existing warehouse product: pre-fill the
-        // receive dialog's Actual Count with the ordered qty, not the product
-        // master's count from a previous receipt. Manual PR lines own a
-        // freshly-minted product, so the master's actual_count is theirs.
-        actual_count:     d.qty        ?? ti.products?.actual_count ?? 0,
-        restock:          d.qty != null,
-      }
-    })
+    return transactionItems.map((ti: any, index: number) => ({
+      id:               ti.id,
+      no:               index + 1,
+      unit:             ti.products?.unit           ?? '—',
+      item_description: ti.products?.product_name   ?? '—',
+      qty:              ti.qty_stock_in   ?? 0,
+      offer_per_unit:   ti.products?.selling_price   ?? 0,
+      cost_per_unit:    ti.products?.cost_price      ?? 0,
+      product_id:       ti.product_id,
+      sku:              ti.products?.sku             ?? null,
+      supplier_name:    ti.products?.suppliers?.name ?? '—',
+      actual_count_stock_in:  ti.actual_count_stock_in      ?? null,
+    }))
   }
 
   function resolveUserNames(createdBy: string | null, approvedBy: string | null) {
@@ -154,8 +142,47 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       updated_at:     tx.updated_at,
       requester_name: names.requester_name,
       reviewer_name:  names.reviewer_name,
-      actual_count:   tx.actual_count,
+      actual_count_stock_in:   tx.actual_count_stock_in,
       items:          prItems,
+    }
+  }
+
+  function mapRPCItemsToPR(items: TransactionRPCRow['items']): PRItem[] {
+    return (items || []).map((it, index) => ({
+      id:                    it.id,
+      no:                    index + 1,
+      unit:                  it.unit          ?? '—',
+      item_description:      it.product_name  ?? '—',
+      qty:                   it.qty_stock_in  ?? 0,
+      offer_per_unit:        it.selling_price ?? 0,
+      cost_per_unit:         it.cost_price    ?? 0,
+      product_id:            it.product_id,
+      sku:                   it.sku           ?? null,
+      supplier_name:         it.supplier_name ?? '—',
+      actual_count_stock_in: it.actual_count_stock_in ?? null,
+    }))
+  }
+
+  function mapRPCRowToPR(
+    row: TransactionRPCRow,
+    names: { requester_name: string; reviewer_name: string }
+  ): PR {
+    return {
+      id:                    row.id,
+      requisition_no:        row.requisition_no,
+      po_no:                 row.po_no,
+      status:                row.status ?? '',
+      remarks:               row.remarks,
+      total_amount:          row.total_amount ?? 0,
+      supplier_id:           row.supplier_id ? String(row.supplier_id) : null,
+      created_at:            row.created_at,
+      created_by:            row.created_by ?? '',
+      approved_by:           row.approved_by,
+      updated_at:            row.updated_at,
+      requester_name:        names.requester_name,
+      reviewer_name:         names.reviewer_name,
+      actual_count_stock_in: null,
+      items:                 mapRPCItemsToPR(row.items),
     }
   }
 
@@ -196,31 +223,73 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       return { success: false }
     }
 
-    const productInserts = items.value.map(item => ({
-      product_name:  item.item_description,
-      unit:          item.unit,
-      cost_price:    item.cost_per_unit,
-      selling_price: item.offer_per_unit,
-      current_stock: item.qty,
-      supplier_id:   item.supplier_id ? Number(item.supplier_id) : null,
-      status:        'active',
-    }))
+    // ─── Check for existing products (matched by product_name + supplier_id) ──
+    const names = [...new Set(items.value.map(i => i.item_description))]
+    const { data: existingProducts, error: existingError } = await supabase
+      .from('products')
+      .select('id, product_name, supplier_id')
+      .in('product_name', names)
 
-    const { data: productData, error: productError } = await supabase
-      .from('products').insert(productInserts).select('id')
-
-    if (productError || !productData) {
-      handleError(productError, 'Failed to save products.')
-      toast.error('Failed to save products. Please try again.')
+    if (existingError) {
+      handleError(existingError, 'Failed to check existing products.')
+      toast.error('Failed to check existing products. Please try again.')
       loading.value = false
       return { success: false }
     }
 
+    const findExisting = (name: string, supplierId: number | null) =>
+      (existingProducts || []).find(
+        p => p.product_name === name && (p.supplier_id ?? null) === (supplierId ?? null)
+      )
+
+    // One slot per PR item: existing product id, or null if it needs to be created
+    const productIdByIndex: (number | null)[] = items.value.map(item => {
+      const supplierId = item.supplier_id ? Number(item.supplier_id) : null
+      const match = findExisting(item.item_description, supplierId)
+      return match ? match.id : null
+    })
+
+    // ─── Only insert products that don't already exist ──
+    const newItemIndexes = productIdByIndex
+      .map((id, idx) => (id === null ? idx : -1))
+      .filter(idx => idx !== -1)
+
+    if (newItemIndexes.length) {
+      const productInserts = newItemIndexes.map(idx => {
+        const item = items.value[idx]
+        return {
+          product_name:  item.item_description,
+          unit:          item.unit,
+          cost_price:    item.cost_per_unit,
+          selling_price: item.offer_per_unit,
+          supplier_id:   item.supplier_id ? Number(item.supplier_id) : null,
+          status:        'active',
+          expiry_date:   item.expiry_date ?? null,
+          current_stock: 0,
+        }
+      })
+
+      const { data: productData, error: productError } = await supabase
+        .from('products').insert(productInserts).select('id')
+
+      if (productError || !productData) {
+        handleError(productError, 'Failed to save products.')
+        toast.error('Failed to save products. Please try again.')
+        loading.value = false
+        return { success: false }
+      }
+
+      newItemIndexes.forEach((idx, i) => {
+        productIdByIndex[idx] = productData[i].id
+      })
+    }
+
     const { error: itemsError } = await supabase
       .from('transaction_items')
-      .insert(items.value.map((_, index) => ({
+      .insert(items.value.map((item, index) => ({
         transaction_id: txData.id,
-        product_id:     productData[index].id,
+        product_id:     productIdByIndex[index]!,
+        qty_stock_in:    item.qty,
       })))
 
     if (itemsError) {
@@ -247,8 +316,8 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       .select(`
         *,
         transaction_items (
-          id, product_id, transaction_item_details ( qty, unit_price, cost_price ),
-          products ( id, product_name, unit, cost_price, selling_price, current_stock, sku, supplier_id, actual_count, suppliers ( name ) )
+          id, product_id, qty_stock_in, actual_count_stock_in,
+          products ( id, product_name, unit, cost_price, selling_price, sku, supplier_id, suppliers ( name ) )
         )
       `)
       .not('requisition_no', 'is', null)
@@ -276,8 +345,8 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       .select(`
         *,
         transaction_items (
-          id, product_id, transaction_item_details ( qty, unit_price, cost_price ),
-          products ( id, product_name, unit, cost_price, selling_price, current_stock, sku, supplier_id, actual_count, suppliers ( name ) )
+          id, product_id, qty_stock_in, actual_count_stock_in,
+          products ( id, product_name, unit, cost_price, selling_price, sku, supplier_id, suppliers ( name ) )
         )
       `)
       .eq('id', requisitionId)
@@ -430,6 +499,8 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
 
     // Computed
     isLoading, hasError,
+
+    resolveUserNames, mapToPR, mapTransactionItems, mapRPCRowToPR, mapRPCItemsToPR,
 
     // PR actions
     savePurchaseRequisition, resetStore,

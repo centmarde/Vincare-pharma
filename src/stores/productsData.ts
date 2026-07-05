@@ -17,6 +17,7 @@ export type ProductType = {
   unit: string | null
   cost_price: number | null
   selling_price: number | null
+  qty_stock_in: number | null
   current_stock: number | null
   reorder_level: number | null
   supplier_id: number | null
@@ -27,7 +28,6 @@ export type ProductType = {
   offer_per_unit: number | null
   cost_per_unit: number | null
   no: number | null
-  actual_count: number | null
   // Joined supplier data (via FK)
   suppliers: SupplierType | null
 }
@@ -51,7 +51,6 @@ export type CreateProductData = {
   offer_per_unit?: number | null
   cost_per_unit?: number | null
   no?: number | null
-  actual_count?: number | null
 }
 
 export type UpdateProductData = CreateProductData
@@ -70,6 +69,27 @@ type FetchProductsOptions = {
   eligibleIds?: number[]
 }
 
+export type ProductPickerResult = {
+  id: number
+  product_name: string | null
+  unit: string | null
+  current_stock: number | null
+  reorder_level: number | null
+  cost_price: number | null
+  selling_price: number | null
+  supplier_id: number | null
+  supplier_name: string | null
+  supplier_is_active: boolean | null
+  total_count: number
+}
+
+export type ReceiveStockUpdate ={
+  transaction_item_id: number
+  product_id: number
+  sku: string | null
+  actual_count_stock_in: number 
+}
+
 export const useProductsDataStore = defineStore('productsData', () => {
   // State
   const products: Ref<ProductType[]> = ref([])
@@ -77,6 +97,8 @@ export const useProductsDataStore = defineStore('productsData', () => {
   const eligibleProductIds: Ref<Set<number>> = ref(new Set())
   const loading = ref(false)
   const error: Ref<string> = ref('')
+  const pickerProducts = ref<ProductPickerResult[]>([])
+  const pickerTotalCount = ref(0)
 
   // Realtime
   const realtimeChannel: Ref<RealtimeChannel | null> = ref(null)
@@ -249,6 +271,26 @@ export const useProductsDataStore = defineStore('productsData', () => {
     }
   }
 
+  async function fetchProductPicker({ search = '', limit = 15 }: { search?: string; limit?: number }) {
+    loading.value = true
+
+    const { data, error } = await supabase.rpc('search_products_with_sku', {
+      search_term: search,
+      page_limit: limit,
+    })
+
+    loading.value = false
+
+    if (error) {
+      console.error(error)
+      return
+    }
+
+    pickerProducts.value = (data ?? []) as ProductPickerResult[]
+    pickerTotalCount.value = data?.[0]?.total_count ?? 0
+  }
+
+
   const createProduct = async (productData: CreateProductData) => {
     loading.value = true
     clearError()
@@ -323,33 +365,38 @@ export const useProductsDataStore = defineStore('productsData', () => {
   }
 
   const updateProductSkuAndCount = async (
-    updates: { product_id: number; sku: string; actual_count: number; restock?: boolean }[]
+    updates: ReceiveStockUpdate[]
   ): Promise<boolean> => {
     if (!updates.length) return true
     clearError()
 
     try {
-      for (const { product_id, sku, actual_count, restock } of updates) {
-        // Manual PR lines own a freshly-minted product, so the counted amount
-        // IS the stock. Canvass-raised lines (restock) receive into an existing
-        // warehouse product — add to its current stock instead of overwriting.
-        let newStock = actual_count
-        if (restock) {
-          const { data, error: stockError } = await supabase
-            .from('products')
-            .select('current_stock')
-            .eq('id', product_id)
-            .single()
-          if (stockError) throw stockError
-          newStock = (data?.current_stock ?? 0) + actual_count
-        }
+      for (const { transaction_item_id, product_id, sku, actual_count_stock_in } of updates) {
+        // 1. Record the actual delivered qty on the transaction line
+        const { error: tiError } = await supabase
+          .from('transaction_items')
+          .update({ actual_count_stock_in })
+          .eq('id', transaction_item_id)
 
-        const result = await updateProduct(product_id, { sku, actual_count, current_stock: newStock })
+        if (tiError) throw tiError
+
+        // 2. Fetch current product stock so we can increment it correctly
+        const product = await fetchProductById(product_id)
+        if (!product) throw new Error(`Failed to fetch product ID ${product_id}`)
+
+        const newStock = (product.current_stock ?? 0) + actual_count_stock_in
+
+        // 3. Update product: new stock total, and sku if provided
+        const result = await updateProduct(product_id, {
+          current_stock: newStock,
+          ...(sku ? { sku } : {}),
+        })
+
         if (!result) throw new Error(`Failed to update product ID ${product_id}`)
       }
       return true
     } catch (err) {
-      handleError(err, 'Failed saving product information.')
+      handleError(err, 'Failed saving received stock information.')
       return false
     }
   }
@@ -381,6 +428,8 @@ export const useProductsDataStore = defineStore('productsData', () => {
     eligibleProductIds,
     loading,
     error,
+    pickerProducts,
+    pickerTotalCount,
 
     // Computed
     productsCount,
@@ -394,6 +443,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     fetchEligibleProductIds,
     fetchProducts,
     fetchProductById,
+    fetchProductPicker,
     createProduct,
     updateProduct,
     deleteProduct,

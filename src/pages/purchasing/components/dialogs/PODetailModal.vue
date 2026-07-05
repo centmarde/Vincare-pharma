@@ -127,7 +127,7 @@ const { printArea, poNumber, emptyRows, uniqueSuppliers, handlePrint } = usePODe
                 <th style="color:#fff; font-weight:600; padding: 10px 12px;">ITEM #</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px;">DESCRIPTION</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">QTY</th>
-                <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">ACTUAL COUNT</th>
+                <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">ACTUAL QTY</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">SUPPLIER</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">UNIT PRICE</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">TOTAL</th>
@@ -138,7 +138,7 @@ const { printArea, poNumber, emptyRows, uniqueSuppliers, handlePrint } = usePODe
                 <td>{{ item.no }}</td>
                 <td>{{ item.item_description }}</td>
                 <td class="text-right">{{ item.qty }}</td>
-                <td class="text-right">{{ item.actual_count ?? '—' }}</td>
+                <td class="text-right">{{ item.actual_count_stock_in ?? '—' }}</td>
                 <td class="text-right">{{ item.supplier_name }}</td>
                 <td class="text-right">{{ formatCurrency(item.cost_per_unit) }}</td>
                 <td class="text-right">{{ formatCurrency(item.qty * item.cost_per_unit) }}</td>
@@ -148,9 +148,9 @@ const { printArea, poNumber, emptyRows, uniqueSuppliers, handlePrint } = usePODe
               </tr>
             </tbody>
             <tfoot>
-              <tr style="background-color: #f5f5f5;">
-                <td colspan="6" style="text-align:right; font-weight:700; padding: 10px 12px;">TOTAL</td>
-                <td style="text-align:right; font-weight:700; padding: 10px 12px;">
+              <tr class="bg-grey-lighten-3">
+                <td colspan="6" class="text-black font-weight-bold" style="text-align:right;">TOTAL</td>
+                <td style="text-align:right; font-weight:700; padding: 10px 12px; color: #000;">
                   {{ formatCurrency(po?.total_amount ?? 0) }}
                 </td>
               </tr>
@@ -177,7 +177,7 @@ const { printArea, poNumber, emptyRows, uniqueSuppliers, handlePrint } = usePODe
                 <v-divider class="my-1" />
                 <div class="d-flex flex-wrap ga-3 text-caption">
                   <div><span class="text-medium-emphasis">Qty: </span>{{ item.qty }}</div>
-                  <div><span class="text-medium-emphasis">Actual: </span>{{ item.actual_count ?? '—' }}</div>
+                  <div><span class="text-medium-emphasis">Actual: </span>{{ item.actual_count_stock_in ?? '—' }}</div>
                   <div><span class="text-medium-emphasis">Supplier: </span>{{ item.supplier_name }}</div>
                   <div><span class="text-medium-emphasis">Price: </span>{{ formatCurrency(item.cost_per_unit) }}</div>
                   <div><span class="text-medium-emphasis">Total: </span><span class="font-weight-medium">{{ formatCurrency(item.qty * item.cost_per_unit) }}</span></div>
@@ -194,15 +194,15 @@ const { printArea, poNumber, emptyRows, uniqueSuppliers, handlePrint } = usePODe
 
           <!-- Signatures -->
           <v-row class="mb-6">
-            <v-col :cols="mobile ? 6 : 6">
+            <v-col :cols="mobile ? 6 : 6" class="d-flex flex-column align-center text-center">
               <div :class="mobile ? 'text-caption font-weight-bold text-medium-emphasis mb-3' : 'text-caption font-weight-bold text-medium-emphasis mb-6'">REQUESTED BY:</div>
-              <div :class="mobile ? 'text-caption font-weight-medium' : 'text-body-2 font-weight-medium'">{{ pr?.requester_name ?? '—' }}</div>
+              <div :class="mobile ? 'text-caption font-weight-medium' : 'text-body-2 font-weight-medium'">{{ pr?.requester_name }}</div>
               <v-divider :style="mobile ? 'width: 120px' : 'width: 200px'" class="mb-1" />
               <div class="text-caption text-medium-emphasis">REQUESTER</div>
             </v-col>
-            <v-col :cols="mobile ? 6 : 6">
+            <v-col :cols="mobile ? 6 : 6" class="d-flex flex-column align-center text-center">
               <div :class="mobile ? 'text-caption font-weight-bold text-medium-emphasis mb-3' : 'text-caption font-weight-bold text-medium-emphasis mb-6'">APPROVED BY:</div>
-              <div :class="mobile ? 'text-caption font-weight-medium' : 'text-body-2 font-weight-medium'">{{ pr?.reviewer_name ?? '—' }}</div>
+              <div :class="mobile ? 'text-caption font-weight-medium' : 'text-body-2 font-weight-medium'">{{ pr?.reviewer_name }}</div>
               <v-divider :style="mobile ? 'width: 120px' : 'width: 200px'" class="mb-1" />
               <div class="text-caption text-medium-emphasis">APPROVER</div>
             </v-col>

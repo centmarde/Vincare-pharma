@@ -9,10 +9,11 @@ type PRFormItem = {
   no: number
   unit: string
   item_description: string
-  supplier_id: string | null
+  supplier_id: number | null
   qty: number
   offer_per_unit: number
   cost_per_unit: number
+  expiry_date: Date | null
 }
 
 export function usePurchaseRequisition() {
@@ -62,7 +63,8 @@ export function usePurchaseRequisition() {
       qty:              0,
       offer_per_unit:   0,
       cost_per_unit:    0,
-      supplier_id:      null ,
+      supplier_id:      null,
+      expiry_date:      null,
     })
   }
 
@@ -72,18 +74,30 @@ export function usePurchaseRequisition() {
   }
 
   // ─── Submit ───────────────────────────────────────────────────────
-  async function handleSubmit() {
+  async function handleSubmit(): Promise<boolean> {
 
     const validItems = items.value.filter(i => i.item_description.trim())
     if (!validItems.length) {
       toast.warning('Please add at least one item.')
-      return
+      return false
     }
-    
-    const missingSupplier = validItems.some(i => !i.supplier_id)
-    if (missingSupplier) {
-      toast.warning('Please select a supplier for each item.')
-      return
+
+    const rules: { check: (i: typeof validItems[number]) => boolean; message: string }[] = [
+      { check: i => !i.item_description.trim(), message: 'description' },
+      { check: i => !i.supplier_id, message: 'supplier' },
+      { check: i => !i.expiry_date, message: 'expiry date' },
+      { check: i => i.qty <= 0, message: 'quantity greater than zero' },
+      { check: i => i.offer_per_unit <= 0, message: 'offer per unit greater than zero' },
+      { check: i => i.cost_per_unit <= 0, message: 'cost per unit greater than zero' },
+    ]
+
+    const failedMessages = rules
+      .filter(rule => validItems.some(rule.check))
+      .map(rule => rule.message)
+
+    if (failedMessages.length) {
+      toast.info(`Please provide ${failedMessages.join(', ')} for each item.`)
+      return false
     }
 
     loading.value = true
@@ -91,9 +105,15 @@ export function usePurchaseRequisition() {
     // Sync to store state so savePurchaseRequisition can read it
     prStore.currentPR.remarks     = currentPR.value.remarks || null
     prStore.currentPR.supplier_id = null
-    prStore.items                 = validItems
+    prStore.items                 = validItems.map(i => ({
+      ...i,
+      supplier_id: i.supplier_id != null ? String(i.supplier_id) : null,
+      expiry_date: i.expiry_date ? i.expiry_date.toISOString().slice(0, 10) : null,
+    }))
 
     const result = await prStore.savePurchaseRequisition()
+
+    loading.value = false
 
     if (result?.success && result.transactionId && result.requisitionNo) {
       // Log the PR submission to the logs table with module = transaction_type
@@ -104,9 +124,10 @@ export function usePurchaseRequisition() {
         validItems.length,
       )
       reset()
+      return true
     }
 
-    loading.value = false
+    return false
   }
 
   // ─── Reset ────────────────────────────────────────────────────────
@@ -132,5 +153,6 @@ export function usePurchaseRequisition() {
     addItem,
     removeItem,
     handleSubmit,
+    reset,
   }
 }

@@ -52,9 +52,9 @@ const {
         <!-- Meta row -->
         <div :class="mobile ? 'text-caption' : 'text-body-2'" class="mb-4">
           <div>Requested by <strong>{{ pr.requester_name ?? '—' }}</strong> &middot; {{ formatDatePR_ISO(pr.created_at) }}</div>
-          <template v-if="pr.status === 'approved' || pr.status === 'rejected'">
+          <template v-if="pr.status === 'approved' || pr.status === 'rejected' || pr.status === 'issued' || pr.status === 'complete'">
             <div>
-              {{ pr.status === 'approved' ? 'Approved' : 'Rejected' }} by
+              {{ pr.status === 'rejected' ? 'Rejected' : 'Approved' }} by
               <strong>{{ pr.reviewer_name ?? '—' }}</strong> &middot; {{ formatDatePR_ISO(pr.updated_at) }}
             </div>
           </template>

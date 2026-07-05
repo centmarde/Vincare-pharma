@@ -49,26 +49,22 @@ export function usePurchaseRequisitionList() {
   }) {
     const sort = sortBy[0]
 
-    const [data, count] = await Promise.all([
-      txStore.fetchTransactions({
-        requisition_no_not_null: true,
-        search:    search.value.trim() || undefined,
-        status:    filterStatus.value ?? undefined,
-        orderBy:   (sort?.key as any) ?? 'created_at',
-        ascending: sort ? sort.order === 'asc' : false,
-        limit:     ipp,
-        offset:    (p - 1) * ipp,
-      }),
-      txStore.fetchTransactionsCount({
-        requisition_no_not_null: true,
-        search: search.value.trim() || undefined,
-        status: filterStatus.value ?? undefined,
-      }),
-    ])
-    serverItems.value = await Promise.all(
-        data.map(async tx => (await prStore.fetchPRByRequisitionId(tx.id)) as PR)
-      )
-    totalItems.value = count
+    if (!authStore.users.length) await authStore.getAllUsers()
+
+    const { rows, totalCount } = await txStore.fetchPurchaseRequisitionsRPC({
+      search:    search.value.trim() || undefined,
+      status:    filterStatus.value ?? undefined,
+      orderBy:   (sort?.key as any) ?? 'created_at',
+      ascending: sort ? sort.order === 'asc' : false,
+      limit:     ipp,
+      offset:    (p - 1) * ipp,
+    })
+
+    serverItems.value = rows.map(row => {
+      const names = prStore.resolveUserNames(row.created_by, row.approved_by)
+      return prStore.mapRPCRowToPR(row, names)
+    })
+    totalItems.value = totalCount
     page.value = p
   }
 

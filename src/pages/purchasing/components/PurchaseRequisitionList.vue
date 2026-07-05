@@ -3,7 +3,8 @@ import { usePurchaseRequisitionList, headers } from '../composables/usePurchaseR
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import PRDetailModal from './dialogs/PRDetailModal.vue'
 import IssuePOModal from './dialogs/IssuePOModal.vue'
-import { computed, onMounted } from 'vue'
+import PurchaseRequisitionDialog from './dialogs/PurchaseRequisitionDialog.vue'
+import { ref, computed, onMounted } from 'vue'
 import { useDisplay } from 'vuetify'
 
 const {
@@ -42,6 +43,15 @@ onMounted(() => {
       loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
     }
 })
+const showNewPRDialog = ref(false)
+
+function onPRSubmitted() {
+  // New PRs land as pending_approval and sort to the top by created_at,
+  // so jump back to page 1 to make the new record visible
+  page.value = 1
+  loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
+}
+
 const totalPages = computed(() => Math.max(1, Math.ceil(totalItems.value / itemsPerPage.value)))
 function goToPage(p: number) {
   // window.scrollTo({ top: 100, behavior: 'smooth' as ScrollBehavior })
@@ -104,6 +114,15 @@ function goToPage(p: number) {
                 />
               </v-list>
             </v-menu>
+            <v-btn
+              color="primary"
+              class="text-none font-weight-bold"
+              prepend-icon="mdi-plus"
+              elevation="0"
+              @click="showNewPRDialog = true"
+            >
+              New Requisition
+            </v-btn>
           </div>
         </div>
 
@@ -144,6 +163,14 @@ function goToPage(p: number) {
               />
             </v-list>
           </v-menu>
+          <v-btn
+            variant="flat"
+            icon="mdi-plus"
+            density="compact"
+            color="primary"
+            size="40"
+            @click="showNewPRDialog = true"
+          />
         </div>
       </v-card-title>
 
@@ -416,6 +443,9 @@ function goToPage(p: number) {
         </div>
       </template>
     </v-card>
+
+    <!-- New Purchase Requisition -->
+    <PurchaseRequisitionDialog v-model="showNewPRDialog" @submitted="onPRSubmitted" />
 
     <!-- 3. Add the Modal Component -->
     <IssuePOModal v-model="showPOModal" :pr="selectedPRForPO" />

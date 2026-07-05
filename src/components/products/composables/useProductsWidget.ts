@@ -31,7 +31,6 @@ export function useProductsWidget() {
     cost_price: null,
     selling_price: null,
     current_stock: null,
-    actual_count: null,
     reorder_level: null,
     supplier_id: null,
     batch_no: null,
