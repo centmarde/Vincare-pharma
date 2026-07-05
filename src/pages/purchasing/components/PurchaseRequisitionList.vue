@@ -27,8 +27,8 @@ const {
   showPOModal,
   selectedPRForPO,
   confirmDialog,
-  searchInput, 
-  commitSearch, 
+  searchInput,
+  commitSearch,
   clearSearch,
   openDetail,
   openConfirm,
@@ -62,7 +62,7 @@ function goToPage(p: number) {
 </script>
 
 <template>
-  <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
+  <v-container fluid class="pa-2 fill-height align-start">
     <v-card class="mx-auto w-100" rounded="lg" elevation="1">
       <!-- Header -->
       <v-card-title class="pa-4 pa-sm-5">
@@ -184,7 +184,7 @@ function goToPage(p: number) {
           :items="serverItems"
           :items-length="totalItems"
           :loading="loading"
-          
+
           :items-per-page-options="[5, 10, 15, 20, 25, 50, 100]"
           hover
           loading-text="Loading purchase orders..."

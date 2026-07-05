@@ -6,7 +6,9 @@ import ExpensesCRUD from './components/ExpensesCRUD.vue'
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <ExpensesCRUD />
+      <v-container>
+        <ExpensesCRUD />
+      </v-container>
     </template>
   </InnerLayoutWrapper>
 </template>
