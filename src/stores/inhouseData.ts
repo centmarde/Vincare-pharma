@@ -7,6 +7,8 @@ import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useCanvassDataStore } from '@/stores/canvassData'
 import { generateIHNumber, generateDRNumber } from '@/utils/generativeHelpers'
+import { useDeliveryReceiptsDataStore } from '@/stores/deliveryReceiptsData'
+import { nextDocNumber } from '@/utils/helpers'
 import type { ProductType } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
 import type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult } from '@/utils/canvassTypes'
@@ -32,8 +34,13 @@ export type InhouseItemType = {
 export type InhouseOrderType = {
   id: number
   created_at: string
-  order_no: string | null        // internal IH-YYYY-###
-  govt_po_no: string | null      // the government's PO number
+  order_no: string | null        // internal IH-YYYY-### (never changes across the order's life)
+  po_no: string | null           // COMPANY PO number, derived: the IH- number with the prefix
+                                 // swapped (IH-2026-005 → PO-2026-005), stamped at the agree
+                                 // step — Purchasing-style formatting, never typed in
+  govt_po_no: string | null      // the government's own external PO number, typed at raise
+                                 // time — pure transparency/documentation, no logic keys off
+                                 // it (lives in inhouse_details, NOT transactions.po_no)
   customer_id: number | null
   status: string | null
   total_amount: number | null
@@ -69,7 +76,8 @@ function mapRow(row: any): InhouseOrderType {
     id:           row.id,
     created_at:   row.created_at,
     order_no:     row.reference_no,
-    govt_po_no:   row.po_no,
+    po_no:        row.po_no,
+    govt_po_no:   details.govt_po_no ?? null,
     customer_id:  row.customer_id,
     status:       row.status,
     total_amount: row.total_amount,
@@ -99,6 +107,7 @@ function mapRow(row: any): InhouseOrderType {
 export const useInhouseDataStore = defineStore('inhouseData', () => {
   const authStore = useAuthUserStore()
   const canvassStore = useCanvassDataStore()
+  const drStore = useDeliveryReceiptsDataStore()
 
   const orders: Ref<InhouseOrderType[]> = ref([])
   const loading = ref(false)
@@ -159,7 +168,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
   // JS-over-RPC convention).
   const createOrder = async (payload: {
     customerId: number
-    govtPoNo?: string
+    govtPoNo?: string   // the government's external PO number (documentation-only)
     remarks?: string
     lines: InhouseLineInput[]
   }) => {
@@ -177,7 +186,10 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       .from('transactions')
       .insert({
         reference_no: orderNo,
-        po_no: payload.govtPoNo || null,
+        // Company PO stays null while negotiating — it's stamped (PO-YYYY-###,
+        // same sequence as the IH- number) when terms are agreed, see agreeOrder.
+        // The government's own PO number goes to inhouse_details.govt_po_no below.
+        po_no: null,
         transaction_type: 'inhouse_order',
         status: 'negotiating',
         customer_id: payload.customerId,
@@ -193,7 +205,9 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       loading.value = false; return { success: false }
     }
 
-    const { error: detailsError } = await supabase.from('inhouse_details').insert({ transaction_id: created.id })
+    const { error: detailsError } = await supabase.from('inhouse_details').insert({
+      transaction_id: created.id, govt_po_no: payload.govtPoNo || null,
+    })
     if (detailsError) {
       handleError(detailsError, 'Failed to create order.'); toast.error(detailsError.message || 'Failed to create order.')
       loading.value = false; return { success: false }
@@ -333,7 +347,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const { data: order, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, transaction_items(product_id, transaction_item_details(qty))')
+      .select('id, status, reference_no, transaction_items(product_id, transaction_item_details(qty))')
       .eq('id', orderId)
       .eq('transaction_type', 'inhouse_order')
       .maybeSingle()
@@ -357,11 +371,18 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       }
     }
 
+    // Agreement is the PO stage: stamp the derived PO number — the order's own
+    // IH- number with the prefix swapped (IH-2026-005 → PO-2026-005). The IH-
+    // reference_no itself never changes; only the header advances (lead-dev
+    // convention). Not typed in, not the government's external PO number.
+    const poNo = order.reference_no ? String(order.reference_no).replace(/^IH-/, 'PO-') : null
+
     const nowIso = new Date().toISOString()
     const { error: statusError } = await supabase
       .from('transactions')
       .update({
         approved_by: user.id, approved_at: nowIso, updated_at: nowIso,
+        po_no: poNo,
         status: shortfall.length > 0 ? 'awaiting_stock' : 'ready',
       })
       .eq('id', orderId)
@@ -371,7 +392,8 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     }
 
     const { error: logError } = await supabase.from('logs').insert({
-      created_by: user.id, action: 'agree', description: 'Terms agreed',
+      created_by: user.id, action: 'agree',
+      description: poNo ? `Terms agreed — ${poNo} issued` : 'Terms agreed',
       module: 'inhouse_negotiation', transaction_id: orderId,
     })
     if (logError) console.warn('agreeOrder: activity log insert failed:', logError.message)
@@ -434,7 +456,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const { data: order, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, customer_id, po_no')
+      .select('id, status, customer_id, po_no, reference_no')
       .eq('id', orderId)
       .eq('transaction_type', 'inhouse_order')
       .maybeSingle()
@@ -463,6 +485,9 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       loading.value = false; return { success: false }
     }
 
+    // Move stock + bump delivered_qty per line, collecting the DR line data as we
+    // go. The DR document itself is written by the DR store afterwards.
+    const drLines: { product_id: number | null; qty: number; unit_price: number | null }[] = []
     for (const line of lines) {
       if (line.qty <= 0) continue
 
@@ -506,21 +531,19 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
         .eq('transaction_item_id', line.item_id)
       if (deliveredError) console.warn('deliver: delivered_qty update failed:', deliveredError.message)
 
-      const { data: drItem, error: drItemError } = await supabase
-        .from('transaction_items')
-        .insert({ transaction_id: dr.id, product_id: item.product_id })
-        .select('id')
-        .single()
-      if (drItemError || !drItem) {
-        console.warn('deliver: DR line insert failed:', drItemError?.message)
-      } else {
-        const { error: drItemDetailsError } = await supabase.from('transaction_item_details').insert({
-          transaction_item_id: drItem.id, qty: line.qty,
-          unit_price: itemDetails.unit_price, line_total: (itemDetails.unit_price ?? 0) * line.qty,
-        })
-        if (drItemDetailsError) console.warn('deliver: DR line details insert failed:', drItemDetailsError.message)
-      }
+      drLines.push({ product_id: item.product_id, qty: line.qty, unit_price: itemDetails.unit_price ?? null })
     }
+
+    // Issue the DR document (dedicated delivery_receipts tables, owned by drStore).
+    const dr = await drStore.createDeliveryReceipt({
+      orderId, orderNo: order.reference_no, source: 'inhouse_order', customerId: order.customer_id,
+      poNo: order.po_no || null, receivedBy: opts.receivedBy || null, lines: drLines,
+    }, user.id)
+    if (!dr.success) {
+      toast.error('Failed to record delivery.')
+      loading.value = false; return { success: false }
+    }
+    const drNo = dr.drNo!
 
     // Supabase can't compare two columns server-side, so check client-side.
     const { data: allItems } = await supabase
@@ -541,7 +564,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     toast.success(`Delivery recorded — ${drNo} issued.`)
     await fetchOrders()
     loading.value = false
-    return { success: true, drId: dr.id, drNo }
+    return { success: true, drId: dr.drId, drNo }
   }
 
   // Government POs are commonly paid in tranches, not lump-sum — each call
