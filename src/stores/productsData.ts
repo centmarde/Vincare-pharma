@@ -87,7 +87,7 @@ export type ReceiveStockUpdate ={
   transaction_item_id: number
   product_id: number
   sku: string | null
-  actual_count_stock_in: number 
+  actual_count_stock_in: number
 }
 
 export const useProductsDataStore = defineStore('productsData', () => {
