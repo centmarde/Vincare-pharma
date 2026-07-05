@@ -17,7 +17,7 @@ onMounted(init)
 
 <template>
   <v-container fluid class="pa-2 fill-height align-start">
-    <v-card class="mx-auto w-100" max-width="1400" rounded="lg" elevation="1">
+    <v-card class="mx-auto w-100" rounded="lg" elevation="1">
       <v-card-title class="d-flex justify-space-between align-center pa-5 flex-wrap" style="gap:12px">
         <span class="text-h6 font-weight-bold">In-House Orders</span>
         <div class="d-flex align-center flex-wrap" style="gap:12px">
