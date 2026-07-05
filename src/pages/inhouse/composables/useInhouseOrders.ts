@@ -5,6 +5,7 @@ import type { InhouseOrderType } from '@/stores/inhouseData'
 
 export const headers = [
   { title: 'ORDER #',   key: 'order_no',     sortable: true,  align: 'start' as const },
+  { title: 'PO #',      key: 'po_no',        sortable: false, align: 'center' as const },
   { title: 'GOVT PO #', key: 'govt_po_no',   sortable: false, align: 'center' as const },
   { title: 'CUSTOMER',  key: 'customer',     sortable: false, align: 'start' as const },
   { title: 'TOTAL',     key: 'total_amount', sortable: true,  align: 'center' as const },
@@ -57,6 +58,7 @@ export function useInhouseOrders() {
       if (search.value.trim()) {
         const s = search.value.trim().toLowerCase()
         if (!o.order_no?.toLowerCase().includes(s) &&
+            !o.po_no?.toLowerCase().includes(s) &&
             !o.govt_po_no?.toLowerCase().includes(s) &&
             !o.customer?.name?.toLowerCase().includes(s)) return false
       }

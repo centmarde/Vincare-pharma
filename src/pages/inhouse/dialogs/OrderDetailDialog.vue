@@ -42,7 +42,7 @@ const productName = (id: number | null) =>
         <div>
           <div class="text-h6 font-weight-bold">{{ order.order_no }}</div>
           <div class="text-caption text-medium-emphasis">
-            {{ order.customer?.name ?? '—' }} · Govt PO: {{ order.govt_po_no ?? '—' }}
+            {{ order.customer?.name ?? '—' }} · PO: {{ order.po_no ?? '— (assigned on agree)' }} · Govt PO: {{ order.govt_po_no ?? '—' }}
           </div>
         </div>
         <v-btn icon="mdi-close" variant="text" size="small" @click="emit('update:modelValue', false)" />

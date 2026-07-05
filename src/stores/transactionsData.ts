@@ -149,7 +149,8 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       .from('transactions')
       .select('*', { count: 'exact', head: true })
 
-    if (po_no_not_null)          q = q.ilike('po_no', 'PO%')
+    // Same transaction_type guard as fetchTransactions — see note there.
+    if (po_no_not_null)          q = q.ilike('po_no', 'PO%').in('transaction_type', ['purchase_order', 'stock_in'])
     if (requisition_no_not_null) q = q.ilike('requisition_no', 'PR%')
     if (status) {
       if (Array.isArray(status)) q = q.in('status', status)

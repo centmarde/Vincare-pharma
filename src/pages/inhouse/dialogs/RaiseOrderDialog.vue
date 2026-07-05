@@ -23,7 +23,7 @@ onMounted(init)
   <v-dialog :model-value="modelValue" max-width="960" persistent scrollable
     @update:model-value="emit('update:modelValue', $event)">
     <v-card rounded="lg">
-      <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold">Raise In-House Order (Government PO)</v-card-title>
+      <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold">Raise In-House Order (Government / LGU)</v-card-title>
       <v-divider />
       <v-card-text class="pa-4 pa-sm-5">
         <v-row dense class="mb-2">
@@ -33,10 +33,15 @@ onMounted(init)
               variant="outlined" density="compact" hide-details />
           </v-col>
           <v-col cols="12" md="6">
-            <label class="lbl">Government PO #</label>
-            <v-text-field v-model="govtPoNo" placeholder="Their PO number" variant="outlined" density="compact" hide-details />
+            <label class="lbl">Government PO # (documentation)</label>
+            <v-text-field v-model="govtPoNo" placeholder="Their PO number, for the record" variant="outlined" density="compact" hide-details />
           </v-col>
         </v-row>
+        <!-- The company's own PO number is NOT typed — it's derived from the order
+             number (IH-… → PO-…) and stamped automatically when terms are agreed. -->
+        <div class="text-caption text-medium-emphasis mb-1">
+          The company PO number (PO-YYYY-###) is assigned automatically once terms are agreed.
+        </div>
 
         <div class="d-flex justify-space-between align-center mb-2 mt-3">
           <span class="text-subtitle-2 font-weight-bold">Line items</span>

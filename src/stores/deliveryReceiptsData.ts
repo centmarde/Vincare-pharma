@@ -4,12 +4,15 @@ import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import type { ProductType } from '@/stores/productsData'
 
-// A Delivery Receipt is a shared, cross-module document: a 'delivery_receipt'
-// transactions row linked to its parent order (inhouse_order OR ethical_order)
-// via parent_transaction_id, with its per-trip quantities in transaction_items.
-// The signatory (received_by printed name) is stored in the hub row's remarks.
-// In-House issues DRs inside inhouse_deliver (stock-moving); Ethical issues them
-// document-only via ethical_issue_dr. This store owns reading them.
+// A Delivery Receipt is a shared, cross-module fulfillment document with its own
+// dedicated tables (delivery_receipts + delivery_receipt_items) — NOT a
+// transactions hub row. It links to its parent order (inhouse_order OR
+// ethical_order) via delivery_receipts.order_id, and every DR event is logged in
+// the shared `logs` table against the parent order's transaction_id (that log
+// trail is how the app assembles a document's cross-module timeline). In-House
+// creates DRs inside deliver() (stock-moving); Ethical via issueDeliveryReceipt()
+// (document-only). Both delegate the actual DR write to createDeliveryReceipt
+// here — this store owns the DR tables.
 
 export type DeliveryReceiptItemType = {
   id: number
@@ -27,34 +30,44 @@ export type DeliveryReceiptType = {
   order_id: number | null       // parent order id
   order_no: string | null       // parent reference (IH-/EO-YYYY-###)
   source: DeliveryReceiptSource // which module the parent order belongs to
-  govt_po_no: string | null     // snapshot of the government's PO number (In-House only)
+  po_no: string | null          // snapshot of the order's derived PO number (In-House only)
   customer_name: string | null
-  received_by: string | null    // signatory printed name (from remarks)
+  received_by: string | null    // signatory printed name
   created_by: string | null
   items: DeliveryReceiptItemType[]
 }
 
+export type CreateDeliveryReceiptPayload = {
+  orderId: number
+  orderNo: string | null   // parent order's own reference_no (IH-/EO-YYYY-###) — the
+                           // DR number is derived from this, not an independent series
+  source: Exclude<DeliveryReceiptSource, null>
+  customerId: number | null
+  poNo: string | null
+  receivedBy: string | null
+  lines: { product_id: number | null; qty: number; unit_price: number | null }[]
+}
+
 const SELECT_DR =
-  '*, transaction_items(id, product_id, transaction_item_details(qty), product:product_id(*)), ' +
-  'parent:parent_transaction_id(reference_no, po_no, transaction_type, customer:customer_id(name))'
+  '*, delivery_receipt_items(id, product_id, qty, product:product_id(*)), ' +
+  'order:order_id(reference_no), customer:customer_id(name)'
 
 function mapDR(row: any): DeliveryReceiptType {
-  const parent = row.parent ?? {}
   return {
     id:            row.id,
     created_at:    row.created_at,
-    dr_no:         row.reference_no,
-    order_id:      row.parent_transaction_id,
-    order_no:      parent.reference_no ?? null,
-    source:        parent.transaction_type ?? null,
-    govt_po_no:    parent.po_no ?? row.po_no ?? null,
-    customer_name: parent.customer?.name ?? null,
-    received_by:   row.remarks ?? null,
+    dr_no:         row.dr_no,
+    order_id:      row.order_id,
+    order_no:      row.order?.reference_no ?? null,
+    source:        row.source ?? null,
+    po_no:         row.po_no ?? null,
+    customer_name: row.customer?.name ?? null,
+    received_by:   row.received_by ?? null,
     created_by:    row.created_by,
-    items: (row.transaction_items ?? []).map((li: any) => ({
+    items: (row.delivery_receipt_items ?? []).map((li: any) => ({
       id:         li.id,
       product_id: li.product_id,
-      qty:        li.transaction_item_details?.qty,
+      qty:        li.qty,
       product:    li.product,
     })),
   }
@@ -72,8 +85,8 @@ export const useDeliveryReceiptsDataStore = defineStore('deliveryReceiptsData', 
     loading.value = true
     clearError()
     try {
-      const { data, error: e } = await supabase.from('transactions')
-        .select(SELECT_DR).eq('transaction_type', 'delivery_receipt')
+      const { data, error: e } = await supabase.from('delivery_receipts')
+        .select(SELECT_DR)
         .order('created_at', { ascending: false })
       if (e) throw e
       return (data || []).map(mapDR)
@@ -86,11 +99,68 @@ export const useDeliveryReceiptsDataStore = defineStore('deliveryReceiptsData', 
   }
 
   const fetchDeliveryReceiptById = async (id: number): Promise<DeliveryReceiptType | null> => {
-    const { data, error: e } = await supabase.from('transactions')
-      .select(SELECT_DR).eq('id', id).eq('transaction_type', 'delivery_receipt').single()
+    const { data, error: e } = await supabase.from('delivery_receipts')
+      .select(SELECT_DR).eq('id', id).single()
     if (e || !data) { handleError(e, 'Failed to load delivery receipt'); return null }
     return mapDR(data)
   }
 
-  return { loading, error, fetchDeliveryReceipts, fetchDeliveryReceiptById, clearError }
+  // Owns the DR-document write for both modules. Best-effort, not atomic
+  // (JS-over-RPC convention): a header insert that succeeds while a line insert
+  // fails leaves a DR with missing lines rather than rolling back. The caller
+  // keeps its own stock-movement / status / logs writes.
+  //
+  // DR number is DERIVED from the parent order's own reference number, not an
+  // independent series (lead-dev rule: a document's number stays constant
+  // across the whole chain — only the letter-code prefix changes, e.g.
+  // IH-2026-009 -> PO-2026-009 -> DR-2026-009). An order can spawn more than
+  // one DR (partial deliveries in In-House, reprints in Ethical), so a
+  // per-order suffix disambiguates: DR-2026-009-1, DR-2026-009-2, ...
+  const createDeliveryReceipt = async (
+    payload: CreateDeliveryReceiptPayload,
+    userId: string,
+  ): Promise<{ success: boolean; drId?: number; drNo?: string }> => {
+    const base = (payload.orderNo ?? '').replace(/^(IH|EO)-/, 'DR-')
+    const { count } = await supabase
+      .from('delivery_receipts')
+      .select('id', { count: 'exact', head: true })
+      .eq('order_id', payload.orderId)
+    const drNo = base ? `${base}-${(count ?? 0) + 1}` : null
+
+    const { data: dr, error: drError } = await supabase
+      .from('delivery_receipts')
+      .insert({
+        dr_no: drNo,
+        order_id: payload.orderId,
+        source: payload.source,
+        customer_id: payload.customerId,
+        po_no: payload.poNo,
+        received_by: payload.receivedBy,
+        created_by: userId,
+      })
+      .select('id')
+      .single()
+    if (drError || !dr) {
+      handleError(drError, 'Failed to create delivery receipt.')
+      return { success: false }
+    }
+
+    const rows = payload.lines
+      .filter(l => l.qty > 0)
+      .map(l => ({
+        delivery_receipt_id: dr.id,
+        product_id: l.product_id,
+        qty: l.qty,
+        unit_price: l.unit_price,
+        line_total: (l.unit_price ?? 0) * l.qty,
+      }))
+    if (rows.length) {
+      const { error: linesError } = await supabase.from('delivery_receipt_items').insert(rows)
+      if (linesError) console.warn('createDeliveryReceipt: DR lines insert failed:', linesError.message)
+    }
+
+    return { success: true, drId: dr.id, drNo: drNo ?? undefined }
+  }
+
+  return { loading, error, fetchDeliveryReceipts, fetchDeliveryReceiptById, createDeliveryReceipt, clearError }
 })
