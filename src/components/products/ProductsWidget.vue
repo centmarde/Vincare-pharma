@@ -1,15 +1,21 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useDisplay } from 'vuetify'
 import { formatCurrency } from '@/utils/helpers'
 import { useProductsWidget } from '@/components/products/composables/useProductsWidget.ts'
 import { useTheme } from '@/stores/useTheme'
+import { useLogsDataStore, type LogType } from '@/stores/logsData'
 import ProductMobile from './mobile/ProductMobile.vue'
 import ProductFormDialog from './dialogs/ProductFormDialog.vue'
 import ProductDeleteDialog from './dialogs/ProductDeleteDialog.vue'
 import StockStatusCards from '../products/StockStatusCards.vue'
+import LogsViewDialog from '@/pages/logs/dialogs/LogsViewDialog.vue'
+import { useRouter } from 'vue-router'
 
 const { mobile } = useDisplay()
+const router = useRouter()
+const logsStore = useLogsDataStore()
+
 const {
   form,
   showDialog,
@@ -46,6 +52,30 @@ const {
 function handleStockCardClick(type: 'out-of-stock' | 'low-stock') {
   stockDialogType.value = type
   showStockDialog.value = true
+}
+
+// Logs dialog state
+const showLogsDialog = ref(false)
+const productLogs = ref<LogType[]>([])
+
+const openLogsDialog = async (product: any) => {
+  // Fetch all logs
+  await logsStore.fetchLogs()
+
+  // Filter logs related to this product by module (stock_in, stock_out, etc.) and product name in description
+  productLogs.value = logsStore.logs.filter((log: LogType) => {
+    const isProductRelated =
+      (log.module?.toLowerCase().includes('stock') && log.description?.toLowerCase().includes((product.product_name ?? '').toLowerCase())) ||
+      (log.module?.toLowerCase().includes('product') && log.description?.toLowerCase().includes((product.product_name ?? '').toLowerCase())) ||
+      log.description?.toLowerCase().includes((product.sku ?? '').toLowerCase())
+    return isProductRelated
+  })
+  showLogsDialog.value = true
+}
+
+const closeLogsDialog = () => {
+  showLogsDialog.value = false
+  productLogs.value = []
 }
 
 const { getCurrentTheme } = useTheme()
@@ -119,11 +149,7 @@ function stockColor(item: any) {
               <v-icon icon="mdi-alert-circle-outline" color="primary" size="small"></v-icon>
               <span class="text-body-2 font-weight-medium">
                 Low Stock Alert —
-                <strong
-                  >{{ lowStockProducts.length }} product{{
-                    lowStockProducts.length > 1 ? 's' : ''
-                  }}</strong
-                >
+                <strong>{{ lowStockProducts.length }} product{{ lowStockProducts.length > 1 ? 's' : '' }}</strong>
                 need{{ lowStockProducts.length > 1 ? '' : 's' }} to be reordered
               </span>
             </div>
@@ -246,6 +272,16 @@ function stockColor(item: any) {
               color="error"
               @click="openDeleteDialog(item)"
             ></v-btn>
+            <v-btn
+              icon="mdi-history"
+              size="small"
+              variant="outlined"
+              color="primary"
+              @click="openLogsDialog(item)"
+            >
+              <v-icon size="16">mdi-text-box-search-outline</v-icon>
+              <v-tooltip activator="parent" location="top">View transaction history</v-tooltip>
+            </v-btn>
           </div>
         </template>
         <template #[`no-data`]>
@@ -267,6 +303,7 @@ function stockColor(item: any) {
         :sort-by="sortBy"
         @edit="openEditDialog"
         @delete="openDeleteDialog"
+        @logs="openLogsDialog"
         @update:page="page = $event"
         @update:options="handleTableOptions"
       />
@@ -292,6 +329,13 @@ function stockColor(item: any) {
     :mobile="mobile"
     @confirm="handleDelete"
     @close="closeDeleteDialog"
+  />
+
+  <!-- Logs View Dialog -->
+  <LogsViewDialog
+    v-model="showLogsDialog"
+    :logs="productLogs"
+    @close="closeLogsDialog"
   />
 
   <!-- Stock Status Dialog (placeholder for future development) -->
