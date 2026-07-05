@@ -115,11 +115,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       if (Array.isArray(status)) q = q.in('status', status)
       else                       q = q.eq('status', status)
     }
-    // In-House's derived company PO number (2026-07-05) is also 'PO-YYYY-###'
-    // formatted, so an ilike-on-value-alone match can't tell it apart from
-    // Purchasing's own PO series — the transaction_type guard is still required
-    // (see the "In-House orders leaked into the Purchase Orders list" pitfall).
-    if (po_no_not_null)    q = q.ilike('po_no', 'PO%').in('transaction_type', ['purchase_order', 'stock_in'])
+    if (po_no_not_null)    q = q.ilike('po_no', 'PO%')              
     if (requisition_no_not_null) q = q.ilike('requisition_no', 'PR%')
     if (search?.trim()) {
       const s = search.trim().replace(/,/g, '')
