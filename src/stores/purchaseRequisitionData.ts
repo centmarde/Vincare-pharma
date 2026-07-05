@@ -169,7 +169,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
   ): PR {
     return {
       id:                    row.id,
-      requisition_no:        row.requisition_no,
+      requisition_no:        row.requisition_no ?? '',
       po_no:                 row.po_no,
       status:                row.status ?? '',
       remarks:               row.remarks,

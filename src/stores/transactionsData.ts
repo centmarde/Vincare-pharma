@@ -6,22 +6,58 @@ import type { Ref } from 'vue'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export const TRANSACTION_CLASSES = [
+  'purchase_requisition',
+  'purchase_order',
+  'stock_in',
+  'stock_out',
+  'sale',
+  'transfer',
+  'expense',
+  'purchase_return',
+  'sales_return',
+] as const
+
+export type TransactionClass = typeof TRANSACTION_CLASSES[number]
+
 export type TransactionType = {
-  id:               number
-  created_at:       string
-  requisition_no:   string
-  po_no:            string | null
-  transaction_type: string | null
-  status:           string | null
-  warehouse_id:     number | null
-  remarks:          string | null
-  total_amount:     number | null
-  created_by:       string | null
-  approved_by:      string | null
-  updated_at:       string | null
-  supplier_id:      number | null
-  ship_via:         string | null
-  ship_method:      string | null
+  id:                  number
+  created_at:          string
+  reference_no:        string | null
+  transaction_type:    TransactionClass | null
+  status:              string | null
+  warehouse_id:        number | null
+  remarks:             string | null
+  total_amount:        number | null
+  created_by:          string | null
+  approved_by:         string | null
+  updated_at:          string | null
+  supplier_id:         number | null
+  ship_via:            string | null
+  ship_method:         string | null
+  requisition_no:      string | null
+  po_no:               string | null
+  remittance_id:       number | null
+  customer_id:         number | null
+  agent_id:            number | null
+  sale_no:             string | null
+  transfer_no:         string | null
+  expense_no:          string | null
+  purchase_return_no:  string | null
+  sales_return_no:     string | null
+  outlet:              string | null
+  received_by:         string | null
+  approved_at:         string | null
+  received_at:         string | null
+  payment_method:      string | null
+  actual_amount:       number | null
+  amount_paid:         number | null
+  paid_at:             string | null
+  liquidation_report:  Record<string, unknown> | null
+  outlet_id:           number | null
+  subtotal:            number | null
+  cash_account_id:     number | null
+  funding_account_id:  number | null
 }
 
 export type CreateTransactionData = Partial<Omit<TransactionType, 'id' | 'created_at'>>
@@ -29,7 +65,7 @@ export type UpdateTransactionData = Partial<CreateTransactionData>
 
 export type FetchTransactionsOptions = {
   po_no_not_null?:   boolean
-  requisition_no_not_null?:  boolean   // ← add this
+  requisition_no_not_null?:  boolean
   search?:           string
   transaction_type?: string | null
   status?:           string | string[] | null
@@ -115,7 +151,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       if (Array.isArray(status)) q = q.in('status', status)
       else                       q = q.eq('status', status)
     }
-    if (po_no_not_null)    q = q.ilike('po_no', 'PO%')              
+    if (po_no_not_null)    q = q.ilike('po_no', 'PO%')
     if (requisition_no_not_null) q = q.ilike('requisition_no', 'PR%')
     if (search?.trim()) {
       const s = search.trim().replace(/,/g, '')

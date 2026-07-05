@@ -1,7 +1,8 @@
 .DS_Store
 node_modules
 /dist
-
+auto-imports.d.ts
+components.d.ts
 # local env files
 .env.local
 .env.*.local
@@ -29,3 +30,4 @@ supabase/
 
 FINANCE_GL_PLAN.md
 SALES_HUB_REDESIGN.md
+
