@@ -26,8 +26,14 @@ const form = defineModel<any>('form')
 // Stepper state
 const step = ref(1)
 const stepperRef = ref<any>(null)
+const step1Form = ref<any>(null)
 
 function nextStep() {
+  // Validate all fields on Step 1 (Basic Info) before proceeding
+  if (step.value === 1) {
+    step1Form.value?.validate()
+    if (!step1Form.value?.isValid) return
+  }
   if (step.value < 3) step.value++
 }
 
@@ -159,7 +165,7 @@ watch(() => props.modelValue, (val) => {
           <!-- Step 1: Basic Info -->
           <v-stepper-window>
             <v-stepper-window-item :value="1">
-              <v-form ref="form" @submit.prevent="emit('submit')">
+              <v-form ref="step1Form" @submit.prevent="emit('submit')">
                 <div class="pa-4">
                   <v-row>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
