@@ -74,7 +74,7 @@ function goToPage(p: number) {
 }
 </script>
 <template>
-  <div class="pa-2 bg-surface-variant fill-height align-start">
+  <div class="pa-2 fill-height align-start">
     <v-card class="mx-auto w-100 pa-0" rounded="lg" elevation="1">
       <!-- Header -->
       <v-card-title class="pa-5">

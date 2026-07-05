@@ -6,7 +6,7 @@ import RemittanceCRUD from './components/RemittanceCRUD.vue'
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container fluid>
+      <v-container>
         <v-card>
           <RemittanceCRUD />
         </v-card>

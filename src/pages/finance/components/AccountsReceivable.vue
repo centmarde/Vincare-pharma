@@ -24,7 +24,7 @@ const bucketLabels: Record<string, string> = {
 </script>
 
 <template>
-  <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
+  <v-container fluid class="pa-2 fill-height align-start">
     <div class="mx-auto w-100">
 
       <!-- KPI cards -->

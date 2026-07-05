@@ -16,7 +16,7 @@ onMounted(init)
 </script>
 
 <template>
-  <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
+  <v-container fluid class="pa-2 fill-height align-start">
     <v-card class="mx-auto w-100" max-width="1400" rounded="lg" elevation="1">
 
       <v-card-title class="d-flex justify-space-between align-center pa-5 flex-wrap ga-3">

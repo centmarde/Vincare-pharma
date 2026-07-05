@@ -26,7 +26,7 @@ onMounted(init)
 </script>
 
 <template>
-  <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
+  <v-container fluid class="pa-2 fill-height align-start">
     <v-row class="w-100" no-gutters>
       <!-- ── Product picker ─────────────────────────────────────── -->
       <v-col cols="12" md="7" class="pa-2">
