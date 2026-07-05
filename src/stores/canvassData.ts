@@ -97,7 +97,12 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
 
         const { data: prItem, error: prItemError } = await supabase
           .from('transaction_items')
-          .insert({ transaction_id: pr.id, product_id: sel.product_id })
+          // The Purchasing module reads line qty from transaction_items.qty_stock_in
+          // (its stock-in/out model — manual PR write, PR/PO list RPCs, receiving all
+          // use it), so a canvass-raised PR must set it or it shows blank quantities
+          // in the purchasing lists. transaction_item_details below still carries the
+          // supplier_quotes audit trail for the canvass flow.
+          .insert({ transaction_id: pr.id, product_id: sel.product_id, qty_stock_in: sel.qty })
           .select('id')
           .single()
         if (prItemError || !prItem) {
