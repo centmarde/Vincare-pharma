@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import type { Ref } from 'vue'
 import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
@@ -8,7 +8,6 @@ import { useAuthUserStore } from '@/stores/authUser'
 import { useCanvassDataStore } from '@/stores/canvassData'
 import { generateIHNumber, generateDRNumber } from '@/utils/generativeHelpers'
 import { useDeliveryReceiptsDataStore } from '@/stores/deliveryReceiptsData'
-import { nextDocNumber } from '@/utils/helpers'
 import type { ProductType } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
 import type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult } from '@/utils/canvassTypes'
@@ -535,15 +534,15 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     }
 
     // Issue the DR document (dedicated delivery_receipts tables, owned by drStore).
-    const dr = await drStore.createDeliveryReceipt({
+    const drResponse = await drStore.createDeliveryReceipt({
       orderId, orderNo: order.reference_no, source: 'inhouse_order', customerId: order.customer_id,
       poNo: order.po_no || null, receivedBy: opts.receivedBy || null, lines: drLines,
     }, user.id)
-    if (!dr.success) {
+    if (!drResponse.success) {
       toast.error('Failed to record delivery.')
       loading.value = false; return { success: false }
     }
-    const drNo = dr.drNo!
+    // drNo was already generated above via generateDRNumber()
 
     // Supabase can't compare two columns server-side, so check client-side.
     const { data: allItems } = await supabase
@@ -564,7 +563,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     toast.success(`Delivery recorded — ${drNo} issued.`)
     await fetchOrders()
     loading.value = false
-    return { success: true, drId: dr.drId, drNo }
+    return { success: true, drId: drResponse.drId, drNo }
   }
 
   // Government POs are commonly paid in tranches, not lump-sum — each call
