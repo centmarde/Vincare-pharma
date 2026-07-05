@@ -98,49 +98,39 @@ export function usePurchaseOrderList() {
     itemsPerPage: number
     sortBy:       { key: string; order: string }[]
   }) {
-    const [data, count] = await Promise.all([txStore.fetchTransactions({
-      po_no_not_null: true,
-      status:         filterStatus.value ?? undefined,
-      search:         search.value.trim() || undefined,
-      orderBy:        (sortBy[0]?.key ?? sortKey.value) as any,
-      ascending:      sortBy[0] != null ? sortBy[0].order === 'asc' : sortOrder.value === 'asc',
-      limit:          itemsPerPage,
-      offset:         (page - 1) * itemsPerPage,
-    }),
-    txStore.fetchTransactionsCount({ 
-      po_no_not_null: true, 
-      status: filterStatus.value ?? undefined, 
-      search: search.value.trim() || undefined})
-  ])
+    const { rows, totalCount } = await txStore.fetchPurchaseOrdersRPC({
+      status:     filterStatus.value ?? undefined,
+      search:     search.value.trim() || undefined,
+      orderBy:    (sortBy[0]?.key ?? sortKey.value) as any,
+      ascending:  sortBy[0] != null ? sortBy[0].order === 'asc' : sortOrder.value === 'asc',
+      limit:      itemsPerPage,
+      offset:     (page - 1) * itemsPerPage,
+    })
 
-    serverItems.value = data.map((tx: any) => ({
-      id:             tx.id,
-      reference_no:   tx.po_no,
-      requisition_no: tx.requisition_no,
-      po_no:          tx.po_no,
-      status:         tx.status ?? 'issued',
-      supplier_id:    tx.supplier_id,
-      total_amount:   tx.total_amount,
-      created_at:     tx.created_at,
-      created_by:     tx.created_by,
-      is_delivered:   tx.status === 'complete',
-      ship_via:       tx.ship_via    ?? null,
-      ship_method:    tx.ship_method ?? null,
-      requisition_id: tx.id,
-      updated_at:     tx.updated_at  ?? null,
+    serverItems.value = rows.map((row: any) => ({
+      id:             row.id,
+      reference_no:   row.po_no,
+      requisition_no: row.requisition_no,
+      po_no:          row.po_no,
+      status:         row.status ?? 'issued',
+      supplier_id:    row.supplier_id,
+      total_amount:   row.total_amount,
+      created_at:     row.created_at,
+      created_by:     row.created_by,
+      is_delivered:   row.status === 'complete',
+      ship_via:       row.ship_via    ?? null,
+      ship_method:    row.ship_method ?? null,
+      requisition_id: row.id,
+      updated_at:     row.updated_at  ?? null,
     }))
 
-    totalItems.value = count
+    totalItems.value = totalCount
 
-    // Pre-fetch linked PRs for supplier summary + PODetailModal
-    await Promise.all(
-      serverItems.value.map(async po => {
-        if (!prItemsCache.value[po.id]) {
-          const pr = await prsStore.fetchPRByRequisitionId(po.id)
-          if (pr) prItemsCache.value[po.id] = pr
-        }
-      })
-    )
+    // Populate PR cache straight from the RPC row's embedded items — no more N+1 fetch
+    rows.forEach(row => {
+      const names = prsStore.resolveUserNames(row.created_by, row.approved_by)
+      prItemsCache.value[row.id] = prsStore.mapRPCRowToPR(row, names)
+    })
   }
 
   // ─── Actions ──────────────────────────────────────────────────────

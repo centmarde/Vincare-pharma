@@ -39,6 +39,26 @@ export type FetchTransactionsOptions = {
   offset?:           number
 }
 
+export type TransactionItemJoined = {
+  id:                    number
+  product_id:            number
+  qty_stock_in:          number
+  actual_count_stock_in: number | null
+  product_name:          string | null
+  unit:                  string | null
+  cost_price:            number | null
+  selling_price:         number | null
+  sku:                   string | null
+  supplier_id:           number | null
+  supplier_name:         string | null
+}
+
+export type TransactionRPCRow = TransactionType & {
+  items:       TransactionItemJoined[]
+  total_count: number
+}
+
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useTransactionsDataStore = defineStore('transactionsData', () => {
@@ -162,6 +182,59 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
     return currentTransaction.value
   }
 
+  function normalizeStatus(status: FetchTransactionsOptions['status']): string[] | null {
+    if (!status) return null
+    return Array.isArray(status) ? status : [status]
+  }
+
+  async function fetchPurchaseRequisitionsRPC(options: FetchTransactionsOptions = {}) {
+    loading.value = true
+    clearError()
+
+    const { data, error: rpcError } = await supabase.rpc('fetch_purchase_requisitions', {
+      p_search:    options.search?.trim() || null,
+      p_status:    normalizeStatus(options.status),
+      p_order_by:  options.orderBy ?? 'created_at',
+      p_ascending: options.ascending ?? false,
+      p_limit:     options.limit ?? 10,
+      p_offset:    options.offset ?? 0,
+    })
+
+    loading.value = false
+
+    if (rpcError) {
+      handleError(rpcError, 'Failed to fetch purchase requisitions')
+      return { rows: [] as TransactionRPCRow[], totalCount: 0 }
+    }
+
+    const rows = (data || []) as TransactionRPCRow[]
+    return { rows, totalCount: rows[0]?.total_count ?? 0 }
+  }
+
+  async function fetchPurchaseOrdersRPC(options: FetchTransactionsOptions = {}) {
+    loading.value = true
+    clearError()
+
+    const { data, error: rpcError } = await supabase.rpc('fetch_purchase_orders', {
+      p_search:    options.search?.trim() || null,
+      p_status:    normalizeStatus(options.status),
+      p_order_by:  options.orderBy ?? 'created_at',
+      p_ascending: options.ascending ?? false,
+      p_limit:     options.limit ?? 10,
+      p_offset:    options.offset ?? 0,
+    })
+
+    loading.value = false
+
+    if (rpcError) {
+      handleError(rpcError, 'Failed to fetch purchase orders')
+      return { rows: [] as TransactionRPCRow[], totalCount: 0 }
+    }
+
+    const rows = (data || []) as TransactionRPCRow[]
+    return { rows, totalCount: rows[0]?.total_count ?? 0 }
+  }
+
   const createTransaction = async (transactionData: CreateTransactionData) => {
     loading.value = true
     clearError()
@@ -265,6 +338,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
 
     // CRUD
     fetchTransactions, fetchTransactionsCount,
+    fetchPurchaseRequisitionsRPC, fetchPurchaseOrdersRPC,
     fetchTransactionById, createTransaction,
     updateTransaction, deleteTransaction,
 

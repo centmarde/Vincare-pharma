@@ -1,4 +1,5 @@
 import { useTransactionsDataStore } from './transactionsData'
+import type { TransactionRPCRow } from './transactionsData'
 import { generateDocNumber } from '@/utils/helpers'
 import { useAuthUserStore } from './authUser'
 import { useToast } from 'vue-toastification'
@@ -159,6 +160,45 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       reviewer_name:  names.reviewer_name,
       actual_count_stock_in:   tx.actual_count_stock_in,
       items:          prItems,
+    }
+  }
+
+  function mapRPCItemsToPR(items: TransactionRPCRow['items']): PRItem[] {
+    return (items || []).map((it, index) => ({
+      id:                    it.id,
+      no:                    index + 1,
+      unit:                  it.unit          ?? '—',
+      item_description:      it.product_name  ?? '—',
+      qty:                   it.qty_stock_in  ?? 0,
+      offer_per_unit:        it.selling_price ?? 0,
+      cost_per_unit:         it.cost_price    ?? 0,
+      product_id:            it.product_id,
+      sku:                   it.sku           ?? null,
+      supplier_name:         it.supplier_name ?? '—',
+      actual_count_stock_in: it.actual_count_stock_in ?? null,
+    }))
+  }
+
+  function mapRPCRowToPR(
+    row: TransactionRPCRow,
+    names: { requester_name: string; reviewer_name: string }
+  ): PR {
+    return {
+      id:                    row.id,
+      requisition_no:        row.requisition_no,
+      po_no:                 row.po_no,
+      status:                row.status ?? '',
+      remarks:               row.remarks,
+      total_amount:          row.total_amount ?? 0,
+      supplier_id:           row.supplier_id ? String(row.supplier_id) : null,
+      created_at:            row.created_at,
+      created_by:            row.created_by ?? '',
+      approved_by:           row.approved_by,
+      updated_at:            row.updated_at,
+      requester_name:        names.requester_name,
+      reviewer_name:         names.reviewer_name,
+      actual_count_stock_in: null,
+      items:                 mapRPCItemsToPR(row.items),
     }
   }
 
@@ -475,6 +515,8 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
 
     // Computed
     isLoading, hasError,
+
+    resolveUserNames, mapToPR, mapTransactionItems, mapRPCRowToPR, mapRPCItemsToPR,
 
     // PR actions
     savePurchaseRequisition, resetStore,
