@@ -86,8 +86,8 @@ async function handlePrint() {
             <v-col cols="7">
               <div class="text-body-2"><span class="font-weight-bold">DR #</span> {{ receipt.dr_no }}</div>
               <div class="text-body-2"><span class="font-weight-bold">Order #</span> {{ receipt.order_no ?? '—' }}</div>
-              <div class="text-body-2" v-if="receipt.govt_po_no">
-                <span class="font-weight-bold">Govt PO #</span> {{ receipt.govt_po_no }}
+              <div class="text-body-2" v-if="receipt.po_no">
+                <span class="font-weight-bold">PO #</span> {{ receipt.po_no }}
               </div>
               <div class="text-caption font-weight-bold mt-2">Deliver to:</div>
               <div class="text-body-2 font-weight-medium">{{ receipt.customer_name || '—' }}</div>

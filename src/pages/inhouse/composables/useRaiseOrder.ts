@@ -23,7 +23,7 @@ export function useRaiseOrder(onCreated: () => void) {
 
   const loading = ref(false)
   const customerId = ref<number | null>(null)
-  const govtPoNo = ref('')
+  const govtPoNo = ref('')   // the government's external PO # (documentation-only)
   const remarks = ref('')
   const lines = ref<FormLine[]>([])
 
