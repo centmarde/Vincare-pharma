@@ -6,6 +6,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useCanvassDataStore } from '@/stores/canvassData'
+import { generateIHNumber, generateDRNumber } from '@/utils/generativeHelpers'
 import { useDeliveryReceiptsDataStore } from '@/stores/deliveryReceiptsData'
 import { nextDocNumber } from '@/utils/helpers'
 import type { ProductType } from '@/stores/productsData'
@@ -179,12 +180,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const subtotal = payload.lines.reduce((sum, l) => sum + l.qty * l.unit_price, 0)
 
-    const year = new Date().getFullYear().toString()
-    const { data: existingOrders } = await supabase
-      .from('transactions')
-      .select('reference_no')
-      .like('reference_no', `IH-${year}-%`)
-    const orderNo = nextDocNumber((existingOrders ?? []).map(r => r.reference_no), `IH-${year}-`)
+    const orderNo = await generateIHNumber()
 
     const { data: created, error: insertError } = await supabase
       .from('transactions')
@@ -470,6 +466,22 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     }
     if (order.status !== 'ready' && order.status !== 'delivered') {
       toast.error('Order is not ready for delivery.')
+      loading.value = false; return { success: false }
+    }
+
+    const drNo = await generateDRNumber()
+
+    const { data: dr, error: drError } = await supabase
+      .from('transactions')
+      .insert({
+        reference_no: drNo, transaction_type: 'delivery_receipt', parent_transaction_id: orderId,
+        customer_id: order.customer_id, po_no: order.po_no || null,
+        remarks: opts.receivedBy || null, created_by: user.id,
+      })
+      .select('id')
+      .single()
+    if (drError || !dr) {
+      handleError(drError, 'Failed to record delivery.'); toast.error(drError?.message || 'Failed to record delivery.')
       loading.value = false; return { success: false }
     }
 

@@ -1,5 +1,5 @@
 import { useTransactionsDataStore } from './transactionsData'
-import { generateDocNumber } from '@/utils/helpers'
+import { generateDocNumber, getLatestReferenceNo } from '@/utils/helpers'
 import { useAuthUserStore } from './authUser'
 import { useToast } from 'vue-toastification'
 import { supabase } from '@/lib/supabase'
@@ -96,20 +96,6 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     currentPR.value = { remarks: null, status: 'pending_approval', requested_by: null, supplier_id: null }
     items.value     = []
     error.value     = ''
-  }
-
-  //  ─── Reference Number Generators ──────────────────────────────────
-  async function getLatestReferenceNo(column: 'requisition_no' | 'po_no' | 'reference_no', prefix: string): Promise<number> {
-    const { data } = await supabase
-      .from('transactions')
-      .select(column)
-      .ilike(column, `${prefix}%`)
-      .order(column, { ascending: false })
-      .limit(1)
-
-    const row    = (data as Record<string, string>[] | null)?.[0]
-    const latest = row ? row[column] : null
-    return latest ? parseInt(latest.split('-')[2], 10) : 0
   }
 
   // ─── Mappers ────────────────────────────────────────────────────

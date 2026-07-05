@@ -5,6 +5,7 @@ import { computed, ref } from 'vue'
 import type { Ref } from 'vue'
 import { useAuthUserStore } from './authUser'
 import { useToast } from 'vue-toastification'
+import { generatePRNumber, generatePONumber, generateSINumber, getLatestReferenceNo } from '@/utils/generativeHelpers'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -122,41 +123,6 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
     currentPR.value = { remarks: null, status: 'pending_approval', requested_by: null, supplier_id: null }
     items.value     = []
     error.value     = ''
-  }
-
-  // ─── Reference Number Generators ──────────────────────────────────
-  async function getLatestReferenceNo(column: 'requisition_no' | 'po_no' | 'reference_no', prefix: string): Promise<number> {
-    const { data } = await supabase
-      .from('transactions')
-      .select(column)
-      .ilike(column, `${prefix}%`)
-      .order(column, { ascending: false })
-      .limit(1)
-
-    const row    = (data as Record<string, string>[] | null)?.[0]
-    const latest = row ? row[column] : null
-    return latest ? parseInt(latest.split('-')[2], 10) : 0
-  }
-
-  async function generatePRNumber(): Promise<string> {
-    const year   = new Date().getFullYear()
-    const prefix = `PR-${year}-`
-    const last   = await getLatestReferenceNo('requisition_no', prefix)
-    return `${prefix}${String(last + 1).padStart(3, '0')}`
-  }
-
-  async function generatePONumber(): Promise<string> {
-    const year   = new Date().getFullYear()
-    const prefix = `PO-${year}-`
-    const last   = await getLatestReferenceNo('po_no', prefix)
-    return `${prefix}${String(last + 1).padStart(3, '0')}`
-  }
-
-  async function generateSINumber(): Promise<string> {
-    const year   = new Date().getFullYear()
-    const prefix = `SI-${year}-`
-    const last   = await getLatestReferenceNo('reference_no', prefix)
-    return `${prefix}${String(last + 1).padStart(3, '0')}`
   }
 
   // ─── Shared PR item mapper ────────────────────────────────────────
