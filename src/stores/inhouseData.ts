@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import type { Ref } from 'vue'
 import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
@@ -6,8 +6,8 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useCanvassDataStore } from '@/stores/canvassData'
+import { generateIHNumber, generateDRNumber } from '@/utils/generativeHelpers'
 import { useDeliveryReceiptsDataStore } from '@/stores/deliveryReceiptsData'
-import { nextDocNumber } from '@/utils/helpers'
 import type { ProductType } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
 import type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult } from '@/utils/canvassTypes'
@@ -179,12 +179,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const subtotal = payload.lines.reduce((sum, l) => sum + l.qty * l.unit_price, 0)
 
-    const year = new Date().getFullYear().toString()
-    const { data: existingOrders } = await supabase
-      .from('transactions')
-      .select('reference_no')
-      .like('reference_no', `IH-${year}-%`)
-    const orderNo = nextDocNumber((existingOrders ?? []).map(r => r.reference_no), `IH-${year}-`)
+    const orderNo = await generateIHNumber()
 
     const { data: created, error: insertError } = await supabase
       .from('transactions')
@@ -473,6 +468,22 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       loading.value = false; return { success: false }
     }
 
+    const drNo = await generateDRNumber()
+
+    const { data: dr, error: drError } = await supabase
+      .from('transactions')
+      .insert({
+        reference_no: drNo, transaction_type: 'delivery_receipt', parent_transaction_id: orderId,
+        customer_id: order.customer_id, po_no: order.po_no || null,
+        remarks: opts.receivedBy || null, created_by: user.id,
+      })
+      .select('id')
+      .single()
+    if (drError || !dr) {
+      handleError(drError, 'Failed to record delivery.'); toast.error(drError?.message || 'Failed to record delivery.')
+      loading.value = false; return { success: false }
+    }
+
     // Move stock + bump delivered_qty per line, collecting the DR line data as we
     // go. The DR document itself is written by the DR store afterwards.
     const drLines: { product_id: number | null; qty: number; unit_price: number | null }[] = []
@@ -523,15 +534,15 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     }
 
     // Issue the DR document (dedicated delivery_receipts tables, owned by drStore).
-    const dr = await drStore.createDeliveryReceipt({
+    const drResponse = await drStore.createDeliveryReceipt({
       orderId, orderNo: order.reference_no, source: 'inhouse_order', customerId: order.customer_id,
       poNo: order.po_no || null, receivedBy: opts.receivedBy || null, lines: drLines,
     }, user.id)
-    if (!dr.success) {
+    if (!drResponse.success) {
       toast.error('Failed to record delivery.')
       loading.value = false; return { success: false }
     }
-    const drNo = dr.drNo!
+    // drNo was already generated above via generateDRNumber()
 
     // Supabase can't compare two columns server-side, so check client-side.
     const { data: allItems } = await supabase
@@ -552,7 +563,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     toast.success(`Delivery recorded — ${drNo} issued.`)
     await fetchOrders()
     loading.value = false
-    return { success: true, drId: dr.drId, drNo }
+    return { success: true, drId: drResponse.drId, drNo }
   }
 
   // Government POs are commonly paid in tranches, not lump-sum — each call
