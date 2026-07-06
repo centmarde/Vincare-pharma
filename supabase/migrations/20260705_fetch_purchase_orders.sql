@@ -73,6 +73,11 @@ begin
       where ti.transaction_id = t.id
     ) items on true
     where t.po_no is not null
+      -- Purchasing-only: transactions.po_no is overloaded — In-House orders now
+      -- carry a DERIVED PO-YYYY-### in po_no too (same format as Purchasing's own
+      -- series), so filtering on po_no alone leaks inhouse_order rows into the PO
+      -- list. Constrain to purchasing document types.
+      and t.transaction_type in ('purchase_order', 'stock_in')
       and ($1 is null or (
         t.requisition_no ilike '%%' || $1 || '%%' or
         t.po_no           ilike '%%' || $1 || '%%' or

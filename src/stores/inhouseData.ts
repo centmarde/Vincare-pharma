@@ -6,7 +6,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useCanvassDataStore } from '@/stores/canvassData'
-import { generateIHNumber, generateDRNumber } from '@/utils/generativeHelpers'
+import { generateIHNumber } from '@/utils/generativeHelpers'
 import { useDeliveryReceiptsDataStore } from '@/stores/deliveryReceiptsData'
 import type { ProductType } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
@@ -468,22 +468,6 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       loading.value = false; return { success: false }
     }
 
-    const drNo = await generateDRNumber()
-
-    const { data: dr, error: drError } = await supabase
-      .from('transactions')
-      .insert({
-        reference_no: drNo, transaction_type: 'delivery_receipt', parent_transaction_id: orderId,
-        customer_id: order.customer_id, po_no: order.po_no || null,
-        remarks: opts.receivedBy || null, created_by: user.id,
-      })
-      .select('id')
-      .single()
-    if (drError || !dr) {
-      handleError(drError, 'Failed to record delivery.'); toast.error(drError?.message || 'Failed to record delivery.')
-      loading.value = false; return { success: false }
-    }
-
     // Move stock + bump delivered_qty per line, collecting the DR line data as we
     // go. The DR document itself is written by the DR store afterwards.
     const drLines: { product_id: number | null; qty: number; unit_price: number | null }[] = []
@@ -542,7 +526,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       toast.error('Failed to record delivery.')
       loading.value = false; return { success: false }
     }
-    // drNo was already generated above via generateDRNumber()
+    const drNo = drResponse.drNo!
 
     // Supabase can't compare two columns server-side, so check client-side.
     const { data: allItems } = await supabase
