@@ -13,7 +13,7 @@ const {
 
 <template>
   <v-container fluid class="pa-2 fill-height align-start">
-    <v-card class="mx-auto w-100" max-width="1400" rounded="lg" elevation="1">
+    <v-card class="mx-auto w-100" rounded="lg" elevation="1">
 
       <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold">Discrepancies</v-card-title>
 

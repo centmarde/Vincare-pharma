@@ -14,6 +14,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'edit': [product: ProductType]
   'delete': [product: ProductType]
+  'logs': [product: ProductType]
   'update:page': [page: number]
   'update:options': [options: any]
 }>()
@@ -77,6 +78,16 @@ function nextPage() {
             <div class="d-flex ga-1">
               <v-btn icon="mdi-pencil" size="small" variant="text" color="info" @click="emit('edit', product)"></v-btn>
               <v-btn icon="mdi-delete" size="small" variant="text" color="error" @click="emit('delete', product)"></v-btn>
+              <v-btn
+                icon="mdi-history"
+                size="small"
+                variant="outlined"
+                color="primary"
+                @click="emit('logs', product)"
+              >
+                <v-icon size="16">mdi-text-box-search-outline</v-icon>
+                <v-tooltip activator="parent" location="top">View transaction history</v-tooltip>
+              </v-btn>
             </div>
           </template>
         </v-card-item>
