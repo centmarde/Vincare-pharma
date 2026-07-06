@@ -8,6 +8,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useDisplay } from 'vuetify'
 
 const {
+  stats,
   init,
   loading,
   selectedPR,
@@ -23,7 +24,7 @@ const {
   itemsPerPage,
   statusOptions,
   showModal,
-  search,
+  itemNames,
   showPOModal,
   selectedPRForPO,
   confirmDialog,
@@ -63,13 +64,72 @@ function goToPage(p: number) {
 
 <template>
   <v-container fluid class="pa-2 fill-height align-start">
+    <v-row class="mb-2" dense>
+      <v-col cols="6" sm="3">
+        <v-card rounded="lg" elevation="1" class="stat-card">
+          <v-card-text class="d-flex align-center" style="gap: 12px">
+            <v-avatar color="primary" variant="tonal" size="40">
+              <v-icon icon="mdi-file-document-multiple-outline" />
+            </v-avatar>
+            <div>
+              <div class="text-caption text-medium-emphasis">Total PRs</div>
+              <div class="text-h6 font-weight-bold">{{ stats.total.toLocaleString() }}</div>
+            </div>
+          </v-card-text>
+        </v-card>
+      </v-col>
+
+      <v-col cols="6" sm="3">
+        <v-card rounded="lg" elevation="1" class="stat-card">
+          <v-card-text class="d-flex align-center" style="gap: 12px">
+            <v-avatar color="#c2922e" variant="tonal" size="40">
+              <v-icon icon="mdi-clock-alert-outline" />
+            </v-avatar>
+            <div>
+              <div class="text-caption text-medium-emphasis">Pending Approval</div>
+              <div class="text-h6 font-weight-bold">{{ stats.pending.toLocaleString() }}</div>
+            </div>
+          </v-card-text>
+        </v-card>
+      </v-col>
+
+      <v-col cols="6" sm="3">
+        <v-card rounded="lg" elevation="1" class="stat-card">
+          <v-card-text class="d-flex align-center" style="gap: 12px">
+            <v-avatar color="#2e7d32" variant="tonal" size="40">
+              <v-icon icon="mdi-check-circle-outline" />
+            </v-avatar>
+            <div>
+              <div class="text-caption text-medium-emphasis">Approved</div>
+              <div class="text-h6 font-weight-bold">{{ stats.approved.toLocaleString() }}</div>
+            </div>
+          </v-card-text>
+        </v-card>
+      </v-col>
+
+      <v-col cols="6" sm="3">
+        <v-card rounded="lg" elevation="1" class="stat-card">
+          <v-card-text class="d-flex align-center" style="gap: 12px">
+            <v-avatar color="green" variant="tonal" size="40">
+              <span class="text-h6 font-weight-bold">₱</span>
+            </v-avatar>
+            <div>
+              <div class="text-caption text-medium-emphasis">Total Requisitions Filed</div>
+              <div class="text-h6 font-weight-bold">{{ formatCurrency(stats.totalCost) }}</div>
+            </div>
+          </v-card-text>
+        </v-card>
+      </v-col>
+    </v-row>
+
+    <!-- V-Data-Table -->
     <v-card class="mx-auto w-100" rounded="lg" elevation="1">
       <!-- Header -->
       <v-card-title class="pa-4 pa-sm-5">
         <div class="d-flex justify-space-between align-center" :class="mobile ? 'mb-3' : ''">
           <div class="d-flex align-center">
             <v-icon
-              icon="mdi-file-clock-outline"
+              icon="mdi-clipboard-list-outline"
               :size="mobile ? 28 : 36"
               class="mr-1 text-primary"
             />
@@ -200,11 +260,29 @@ function goToPage(p: number) {
 
           <!-- Items -->
           <template #item.items="{ item }">
-            <div style="white-space: normal; word-break: break-word; min-width: 160px">
-              <div class="text-body-2">{{ itemSummary(item.items) }}</div>
-              <div class="text-caption text-medium-emphasis">
-                {{ item.items.length }} line {{ item.items.length === 1 ? 'item' : 'items' }}
-              </div>
+            <div>
+              <span class="text-body-2">
+                {{ itemSummary(item.items) }}
+              </span>
+
+              <v-tooltip v-if="item.items.length > 1" location="top">
+                <template #activator="{ props }">
+                  <v-icon
+                    v-bind="props"
+                    size="14"
+                    class="ml-1 text-medium-emphasis"
+                  >
+                    mdi-information-outline
+                  </v-icon>
+                </template>
+
+                <div
+                  v-for="name in itemNames(item.items)"
+                  :key="name"
+                >
+                  {{ name }}
+                </div>
+              </v-tooltip>
             </div>
           </template>
 
@@ -519,28 +597,24 @@ function goToPage(p: number) {
 }
 
 .status-chip--pending_approval {
-  color: #c2922e;
-  background: rgba(194, 146, 46, 0.12);
-}
-.status-chip--pending {
-  color: #c2922e;
-  background: rgba(194, 146, 46, 0.12);
+  color: #A16207;
+  background: rgba(183, 121, 31, 0.12);
 }
 .status-chip--approved {
-  color: #2e7d32;
-  background: rgba(46, 125, 50, 0.12);
-}
-.status-chip--complete {
-  color: #2e7d32;
-  background: rgba(46, 125, 50, 0.12);
+  color: #2563EB;
+  background: rgba(51, 102, 204, 0.12);
 }
 .status-chip--rejected {
-  color: #c62828;
-  background: rgba(198, 40, 40, 0.12);
+  color: #DC2626;
+  background: rgba(197, 48, 48, 0.12);
 }
 .status-chip--issued {
-  color: #1565c0;
-  background: rgba(21, 101, 192, 0.12);
+  color: #7C3AED;
+  background: rgba(79, 70, 229, 0.12);
+}
+.status-chip--complete {
+  color: #15803D;
+  background: rgba(47, 133, 90, 0.12);
 }
 
 /* ─── Table ───────────────────────────────────────────────────── */
@@ -571,5 +645,8 @@ function goToPage(p: number) {
 }
 .pr-mobile-card:active {
   box-shadow: 0 0 0 2px rgba(var(v-theme-primary), 0.3) !important;
+}
+.stat-card {
+  height: 100%;
 }
 </style>

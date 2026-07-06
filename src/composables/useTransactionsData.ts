@@ -68,6 +68,10 @@ export function useTransactionsData() {
       : list[0].item_description
   }
 
+  const itemNames = (list: PRItem[]) => {
+    return list?.map(item => item.item_description) ?? []
+  }
+
   const statusConfig = (status: string) => {
     const map: Record<string, { label: string; color: string; bg: string; dot: string }> = {
       pending_approval: { label: 'Pending Approval', color: '#c2922e', bg: '#fff8ee', dot: '#c2922e' },
@@ -102,6 +106,7 @@ export function useTransactionsData() {
     totalQty,
     totalCost,
     itemSummary,
+    itemNames,
     statusConfig,
   }
 }
