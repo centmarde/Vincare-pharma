@@ -6,7 +6,7 @@ import SupplierPayments from './components/SupplierPayments.vue'
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container>
+      <v-container fluid>
         <SupplierPayments />
       </v-container>
     </template>

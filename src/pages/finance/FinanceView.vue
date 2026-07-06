@@ -6,7 +6,7 @@ import FinanceDashboard from './components/FinanceDashboard.vue'
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container>
+      <v-container fluid>
         <FinanceDashboard />
       </v-container>
     </template>

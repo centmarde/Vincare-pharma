@@ -6,7 +6,7 @@ import DiscrepanciesPanel from './components/DiscrepanciesPanel.vue'
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container>
+      <v-container fluid>
         <DiscrepanciesPanel />
       </v-container>
     </template>

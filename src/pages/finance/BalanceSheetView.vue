@@ -6,7 +6,7 @@ import BalanceSheet from './components/BalanceSheet.vue'
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container fluid class="pa-0">
+      <v-container fluid>
         <BalanceSheet />
       </v-container>
     </template>

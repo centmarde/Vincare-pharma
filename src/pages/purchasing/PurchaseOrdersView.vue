@@ -6,7 +6,7 @@ import PurchaseOrderList from './components/PurchaseOrderList.vue';
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container fluid class="pa-0">
+      <v-container fluid>
         <section>
           <v-container fluid class="px-2 px-sm-4 px-md-6">
             <v-row>

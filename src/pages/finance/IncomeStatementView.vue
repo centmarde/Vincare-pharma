@@ -6,7 +6,7 @@ import IncomeStatement from './components/IncomeStatement.vue'
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container fluid class="pa-0">
+      <v-container fluid>
         <IncomeStatement />
       </v-container>
     </template>

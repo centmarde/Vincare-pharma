@@ -6,7 +6,7 @@ import AccountsReceivable from './components/AccountsReceivable.vue'
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container>
+      <v-container fluid>
         <AccountsReceivable />
       </v-container>
     </template>

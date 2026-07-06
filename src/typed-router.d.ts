@@ -98,7 +98,6 @@ declare module 'vue-router/auto-routes' {
     '/logs/dialogs/LogsViewDialog': RouteRecordInfo<'/logs/dialogs/LogsViewDialog', '/logs/dialogs/LogsViewDialog', Record<never, never>, Record<never, never>>,
     '/logs/LogsView': RouteRecordInfo<'/logs/LogsView', '/logs/LogsView', Record<never, never>, Record<never, never>>,
     '/NotFound': RouteRecordInfo<'/NotFound', '/NotFound', Record<never, never>, Record<never, never>>,
-    '/otherTab/Page1View': RouteRecordInfo<'/otherTab/Page1View', '/otherTab/Page1View', Record<never, never>, Record<never, never>>,
     '/purchasing/components/dialogs/IssuePOModal': RouteRecordInfo<'/purchasing/components/dialogs/IssuePOModal', '/purchasing/components/dialogs/IssuePOModal', Record<never, never>, Record<never, never>>,
     '/purchasing/components/dialogs/PODetailModal': RouteRecordInfo<'/purchasing/components/dialogs/PODetailModal', '/purchasing/components/dialogs/PODetailModal', Record<never, never>, Record<never, never>>,
     '/purchasing/components/dialogs/PRDetailModal': RouteRecordInfo<'/purchasing/components/dialogs/PRDetailModal', '/purchasing/components/dialogs/PRDetailModal', Record<never, never>, Record<never, never>>,

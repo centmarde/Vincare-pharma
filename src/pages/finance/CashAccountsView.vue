@@ -6,7 +6,7 @@ import CashAccountsPanel from './components/CashAccountsPanel.vue'
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container>
+      <v-container fluid>
         <CashAccountsPanel />
       </v-container>
     </template>

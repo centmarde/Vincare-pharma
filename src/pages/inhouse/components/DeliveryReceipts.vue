@@ -11,8 +11,8 @@ const {
 </script>
 
 <template>
-  <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
-    <v-card class="mx-auto w-100" max-width="1400" rounded="lg" elevation="1">
+  <v-container fluid class="pa-2  fill-height align-start">
+    <v-card class="mx-auto w-100"  rounded="lg" elevation="1">
       <v-card-title class="d-flex justify-space-between align-center pa-5 flex-wrap" style="gap:12px">
         <span class="text-h6 font-weight-bold">Delivery Receipts</span>
         <v-text-field v-model="search" placeholder="Search DR / order / customer..." prepend-inner-icon="mdi-magnify"

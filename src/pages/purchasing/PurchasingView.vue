@@ -6,7 +6,7 @@ import PurchaseRequisition from '@/pages/purchasing/components/PurchaseRequisiti
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container fluid class="pa-0">
+      <v-container fluid>
          <PurchaseRequisition />
       </v-container>
     </template>

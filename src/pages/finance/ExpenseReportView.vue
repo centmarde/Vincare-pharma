@@ -6,7 +6,7 @@ import ExpenseReport from './components/ExpenseReport.vue'
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container>
+      <v-container fluid>
         <ExpenseReport />
       </v-container>
     </template>
