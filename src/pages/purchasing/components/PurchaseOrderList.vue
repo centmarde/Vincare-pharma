@@ -482,7 +482,9 @@ function goToPage(p: number) {
 }
 
 .stat-card {
-  height: 100%;
+  min-height: 96px;
+  display: flex;
+  align-items: center;
 }
 
 </style>

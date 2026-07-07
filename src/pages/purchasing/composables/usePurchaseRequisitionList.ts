@@ -39,7 +39,7 @@ export function usePurchaseRequisitionList() {
   const page          = ref(1)
   const itemsPerPage  = ref(10)
   const searchInput      = ref(search.value)
-  const stats = ref({ total: 0, pending: 0, approved: 0, totalCost: 0 })
+  const stats = ref({ total: 0, pending: 0, approved: 0, totalCost: 0 , rejected: 0 })
 
   const confirmDialog = ref({ show: false, action: '' as 'APPROVE' | 'REJECT', prId: 0, prNumber: '' })
 
@@ -86,6 +86,7 @@ export function usePurchaseRequisitionList() {
     total: mapped.length,
     pending: mapped.filter(p => p.status === 'pending_approval').length,
     approved: mapped.filter(p => p.status === 'approved').length,
+    rejected: mapped.filter(p => p.status === 'rejected').length,
     totalCost: mapped.reduce((sum, p) => sum + totalCost(p.items), 0),
   }
 }

@@ -110,12 +110,12 @@ function goToPage(p: number) {
       <v-col cols="6" sm="3">
         <v-card rounded="lg" elevation="1" class="stat-card">
           <v-card-text class="d-flex align-center" style="gap: 12px">
-            <v-avatar color="green" variant="tonal" size="40">
-              <span class="text-h6 font-weight-bold">₱</span>
+            <v-avatar color="error" variant="tonal" size="40">
+              <v-icon icon="mdi-close-circle-outline" />
             </v-avatar>
             <div>
-              <div class="text-caption text-medium-emphasis">Total Requisitions Filed</div>
-              <div class="text-h6 font-weight-bold">{{ formatCurrency(stats.totalCost) }}</div>
+              <div class="text-caption text-medium-emphasis">Rejected</div>
+              <div class="text-h6 font-weight-bold">{{ stats.rejected.toLocaleString() }}</div>
             </div>
           </v-card-text>
         </v-card>
@@ -647,6 +647,8 @@ function goToPage(p: number) {
   box-shadow: 0 0 0 2px rgba(var(v-theme-primary), 0.3) !important;
 }
 .stat-card {
-  height: 100%;
+  min-height: 96px;
+  display: flex;
+  align-items: center;
 }
 </style>
