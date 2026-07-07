@@ -83,7 +83,7 @@ onMounted(async () => {
                   grow
                 >
                   <v-tab value="activity" class="text-none font-weight-bold">
-                    Activity Logs
+                    Transaction Activity Logs
                   </v-tab>
                   <v-tab value="users" class="text-none font-weight-bold">
                     Users Activity Logs
