@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import { usePRDetailModal } from '../../composables/usePRDetailModal'
+import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import { useDisplay } from 'vuetify'
+import { de } from 'vuetify/locale'
 
 const { mobile } = useDisplay()
 
 const props = defineProps<{ pr: PR }>()
 const model = defineModel<boolean>()
+const emit = defineEmits<{
+  approve: [pr: PR]
+  reject: [pr: PR]
+}>()
 
 const {
   statusConfig,
@@ -18,6 +23,16 @@ const {
   offerCostRatio,
   marginPercent,
 } = usePRDetailModal(props)
+
+function onApprove() {
+  model.value = false
+  emit('approve', props.pr)
+}
+
+function onReject() {
+  model.value = false
+  emit('reject', props.pr)
+}
 </script>
 
 <template>
@@ -180,12 +195,36 @@ const {
       </v-card-text>
 
       <!-- Footer -->
-      <v-card-actions :class="mobile ? 'px-3 pb-3 pt-2 justify-end' : 'px-6 pb-5 pt-2 justify-end'">
+      <v-card-actions
+        :class="mobile ? 'px-3 pb-3 pt-2' : 'px-6 pb-5 pt-2'" class="d-flex justify-end">
+      <div v-if="pr.status === 'pending_approval'" class="d-flex mr-auto" style="gap: 16px">
+          <v-btn
+            variant="outlined"
+            size="small"
+            color="red-darken-2"
+            class="text-none"
+            @click="onReject"
+          >
+          <v-icon>mdi-close</v-icon>
+            Reject
+          </v-btn>
+          <v-btn
+            variant="tonal"
+            prepend-icon="mdi-check-circle-outline"
+            color="green-darken-2"
+            size="small"
+            class="text-none"
+            elevation="0"
+            @click="onApprove"
+            >
+            <!-- <v-icon>mdi-check</v-icon> -->
+            Approve
+          </v-btn>
+        </div>
         <v-btn variant="outlined" size="small" class="text-none" @click="model = false">
           Close
         </v-btn>
       </v-card-actions>
-
     </v-card>
   </v-dialog>
 </template>

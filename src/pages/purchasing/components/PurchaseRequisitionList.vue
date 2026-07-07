@@ -28,6 +28,7 @@ const {
   showPOModal,
   selectedPRForPO,
   confirmDialog,
+  confirmLoading,
   searchInput,
   commitSearch,
   clearSearch,
@@ -330,26 +331,6 @@ function goToPage(p: number) {
               <v-btn variant="outlined" size="small" class="text-none" @click="openDetail(item)">
                 View
               </v-btn>
-              <template v-if="item.status === 'pending_approval'">
-                <v-btn
-                  color="green-darken-2"
-                  size="small"
-                  class="text-none"
-                  elevation="0"
-                  @click="openConfirm('APPROVE', item)"
-                >
-                  Approve
-                </v-btn>
-                <v-btn
-                  variant="outlined"
-                  size="small"
-                  color="red-darken-2"
-                  class="text-none"
-                  @click="openConfirm('REJECT', item)"
-                >
-                  Reject
-                </v-btn>
-              </template>
               <template v-if="item.status === 'approved'">
                 <v-btn
                   variant="outlined"
@@ -454,32 +435,6 @@ function goToPage(p: number) {
               >
                 View Details
               </v-btn>
-
-              <template v-if="item.status === 'pending_approval'">
-                <div class="d-flex" style="gap: 6px">
-                  <v-btn
-                    color="green-darken-2"
-                    size="small"
-                    class="text-none"
-                    elevation="0"
-                    style="flex: 1"
-                    @click="openConfirm('APPROVE', item)"
-                  >
-                    Approve
-                  </v-btn>
-                  <v-btn
-                    variant="outlined"
-                    size="small"
-                    color="red-darken-2"
-                    class="text-none"
-                    style="flex: 1"
-                    @click="openConfirm('REJECT', item)"
-                  >
-                    Reject
-                  </v-btn>
-                </div>
-              </template>
-
               <template v-if="item.status === 'approved'">
                 <v-btn
                   variant="outlined"
@@ -529,7 +484,8 @@ function goToPage(p: number) {
     <IssuePOModal v-model="showPOModal" :pr="selectedPRForPO" />
 
     <!-- Detail Modal -->
-    <PRDetailModal v-if="selectedPR" v-model="showModal" :pr="selectedPR" />
+    <PRDetailModal v-if="selectedPR" v-model="showModal" :pr="selectedPR" 
+    @approve="openConfirm('APPROVE', $event)" @reject="openConfirm('REJECT', $event)"/>
 
     <!-- Confirm Dialog -->
     <v-dialog v-model="confirmDialog.show" :max-width="mobile ? '100%' : '400'" persistent>
@@ -557,14 +513,15 @@ function goToPage(p: number) {
         </v-card-text>
 
         <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end ga-2">
-          <v-btn variant="outlined" class="text-none" :disabled="loading" @click="closeConfirm">
+          <v-btn variant="outlined" class="text-none" :disabled="confirmLoading" @click="closeConfirm">
             Cancel
           </v-btn>
           <v-btn
             :color="confirmDialog.action === 'APPROVE' ? 'green-darken-2' : 'red-darken-2'"
             :variant="confirmDialog.action === 'APPROVE' ? 'flat' : 'outlined'"
             class="text-none"
-            :loading="loading"
+            :loading="confirmLoading"
+            :disabled="confirmLoading"
             @click="handleConfirm"
           >
             Yes, {{ confirmDialog.action === 'APPROVE' ? 'Approve' : 'Reject' }}

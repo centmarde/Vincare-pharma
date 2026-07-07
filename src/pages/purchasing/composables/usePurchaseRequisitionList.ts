@@ -42,6 +42,7 @@ export function usePurchaseRequisitionList() {
   const stats = ref({ total: 0, pending: 0, approved: 0, totalCost: 0 , rejected: 0 })
 
   const confirmDialog = ref({ show: false, action: '' as 'APPROVE' | 'REJECT', prId: 0, prNumber: '' })
+  const confirmLoading = ref(false)
 
   async function loadItems({ page: p, itemsPerPage: ipp, sortBy }: {
     page: number
@@ -113,6 +114,9 @@ export function usePurchaseRequisitionList() {
   function closeConfirm() { confirmDialog.value.show = false }
 
   async function handleConfirm() {
+    if (!confirmDialog.value.show || confirmLoading.value) return
+    confirmLoading.value = true
+
     const { action, prId, prNumber } = confirmDialog.value
     const { user, error: authError } = await authStore.getCurrentUser()
     const userId = !authError && user ? user.id : undefined
@@ -137,6 +141,7 @@ export function usePurchaseRequisitionList() {
       loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] }),
       loadStats(),
       ])
+      confirmLoading.value = false
     }
   async function openPurchaseOrder(pr: PR) {
     selectedPRForPO.value = pr
@@ -154,7 +159,7 @@ export function usePurchaseRequisitionList() {
 
   return {
     loading, filterStatus, search, showModal, showPOModal,
-    selectedPR, selectedPRForPO, confirmDialog,
+    selectedPR, selectedPRForPO, confirmDialog, confirmLoading,
     page, itemsPerPage, serverItems, totalItems,
     searchInput, commitSearch, clearSearch,
     totalQty, totalCost, itemSummary, itemNames, statusConfig, statusOptions,
