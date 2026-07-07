@@ -38,10 +38,12 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
 
     const logModule = orderType === 'inhouse_order' ? 'inhouse' : 'ethical'
     const statusColumn = orderType === 'inhouse_order' ? 'status' : 'fulfillment_status'
+    // Each order type stores its number in its own column (per-type ref-column scheme).
+    const orderNoColumn = orderType === 'inhouse_order' ? 'inhouse_no' : 'ethical_no'
 
     const { data: order, error: fetchError } = await supabase
       .from('transactions')
-      .select(orderType === 'inhouse_order' ? 'status, reference_no' : 'fulfillment_status, reference_no')
+      .select(`${statusColumn}, ${orderNoColumn}`)
       .eq('id', orderId)
       .eq('transaction_type', orderType)
       .maybeSingle()
@@ -55,7 +57,7 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
       loading.value = false
       return { success: false, error: `Order is not awaiting stock (${statusColumn} ${orderStatus}).` }
     }
-    const orderNo = (order as Record<string, unknown>).reference_no as string | null
+    const orderNo = (order as Record<string, unknown>)[orderNoColumn] as string | null
 
     const year = new Date().getFullYear().toString()
     const { data: existingPRs } = await supabase
@@ -97,7 +99,12 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
 
         const { data: prItem, error: prItemError } = await supabase
           .from('transaction_items')
-          .insert({ transaction_id: pr.id, product_id: sel.product_id })
+          // The Purchasing module reads line qty from transaction_items.qty_stock_in
+          // (its stock-in/out model — manual PR write, PR/PO list RPCs, receiving all
+          // use it), so a canvass-raised PR must set it or it shows blank quantities
+          // in the purchasing lists. transaction_item_details below still carries the
+          // supplier_quotes audit trail for the canvass flow.
+          .insert({ transaction_id: pr.id, product_id: sel.product_id, qty_stock_in: sel.qty })
           .select('id')
           .single()
         if (prItemError || !prItem) {

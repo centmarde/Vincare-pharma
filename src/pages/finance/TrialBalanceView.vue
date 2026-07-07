@@ -6,7 +6,7 @@ import TrialBalance from './components/TrialBalance.vue'
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container fluid class="pa-0">
+      <v-container fluid>
         <TrialBalance />
       </v-container>
     </template>

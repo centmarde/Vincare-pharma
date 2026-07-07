@@ -4,12 +4,14 @@ import { storeToRefs } from 'pinia'
 import InnerLayoutWrapper from '@/layouts/InnerLayoutWrapper.vue'
 import LogsWidget from '@/pages/logs/components/LogsWidget.vue'
 import LogsCard from '@/pages/logs/components/LogsCard.vue'
+import LogsInAllUsers from '@/pages/logs/components/LogsInAllUsers.vue'
 import { useLogsDataStore } from '@/stores/logsData'
 
 const logsStore = useLogsDataStore()
 const { logs } = storeToRefs(logsStore)
 
 const moduleFilter = ref<string | null>(null)
+const activeTab = ref<'activity' | 'users'>('activity')
 
 // Compute module counts from all logs (one per transaction_id)
 const totalCount = computed(() => {
@@ -62,6 +64,7 @@ onMounted(async () => {
         <section>
           <v-container fluid class="px-2 px-sm-4 px-md-6">
             <v-row>
+
               <v-col cols="12">
                 <LogsCard
                   v-model:active-filter="moduleFilter"
@@ -69,8 +72,29 @@ onMounted(async () => {
                   :total-count="totalCount"
                 />
               </v-col>
-              <v-col cols="12">
+							<v-col cols="12" sm="5">
+                <v-tabs
+                  v-model="activeTab"
+                  density="compact"
+                  color="primary"
+                  class="mb-2"
+                  bg-color="transparent"
+                  slider-size="4"
+                  grow
+                >
+                  <v-tab value="activity" class="text-none font-weight-bold">
+                    Activity Logs
+                  </v-tab>
+                  <v-tab value="users" class="text-none font-weight-bold">
+                    Users Activity Logs
+                  </v-tab>
+                </v-tabs>
+              </v-col>
+              <v-col cols="12" v-if="activeTab === 'activity'">
                 <LogsWidget :module-filter="moduleFilter" />
+              </v-col>
+              <v-col cols="12" v-else-if="activeTab === 'users'">
+                <LogsInAllUsers />
               </v-col>
             </v-row>
           </v-container>
@@ -79,3 +103,7 @@ onMounted(async () => {
     </template>
   </InnerLayoutWrapper>
 </template>
+
+<style scoped>
+
+</style>

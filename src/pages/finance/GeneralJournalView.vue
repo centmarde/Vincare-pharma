@@ -6,7 +6,7 @@ import GeneralJournal from './components/GeneralJournal.vue'
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container fluid class="pa-0">
+      <v-container fluid>
         <GeneralJournal />
       </v-container>
     </template>

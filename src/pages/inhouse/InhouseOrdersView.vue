@@ -6,7 +6,7 @@ import InhouseOrders from './components/InhouseOrders.vue'
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container>
+      <v-container fluid>
         <InhouseOrders />
       </v-container>
     </template>

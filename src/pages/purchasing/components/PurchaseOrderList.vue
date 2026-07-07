@@ -210,7 +210,7 @@ function goToPage(p: number) {
           :items="serverItems"
           :items-length="totalItems"
           :loading="loading"
-          
+
           :items-per-page-options="[5, 10, 15, 20, 25, 50, 100]"
           hover
           loading-text="Loading purchase orders..."

@@ -86,7 +86,22 @@ export const useUserPermissions = () => {
           return hasAccessToRoute(child.route) ? child : null
         }
         const filteredItems = child.children.filter((item) => hasAccessToRoute(item.route))
-        return filteredItems.length > 0 ? { ...child, children: filteredItems } : null
+        if (filteredItems.length === 0) return null
+        // A sub-group with a `route` collapses to a SINGLE link (its children are
+        // surfaced as v-tabs inside the view, not as separate sidebar entries).
+        // Land on its own route if the user can see it, else the first accessible
+        // tab; carry every accessible tab route as activeRoutes so the sidebar
+        // keeps the section highlighted/expanded while on any of its tabs.
+        if (child.route) {
+          return {
+            title: child.title,
+            icon: child.icon,
+            permission: child.permission,
+            route: hasAccessToRoute(child.route) ? child.route : filteredItems[0].route,
+            activeRoutes: filteredItems.map((item) => item.route),
+          }
+        }
+        return { ...child, children: filteredItems }
       })
       .filter((child): child is NavigationChild => child !== null)
   }

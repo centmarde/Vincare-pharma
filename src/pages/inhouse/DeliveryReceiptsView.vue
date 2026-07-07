@@ -6,7 +6,7 @@ import DeliveryReceipts from './components/DeliveryReceipts.vue'
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container fluid class="pa-0">
+      <v-container fluid>
         <DeliveryReceipts />
       </v-container>
     </template>
