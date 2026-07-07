@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, watch, ref } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useLogsDataStore } from '@/stores/logsData'
 import type { LogType } from '@/stores/logsData'
@@ -23,6 +23,11 @@ const dialog = computed({
   set: (val) => emit('update:modelValue', val),
 })
 
+// Filter state
+const searchQuery = ref('')
+const dateFrom = ref('')
+const dateTo = ref('')
+
 // Ensure logs are loaded when dialog opens
 watch(
   () => props.modelValue,
@@ -34,7 +39,32 @@ watch(
 )
 
 const userLogs = computed(() => {
-  return logsStore.logs.filter((log) => log.created_by === props.userId)
+  let filtered = logsStore.logs.filter((log) => log.created_by === props.userId)
+
+  // Search filter
+  if (searchQuery.value.trim()) {
+    const term = searchQuery.value.toLowerCase()
+    filtered = filtered.filter(
+      (log) =>
+        log.description?.toLowerCase().includes(term) ||
+        log.action?.toLowerCase().includes(term) ||
+        log.module?.toLowerCase().includes(term) ||
+        log.reference_no?.toLowerCase().includes(term)
+    )
+  }
+
+  // Date range filter
+  if (dateFrom.value) {
+    const fromDate = new Date(dateFrom.value)
+    filtered = filtered.filter((log) => new Date(log.created_at) >= fromDate)
+  }
+  if (dateTo.value) {
+    const toDate = new Date(dateTo.value)
+    toDate.setHours(23, 59, 59, 999) // End of the selected day
+    filtered = filtered.filter((log) => new Date(log.created_at) <= toDate)
+  }
+
+  return filtered
 })
 
 const formatDate = (dateString: string | null) => {
@@ -88,14 +118,54 @@ const handleClose = () => {
     @keydown.esc="handleClose"
   >
     <v-card rounded="lg">
-      <v-card-title class="d-flex align-center justify-space-between pa-4">
-        <div class="d-flex align-center ga-2">
-          <v-icon icon="mdi-account-text-outline" color="primary" />
-          <span class="text-h6 font-weight-bold">User Activity Logs</span>
+      <v-card-title class="pa-4">
+        <div class="w-100">
+          <div class="d-flex align-center justify-space-between mb-2">
+            <div class="d-flex align-center ga-2">
+              <v-icon icon="mdi-account-text-outline" color="primary" />
+              <span class="text-h6 font-weight-bold">User Activity Logs</span>
+            </div>
+            <span class="text-caption text-medium-emphasis">
+              {{ userLogs.length }} log{{ userLogs.length === 1 ? '' : 's' }} found
+            </span>
+          </div>
+
+          <div class="d-flex flex-wrap ga-2 mt-2">
+            <v-text-field
+              v-model="searchQuery"
+              label="Search logs..."
+              prepend-inner-icon="mdi-magnify"
+              variant="outlined"
+              density="compact"
+              hide-details
+              clearable
+              class="flex-grow-1"
+              style="min-width: 200px; max-width: 400px;"
+            ></v-text-field>
+
+            <v-text-field
+              v-model="dateFrom"
+              label="From"
+              type="date"
+              prepend-inner-icon="mdi-calendar-start"
+              variant="outlined"
+              density="compact"
+              hide-details
+              clearable
+            ></v-text-field>
+
+            <v-text-field
+              v-model="dateTo"
+              label="To"
+              type="date"
+              prepend-inner-icon="mdi-calendar-end"
+              variant="outlined"
+              density="compact"
+              hide-details
+              clearable
+            ></v-text-field>
+          </div>
         </div>
-        <span class="text-caption text-medium-emphasis">
-          {{ userLogs.length }} log{{ userLogs.length === 1 ? '' : 's' }} found
-        </span>
       </v-card-title>
 
       <v-divider />
