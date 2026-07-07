@@ -11,7 +11,6 @@ import UserManagementView from '@/pages/admin/UserManagementView.vue'
 import AnnouncementsView from '@/pages/admin/AnnouncementsView.vue'
 import SettingsView from '@/pages/account/SettingsView.vue'
 import ExecutiveView from '@/pages/executive/ExecutiveView.vue'
-import PurchasingView from '@/pages/purchasing/PurchasingView.vue'
 import PurchasingListView from '@/pages/purchasing/PurchasingListView.vue'
 import PurchaseOrdersView from '@/pages/purchasing/PurchaseOrdersView.vue'
 import WareHouseView from '@/pages/warehouse/WareHouseView.vue'
@@ -86,11 +85,6 @@ const routes = setupLayouts([
   {
     path: '/executive/dashboard',
     component: ExecutiveView,
-    meta: { requiresAuth: true },
-  },
-  {
-    path: '/purchasing/list-of-purchases',
-    component: PurchasingView,
     meta: { requiresAuth: true },
   },
   {

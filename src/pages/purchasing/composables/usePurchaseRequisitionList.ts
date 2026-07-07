@@ -26,7 +26,7 @@ export function usePurchaseRequisitionList() {
   const logsStore     = useLogsDataStore()
   const authStore     = useAuthUserStore()
   const { loading }   = storeToRefs(txStore)
-  const { totalQty, totalCost, itemSummary, statusConfig, statusOptions } = useTransactionsData()
+  const { totalQty, totalCost, itemSummary, itemNames, statusConfig, statusOptions } = useTransactionsData()
 
   const search        = ref('')
   const filterStatus  = ref<string | null>(null)
@@ -39,8 +39,10 @@ export function usePurchaseRequisitionList() {
   const page          = ref(1)
   const itemsPerPage  = ref(10)
   const searchInput      = ref(search.value)
+  const stats = ref({ total: 0, pending: 0, approved: 0, totalCost: 0 , rejected: 0 })
 
   const confirmDialog = ref({ show: false, action: '' as 'APPROVE' | 'REJECT', prId: 0, prNumber: '' })
+  const confirmLoading = ref(false)
 
   async function loadItems({ page: p, itemsPerPage: ipp, sortBy }: {
     page: number
@@ -68,12 +70,36 @@ export function usePurchaseRequisitionList() {
     page.value = p
   }
 
+  async function loadStats() {
+  const { rows } = await txStore.fetchPurchaseRequisitionsRPC({
+    orderBy: 'created_at',
+    ascending: false,
+    limit: 1000, // adjust upward if you expect more PRs than this
+    offset: 0,
+  })
+
+  const mapped = rows.map(row => {
+    const names = prStore.resolveUserNames(row.created_by, row.approved_by)
+    return prStore.mapRPCRowToPR(row, names)
+  })
+
+  stats.value = {
+    total: mapped.length,
+    pending: mapped.filter(p => p.status === 'pending_approval').length,
+    approved: mapped.filter(p => p.status === 'approved').length,
+    rejected: mapped.filter(p => p.status === 'rejected').length,
+    totalCost: mapped.reduce((sum, p) => sum + totalCost(p.items), 0),
+  }
+}
+
+
   watch([search, filterStatus], () =>
     loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
   )
 
   async function init() {
     await supplierStore.fetchSuppliers()
+    await loadStats()
   }
 
   function openDetail(pr: PR) {
@@ -88,6 +114,9 @@ export function usePurchaseRequisitionList() {
   function closeConfirm() { confirmDialog.value.show = false }
 
   async function handleConfirm() {
+    if (!confirmDialog.value.show || confirmLoading.value) return
+    confirmLoading.value = true
+
     const { action, prId, prNumber } = confirmDialog.value
     const { user, error: authError } = await authStore.getCurrentUser()
     const userId = !authError && user ? user.id : undefined
@@ -108,8 +137,12 @@ export function usePurchaseRequisitionList() {
       })
     }
     closeConfirm()
-    await loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
-  }
+    await Promise.all([
+      loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] }),
+      loadStats(),
+      ])
+      confirmLoading.value = false
+    }
   async function openPurchaseOrder(pr: PR) {
     selectedPRForPO.value = pr
     showPOModal.value     = true
@@ -126,12 +159,13 @@ export function usePurchaseRequisitionList() {
 
   return {
     loading, filterStatus, search, showModal, showPOModal,
-    selectedPR, selectedPRForPO, confirmDialog,
+    selectedPR, selectedPRForPO, confirmDialog, confirmLoading,
     page, itemsPerPage, serverItems, totalItems,
     searchInput, commitSearch, clearSearch,
-    totalQty, totalCost, itemSummary, statusConfig, statusOptions,
+    totalQty, totalCost, itemSummary, itemNames, statusConfig, statusOptions,
     openDetail, openConfirm, closeConfirm,
     handleConfirm, openPurchaseOrder,
     loadItems, init,
+    stats,
   }
 }

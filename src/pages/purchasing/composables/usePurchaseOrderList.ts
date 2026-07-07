@@ -54,6 +54,7 @@ export function usePurchaseOrderList() {
   const sortKey          = ref('created_at')
   const sortOrder        = ref<'asc' | 'desc'>('desc')
   const searchInput      = ref(search.value)
+  const stats = ref({ total: 0, pending: 0, complete: 0, totalCost: 0 })
 
   const prItemsCache  = ref<Record<number, PR>>({})
   const confirmDialog = ref({ show: false, poId: 0, poNumber: '' })
@@ -133,6 +134,22 @@ export function usePurchaseOrderList() {
     })
   }
 
+  async function loadStats() {
+    const { rows } = await txStore.fetchPurchaseOrdersRPC({
+      orderBy: 'created_at',
+      ascending: false,
+      limit: 1000, // adjust upward if you expect more POs than this
+      offset: 0,
+    })
+
+    stats.value = {
+      total: rows.length,
+      pending: rows.filter((r: any) => r.status !== 'complete').length,
+      complete: rows.filter((r: any) => r.status === 'complete').length,
+      totalCost: rows.reduce((sum: number, r: any) => sum + (r.total_amount ?? 0), 0),
+    }
+  }
+
   // ─── Actions ──────────────────────────────────────────────────────
   async function openDetail(po: PurchaseOrder) {
     selectedPO.value      = po
@@ -167,7 +184,10 @@ export function usePurchaseOrderList() {
       })
     }
       confirmDialog.value.show = false
-      await loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
+      await Promise.all([
+        loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] }),
+        loadStats(),
+      ])
     }
   }
 
@@ -186,6 +206,7 @@ export function usePurchaseOrderList() {
 
   async function init() {
     await supplierStore.fetchSuppliers()
+    await loadStats()
   }
 
   return {
@@ -198,5 +219,6 @@ export function usePurchaseOrderList() {
     resolveSupplier, statusLabel, getSupplierSummary,
     loadItems, openDetail, openDetailForSku,
     openConfirm, handleMarkReceived, init,
+    stats,
   }
 }

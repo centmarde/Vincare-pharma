@@ -126,7 +126,7 @@ watch(
         <div class="d-flex align-center">
           <v-icon icon="mdi-file-document-edit-outline" size="30" class="mr-2 text-primary" />
           <span class="text-subtitle-1 text-sm-h6 font-weight-bold"
-            >Raise Purchase Requisition</span
+            >Place Purchase Requisition</span
           >
         </div>
         <div class="d-flex align-center" style="gap: 12px">
