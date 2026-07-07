@@ -5,7 +5,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useUserPermissions } from '@/composables/useUserPermissions'
 import { isNavigationItem, flattenNavigationItems } from '@/utils/navigation'
-import type { NavigationChild } from '@/utils/navigation'
+import type { NavigationChild, NavigationItem } from '@/utils/navigation'
 
 const props = defineProps<{
   version?: string
@@ -42,7 +42,7 @@ const groupExpanded = ref<Record<string, boolean>>({})
 // here. A manual toggle this page-load overrides that default either way.
 const isGroupExpanded = (groupTitle: string, children: NavigationChild[]) => {
   if (groupTitle in groupExpanded.value) return groupExpanded.value[groupTitle]
-  return flattenNavigationItems(children).some((item) => route.path === item.route)
+  return flattenNavigationItems(children).some((item) => isItemActive(item))
 }
 const toggleGroupExpanded = (groupTitle: string, children: NavigationChild[]) => {
   groupExpanded.value[groupTitle] = !isGroupExpanded(groupTitle, children)
@@ -69,6 +69,12 @@ const navigateTo = (route: string) => {
 // Check if route is active
 const isRouteActive = (routePath: string) => {
   return route.path === routePath
+}
+
+// Active when the current route is the item's route OR one of its activeRoutes
+// (a collapsed tabbed section stays lit while you're on any of its tabs).
+const isItemActive = (item: NavigationItem) => {
+  return route.path === item.route || (item.activeRoutes?.includes(route.path) ?? false)
 }
 
 // Logout function
@@ -144,7 +150,7 @@ const handleLogout = async () => {
                 v-if="isNavigationItem(child)"
                 @click="navigateTo(child.route)"
                 class="mb-1 rounded-lg ml-4"
-                :class="{ 'v-list-item--active': isRouteActive(child.route) }"
+                :class="{ 'v-list-item--active': isItemActive(child) }"
                 :prepend-icon="child.icon"
               >
                 <v-list-item-title class="font-weight-medium">
