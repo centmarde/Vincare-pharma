@@ -249,7 +249,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     }
 
     const year = new Date().getFullYear().toString()
-    const orderNo = await generateNextNumber('ethical_no', `EO-${year}-`)
+    const orderNo = await generateNextNumber('ethical_no', `EO-${year}-`, ['reference_no'])
 
     const termsDays = payload.termsDays ?? 0
     const dueDate = new Date()

@@ -390,7 +390,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     }
 
     const year = new Date().getFullYear().toString()
-    const expenseNo = await generateNextNumber('expense_no', `EXP-${year}-`)
+    const expenseNo = await generateNextNumber('expense_no', `EXP-${year}-`, ['reference_no'])
 
     const { data: created, error: insertError } = await supabase
       .from('transactions')

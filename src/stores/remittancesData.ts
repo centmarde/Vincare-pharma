@@ -185,7 +185,7 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
     const expected = rows.reduce((sum, r) => sum + (r.total_amount ?? 0), 0)
 
     const year = new Date().getFullYear().toString()
-    const remittanceNo = await generateNextNumber('remittance_no', `RM-${year}-`)
+    const remittanceNo = await generateNextNumber('remittance_no', `RM-${year}-`, ['reference_no'])
 
     const { data: created, error: insertError } = await supabase
       .from('transactions')

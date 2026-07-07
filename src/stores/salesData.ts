@@ -291,7 +291,7 @@ export const useSalesDataStore = defineStore('salesData', () => {
     }
 
     const year = new Date().getFullYear().toString()
-    const saleNo = await generateNextNumber('sale_no', `SO-${year}-`)
+    const saleNo = await generateNextNumber('sale_no', `SO-${year}-`, ['reference_no'])
 
     const { data: created, error: insertError } = await supabase
       .from('transactions')

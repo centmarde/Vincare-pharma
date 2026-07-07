@@ -54,20 +54,35 @@ export async function generateDocNumber(
 // ─── Generic Supabase-backed number generators ──────────────────────────────
 
 /**
- * Next `PREFIX-YYYY-NNN` document number for any `transactions` column.
+ * Next `PREFIX-YYYY-NNN` document number for a `transactions` column.
  *
  * Fetches ALL existing numbers for the prefix (no order/limit) and computes the
  * NUMERIC max + 1 via {@link maxDocSeq}. Never `.order(col,desc).limit(1)` — that
  * lexical shortcut is only correct within one pad width and stalls once a series
- * crosses it (see the note above). Per-type column is the caller's choice, so
- * every transaction_type mints into its own dedicated column.
+ * crosses it (see the note above). The number is minted into `column`.
+ *
+ * `alsoScan` columns are additionally scanned for the max but never written to.
+ * This is the per-type-column migration's transition safety net: a type whose
+ * numbers are being moved out of `reference_no` into a dedicated column must also
+ * scan `reference_no` for the max, or — while the backfill hasn't run and the
+ * dedicated column is still empty — the generator would restart at 001 and
+ * collide with numbers still living in `reference_no`. Harmless to keep after the
+ * backfill (reference_no holds no numbers for that prefix anymore).
  */
-export async function generateNextNumber(column: string, prefix: string): Promise<string> {
-  const { data } = await supabase
-    .from('transactions')
-    .select(column)
-    .like(column, `${prefix}%`)
-  return nextDocNumber(((data ?? []) as unknown as Record<string, string>[]).map((r) => r[column]), prefix)
+export async function generateNextNumber(
+  column: string,
+  prefix: string,
+  alsoScan: string[] = [],
+): Promise<string> {
+  const nums: (string | null | undefined)[] = []
+  for (const col of [column, ...alsoScan]) {
+    const { data } = await supabase
+      .from('transactions')
+      .select(col)
+      .like(col, `${prefix}%`)
+    nums.push(...((data ?? []) as unknown as Record<string, string>[]).map((r) => r[col]))
+  }
+  return nextDocNumber(nums, prefix)
 }
 
 /**
@@ -102,7 +117,7 @@ export async function generateSINumber(): Promise<string> {
 
 /** Generate an In-House Order number (IH-YYYY-NNN) — minted into inhouse_no. */
 export async function generateIHNumber(): Promise<string> {
-  return generateNextNumber('inhouse_no', `IH-${new Date().getFullYear()}-`)
+  return generateNextNumber('inhouse_no', `IH-${new Date().getFullYear()}-`, ['reference_no'])
 }
 
 // ─── Date formatters ─────────────────────────────────────────────────────────

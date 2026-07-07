@@ -189,7 +189,7 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
     }
 
     const year = new Date().getFullYear().toString()
-    const transferNo = await generateNextNumber('transfer_no', `ST-${year}-`)
+    const transferNo = await generateNextNumber('transfer_no', `ST-${year}-`, ['reference_no'])
 
     const { data: created, error: insertError } = await supabase
       .from('transactions')
