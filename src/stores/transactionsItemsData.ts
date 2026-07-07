@@ -6,13 +6,25 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import type { ProductType } from '@/stores/productsData'
 import type { TransactionType } from '@/stores/transactionsData'
 
-// Matches `public.transaction_items` schema — now a pure link table. All line
-// value fields (qty/unit_price/…) moved to transaction_item_details (1:1).
+// Matches `public.transaction_items` schema. Line values live here again after
+// transaction_item_details was merged back in: inbound qty is qty_stock_in,
+// outbound qty is qty_stock_out, and the actual counted quantity is
+// actual_count_stock_in (PO receipts) / actual_count_stock_out (transfer
+// received, inhouse/ethical delivered).
 export type TransactionItemType = {
   id: number
   created_at: string
   transaction_id: number | null
   product_id: number | null
+  qty_stock_in: number | null
+  qty_stock_out: number | null
+  actual_count_stock_in: number | null
+  actual_count_stock_out: number | null
+  unit_price: number | null
+  line_total: number | null
+  cost_price: number | null
+  stock_sources: Record<string, number> | null
+  supplier_quotes: Record<string, unknown> | null
   // Joined FK data
   transaction?: TransactionType | null
   product?: ProductType | null
@@ -21,6 +33,15 @@ export type TransactionItemType = {
 export type CreateTransactionItemData = {
   transaction_id?: number | null
   product_id?: number | null
+  qty_stock_in?: number | null
+  qty_stock_out?: number | null
+  actual_count_stock_in?: number | null
+  actual_count_stock_out?: number | null
+  unit_price?: number | null
+  line_total?: number | null
+  cost_price?: number | null
+  stock_sources?: Record<string, number> | null
+  supplier_quotes?: Record<string, unknown> | null
 }
 
 export type UpdateTransactionItemData = Partial<CreateTransactionItemData>

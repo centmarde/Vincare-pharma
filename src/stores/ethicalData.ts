@@ -92,10 +92,11 @@ type CommissionSummaryRow = {
   paid_commission: number
 }
 
-// Line values live in the 1:1 transaction_item_details extension table —
-// transaction_items is a pure link (id/transaction_id/product_id).
+// Line values live directly on transaction_items (transaction_item_details was
+// merged back in). An ethical order is outbound, so the ordered quantity is
+// qty_stock_out and the delivered/sourced count is actual_count_stock_out.
 const SELECT_ORDER =
-  '*, transaction_items(id, product_id, transaction_item_details(qty, unit_price, line_total, delivered_qty, stock_sources), product:product_id(*)), customer:customer_id(*), agent:agent_id(*), outlet:outlet_id(*), ethical_details(*)'
+  '*, transaction_items(id, product_id, qty_stock_out, unit_price, line_total, actual_count_stock_out, stock_sources, product:product_id(*)), customer:customer_id(*), agent:agent_id(*), outlet:outlet_id(*), ethical_details(*)'
 
 function mapRow(row: any): EthicalOrderType {
   const details = row.ethical_details ?? {}
@@ -123,18 +124,15 @@ function mapRow(row: any): EthicalOrderType {
     remarks:        row.remarks,
     customer:       row.customer,
     agent:          row.agent,
-    items: (row.transaction_items ?? []).map((li: any) => {
-      const d = li.transaction_item_details ?? {}
-      return {
-        id:            li.id,
-        product_id:    li.product_id,
-        quantity:      d.qty,
-        unit_price:    d.unit_price,
-        line_total:    d.line_total,
-        delivered_qty: d.delivered_qty ?? 0,
-        product:       li.product,
-      }
-    }),
+    items: (row.transaction_items ?? []).map((li: any) => ({
+      id:            li.id,
+      product_id:    li.product_id,
+      quantity:      li.qty_stock_out,
+      unit_price:    li.unit_price,
+      line_total:    li.line_total,
+      delivered_qty: li.actual_count_stock_out ?? 0,
+      product:       li.product,
+    })),
   }
 }
 
@@ -306,25 +304,20 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
 
       if (need > 0) anyShort = true
 
-      const { data: item, error: itemError } = await supabase
+      // One insert per line now that line values live on transaction_items.
+      // An ethical order is outbound -> qty_stock_out; the sourced count is
+      // the actual outbound count -> actual_count_stock_out.
+      const { error: itemError } = await supabase
         .from('transaction_items')
-        .insert({ transaction_id: created.id, product_id: line.product_id })
-        .select('id')
-        .single()
-      if (itemError || !item) {
+        .insert({
+          transaction_id: created.id, product_id: line.product_id,
+          qty_stock_out: line.quantity, unit_price: line.unit_price,
+          line_total: line.quantity * line.unit_price,
+          actual_count_stock_out: sourced, stock_sources: sources,
+        })
+      if (itemError) {
         handleError(itemError, 'Failed to save order line item.')
-        toast.error(itemError?.message || 'Failed to save order line item.')
-        loading.value = false
-        return { success: false }
-      }
-      const { error: itemDetailsError } = await supabase.from('transaction_item_details').insert({
-        transaction_item_id: item.id, qty: line.quantity,
-        unit_price: line.unit_price, line_total: line.quantity * line.unit_price,
-        delivered_qty: sourced, stock_sources: sources,
-      })
-      if (itemDetailsError) {
-        handleError(itemDetailsError, 'Failed to save order line item.')
-        toast.error(itemDetailsError.message || 'Failed to save order line item.')
+        toast.error(itemError.message || 'Failed to save order line item.')
         loading.value = false
         return { success: false }
       }
@@ -471,9 +464,9 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
 
     const { data: fulfilledItemRows, error: itemsError } = await supabase
       .from('transaction_items')
-      .select('product_id, transaction_item_details!inner(delivered_qty, unit_price)')
+      .select('product_id, actual_count_stock_out, unit_price')
       .eq('transaction_id', payload.orderId)
-      .gt('transaction_item_details.delivered_qty', 0)
+      .gt('actual_count_stock_out', 0)
     if (itemsError) {
       handleError(itemsError, 'Failed to issue delivery receipt.')
       toast.error(itemsError.message || 'Failed to issue delivery receipt.')
@@ -483,10 +476,10 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
       toast.error('Nothing has been fulfilled on this order yet to receipt.')
       loading.value = false; return { success: false }
     }
-    const fulfilledItems = fulfilledItemRows.map(row => ({
+    const fulfilledItems = fulfilledItemRows.map((row: any) => ({
       product_id: row.product_id,
-      delivered_qty: (row.transaction_item_details as unknown as { delivered_qty: number }).delivered_qty,
-      unit_price: (row.transaction_item_details as unknown as { unit_price: number | null }).unit_price,
+      delivered_qty: row.actual_count_stock_out,
+      unit_price: row.unit_price,
     }))
 
     // Document-only DR (no stock movement) into the dedicated tables via drStore.
@@ -548,10 +541,10 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     const { data: outlet } = await supabase.from('outlets').select('code').eq('id', order.outlet_id).maybeSingle()
 
     const { data: itemRows } = await supabase
-      .from('transaction_items').select('product_id, transaction_item_details(stock_sources)').eq('transaction_id', orderId)
-    const items = (itemRows ?? []).map(row => ({
+      .from('transaction_items').select('product_id, stock_sources').eq('transaction_id', orderId)
+    const items = (itemRows ?? []).map((row: any) => ({
       product_id: row.product_id,
-      stock_sources: (row.transaction_item_details as unknown as { stock_sources: Record<string, number> | null } | null)?.stock_sources,
+      stock_sources: (row.stock_sources ?? null) as Record<string, number> | null,
     }))
 
     for (const item of items) {
@@ -610,12 +603,15 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     // Supabase can't compare two columns server-side, so filter client-side.
     const { data: allLineRows } = await supabase
       .from('transaction_items')
-      .select('id, product_id, transaction_item_details(qty, delivered_qty, stock_sources)')
+      .select('id, product_id, qty_stock_out, actual_count_stock_out, stock_sources')
       .eq('transaction_id', orderId)
-    const allLines = (allLineRows ?? []).map(row => {
-      const d = (row.transaction_item_details ?? {}) as unknown as { qty?: number; delivered_qty?: number; stock_sources?: Record<string, number> }
-      return { id: row.id, product_id: row.product_id, qty: d.qty ?? 0, delivered_qty: d.delivered_qty ?? 0, stock_sources: d.stock_sources }
-    })
+    const allLines = (allLineRows ?? []).map((row: any) => ({
+      id: row.id,
+      product_id: row.product_id,
+      qty: row.qty_stock_out ?? 0,
+      delivered_qty: row.actual_count_stock_out ?? 0,
+      stock_sources: row.stock_sources as Record<string, number> | undefined,
+    }))
     const shortLines = allLines.filter(l => l.delivered_qty < l.qty)
 
     const shortfall: Shortfall[] = []
@@ -650,9 +646,9 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
         }
       }
 
-      await supabase.from('transaction_item_details')
-        .update({ delivered_qty: (line.delivered_qty ?? 0) + sourced, stock_sources: sources })
-        .eq('transaction_item_id', line.id)
+      await supabase.from('transaction_items')
+        .update({ actual_count_stock_out: (line.delivered_qty ?? 0) + sourced, stock_sources: sources })
+        .eq('id', line.id)
 
       if (need > 0) {
         shortfall.push({
