@@ -67,7 +67,9 @@ function goToPage(p: number) {
   <v-container fluid class="pa-2 fill-height align-start">
     <v-row class="mb-2" dense>
       <v-col cols="6" sm="3">
-        <v-card rounded="lg" elevation="1" class="stat-card">
+        <v-card rounded="lg" elevation="1" class="stat-card"
+        
+          @click="filterStatus = null">
           <v-card-text class="d-flex align-center" style="gap: 12px">
             <v-avatar color="primary" variant="tonal" size="40">
               <v-icon icon="mdi-file-document-multiple-outline" />
@@ -81,7 +83,12 @@ function goToPage(p: number) {
       </v-col>
 
       <v-col cols="6" sm="3">
-        <v-card rounded="lg" elevation="1" class="stat-card">
+        <v-card
+          rounded="lg" elevation="1"
+          class="stat-card"
+          :class="{ 'stat-card--active': filterStatus === 'pending_approval' }"
+          @click="filterStatus = 'pending_approval'"
+        >
           <v-card-text class="d-flex align-center" style="gap: 12px">
             <v-avatar color="#c2922e" variant="tonal" size="40">
               <v-icon icon="mdi-clock-alert-outline" />
@@ -95,9 +102,12 @@ function goToPage(p: number) {
       </v-col>
 
       <v-col cols="6" sm="3">
-        <v-card rounded="lg" elevation="1" class="stat-card">
+        <v-card rounded="lg" elevation="1" class="stat-card" 
+          :class="{ 'stat-card--active': filterStatus === 'approved' }" 
+          @click="filterStatus = 'approved'"
+          >
           <v-card-text class="d-flex align-center" style="gap: 12px">
-            <v-avatar color="#2e7d32" variant="tonal" size="40">
+            <v-avatar color="#2563EB" variant="tonal" size="40">
               <v-icon icon="mdi-check-circle-outline" />
             </v-avatar>
             <div>
@@ -109,9 +119,11 @@ function goToPage(p: number) {
       </v-col>
 
       <v-col cols="6" sm="3">
-        <v-card rounded="lg" elevation="1" class="stat-card">
+        <v-card rounded="lg" elevation="1" class="stat-card"
+          :class="{ 'stat-card--active': filterStatus === 'rejected' }"
+          @click="filterStatus = 'rejected'">
           <v-card-text class="d-flex align-center" style="gap: 12px">
-            <v-avatar color="error" variant="tonal" size="40">
+            <v-avatar color="#DC2626" variant="tonal" size="40">
               <v-icon icon="mdi-close-circle-outline" />
             </v-avatar>
             <div>
@@ -607,5 +619,14 @@ function goToPage(p: number) {
   min-height: 96px;
   display: flex;
   align-items: center;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  border: 2px solid transparent;
+}
+.stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+}
+.stat-card--active {
+  border-color: rgba(var(--v-theme-primary), 0.5);
 }
 </style>

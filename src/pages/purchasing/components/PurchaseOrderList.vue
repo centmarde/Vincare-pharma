@@ -46,7 +46,8 @@ function goToPage(p: number) {
   <v-container fluid class="pa-2 fill-height align-start">
     <v-row class="mb-2" dense>
       <v-col cols="6" sm="3">
-        <v-card rounded="lg" elevation="1" class="stat-card">
+        <v-card rounded="lg" elevation="1" class="stat-card" 
+          @click="filterStatus = null">
           <v-card-text class="d-flex align-center" style="gap: 12px">
             <v-avatar color="primary" variant="tonal" size="40">
               <v-icon icon="mdi-file-document-multiple-outline" />
@@ -60,7 +61,10 @@ function goToPage(p: number) {
       </v-col>
 
       <v-col cols="6" sm="3">
-        <v-card rounded="lg" elevation="1" class="stat-card">
+        <v-card rounded="lg" elevation="1" class="stat-card"
+          :class="{ 'stat-card--active': filterStatus === 'issued' }"
+          @click="filterStatus = 'issued'"
+          @click:clear="clearSearch">
           <v-card-text class="d-flex align-center" style="gap: 12px">
             <v-avatar color="#1565c0" variant="tonal" size="40">
               <v-icon icon="mdi-truck-outline" />
@@ -74,7 +78,10 @@ function goToPage(p: number) {
       </v-col>
 
       <v-col cols="6" sm="3">
-        <v-card rounded="lg" elevation="1" class="stat-card">
+        <v-card rounded="lg" elevation="1" class="stat-card"
+          :class="{ 'stat-card--active': filterStatus === 'complete' }"
+          @click="filterStatus = 'complete'"
+          @click:clear="clearSearch">
           <v-card-text class="d-flex align-center" style="gap: 12px">
             <v-avatar color="#2e7d32" variant="tonal" size="40">
               <v-icon icon="mdi-check-circle-outline" />
@@ -480,11 +487,18 @@ function goToPage(p: number) {
 :deep(.v-table tbody tr:not(:last-child) td) {
   border-bottom: 1px solid rgba(0, 0, 0, 0.05) !important;
 }
-
 .stat-card {
   min-height: 96px;
   display: flex;
   align-items: center;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  border: 2px solid transparent;
 }
-
+.stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+}
+.stat-card--active {
+  border-color: rgba(var(--v-theme-primary), 0.5);
+}
 </style>

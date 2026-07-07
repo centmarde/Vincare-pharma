@@ -203,6 +203,7 @@ function onReject() {
             size="small"
             color="red-darken-2"
             class="text-none"
+            elevation="1"
             @click="onReject"
           >
           <v-icon>mdi-close</v-icon>
@@ -211,13 +212,12 @@ function onReject() {
           <v-btn
             variant="tonal"
             prepend-icon="mdi-check-circle-outline"
-            color="green-darken-2"
+            color="green-lighten-1"
             size="small"
             class="text-none"
-            elevation="0"
+            elevation="3"
             @click="onApprove"
             >
-            <!-- <v-icon>mdi-check</v-icon> -->
             Approve
           </v-btn>
         </div>
