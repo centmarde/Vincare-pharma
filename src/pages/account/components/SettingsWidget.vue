@@ -192,8 +192,8 @@ onMounted(() => {
 <template>
   <v-row no-gutters class="fill-height">
     <!-- Left Sidebar - Current Profile -->
-    <v-col cols="12" md="3" class="bg-grey-darken-4">
-      <v-card flat class="bg-grey-darken-4 text-white pa-6 fill-height">
+    <v-col cols="12" md="3">
+      <v-card elevation="4"  flat class="pa-6 fill-height">
         <div class="d-flex align-center mb-4">
           <v-icon icon="mdi-account-circle" class="mr-2" color="blue-accent-2"></v-icon>
           <h3 class="text-h6 font-weight-medium">Current Profile</h3>
