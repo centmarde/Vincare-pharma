@@ -5,24 +5,36 @@ export interface NavigationItem {
   selected?: boolean
   permission?: string // Optional permission key for role-based access
   keywords?: string // Comma-separated search terms for easier discovery
+  // Extra routes that should still count as "this item is active" for
+  // sidebar highlight/expand. Set when a tabbed sub-group is collapsed into a
+  // single link (its tab sub-pages), so the section stays lit while you're on
+  // a tab. See useUserPermissions.getFilteredNavigationItems.
+  activeRoutes?: string[]
 }
 
 // An optional third level: a group's children can include a labeled
-// sub-section (no route of its own) instead of only flat leaf items —
-// e.g. "Finance Controls" containing "Income Statement Controls" and
-// "Balance Sheet Controls" as sub-groups. Existing flat groups elsewhere
-// are unaffected: a plain NavigationItem still works exactly as before.
+// sub-section instead of only flat leaf items — e.g. "Finance Controls"
+// containing "Income Statement" and "Balance Sheet" as sub-groups whose own
+// children are surfaced as v-tabs inside a single view rather than as separate
+// sidebar entries. A sub-group with a `route` renders in the sidebar/navbars as
+// ONE link to that route (its children become tabs, see FinanceSectionTabs);
+// the Admin role editor still bundles its children into a single grantable
+// checkbox. Existing flat groups elsewhere are unaffected.
 export interface NavigationSubGroup {
   title: string
   icon: string
   permission?: string
+  route?: string // if set, sidebar/navbars collapse this sub-group to one link
   children: NavigationItem[]
 }
 
 export type NavigationChild = NavigationItem | NavigationSubGroup
 
+// A sub-group is the only child shape with a `children` array; a leaf item never
+// has one. Discriminate on that (NOT on `route`, which a sub-group may now also
+// carry for its collapsed-link target).
 export function isNavigationItem(child: NavigationChild): child is NavigationItem {
-  return 'route' in child
+  return !('children' in child)
 }
 
 export interface NavigationGroup {
@@ -262,20 +274,23 @@ export const navigationConfig: NavigationGroup[] = [
     ],
   },
   {
-    // Single umbrella group. Income Statement Controls and Balance Sheet
-    // Controls are nested sub-groups inside it (CLAUDE.md SECTION 1 / SECTION
-    // 2 account taxonomy) rather than separate top-level groups. Trial
-    // Balance and General Journal are cross-cutting (every account, not just
-    // one section's) so they live as flat leaf items directly under Finance
-    // Controls instead of inside either sub-group.
+    // Single umbrella group. Income Statement and Balance Sheet are sub-groups
+    // (CLAUDE.md SECTION 1 / SECTION 2 account taxonomy) that each carry a
+    // `route`: the sidebar/navbars collapse them to ONE link, and their children
+    // are surfaced as v-tabs inside that view (see FinanceSectionTabs), not as
+    // separate sidebar entries. The Admin role editor still bundles each
+    // sub-group's children into one grantable checkbox. Trial Balance and
+    // General Journal are cross-cutting (every account, not just one section's)
+    // so they stay as flat leaf items directly under Finance Controls.
     title: 'Finance Controls',
     icon: 'mdi-currency-usd',
     permission: 'finance.access',
     children: [
       {
-        title: 'Income Statement Controls',
+        title: 'Income Statement',
         icon: 'mdi-finance',
         permission: 'finance.incomeStatement.access',
+        route: '/finance/income-statement',
         children: [
           {
             title: 'Income Statement',
@@ -304,9 +319,10 @@ export const navigationConfig: NavigationGroup[] = [
         ],
       },
       {
-        title: 'Balance Sheet Controls',
+        title: 'Balance Sheet',
         icon: 'mdi-scale-balance',
         permission: 'finance.balanceSheet.access',
+        route: '/finance/balance-sheet',
         children: [
           {
             title: 'Balance Sheet',
@@ -434,7 +450,9 @@ export type SelectableNavigationGroup = Omit<NavigationGroup, 'children'> & {
 export function isSelectableNavigationItem(
   child: SelectableNavigationChild,
 ): child is NavigationItem & { selected: boolean } {
-  return 'route' in child
+  // Discriminate on `children` (only sub-groups have it), NOT `route` — a routed
+  // sub-group now carries a `route` too but must still render as a bundle.
+  return !('children' in child)
 }
 
 function withSelection(

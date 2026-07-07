@@ -84,10 +84,23 @@ export const useLogsDataStore = defineStore('logsData', () => {
       (rawData || []).map(async (log: any) => {
         const createdByEmail = await resolveUserEmail(log.created_by)
 
-        // Resolve reference_no from transactions table, falling through:
-        // reference_no → po_no → requisition_no
+        // Resolve the document number from the transactions row. Each type now
+        // stores its number in its own dedicated column (per-type ref-column
+        // scheme); reference_no is stock_in / deferred-finance only. The type's
+        // own number is preferred over po_no so an agreed in-house order's logs
+        // still show IH- (it carries both inhouse_no and a minted po_no).
         const tx = log.transactions ?? {}
-        const referenceNo = tx.reference_no ?? tx.po_no ?? tx.requisition_no ?? null
+        const referenceNo =
+          tx.reference_no ??
+          tx.inhouse_no ??
+          tx.ethical_no ??
+          tx.sale_no ??
+          tx.transfer_no ??
+          tx.remittance_no ??
+          tx.expense_no ??
+          tx.po_no ??
+          tx.requisition_no ??
+          null
 
         return {
           id: log.id,
@@ -120,7 +133,13 @@ export const useLogsDataStore = defineStore('logsData', () => {
           transactions (
             reference_no,
             po_no,
-            requisition_no
+            requisition_no,
+            sale_no,
+            transfer_no,
+            remittance_no,
+            inhouse_no,
+            ethical_no,
+            expense_no
           )
         `,
         )
@@ -151,7 +170,15 @@ export const useLogsDataStore = defineStore('logsData', () => {
           `
           *,
           transactions (
-            reference_no
+            reference_no,
+            po_no,
+            requisition_no,
+            sale_no,
+            transfer_no,
+            remittance_no,
+            inhouse_no,
+            ethical_no,
+            expense_no
           )
         `,
         )
@@ -183,7 +210,15 @@ export const useLogsDataStore = defineStore('logsData', () => {
           `
           *,
           transactions (
-            reference_no
+            reference_no,
+            po_no,
+            requisition_no,
+            sale_no,
+            transfer_no,
+            remittance_no,
+            inhouse_no,
+            ethical_no,
+            expense_no
           )
         `,
         )

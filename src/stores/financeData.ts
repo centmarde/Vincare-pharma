@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useGLDataStore } from '@/stores/glData'
-import { nextDocNumber } from '@/utils/helpers'
+import { nextDocNumber, generateNextNumber } from '@/utils/helpers'
 
 const toast = useToast()
 
@@ -306,7 +306,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     return {
       id: row.id,
       created_at: row.created_at,
-      reference_no: row.reference_no,
+      reference_no: row.expense_no,
       category: details.category ?? row.category ?? null,
       department: details.department ?? row.department ?? null,
       or_si_no: details.or_si_no ?? row.or_si_no ?? null,
@@ -390,16 +390,12 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     }
 
     const year = new Date().getFullYear().toString()
-    const { data: existingExpenses } = await supabase
-      .from('transactions')
-      .select('reference_no')
-      .like('reference_no', `EXP-${year}-%`)
-    const expenseNo = nextDocNumber((existingExpenses ?? []).map(r => r.reference_no), `EXP-${year}-`)
+    const expenseNo = await generateNextNumber('expense_no', `EXP-${year}-`, ['reference_no'])
 
     const { data: created, error: insertError } = await supabase
       .from('transactions')
       .insert({
-        reference_no: expenseNo, transaction_type: 'expense', status: 'recorded',
+        expense_no: expenseNo, transaction_type: 'expense', status: 'recorded',
         payment_method: payload.paymentMethod || null, subtotal: payload.amount, total_amount: payload.amount,
         paid_at: payload.valueDate || new Date().toISOString().slice(0, 10),
         remarks: payload.remarks || null, created_by: user.id, cash_account_id: payload.cashAccountId,
@@ -582,7 +578,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         .maybeSingle()
 
       let q = supabase.from('transactions')
-        .select('reference_no, total_amount, paid_at, finance_details(category, paid_to, or_si_no)')
+        .select('expense_no, total_amount, paid_at, finance_details(category, paid_to, or_si_no)')
         .eq('transaction_type', 'expense')
         .eq('cash_account_id', cashAccountId)
       if (lastApproved?.approved_at) q = q.gt('created_at', lastApproved.approved_at)
@@ -591,7 +587,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       const { data, error: fetchError } = await q
       if (fetchError) throw fetchError
       const rows: LiquidationReportItem[] = ((data || []) as any[]).map((r) => ({
-        reference_no: r.reference_no,
+        reference_no: r.expense_no,
         category: r.finance_details?.category ?? null,
         paid_to: r.finance_details?.paid_to ?? null,
         or_si_no: r.finance_details?.or_si_no ?? null,
@@ -790,7 +786,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
 
     const { data: expense, error: fetchError } = await supabase
       .from('transactions')
-      .select('reference_no, total_amount, cash_account_id')
+      .select('expense_no, total_amount, cash_account_id')
       .eq('id', id).eq('transaction_type', 'expense')
       .maybeSingle()
     if (fetchError || !expense) {
@@ -808,7 +804,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     }
 
     const { error: logError } = await supabase.from('logs').insert({
-      created_by: user.id, action: 'expense_delete', description: expense.reference_no ?? String(id),
+      created_by: user.id, action: 'expense_delete', description: expense.expense_no ?? String(id),
       module: 'finance', transaction_id: id,
     })
     if (logError) console.warn('deleteExpense: activity log insert failed:', logError.message)
@@ -1207,7 +1203,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       // actual_amount moved to remittance_details in hub redesign; old rows
       // still have it on transactions — coalesce handles both.
       const { data, error: fetchError } = await supabase.from('transactions')
-        .select('id, reference_no, outlet, outlet_id, created_at, total_amount, actual_amount, remittance_details(actual_amount)')
+        .select('id, remittance_no, outlet, outlet_id, created_at, total_amount, actual_amount, remittance_details(actual_amount)')
         .eq('transaction_type', 'remittance')
         .order('created_at', { ascending: false })
       if (fetchError) throw fetchError
@@ -1217,7 +1213,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
           const actualAmount = r.remittance_details?.actual_amount ?? r.actual_amount ?? 0
           return {
             id: r.id,
-            reference_no: r.reference_no,
+            reference_no: r.remittance_no,
             outlet: r.outlet,
             created_at: r.created_at,
             expected_amount: r.total_amount ?? 0,
@@ -1253,10 +1249,10 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     try {
       const [ethicalRes, inhouseRes] = await Promise.all([
         supabase.from('transactions')
-          .select('id, reference_no, total_amount, customer_id, ethical_details(amount_paid, due_date), customer:customer_id(name)')
+          .select('id, ethical_no, total_amount, customer_id, ethical_details(amount_paid, due_date), customer:customer_id(name)')
           .eq('transaction_type', 'ethical_order').in('status', ['invoiced', 'partial']),
         supabase.from('transactions')
-          .select('id, reference_no, total_amount, customer_id, inhouse_details(amount_paid), status, customer:customer_id(name)')
+          .select('id, inhouse_no, total_amount, customer_id, inhouse_details(amount_paid), status, customer:customer_id(name)')
           .eq('transaction_type', 'inhouse_order').not('status', 'in', '("paid","cancelled")'),
       ])
       if (ethicalRes.error) throw ethicalRes.error
@@ -1272,7 +1268,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         const dueDate = r.ethical_details?.due_date ?? null
         const daysOverdue = dueDate ? Math.floor((now - new Date(dueDate).getTime()) / 86400000) : null
         rows.push({
-          id: r.id, source: 'ethical_order', reference_no: r.reference_no,
+          id: r.id, source: 'ethical_order', reference_no: r.ethical_no,
           customer_id: r.customer_id ?? null, customer_name: r.customer?.name ?? null, total_amount: r.total_amount ?? 0,
           amount_paid: amountPaid, balance, due_date: dueDate,
           days_overdue: daysOverdue, bucket: bucketFor(daysOverdue),
@@ -1285,7 +1281,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         if (balance <= 0.01) continue
         // No due_date convention exists yet for in-house orders.
         rows.push({
-          id: r.id, source: 'inhouse_order', reference_no: r.reference_no,
+          id: r.id, source: 'inhouse_order', reference_no: r.inhouse_no,
           customer_id: r.customer_id ?? null, customer_name: r.customer?.name ?? null, total_amount: r.total_amount ?? 0,
           amount_paid: amountPaid, balance, due_date: null,
           days_overdue: null, bucket: 'no-term',

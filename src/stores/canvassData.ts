@@ -38,10 +38,12 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
 
     const logModule = orderType === 'inhouse_order' ? 'inhouse' : 'ethical'
     const statusColumn = orderType === 'inhouse_order' ? 'status' : 'fulfillment_status'
+    // Each order type stores its number in its own column (per-type ref-column scheme).
+    const orderNoColumn = orderType === 'inhouse_order' ? 'inhouse_no' : 'ethical_no'
 
     const { data: order, error: fetchError } = await supabase
       .from('transactions')
-      .select(orderType === 'inhouse_order' ? 'status, reference_no' : 'fulfillment_status, reference_no')
+      .select(`${statusColumn}, ${orderNoColumn}`)
       .eq('id', orderId)
       .eq('transaction_type', orderType)
       .maybeSingle()
@@ -55,7 +57,7 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
       loading.value = false
       return { success: false, error: `Order is not awaiting stock (${statusColumn} ${orderStatus}).` }
     }
-    const orderNo = (order as Record<string, unknown>).reference_no as string | null
+    const orderNo = (order as Record<string, unknown>)[orderNoColumn] as string | null
 
     const year = new Date().getFullYear().toString()
     const { data: existingPRs } = await supabase

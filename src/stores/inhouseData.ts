@@ -6,7 +6,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useCanvassDataStore } from '@/stores/canvassData'
-import { generateIHNumber } from '@/utils/generativeHelpers'
+import { generateIHNumber, generateDocNumber, getLatestReferenceNo } from '@/utils/generativeHelpers'
 import { useDeliveryReceiptsDataStore } from '@/stores/deliveryReceiptsData'
 import type { ProductType } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
@@ -74,7 +74,7 @@ function mapRow(row: any): InhouseOrderType {
   return {
     id:           row.id,
     created_at:   row.created_at,
-    order_no:     row.reference_no,
+    order_no:     row.inhouse_no,
     po_no:        row.po_no,
     govt_po_no:   details.govt_po_no ?? null,
     customer_id:  row.customer_id,
@@ -184,10 +184,11 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     const { data: created, error: insertError } = await supabase
       .from('transactions')
       .insert({
-        reference_no: orderNo,
+        inhouse_no: orderNo,
         // Company PO stays null while negotiating — it's stamped (PO-YYYY-###,
-        // same sequence as the IH- number) when terms are agreed, see agreeOrder.
-        // The government's own PO number goes to inhouse_details.govt_po_no below.
+        // minted from the shared Purchasing PO series) when terms are agreed,
+        // see agreeOrder. The government's own PO number goes to
+        // inhouse_details.govt_po_no below.
         po_no: null,
         transaction_type: 'inhouse_order',
         status: 'negotiating',
@@ -346,7 +347,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const { data: order, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, reference_no, transaction_items(product_id, transaction_item_details(qty))')
+      .select('id, status, transaction_items(product_id, transaction_item_details(qty))')
       .eq('id', orderId)
       .eq('transaction_type', 'inhouse_order')
       .maybeSingle()
@@ -370,11 +371,12 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       }
     }
 
-    // Agreement is the PO stage: stamp the derived PO number — the order's own
-    // IH- number with the prefix swapped (IH-2026-005 → PO-2026-005). The IH-
-    // reference_no itself never changes; only the header advances (lead-dev
-    // convention). Not typed in, not the government's external PO number.
-    const poNo = order.reference_no ? String(order.reference_no).replace(/^IH-/, 'PO-') : null
+    // Agreement is the PO stage: mint the company PO number from the SHARED
+    // Purchasing PO series (PO-YYYY-###, numeric max + 1), so po_no is one clean
+    // incremental sequence across Purchasing and In-House — no longer derived
+    // from the IH- number. The inhouse_no itself never changes; only the header
+    // advances. Not typed in, not the government's external PO number.
+    const poNo = await generateDocNumber('PO', getLatestReferenceNo)
 
     const nowIso = new Date().toISOString()
     const { error: statusError } = await supabase
@@ -455,7 +457,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const { data: order, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, customer_id, po_no, reference_no')
+      .select('id, status, customer_id, po_no, inhouse_no')
       .eq('id', orderId)
       .eq('transaction_type', 'inhouse_order')
       .maybeSingle()
@@ -519,7 +521,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     // Issue the DR document (dedicated delivery_receipts tables, owned by drStore).
     const drResponse = await drStore.createDeliveryReceipt({
-      orderId, orderNo: order.reference_no, source: 'inhouse_order', customerId: order.customer_id,
+      orderId, orderNo: order.inhouse_no, source: 'inhouse_order', customerId: order.customer_id,
       poNo: order.po_no || null, receivedBy: opts.receivedBy || null, lines: drLines,
     }, user.id)
     if (!drResponse.success) {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import InnerLayoutWrapper from '@/layouts/InnerLayoutWrapper.vue'
+import FinanceSectionTabs from './components/FinanceSectionTabs.vue'
 import CashAccountsPanel from './components/CashAccountsPanel.vue'
 </script>
 
@@ -7,6 +8,7 @@ import CashAccountsPanel from './components/CashAccountsPanel.vue'
   <InnerLayoutWrapper>
     <template #content>
       <v-container fluid>
+        <FinanceSectionTabs />
         <CashAccountsPanel />
       </v-container>
     </template>
