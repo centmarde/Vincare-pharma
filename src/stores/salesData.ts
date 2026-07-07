@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
-import { nextDocNumber } from '@/utils/helpers'
+import { generateNextNumber } from '@/utils/helpers'
 import type { ProductType } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
 import type { OutletType } from '@/stores/outletsData'
@@ -79,7 +79,7 @@ function mapRowToSale(row: any): SaleType {
   return {
     id:               row.id,
     created_at:       row.created_at,
-    sale_no:          row.reference_no,
+    sale_no:          row.sale_no,
     outlet_id:        row.outlet_id,
     outlet:           row.outlet,
     status:           row.status,
@@ -291,16 +291,12 @@ export const useSalesDataStore = defineStore('salesData', () => {
     }
 
     const year = new Date().getFullYear().toString()
-    const { data: existingSales } = await supabase
-      .from('transactions')
-      .select('reference_no')
-      .like('reference_no', `SO-${year}-%`)
-    const saleNo = nextDocNumber((existingSales ?? []).map(r => r.reference_no), `SO-${year}-`)
+    const saleNo = await generateNextNumber('sale_no', `SO-${year}-`)
 
     const { data: created, error: insertError } = await supabase
       .from('transactions')
       .insert({
-        reference_no: saleNo,
+        sale_no: saleNo,
         transaction_type: 'sale',
         status: 'completed',
         outlet_id: outletId,

@@ -7,7 +7,7 @@ import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useCanvassDataStore } from '@/stores/canvassData'
 import { useDeliveryReceiptsDataStore } from '@/stores/deliveryReceiptsData'
-import { nextDocNumber } from '@/utils/helpers'
+import { generateNextNumber } from '@/utils/helpers'
 import type { ProductType } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
 import type { AgentType } from '@/stores/agentsData'
@@ -104,7 +104,7 @@ function mapRow(row: any): EthicalOrderType {
   return {
     id:             row.id,
     created_at:     row.created_at,
-    order_no:       row.reference_no,
+    order_no:       row.ethical_no,
     outlet_id:      row.outlet_id,
     outlet:         row.outlet,
     customer_id:    row.customer_id,
@@ -249,11 +249,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     }
 
     const year = new Date().getFullYear().toString()
-    const { data: existingOrders } = await supabase
-      .from('transactions')
-      .select('reference_no')
-      .like('reference_no', `EO-${year}-%`)
-    const orderNo = nextDocNumber((existingOrders ?? []).map(r => r.reference_no), `EO-${year}-`)
+    const orderNo = await generateNextNumber('ethical_no', `EO-${year}-`)
 
     const termsDays = payload.termsDays ?? 0
     const dueDate = new Date()
@@ -262,7 +258,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     const { data: created, error: insertError } = await supabase
       .from('transactions')
       .insert({
-        reference_no: orderNo, transaction_type: 'ethical_order', status: 'invoiced',
+        ethical_no: orderNo, transaction_type: 'ethical_order', status: 'invoiced',
         outlet_id: payload.outletId, customer_id: payload.customerId, agent_id: payload.agentId ?? null,
         total_amount: total, remarks: payload.remarks || null, created_by: user.id,
       })
@@ -461,7 +457,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
 
     const { data: order, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, customer_id, reference_no')
+      .select('id, status, customer_id, ethical_no')
       .eq('id', payload.orderId)
       .eq('transaction_type', 'ethical_order')
       .maybeSingle()
@@ -495,7 +491,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
 
     // Document-only DR (no stock movement) into the dedicated tables via drStore.
     const dr = await drStore.createDeliveryReceipt({
-      orderId: payload.orderId, orderNo: order.reference_no, source: 'ethical_order', customerId: order.customer_id,
+      orderId: payload.orderId, orderNo: order.ethical_no, source: 'ethical_order', customerId: order.customer_id,
       poNo: null, receivedBy: payload.receivedBy || null,
       lines: fulfilledItems.map(item => ({
         product_id: item.product_id, qty: item.delivered_qty, unit_price: item.unit_price,

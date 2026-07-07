@@ -54,8 +54,25 @@ export async function generateDocNumber(
 // ─── Generic Supabase-backed number generators ──────────────────────────────
 
 /**
- * Fetches the latest reference number from the `transactions` table matching
- * the given column and prefix.
+ * Next `PREFIX-YYYY-NNN` document number for any `transactions` column.
+ *
+ * Fetches ALL existing numbers for the prefix (no order/limit) and computes the
+ * NUMERIC max + 1 via {@link maxDocSeq}. Never `.order(col,desc).limit(1)` — that
+ * lexical shortcut is only correct within one pad width and stalls once a series
+ * crosses it (see the note above). Per-type column is the caller's choice, so
+ * every transaction_type mints into its own dedicated column.
+ */
+export async function generateNextNumber(column: string, prefix: string): Promise<string> {
+  const { data } = await supabase
+    .from('transactions')
+    .select(column)
+    .like(column, `${prefix}%`)
+  return nextDocNumber(((data ?? []) as unknown as Record<string, string>[]).map((r) => r[column]), prefix)
+}
+
+/**
+ * Highest existing sequence number for a column+prefix (numeric max, or 0).
+ * Kept for {@link generateDocNumber}'s callback signature; numeric-based now.
  */
 export async function getLatestReferenceNo(
   column: 'requisition_no' | 'po_no' | 'reference_no',
@@ -64,53 +81,28 @@ export async function getLatestReferenceNo(
   const { data } = await supabase
     .from('transactions')
     .select(column)
-    .ilike(column, `${prefix}%`)
-    .order(column, { ascending: false })
-    .limit(1)
-
-  const row    = (data as Record<string, string>[] | null)?.[0]
-  const latest = row ? row[column] : null
-  return latest ? parseInt(latest.split('-')[2], 10) : 0
+    .like(column, `${prefix}%`)
+  return maxDocSeq(((data ?? []) as unknown as Record<string, string>[]).map((r) => r[column]))
 }
 
 /** Generate a Purchase Requisition number (PR-YYYY-NNN). */
 export async function generatePRNumber(): Promise<string> {
-  const year   = new Date().getFullYear()
-  const prefix = `PR-${year}-`
-  const last   = await getLatestReferenceNo('requisition_no', prefix)
-  return `${prefix}${String(last + 1).padStart(3, '0')}`
+  return generateNextNumber('requisition_no', `PR-${new Date().getFullYear()}-`)
 }
 
 /** Generate a Purchase Order number (PO-YYYY-NNN). */
 export async function generatePONumber(): Promise<string> {
-  const year   = new Date().getFullYear()
-  const prefix = `PO-${year}-`
-  const last   = await getLatestReferenceNo('po_no', prefix)
-  return `${prefix}${String(last + 1).padStart(3, '0')}`
+  return generateNextNumber('po_no', `PO-${new Date().getFullYear()}-`)
 }
 
 /** Generate a Stock-In / SI number (SI-YYYY-NNN). */
 export async function generateSINumber(): Promise<string> {
-  const year   = new Date().getFullYear()
-  const prefix = `SI-${year}-`
-  const last   = await getLatestReferenceNo('reference_no', prefix)
-  return `${prefix}${String(last + 1).padStart(3, '0')}`
+  return generateNextNumber('reference_no', `SI-${new Date().getFullYear()}-`)
 }
 
-/** Generate an In-House Order number (IH-YYYY-NNN). */
+/** Generate an In-House Order number (IH-YYYY-NNN) — minted into inhouse_no. */
 export async function generateIHNumber(): Promise<string> {
-  const year   = new Date().getFullYear()
-  const prefix = `IH-${year}-`
-  const last   = await getLatestReferenceNo('reference_no', prefix)
-  return `${prefix}${String(last + 1).padStart(3, '0')}`
-}
-
-/** Generate a Delivery Receipt number (DR-YYYY-NNN). */
-export async function generateDRNumber(): Promise<string> {
-  const year   = new Date().getFullYear()
-  const prefix = `DR-${year}-`
-  const last   = await getLatestReferenceNo('reference_no', prefix)
-  return `${prefix}${String(last + 1).padStart(3, '0')}`
+  return generateNextNumber('inhouse_no', `IH-${new Date().getFullYear()}-`)
 }
 
 // ─── Date formatters ─────────────────────────────────────────────────────────

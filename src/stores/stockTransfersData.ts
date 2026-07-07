@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
-import { nextDocNumber } from '@/utils/helpers'
+import { generateNextNumber } from '@/utils/helpers'
 import type { ProductType } from '@/stores/productsData'
 import type { OutletType } from '@/stores/outletsData'
 
@@ -60,7 +60,7 @@ function mapRowToTransfer(row: any): StockTransferType {
   return {
     id:           row.id,
     created_at:   row.created_at,
-    transfer_no:  row.reference_no,
+    transfer_no:  row.transfer_no,
     outlet_id:    row.outlet_id,
     outlet:       row.outlet,
     status:       row.status,
@@ -189,16 +189,12 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
     }
 
     const year = new Date().getFullYear().toString()
-    const { data: existingTransfers } = await supabase
-      .from('transactions')
-      .select('reference_no')
-      .like('reference_no', `ST-${year}-%`)
-    const transferNo = nextDocNumber((existingTransfers ?? []).map(r => r.reference_no), `ST-${year}-`)
+    const transferNo = await generateNextNumber('transfer_no', `ST-${year}-`)
 
     const { data: created, error: insertError } = await supabase
       .from('transactions')
       .insert({
-        reference_no: transferNo,
+        transfer_no: transferNo,
         transaction_type: 'stock_transfer',
         status: 'pending_approval',
         outlet_id: outletId,

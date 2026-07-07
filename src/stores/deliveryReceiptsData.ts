@@ -50,7 +50,7 @@ export type CreateDeliveryReceiptPayload = {
 
 const SELECT_DR =
   '*, delivery_receipt_items(id, product_id, qty, product:product_id(*)), ' +
-  'order:order_id(reference_no), customer:customer_id(name)'
+  'order:order_id(inhouse_no, ethical_no), customer:customer_id(name)'
 
 function mapDR(row: any): DeliveryReceiptType {
   return {
@@ -58,7 +58,7 @@ function mapDR(row: any): DeliveryReceiptType {
     created_at:    row.created_at,
     dr_no:         row.dr_no,
     order_id:      row.order_id,
-    order_no:      row.order?.reference_no ?? null,
+    order_no:      row.order?.inhouse_no ?? row.order?.ethical_no ?? null,
     source:        row.source ?? null,
     po_no:         row.po_no ?? null,
     customer_name: row.customer?.name ?? null,

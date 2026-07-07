@@ -6,7 +6,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useSalesDataStore } from '@/stores/salesData'
-import { nextDocNumber } from '@/utils/helpers'
+import { generateNextNumber } from '@/utils/helpers'
 import type { OutletType } from '@/stores/outletsData'
 
 const toast = useToast()
@@ -48,7 +48,7 @@ function mapRowToRemittance(row: any): RemittanceType {
   return {
     id:              row.id,
     created_at:      row.created_at,
-    remittance_no:   row.reference_no,
+    remittance_no:   row.remittance_no,
     outlet_id:       row.outlet_id,
     outlet:          row.outlet,
     remittance_date: row.created_at,
@@ -185,16 +185,12 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
     const expected = rows.reduce((sum, r) => sum + (r.total_amount ?? 0), 0)
 
     const year = new Date().getFullYear().toString()
-    const { data: existingRemittances } = await supabase
-      .from('transactions')
-      .select('reference_no')
-      .like('reference_no', `RM-${year}-%`)
-    const remittanceNo = nextDocNumber((existingRemittances ?? []).map(r => r.reference_no), `RM-${year}-`)
+    const remittanceNo = await generateNextNumber('remittance_no', `RM-${year}-`)
 
     const { data: created, error: insertError } = await supabase
       .from('transactions')
       .insert({
-        reference_no: remittanceNo,
+        remittance_no: remittanceNo,
         transaction_type: 'remittance',
         status: 'submitted',
         outlet_id: payload.outletId,
