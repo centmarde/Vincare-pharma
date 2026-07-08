@@ -52,9 +52,11 @@ type FetchTransfersOptions = {
   ascending?: boolean
 }
 
-// Line values (qty/received_qty) live in the 1:1 transaction_item_details
-// extension table now — transaction_items is a pure link (id/transaction_id/product_id).
-const SELECT_TRANSFER = '*, transaction_items(id, product_id, transaction_item_details(qty, received_qty), product:product_id(*)), outlet:outlet_id(*)'
+// Line values live directly on transaction_items (transaction_item_details was
+// merged back in). A transfer is outbound from the warehouse, so the requested
+// quantity is qty_stock_out and the actually-received count is
+// actual_count_stock_out (the "actual quantity that moved out").
+const SELECT_TRANSFER = '*, transaction_items(id, product_id, qty_stock_out, actual_count_stock_out, product:product_id(*)), outlet:outlet_id(*)'
 
 function mapRowToTransfer(row: any): StockTransferType {
   return {
@@ -71,16 +73,13 @@ function mapRowToTransfer(row: any): StockTransferType {
     approved_at:  row.approved_at,
     received_at:  row.received_at,
     updated_at:   row.updated_at,
-    stock_transfer_items: (row.transaction_items ?? []).map((li: any) => {
-      const d = li.transaction_item_details ?? {}
-      return {
-        id:            li.id,
-        product_id:    li.product_id,
-        requested_qty: d.qty,
-        received_qty:  d.received_qty,
-        product:       li.product,
-      }
-    }),
+    stock_transfer_items: (row.transaction_items ?? []).map((li: any) => ({
+      id:            li.id,
+      product_id:    li.product_id,
+      requested_qty: li.qty_stock_out,
+      received_qty:  li.actual_count_stock_out,
+      product:       li.product,
+    })),
   }
 }
 
@@ -211,23 +210,18 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
       return { success: false }
     }
 
-    const { data: createdItems, error: itemsError } = await supabase
+    // One insert per line now that line values live on transaction_items.
+    // Requested quantity is outbound from the warehouse -> qty_stock_out.
+    const { error: itemsError } = await supabase
       .from('transaction_items')
-      .insert(items.map(item => ({ transaction_id: created.id, product_id: item.product_id })))
-      .select('id')
-    if (itemsError || !createdItems) {
+      .insert(items.map(item => ({
+        transaction_id: created.id,
+        product_id: item.product_id,
+        qty_stock_out: item.requested_qty,
+      })))
+    if (itemsError) {
       handleError(itemsError, 'Failed to save transfer line items.')
-      toast.error(itemsError?.message || 'Failed to save transfer line items.')
-      loading.value = false
-      return { success: false }
-    }
-
-    const { error: detailsError } = await supabase.from('transaction_item_details').insert(
-      createdItems.map((row, i) => ({ transaction_item_id: row.id, qty: items[i].requested_qty })),
-    )
-    if (detailsError) {
-      handleError(detailsError, 'Failed to save transfer line items.')
-      toast.error(detailsError.message || 'Failed to save transfer line items.')
+      toast.error(itemsError.message || 'Failed to save transfer line items.')
       loading.value = false
       return { success: false }
     }
@@ -256,7 +250,7 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
 
     const { data: transfer, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, transaction_items(product_id, transaction_item_details(qty))')
+      .select('id, status, transaction_items(product_id, qty_stock_out)')
       .eq('id', transferId)
       .eq('transaction_type', 'stock_transfer')
       .maybeSingle()
@@ -273,8 +267,8 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
       return false
     }
 
-    const lines = ((transfer.transaction_items ?? []) as unknown as { product_id: number; transaction_item_details: { qty: number } | null }[])
-      .map(li => ({ product_id: li.product_id, qty: li.transaction_item_details?.qty ?? 0 }))
+    const lines = ((transfer.transaction_items ?? []) as unknown as { product_id: number; qty_stock_out: number | null }[])
+      .map(li => ({ product_id: li.product_id, qty: li.qty_stock_out ?? 0 }))
     const stockChecks: { product_id: number; qty: number; current_stock: number }[] = []
     for (const line of lines) {
       const { data: product, error: productError } = await supabase
@@ -423,9 +417,9 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
       if (!item?.product_id) continue
 
       const { error: itemError } = await supabase
-        .from('transaction_item_details')
-        .update({ received_qty: received.received_qty })
-        .eq('transaction_item_id', received.item_id)
+        .from('transaction_items')
+        .update({ actual_count_stock_out: received.received_qty })
+        .eq('id', received.item_id)
       if (itemError) {
         loading.value = false
         handleError(itemError, 'Failed to record received quantity.')

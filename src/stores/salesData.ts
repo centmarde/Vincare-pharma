@@ -69,10 +69,9 @@ type FetchSalesOptions = {
 // POS-specific fields live in pos_sale_details (hub redesign migration 0003).
 // payment_method is the one field kept on transactions (also used by other
 // transaction types) so we still fall back to row.payment_method for it.
-// Line values (qty/unit_price/line_total) live in the 1:1
-// transaction_item_details extension table — transaction_items is a pure
-// link (id/transaction_id/product_id).
-const SELECT_SALE = '*, transaction_items(id, product_id, transaction_item_details(qty, unit_price, line_total), product:product_id(*)), customer:customer_id(*), outlet:outlet_id(*), pos_sale_details(*)'
+// Line values live directly on transaction_items (transaction_item_details was
+// merged back in). A sale is outbound, so the line quantity is qty_stock_out.
+const SELECT_SALE = '*, transaction_items(id, product_id, qty_stock_out, unit_price, line_total, product:product_id(*)), customer:customer_id(*), outlet:outlet_id(*), pos_sale_details(*)'
 
 function mapRowToSale(row: any): SaleType {
   const details = row.pos_sale_details ?? {}
@@ -94,17 +93,14 @@ function mapRowToSale(row: any): SaleType {
     customer:         row.customer,
     voided_at:        details.voided_at,
     void_reason:      details.void_reason,
-    sale_items: (row.transaction_items ?? []).map((li: any) => {
-      const d = li.transaction_item_details ?? {}
-      return {
-        id:         li.id,
-        product_id: li.product_id,
-        quantity:   d.qty,
-        unit_price: d.unit_price,
-        line_total: d.line_total,
-        product:    li.product,
-      }
-    }),
+    sale_items: (row.transaction_items ?? []).map((li: any) => ({
+      id:         li.id,
+      product_id: li.product_id,
+      quantity:   li.qty_stock_out,
+      unit_price: li.unit_price,
+      line_total: li.line_total,
+      product:    li.product,
+    })),
   }
 }
 
@@ -330,26 +326,20 @@ export const useSalesDataStore = defineStore('salesData', () => {
     }
 
     for (const line of lines) {
-      const { data: item, error: itemError } = await supabase
+      // One insert per line now that line values live on transaction_items.
+      // A sale is outbound -> qty_stock_out.
+      const { error: itemError } = await supabase
         .from('transaction_items')
-        .insert({ transaction_id: created.id, product_id: line.product_id })
-        .select('id')
-        .single()
-      if (itemError || !item) {
+        .insert({
+          transaction_id: created.id,
+          product_id: line.product_id,
+          qty_stock_out: line.quantity,
+          unit_price: line.unit_price,
+          line_total: line.quantity * line.unit_price,
+        })
+      if (itemError) {
         handleError(itemError, 'Failed to save sale line item.')
-        toast.error(itemError?.message || 'Failed to save sale line item.')
-        loading.value = false
-        return { success: false }
-      }
-      const { error: itemDetailsError } = await supabase.from('transaction_item_details').insert({
-        transaction_item_id: item.id,
-        qty: line.quantity,
-        unit_price: line.unit_price,
-        line_total: line.quantity * line.unit_price,
-      })
-      if (itemDetailsError) {
-        handleError(itemDetailsError, 'Failed to save sale line item.')
-        toast.error(itemDetailsError.message || 'Failed to save sale line item.')
+        toast.error(itemError.message || 'Failed to save sale line item.')
         loading.value = false
         return { success: false }
       }
@@ -403,7 +393,7 @@ export const useSalesDataStore = defineStore('salesData', () => {
 
     const { data: sale, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, remittance_id, outlet_id, transaction_items(product_id, transaction_item_details(qty))')
+      .select('id, status, remittance_id, outlet_id, transaction_items(product_id, qty_stock_out)')
       .eq('id', saleId)
       .eq('transaction_type', 'sale')
       .maybeSingle()
@@ -443,8 +433,8 @@ export const useSalesDataStore = defineStore('salesData', () => {
       .eq('transaction_id', saleId)
     if (detailsError) console.warn('voidSale: pos_sale_details update failed:', detailsError.message)
 
-    const lines = ((sale.transaction_items ?? []) as unknown as { product_id: number; transaction_item_details: { qty: number } | null }[])
-      .map(li => ({ product_id: li.product_id, qty: li.transaction_item_details?.qty ?? 0 }))
+    const lines = ((sale.transaction_items ?? []) as unknown as { product_id: number; qty_stock_out: number | null }[])
+      .map(li => ({ product_id: li.product_id, qty: li.qty_stock_out ?? 0 }))
     for (const line of lines) {
       const { data: stockRow } = await supabase
         .from('outlet_stock')
