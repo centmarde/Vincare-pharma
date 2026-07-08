@@ -23,6 +23,16 @@ export const headers = [
   { title: 'ACTIONS',     key: 'actions',       sortable: false, align: 'center' as const },
 ] as const
 
+export const headersWarehouse = [
+  { title: 'PO #',        key: 'po_no',        sortable: true,  align: 'center' as const },
+  { title: 'TOTAL',       key: 'total_amount',  sortable: false, align: 'center' as const },
+  { title: 'SHIP VIA',    key: 'ship_via',      sortable: true,  align: 'center' as const },
+  { title: 'SHIP METHOD', key: 'ship_method',   sortable: true,  align: 'center' as const },
+  { title: 'ISSUED AT',   key: 'created_at',    sortable: true,  align: 'center' as const },
+  { title: 'STATUS',      key: 'status',        sortable: true,  align: 'center' as const },
+  { title: 'ACTIONS',     key: 'actions',       sortable: false, align: 'center' as const},
+] as const
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type SupplierSummary = {
   names:      string[]
