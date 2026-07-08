@@ -8,6 +8,13 @@ import {
   type UpdateProductData,
 } from '@/stores/productsData'
 import { useLogsDataStore } from '@/stores/logsData'
+interface StockStatusCardDef {
+  type: 'out-of-stock' | 'low-stock' | 'no-reorder-level' | 'expiring-soon' | 'expired'
+  label: string
+  icon: string
+  color: string
+  filter: (p: ProductType) => boolean
+}
 
 export function useProductsWidget() {
   const toast = useToast()
@@ -18,6 +25,7 @@ export function useProductsWidget() {
   const showDialog = ref(false)
   const showDeleteDialog = ref(false)
   const dialogMode = ref<'create' | 'edit'>('create')
+  const EXPIRY_WARNING_DAYS = 30
 
 
   // Form state
@@ -58,7 +66,7 @@ export function useProductsWidget() {
 
   // Stock status dialog
   const showStockDialog = ref(false)
-  const stockDialogType = ref<'out-of-stock' | 'low-stock'>('out-of-stock')
+  // const stockDialogType = ref<'out-of-stock' | 'low-stock' | 'no-reorder-level' | 'expiring-soon' | 'expired'>('out-of-stock')
 
   // Eligible product IDs (those in stock_in transactions)
   const eligibleProductIds = ref<Set<number>>(new Set())
@@ -112,6 +120,86 @@ export function useProductsWidget() {
       return stock > 0 && p.reorder_level && stock <= p.reorder_level
     }).length
   )
+
+  function daysUntilExpiry(expiryDate: string | null | undefined): number | null {
+  if (!expiryDate) return null
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const expiry = new Date(expiryDate)
+  expiry.setHours(0, 0, 0, 0)
+  return Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+const stockStatusCardDefs: StockStatusCardDef[] = [
+  {
+    type: 'out-of-stock',
+    label: 'Out of Stock',
+    icon: 'mdi-close-circle-outline',
+    color: 'error',
+    filter: p => (p.current_stock ?? 0) <= 0,
+  },
+  {
+    type: 'low-stock',
+    label: 'Low Stock',
+    icon: 'mdi-alert-outline',
+    color: 'warning',
+    filter: p => {
+      const stock = p.current_stock ?? 0
+      return stock > 0 && !!p.reorder_level && stock <= p.reorder_level
+    },
+  },
+  {
+    type: 'no-reorder-level',
+    label: 'No Reorder Level',
+    icon: 'mdi-information-outline',
+    color: 'info',
+    filter: p => p.reorder_level === null,
+  },
+  {
+    type: 'expiring-soon',
+    label: 'Expiring Soon',
+    icon: 'mdi-clock-alert-outline',
+    color: 'orange',
+    filter: p => {
+      const days = daysUntilExpiry(p.expiry_date)
+      return days !== null && days >= 0 && days <= EXPIRY_WARNING_DAYS
+    },
+  },
+  {
+    type: 'expired',
+    label: 'Expired',
+    icon: 'mdi-calendar-remove',
+    color: 'error',
+    filter: p => {
+      const days = daysUntilExpiry(p.expiry_date)
+      return days !== null && days < 0
+    },
+  },
+]
+
+// Cards for the StockStatusCards row (label/icon/color/count)
+const stockStatusCards = computed(() =>
+  stockStatusCardDefs.map(def => ({
+    type: def.type,
+    label: def.label,
+    icon: def.icon,
+    color: def.color,
+    count: allEligibleProducts.value.filter(def.filter).length,
+  }))
+)
+
+const stockDialogType = ref<StockStatusCardDef['type']>('out-of-stock')
+
+// The active card's metadata (for dialog title/icon/color)
+const activeStockCard = computed(() =>
+  stockStatusCards.value.find(c => c.type === stockDialogType.value)
+)
+
+// The active card's filtered product list (for dialog body)
+const stockDialogProducts = computed<ProductType[]>(() => {
+  const def = stockStatusCardDefs.find(d => d.type === stockDialogType.value)
+  return def ? allEligibleProducts.value.filter(def.filter) : []
+})
 
   // Validation rules
   const rules = {
@@ -306,6 +394,9 @@ export function useProductsWidget() {
     lowStockProducts,
     allOutOfStockCount,
     allLowStockCount,
+    stockStatusCards,
+    activeStockCard,
+    stockDialogProducts,
     // Validation
     rules,
     // Methods

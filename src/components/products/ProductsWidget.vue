@@ -38,6 +38,9 @@ const {
   rules,
   showStockDialog,
   stockDialogType,
+  stockStatusCards,
+  stockDialogProducts,
+  activeStockCard,
   openCreateDialog,
   openEditDialog,
   openDeleteDialog,
@@ -49,8 +52,8 @@ const {
   handleTableOptions,
 } = useProductsWidget()
 
-function handleStockCardClick(type: 'out-of-stock' | 'low-stock') {
-  stockDialogType.value = type
+function handleStockCardClick(type: string) {
+  stockDialogType.value = type as any // or import StockStatusCardDef['type'] if you want it tight
   showStockDialog.value = true
 }
 
@@ -140,8 +143,41 @@ function stockColor(item: any) {
       ></v-text-field>
     </div>
 
+    <!-- I want to have another alert to have if the product is don't have a reoder level or null -->
+     <!-- I want all products from the all rows count products in v-data-table-server -->
+    <!-- <div class="px-3 pt-2">
+      <v-expansion-panels v-if="products.length > 0">
+        <v-expansion-panel bg-color="info" elevation="0" rounded="lg">
+          <v-expansion-panel-title class="py-2">
+            <div class="d-flex align-center ga-2">
+              <v-icon icon="mdi-information-outline" color="primary" size="small"></v-icon>
+              <span class="text-body-2 font-weight-medium">
+                Info —
+                <strong>{{ products.filter(p => p.reorder_level === null).length }} product{{ products.filter(p => p.reorder_level === null).length > 1 ? 's' : '' }}</strong>
+                does not have a reorder level set
+              </span>
+            </div>
+          </v-expansion-panel-title>
+          <v-expansion-panel-text class="pa-0">
+            <v-list density="compact" bg-color="transparent">
+              <v-list-item
+                v-for="p in products.filter(p => p.reorder_level === null)"
+                :key="p.id"
+                density="compact"
+              >
+                <v-list-item-title class="text-body-2">{{ p.product_name }}</v-list-item-title>
+                <v-list-item-subtitle class="text-caption">
+                  Current stock: {{ p.current_stock ?? 0 }} units
+                </v-list-item-subtitle>
+              </v-list-item>
+            </v-list>
+          </v-expansion-panel-text>
+        </v-expansion-panel>
+      </v-expansion-panels>
+    </div> -->
+
     <!-- Low stock alert -->
-    <div class="px-3 pt-2">
+    <!-- <div class="px-3 pt-2">
       <v-expansion-panels v-if="lowStockProducts.length > 0">
         <v-expansion-panel bg-color="warning" elevation="0" rounded="lg">
           <v-expansion-panel-title class="py-2">
@@ -171,12 +207,11 @@ function stockColor(item: any) {
           </v-expansion-panel-text>
         </v-expansion-panel>
       </v-expansion-panels>
-    </div>
+    </div> -->
 
     <!-- Stock Status Cards -->
     <StockStatusCards
-      :out-of-stock-count="allOutOfStockCount"
-      :low-stock-count="allLowStockCount"
+      :cards="stockStatusCards"
       @show-dialog="handleStockCardClick"
     />
 
@@ -339,24 +374,51 @@ function stockColor(item: any) {
   />
 
   <!-- Stock Status Dialog (placeholder for future development) -->
-  <v-dialog v-model="showStockDialog" max-width="500">
+  <v-dialog v-model="showStockDialog" max-width="600">
     <v-card>
       <v-card-title class="d-flex align-center pa-4">
         <v-icon
-          :icon="stockDialogType === 'out-of-stock' ? 'mdi-close-circle-outline' : 'mdi-alert-outline'"
-          :color="stockDialogType === 'out-of-stock' ? 'error' : 'warning'"
+          :icon="activeStockCard?.icon"
+          :color="activeStockCard?.color"
           class="mr-2"
           size="28"
         ></v-icon>
-        <span class="text-h6 font-weight-bold">
-          {{ stockDialogType === 'out-of-stock' ? 'Out of Stock' : 'Low Stock' }}
-        </span>
+        <span class="text-h6 font-weight-bold">{{ activeStockCard?.label }}</span>
         <v-spacer></v-spacer>
         <v-btn icon="mdi-close" variant="text" size="small" @click="showStockDialog = false"></v-btn>
       </v-card-title>
       <v-divider></v-divider>
-      <v-card-text class="pa-4 text-body-1 text-medium-emphasis">
-        <p>This feature is under development.</p>
+      <v-card-text class="pa-0" style="max-height: 400px; overflow-y: auto;">
+        <v-list v-if="stockDialogProducts.length > 0" density="comfortable">
+          <v-list-item
+            v-for="p in stockDialogProducts"
+            :key="p.id"
+            @click="openEditDialog(p); showStockDialog = false"
+          >
+            <v-list-item-title class="font-weight-medium">
+              {{ p.product_name }}
+            </v-list-item-title>
+            <v-list-item-subtitle>
+              <template v-if="stockDialogType === 'out-of-stock' || stockDialogType === 'low-stock'">
+                Stock: {{ p.current_stock ?? 0 }}
+                <span v-if="p.reorder_level != null"> · reorder at {{ p.reorder_level }}</span>
+              </template>
+              <template v-else-if="stockDialogType === 'no-reorder-level'">
+                Current stock: {{ p.current_stock ?? 0 }} units
+              </template>
+              <template v-else-if="stockDialogType === 'expiring-soon' || stockDialogType === 'expired'">
+                Expiry: {{ p.expiry_date || 'N/A' }}
+              </template>
+            </v-list-item-subtitle>
+            <template #append>
+              <v-chip size="small" variant="outlined">{{ p.sku || 'No SKU' }}</v-chip>
+            </template>
+          </v-list-item>
+        </v-list>
+        <div v-else class="text-center py-8">
+          <v-icon icon="mdi-check-circle-outline" size="40" color="success"></v-icon>
+          <p class="text-grey mt-2">No products in this category</p>
+        </div>
       </v-card-text>
     </v-card>
   </v-dialog>
