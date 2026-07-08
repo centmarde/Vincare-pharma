@@ -37,6 +37,10 @@ const {
   closeConfirm,
   handleConfirm,
   openPurchaseOrder,
+  openReorderDialog,
+  reorderRequests,
+  showReorderDialog,
+  reorderCount,
 } = usePurchaseRequisitionList()
 const { mobile } = useDisplay()
 onMounted(() => {
@@ -77,6 +81,19 @@ function goToPage(p: number) {
             <div>
               <div class="text-subtitle-2">Total PRs</div>
               <div class="text-h6 font-weight-bold text-purple">{{ stats.total.toLocaleString() }}</div>
+            </div>
+          </v-card-text>
+        </v-card>
+      </v-col>
+      <v-col cols="6" sm="3">
+        <v-card elevation="1" class="stat-card rounded-xl" @click="openReorderDialog">
+          <v-card-text class="d-flex align-center" style="gap: 12px">
+            <v-avatar color="teal" variant="tonal" size="40">
+              <v-icon icon="mdi-cart-arrow-down" />
+            </v-avatar>
+            <div>
+              <div class="text-subtitle-2">Reorder Requests</div>
+              <div class="text-h6 font-weight-bold text-teal">{{ reorderCount.toLocaleString() }}</div>
             </div>
           </v-card-text>
         </v-card>
@@ -537,6 +554,44 @@ function goToPage(p: number) {
             Yes, {{ confirmDialog.action === 'APPROVE' ? 'Approve' : 'Reject' }}
           </v-btn>
         </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="showReorderDialog" max-width="600">
+      <v-card>
+        <v-card-title class="d-flex align-center pa-4">
+          <v-icon icon="mdi-cart-arrow-down" color="teal" class="mr-2"></v-icon>
+          <span class="text-h6 font-weight-bold">Reorder Requests</span>
+          <v-spacer></v-spacer>
+          <v-btn icon="mdi-close" variant="text" size="small" @click="showReorderDialog = false"></v-btn>
+        </v-card-title>
+        <v-divider></v-divider>
+        <v-card-text class="pa-0" style="max-height: 400px; overflow-y: auto;">
+          <v-list v-if="reorderRequests.length" density="comfortable">
+            <v-list-item v-for="r in reorderRequests" :key="r.id">
+              <v-list-item-title class="font-weight-medium">
+                {{ r.product?.product_name }}
+              </v-list-item-title>
+              <v-list-item-subtitle>
+                Stock: {{ r.product?.current_stock ?? 0 }}
+                <span v-if="r.product?.reorder_level != null"> · reorder at {{ r.product.reorder_level }}</span>
+                · Flagged by {{ r.requester_name }}
+              </v-list-item-subtitle>
+              <template #append>
+                <v-chip
+                  size="small"
+                  :color="r.transaction_type === 'reorder_outofstock' ? 'error' : r.transaction_type === 'reorder_lowstock' ? 'warning' : 'orange'"
+                  variant="tonal"
+                >
+                  {{ r.transaction_type.replace('reorder_', '').replace('_', ' ') }}
+                </v-chip>
+              </template>
+            </v-list-item>
+          </v-list>
+          <div v-else class="text-center py-8 text-medium-emphasis">
+            No pending reorder requests
+          </div>
+        </v-card-text>
       </v-card>
     </v-dialog>
   </v-container>

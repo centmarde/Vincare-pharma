@@ -4,6 +4,10 @@ import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import type { SupplierType } from '@/stores/suppliersData'
+import { useAuthUserStore } from './authUser'
+import { useToast } from 'vue-toastification'
+
+const toast = useToast()
 
 // Matches `public.products` schema (with FK join to suppliers)
 export type ProductType = {
@@ -91,6 +95,7 @@ export type ReceiveStockUpdate ={
 }
 
 export const useProductsDataStore = defineStore('productsData', () => {
+  const authStore = useAuthUserStore()
   // State
   const products: Ref<ProductType[]> = ref([])
   const currentProduct: Ref<ProductType | undefined> = ref(undefined)
@@ -99,6 +104,10 @@ export const useProductsDataStore = defineStore('productsData', () => {
   const error: Ref<string> = ref('')
   const pickerProducts = ref<ProductPickerResult[]>([])
   const pickerTotalCount = ref(0)
+  const reorderRequests: Ref<any[]> = ref([])
+  const reorderCount:    Ref<number> = ref(0)
+  const REORDER_TYPES = ['reorder_outofstock', 'reorder_lowstock', 'reorder_expiring', 'reorder_expired']
+  
 
   // Realtime
   const realtimeChannel: Ref<RealtimeChannel | null> = ref(null)
@@ -315,6 +324,114 @@ export const useProductsDataStore = defineStore('productsData', () => {
       loading.value = false
     }
   }
+    
+    async function createReorderRequest(payload: {
+    product_id: number
+    reason: 'reorder_outofstock' | 'reorder_lowstock' | 'reorder_expiring' | 'reorder_expired'
+  }) {
+    loading.value = true
+
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) {
+      toast.error('User not authenticated.')
+      loading.value = false
+      return { success: false }
+    }
+
+    const { data: existing } = await supabase
+      .from('transactions')
+      .select('id, transaction_items!inner(product_id)')
+      .in('transaction_type', REORDER_TYPES)
+      .eq('status', 'pending')
+      .eq('transaction_items.product_id', payload.product_id)
+      .maybeSingle()
+
+    if (existing) {
+      toast.info('This product already has a pending reorder request.')
+      loading.value = false
+      return { success: false }
+    }
+
+    const { data: txData, error: txError } = await supabase
+      .from('transactions')
+      .insert({
+        transaction_type: payload.reason,
+        status:           'pending',
+        created_by:       user.id,
+        remarks:          `Reorder flagged from warehouse (${payload.reason})`,
+      })
+      .select('id')
+      .single()
+
+    if (txError || !txData) {
+      toast.error('Failed to submit reorder request.')
+      loading.value = false
+      return { success: false }
+    }
+
+    const { error: itemError } = await supabase
+      .from('transaction_items')
+      .insert({
+        transaction_id: txData.id,
+        product_id:     payload.product_id,
+      })
+
+    loading.value = false
+    if (itemError) {
+      toast.error('Failed to save reorder item.')
+      return { success: false }
+    }
+
+    toast.success('Reorder request submitted.')
+    return { success: true }
+  }
+
+  async function fetchReorderRequests() {
+    loading.value = true
+    if (!authStore.users.length) await authStore.getAllUsers()
+
+    const { data, error } = await supabase
+      .from('transactions')
+      .select(`
+        id, transaction_type, status, created_at, created_by, remarks,
+        transaction_items (
+          id, product_id,
+          products ( id, product_name, sku, unit, current_stock, reorder_level, expiry_date, supplier_id, suppliers ( name ) )
+        )
+      `)
+      .in('transaction_type', REORDER_TYPES)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+
+    loading.value = false
+    if (error) {
+      toast.error('Failed to fetch reorder requests.')
+      return
+    }
+
+    reorderRequests.value = (data || []).map((tx: any) => {
+      const item = tx.transaction_items?.[0]
+      return {
+        id:               tx.id,
+        transaction_type: tx.transaction_type,
+        product:          item?.products
+          ? { ...item.products, supplier_name: item.products.suppliers?.name ?? null }
+          : null,
+        requester_name: authStore.users.find(u => u.id === tx.created_by)?.full_name?.toUpperCase() ?? '—',
+        created_at:     tx.created_at,
+      }
+    })
+    reorderCount.value = reorderRequests.value.length
+  }
+
+  async function fetchReorderCount() {
+    const { count } = await supabase
+      .from('transactions')
+      .select('id', { count: 'exact', head: true })
+      .in('transaction_type', REORDER_TYPES)
+      .eq('status', 'pending')
+    reorderCount.value = count ?? 0
+  }
 
   const updateProduct = async (id: number, updateData: UpdateProductData) => {
     loading.value = true
@@ -450,6 +567,13 @@ export const useProductsDataStore = defineStore('productsData', () => {
     updateProductSkuAndCount,
     clearError,
     resetStore,
+
+    // Reorder Requests
+    fetchReorderRequests,
+    fetchReorderCount,
+    createReorderRequest,
+    reorderRequests,
+    reorderCount,
 
     // Realtime
     startRealtime,

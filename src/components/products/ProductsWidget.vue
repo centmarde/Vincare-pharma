@@ -11,10 +11,12 @@ import ProductDeleteDialog from './dialogs/ProductDeleteDialog.vue'
 import StockStatusCards from '../products/StockStatusCards.vue'
 import LogsViewDialog from '@/pages/logs/dialogs/LogsViewDialog.vue'
 import { useRouter } from 'vue-router'
+import { useProductsDataStore } from '@/stores/productsData'
 
 const { mobile } = useDisplay()
 const router = useRouter()
 const logsStore = useLogsDataStore()
+const productsDataStore = useProductsDataStore()
 
 const {
   form,
@@ -55,6 +57,19 @@ const {
 function handleStockCardClick(type: string) {
   stockDialogType.value = type as any // or import StockStatusCardDef['type'] if you want it tight
   showStockDialog.value = true
+}
+
+const reorderReasonMap: Record<string, 'reorder_outofstock' | 'reorder_lowstock' | 'reorder_expiring' | 'reorder_expired'> = {
+  'out-of-stock':  'reorder_outofstock',
+  'low-stock':     'reorder_lowstock',
+  'expiring-soon': 'reorder_expiring',
+  'expired':       'reorder_expired',
+}
+
+async function requestReorder(product: any) {
+  const reason = reorderReasonMap[stockDialogType.value]
+  if (!reason) return
+  await productsDataStore.createReorderRequest({ product_id: product.id, reason })
 }
 
 // Logs dialog state
@@ -145,7 +160,7 @@ function stockColor(item: any) {
 
     <!-- I want to have another alert to have if the product is don't have a reoder level or null -->
      <!-- I want all products from the all rows count products in v-data-table-server -->
-    <!-- <div class="px-3 pt-2">
+    <div class="px-3 pt-2">
       <v-expansion-panels v-if="products.length > 0">
         <v-expansion-panel bg-color="info" elevation="0" rounded="lg">
           <v-expansion-panel-title class="py-2">
@@ -174,10 +189,10 @@ function stockColor(item: any) {
           </v-expansion-panel-text>
         </v-expansion-panel>
       </v-expansion-panels>
-    </div> -->
+    </div>
 
     <!-- Low stock alert -->
-    <!-- <div class="px-3 pt-2">
+    <div class="px-3 pt-2">
       <v-expansion-panels v-if="lowStockProducts.length > 0">
         <v-expansion-panel bg-color="warning" elevation="0" rounded="lg">
           <v-expansion-panel-title class="py-2">
@@ -207,7 +222,7 @@ function stockColor(item: any) {
           </v-expansion-panel-text>
         </v-expansion-panel>
       </v-expansion-panels>
-    </div> -->
+    </div>
 
     <!-- Stock Status Cards -->
     <StockStatusCards
@@ -410,9 +425,23 @@ function stockColor(item: any) {
                 Expiry: {{ p.expiry_date || 'N/A' }}
               </template>
             </v-list-item-subtitle>
-            <template #append>
-              <v-chip size="small" variant="outlined">{{ p.sku || 'No SKU' }}</v-chip>
-            </template>
+
+               <template #append>
+                <div class="d-flex align-center ga-2">
+                  <v-chip size="small" variant="outlined">{{ p.sku || 'No SKU' }}</v-chip>
+                    <v-btn
+                      v-if="stockDialogType !== 'no-reorder-level'"
+                      size="small"
+                      variant="outlined"
+                      color="primary"
+                      prepend-icon="mdi-cart-plus"
+                      class="text-none"
+                      @click.stop="requestReorder(p)"
+                    >
+                    Reorder
+                  </v-btn>
+                </div>
+              </template>
           </v-list-item>
         </v-list>
         <div v-else class="text-center py-8">
