@@ -8,6 +8,7 @@ import {
   type SelectableNavigationChild,
 } from '@/utils/navigation'
 import { useRoleEditFetchDialog } from '../composables/roleEditFetchDialog'
+import { isProtectedRoleObject } from '@/utils/roleHelpers'
 
 interface Props {
   // Dialog state
@@ -169,7 +170,29 @@ const handleDelete = () => {
           <v-col cols="12" md="6">
             <h3 class="text-h6 mb-4">Role Information</h3>
             <v-form @submit.prevent="handleSubmit">
+              <!-- Protected roles (id 1, 2, 3): show read-only display with lock icon -->
+              <div v-if="isEditing && isProtectedRoleObject(selectedRole)">
+                <v-text-field
+                  :model-value="selectedRole?.title"
+                  label="Role Title"
+                  variant="outlined"
+                  readonly
+                  disabled
+                  prepend-inner-icon="mdi-shield-lock"
+                />
+                <v-alert
+                  type="info"
+                  variant="tonal"
+                  density="compact"
+                  class="mt-2"
+                  icon="mdi-information"
+                >
+                  This is a system role and its title cannot be modified.
+                </v-alert>
+              </div>
+              <!-- Editable title for non-protected or new roles -->
               <v-text-field
+                v-else
                 v-model="localFormData.title"
                 label="Role Title *"
                 variant="outlined"

@@ -2,6 +2,7 @@
 import { useAdminUserRoles } from './composables/adminUserRoles'
 import InnerLayoutWrapper from '@/layouts/InnerLayoutWrapper.vue'
 import AdminUserRolesDialog from './dialogs/AdminUserRolesDialog.vue'
+import { isProtectedRoleObject } from '@/utils/roleHelpers'
 
 const {
   // Store state
@@ -113,7 +114,7 @@ const formatDate = (dateString: string) => {
                       color="error"
                       @click="openDeleteDialog(role)"
                       :loading="loading"
-                      :disabled="role.id === 1 || role.id === 2 || role.id === 3"
+                      :disabled="isProtectedRoleObject(role)"
                     >
                       <v-icon>mdi-delete</v-icon>
                     </v-btn>
@@ -131,7 +132,7 @@ const formatDate = (dateString: string) => {
 
                 <!-- Protected role indicator -->
                 <div
-                  v-if="role.id === 1 || role.id === 2 || role.id === 3"
+                  v-if="isProtectedRoleObject(role)"
                   class="d-flex align-center mt-2"
                 >
                   <v-icon icon="mdi-shield-lock" size="small" color="warning" class="mr-1"></v-icon>
