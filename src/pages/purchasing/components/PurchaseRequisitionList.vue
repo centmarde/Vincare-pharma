@@ -67,25 +67,23 @@ function goToPage(p: number) {
   <v-container fluid class="pa-2 fill-height align-start">
     <v-row class="mb-2" dense>
       <v-col cols="6" sm="3">
-        <v-card rounded="lg" elevation="1" class="stat-card"
+        <v-card elevation="1" class="stat-card rounded-xl"
         
           @click="filterStatus = null">
           <v-card-text class="d-flex align-center" style="gap: 12px">
-            <v-avatar color="primary" variant="tonal" size="40">
+            <v-avatar color="purple" variant="tonal" size="40">
               <v-icon icon="mdi-file-document-multiple-outline" />
             </v-avatar>
             <div>
-              <div class="text-caption text-medium-emphasis">Total PRs</div>
-              <div class="text-h6 font-weight-bold">{{ stats.total.toLocaleString() }}</div>
+              <div class="text-subtitle-2">Total PRs</div>
+              <div class="text-h6 font-weight-bold text-purple">{{ stats.total.toLocaleString() }}</div>
             </div>
           </v-card-text>
         </v-card>
       </v-col>
 
       <v-col cols="6" sm="3">
-        <v-card
-          rounded="lg" elevation="1"
-          class="stat-card"
+        <v-card elevation="1" class="stat-card rounded-xl"
           :class="{ 'stat-card--active': filterStatus === 'pending_approval' }"
           @click="filterStatus = 'pending_approval'"
         >
@@ -94,7 +92,7 @@ function goToPage(p: number) {
               <v-icon icon="mdi-clock-alert-outline" />
             </v-avatar>
             <div>
-              <div class="text-caption text-medium-emphasis">Pending Approval</div>
+              <div class="text-subtitle-2">Pending Approval</div>
               <div class="text-h6 font-weight-bold">{{ stats.pending.toLocaleString() }}</div>
             </div>
           </v-card-text>
@@ -102,8 +100,8 @@ function goToPage(p: number) {
       </v-col>
 
       <v-col cols="6" sm="3">
-        <v-card rounded="lg" elevation="1" class="stat-card" 
-          :class="{ 'stat-card--active': filterStatus === 'approved' }" 
+        <v-card elevation="1" class="stat-card rounded-xl"
+          :class="{ 'stat-card--active': filterStatus === 'approved' }"
           @click="filterStatus = 'approved'"
           >
           <v-card-text class="d-flex align-center" style="gap: 12px">
@@ -111,7 +109,7 @@ function goToPage(p: number) {
               <v-icon icon="mdi-check-circle-outline" />
             </v-avatar>
             <div>
-              <div class="text-caption text-medium-emphasis">Approved</div>
+              <div class="text-subtitle-2">Approved</div>
               <div class="text-h6 font-weight-bold">{{ stats.approved.toLocaleString() }}</div>
             </div>
           </v-card-text>
@@ -119,7 +117,7 @@ function goToPage(p: number) {
       </v-col>
 
       <v-col cols="6" sm="3">
-        <v-card rounded="lg" elevation="1" class="stat-card"
+        <v-card rounded="lg" elevation="1" class="stat-card rounded-xl"
           :class="{ 'stat-card--active': filterStatus === 'rejected' }"
           @click="filterStatus = 'rejected'">
           <v-card-text class="d-flex align-center" style="gap: 12px">
@@ -127,7 +125,7 @@ function goToPage(p: number) {
               <v-icon icon="mdi-close-circle-outline" />
             </v-avatar>
             <div>
-              <div class="text-caption text-medium-emphasis">Rejected</div>
+              <div class="text-subtitle-2">Rejected</div>
               <div class="text-h6 font-weight-bold">{{ stats.rejected.toLocaleString() }}</div>
             </div>
           </v-card-text>
@@ -620,13 +618,15 @@ function goToPage(p: number) {
   display: flex;
   align-items: center;
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
-  border: 2px solid transparent;
+  border: 3px solid rgba(0, 0, 0, 0.06);
 }
 .stat-card:hover {
   transform: translateY(-3px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
 }
 .stat-card--active {
-  border-color: rgba(var(--v-theme-primary), 0.5);
+  border-color: #A63EB8;
+  background-color: rgba(50, 75, 219, 0.08);
+  box-shadow: 0 4px 12px rgba(var(--v-theme-primary), 0.2);
 }
 </style>

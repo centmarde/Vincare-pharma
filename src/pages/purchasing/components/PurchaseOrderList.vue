@@ -46,22 +46,22 @@ function goToPage(p: number) {
   <v-container fluid class="pa-2 fill-height align-start">
     <v-row class="mb-2" dense>
       <v-col cols="6" sm="3">
-        <v-card rounded="lg" elevation="1" class="stat-card" 
+        <v-card elevation="1" class="stat-card rounded-xl" 
           @click="filterStatus = null">
           <v-card-text class="d-flex align-center" style="gap: 12px">
-            <v-avatar color="primary" variant="tonal" size="40">
+            <v-avatar color="indigo" variant="tonal" size="40">
               <v-icon icon="mdi-file-document-multiple-outline" />
             </v-avatar>
             <div>
-              <div class="text-caption text-medium-emphasis">Total POs</div>
-              <div class="text-h6 font-weight-bold">{{ stats.total.toLocaleString() }}</div>
+              <div class="text-subtitle-2">Total POs</div>
+              <div class="text-h6 font-weight-bold text-indigo">{{ stats.total.toLocaleString() }}</div>
             </div>
           </v-card-text>
         </v-card>
       </v-col>
 
       <v-col cols="6" sm="3">
-        <v-card rounded="lg" elevation="1" class="stat-card"
+        <v-card elevation="1" class="stat-card rounded-xl"
           :class="{ 'stat-card--active': filterStatus === 'issued' }"
           @click="filterStatus = 'issued'"
           @click:clear="clearSearch">
@@ -70,7 +70,7 @@ function goToPage(p: number) {
               <v-icon icon="mdi-truck-outline" />
             </v-avatar>
             <div>
-              <div class="text-caption text-medium-emphasis">Pending / Issued</div>
+              <div class="text-subtitle-2">Pending / Issued</div>
               <div class="text-h6 font-weight-bold">{{ stats.pending.toLocaleString() }}</div>
             </div>
           </v-card-text>
@@ -78,7 +78,7 @@ function goToPage(p: number) {
       </v-col>
 
       <v-col cols="6" sm="3">
-        <v-card rounded="lg" elevation="1" class="stat-card"
+        <v-card elevation="1" class="stat-card rounded-xl"
           :class="{ 'stat-card--active': filterStatus === 'complete' }"
           @click="filterStatus = 'complete'"
           @click:clear="clearSearch">
@@ -87,7 +87,7 @@ function goToPage(p: number) {
               <v-icon icon="mdi-check-circle-outline" />
             </v-avatar>
             <div>
-              <div class="text-caption text-medium-emphasis">Complete</div>
+              <div class="text-subtitle-2">Complete</div>
               <div class="text-h6 font-weight-bold">{{ stats.complete.toLocaleString() }}</div>
             </div>
           </v-card-text>
@@ -95,13 +95,13 @@ function goToPage(p: number) {
       </v-col>
 
       <v-col cols="6" sm="3">
-        <v-card rounded="lg" elevation="1" class="stat-card">
+        <v-card elevation="1" class="stat-card rounded-xl">
           <v-card-text class="d-flex align-center" style="gap: 12px">
             <v-avatar color="green" variant="tonal" size="40">
               <span class="text-h6 font-weight-bold">₱</span>
             </v-avatar>
             <div>
-              <div class="text-caption text-medium-emphasis">Total Orders Issued</div>
+              <div class="text-subtitle-2">Total Orders Issued</div>
               <div class="text-h6 font-weight-bold">{{ formatCurrency(stats.totalCost) }}</div>
             </div>
           </v-card-text>
@@ -492,13 +492,15 @@ function goToPage(p: number) {
   display: flex;
   align-items: center;
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
-  border: 2px solid transparent;
+  border: 3px solid rgba(0, 0, 0, 0.06);
 }
 .stat-card:hover {
   transform: translateY(-3px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
 }
 .stat-card--active {
-  border-color: rgba(var(--v-theme-primary), 0.5);
+  border-color: #3F51B5;
+  background-color: rgba(50, 75, 219, 0.08);
+  box-shadow: 0 4px 12px rgba(var(--v-theme-primary), 0.2);
 }
 </style>
