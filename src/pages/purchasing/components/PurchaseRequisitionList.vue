@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import { usePurchaseRequisitionList, headers } from '../composables/usePurchaseRequisitionList'
+import type { ReorderPrefillItem } from '../composables/usePurchaseRequisition'
+import PurchaseRequisitionDialog from './dialogs/PurchaseRequisitionDialog.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import { useProductsDataStore } from '@/stores/productsData'
 import PRDetailModal from './dialogs/PRDetailModal.vue'
 import IssuePOModal from './dialogs/IssuePOModal.vue'
-import PurchaseRequisitionDialog from './dialogs/PurchaseRequisitionDialog.vue'
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useDisplay } from 'vuetify'
+
+const selectedReorderIds = ref<number[]>([])
+const prefillItemsForDialog = ref<ReorderPrefillItem[]>([])
+const productsStore = useProductsDataStore()
 
 const {
   stats,
@@ -37,6 +43,10 @@ const {
   closeConfirm,
   handleConfirm,
   openPurchaseOrder,
+  openReorderDialog,
+  reorderRequests,
+  showReorderDialog,
+  reorderCount,
 } = usePurchaseRequisitionList()
 const { mobile } = useDisplay()
 onMounted(() => {
@@ -47,12 +57,19 @@ onMounted(() => {
 })
 const showNewPRDialog = ref(false)
 
-function onPRSubmitted() {
-  // New PRs land as pending_approval and sort to the top by created_at,
-  // so jump back to page 1 to make the new record visible
-  page.value = 1
-  loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
-}
+// Clear prefill items when the dialog is closed without submitting
+watch(showNewPRDialog, (isOpen) => {
+  if (!isOpen) {
+    prefillItemsForDialog.value = []
+  }
+})
+
+// Clear reorder selection when the reorder dialog is closed
+watch(() => showReorderDialog.value, (isOpen) => {
+  if (!isOpen) {
+    selectedReorderIds.value = []
+  }
+})
 
 const totalPages = computed(() => Math.max(1, Math.ceil(totalItems.value / itemsPerPage.value)))
 function goToPage(p: number) {
@@ -61,31 +78,69 @@ function goToPage(p: number) {
   page.value = p
   loadItems({ page: p, itemsPerPage: itemsPerPage.value, sortBy: [] })
 }
+
+function createPRFromReorder() {
+  prefillItemsForDialog.value = reorderRequests.value
+    .filter(r => selectedReorderIds.value.includes(r.id))
+    .filter(r => r.product) // guard against orphaned rows
+    .map(r => {
+      const shortfall = (r.product.reorder_level ?? 0) - (r.product.current_stock ?? 0)
+      return {
+        reorder_request_id: r.id,
+        product_id:         r.product.id,
+        item_description:   r.product.product_name ?? '',
+        unit:                r.product.unit ?? 'Box',
+        supplier_id:         r.product.supplier_id ?? null,
+        cost_per_unit:       r.product.cost_price ?? 0,
+        offer_per_unit:      r.product.selling_price ?? 0,
+        suggested_qty:       Math.max(shortfall, 1),
+      }
+    })
+
+  showReorderDialog.value = false
+  showNewPRDialog.value = true
+}
+
+function onPRSubmitted(resolvedReorderIds: number[]) {
+  page.value = 1
+  loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
+  if (resolvedReorderIds.length) {
+    productsStore.resolveReorderRequests(resolvedReorderIds)
+  }
+  selectedReorderIds.value = []
+  prefillItemsForDialog.value = []
+}
 </script>
 
 <template>
   <v-container fluid class="pa-2 fill-height align-start">
-    <v-row class="mb-2" dense>
-      <v-col cols="6" sm="3">
-        <v-card rounded="lg" elevation="1" class="stat-card"
-        
-          @click="filterStatus = null">
+
+    <div class="stats-grid mb-2">
+        <v-card elevation="1" class="stat-card rounded-xl" @click="filterStatus = null">
           <v-card-text class="d-flex align-center" style="gap: 12px">
-            <v-avatar color="primary" variant="tonal" size="40">
+            <v-avatar color="purple" variant="tonal" size="40">
               <v-icon icon="mdi-file-document-multiple-outline" />
             </v-avatar>
             <div>
-              <div class="text-caption text-medium-emphasis">Total PRs</div>
-              <div class="text-h6 font-weight-bold">{{ stats.total.toLocaleString() }}</div>
+              <div class="text-subtitle-2">Total PRs</div>
+              <div class="text-h6 font-weight-bold text-purple">{{ stats.total.toLocaleString() }}</div>
             </div>
           </v-card-text>
         </v-card>
-      </v-col>
 
-      <v-col cols="6" sm="3">
-        <v-card
-          rounded="lg" elevation="1"
-          class="stat-card"
+        <v-card elevation="1" class="stat-card rounded-xl" @click="openReorderDialog">
+          <v-card-text class="d-flex align-center" style="gap: 12px">
+            <v-avatar color="teal" variant="tonal" size="40">
+              <v-icon icon="mdi-cart-arrow-down" />
+            </v-avatar>
+            <div>
+              <div class="text-subtitle-2">Reorder Requests</div>
+              <div class="text-h6 font-weight-bold text-teal">{{ reorderCount.toLocaleString() }}</div>
+            </div>
+          </v-card-text>
+        </v-card>
+
+        <v-card elevation="1" class="stat-card rounded-xl"
           :class="{ 'stat-card--active': filterStatus === 'pending_approval' }"
           @click="filterStatus = 'pending_approval'"
         >
@@ -94,16 +149,14 @@ function goToPage(p: number) {
               <v-icon icon="mdi-clock-alert-outline" />
             </v-avatar>
             <div>
-              <div class="text-caption text-medium-emphasis">Pending Approval</div>
+              <div class="text-subtitle-2">Pending Approval</div>
               <div class="text-h6 font-weight-bold">{{ stats.pending.toLocaleString() }}</div>
             </div>
           </v-card-text>
         </v-card>
-      </v-col>
 
-      <v-col cols="6" sm="3">
-        <v-card rounded="lg" elevation="1" class="stat-card" 
-          :class="{ 'stat-card--active': filterStatus === 'approved' }" 
+        <v-card elevation="1" class="stat-card rounded-xl"
+          :class="{ 'stat-card--active': filterStatus === 'approved' }"
           @click="filterStatus = 'approved'"
           >
           <v-card-text class="d-flex align-center" style="gap: 12px">
@@ -111,15 +164,13 @@ function goToPage(p: number) {
               <v-icon icon="mdi-check-circle-outline" />
             </v-avatar>
             <div>
-              <div class="text-caption text-medium-emphasis">Approved</div>
+              <div class="text-subtitle-2">Approved</div>
               <div class="text-h6 font-weight-bold">{{ stats.approved.toLocaleString() }}</div>
             </div>
           </v-card-text>
         </v-card>
-      </v-col>
 
-      <v-col cols="6" sm="3">
-        <v-card rounded="lg" elevation="1" class="stat-card"
+        <v-card rounded="lg" elevation="1" class="stat-card rounded-xl"
           :class="{ 'stat-card--active': filterStatus === 'rejected' }"
           @click="filterStatus = 'rejected'">
           <v-card-text class="d-flex align-center" style="gap: 12px">
@@ -127,13 +178,12 @@ function goToPage(p: number) {
               <v-icon icon="mdi-close-circle-outline" />
             </v-avatar>
             <div>
-              <div class="text-caption text-medium-emphasis">Rejected</div>
+              <div class="text-subtitle-2">Rejected</div>
               <div class="text-h6 font-weight-bold">{{ stats.rejected.toLocaleString() }}</div>
             </div>
           </v-card-text>
         </v-card>
-      </v-col>
-    </v-row>
+      </div>  
 
     <!-- V-Data-Table -->
     <v-card class="mx-auto w-100" rounded="lg" elevation="1">
@@ -490,7 +540,7 @@ function goToPage(p: number) {
     </v-card>
 
     <!-- New Purchase Requisition -->
-    <PurchaseRequisitionDialog v-model="showNewPRDialog" @submitted="onPRSubmitted" />
+    <PurchaseRequisitionDialog v-model="showNewPRDialog" :prefill-items="prefillItemsForDialog" @submitted="onPRSubmitted" />
 
     <!-- 3. Add the Modal Component -->
     <IssuePOModal v-model="showPOModal" :pr="selectedPRForPO" />
@@ -537,6 +587,64 @@ function goToPage(p: number) {
             @click="handleConfirm"
           >
             Yes, {{ confirmDialog.action === 'APPROVE' ? 'Approve' : 'Reject' }}
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="showReorderDialog" max-width="600">
+      <v-card>
+        <v-card-title class="d-flex align-center pa-4">
+          <v-icon icon="mdi-cart-arrow-down" color="teal" class="mr-2"></v-icon>
+          <span class="text-h6 font-weight-bold">Reorder Requests</span>
+          <v-spacer></v-spacer>
+          <v-btn icon="mdi-close" variant="text" size="small" @click="showReorderDialog = false"></v-btn>
+        </v-card-title>
+        <v-divider></v-divider>
+        <v-card-text class="pa-0" style="max-height: 400px; overflow-y: auto;">
+          <v-list v-if="reorderRequests.length" density="comfortable">
+            <v-list-item v-for="r in reorderRequests" :key="r.id">
+              <template #prepend>
+                <v-checkbox-btn
+                  :model-value="selectedReorderIds.includes(r.id)"
+                  @update:model-value="(val) => {
+                    if (val) selectedReorderIds.push(r.id)
+                    else selectedReorderIds = selectedReorderIds.filter(id => id !== r.id)
+                  }"
+                />
+              </template>
+              <v-list-item-title class="font-weight-medium">
+                {{ r.product?.product_name }}
+              </v-list-item-title>
+              <v-list-item-subtitle>
+                Stock: {{ r.product?.current_stock ?? 0 }}
+                <span v-if="r.product?.reorder_level != null"> · reorder at {{ r.product.reorder_level }}</span>
+                · Flagged by {{ r.requester_name }}
+              </v-list-item-subtitle>
+              <template #append>
+                <v-chip
+                  size="small"
+                  :color="r.transaction_type === 'reorder_outofstock' ? 'error' : r.transaction_type === 'reorder_lowstock' ? 'warning' : 'orange'"
+                  variant="tonal"
+                >
+                  {{ r.transaction_type.replace('reorder_', '').replace('_', ' ') }}
+                </v-chip>
+              </template>
+            </v-list-item>
+          </v-list>
+          <div v-else class="text-center py-8 text-medium-emphasis">
+            No pending reorder requests
+          </div>
+        </v-card-text>
+        <v-divider />
+        <v-card-actions class="pa-4 d-flex justify-end">
+          <v-btn
+            color="primary"
+            class="text-none font-weight-bold"
+            :disabled="!selectedReorderIds.length"
+            @click="createPRFromReorder"
+          >
+            Create Purchase Requisition ({{ selectedReorderIds.length }})
           </v-btn>
         </v-card-actions>
       </v-card>
@@ -620,13 +728,21 @@ function goToPage(p: number) {
   display: flex;
   align-items: center;
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
-  border: 2px solid transparent;
+  border: 3px solid rgba(0, 0, 0, 0.06);
 }
 .stat-card:hover {
   transform: translateY(-3px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
 }
 .stat-card--active {
-  border-color: rgba(var(--v-theme-primary), 0.5);
+  border-color: #A63EB8;
+  background-color: rgba(50, 75, 219, 0.08);
+  box-shadow: 0 4px 12px rgba(var(--v-theme-primary), 0.2);
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  width: 100%;
 }
 </style>

@@ -178,8 +178,13 @@ export const parseMonthYear = (value: string): Date | null => {
 }
 
 // Date -> "MM/YYYY".
-export const formatMonthYear = (date: Date): string =>
-  `${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`
+export const formatMonthYear = (value: string | Date): string => {
+  const date = value instanceof Date ? value : new Date(value)
+
+  if (isNaN(date.getTime())) return '-'
+
+  return `${String(date.getMonth() + 1).padStart(2, '0')}-${date.getFullYear()}`
+}
 
 // Live input mask: keep digits only, auto-insert the slash -> "MM/YYYY" (capped).
 export const maskMonthYearInput = (raw: string): string => {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useDisplay } from 'vuetify'
-import { formatCurrency } from '@/utils/helpers'
+import { formatCurrency, parseMonthYear, formatMonthYear } from '@/utils/helpers'
 import { useProductsWidget } from '@/components/products/composables/useProductsWidget.ts'
 import { useTheme } from '@/stores/useTheme'
 import { useLogsDataStore, type LogType } from '@/stores/logsData'
@@ -11,10 +11,12 @@ import ProductDeleteDialog from './dialogs/ProductDeleteDialog.vue'
 import StockStatusCards from '../products/StockStatusCards.vue'
 import LogsViewDialog from '@/pages/logs/dialogs/LogsViewDialog.vue'
 import { useRouter } from 'vue-router'
+import { useProductsDataStore } from '@/stores/productsData'
 
 const { mobile } = useDisplay()
 const router = useRouter()
 const logsStore = useLogsDataStore()
+const productsDataStore = useProductsDataStore()
 
 const {
   form,
@@ -38,6 +40,9 @@ const {
   rules,
   showStockDialog,
   stockDialogType,
+  stockStatusCards,
+  stockDialogProducts,
+  activeStockCard,
   openCreateDialog,
   openEditDialog,
   openDeleteDialog,
@@ -49,9 +54,28 @@ const {
   handleTableOptions,
 } = useProductsWidget()
 
-function handleStockCardClick(type: 'out-of-stock' | 'low-stock') {
-  stockDialogType.value = type
+function handleStockCardClick(type: string) {
+  stockDialogType.value = type as any
   showStockDialog.value = true
+}
+
+const reorderReasonMap: Record<string, 'reorder_outofstock' | 'reorder_lowstock' | 'reorder_expiring' | 'reorder_expired'> = {
+  'out-of-stock':  'reorder_outofstock',
+  'low-stock':     'reorder_lowstock',
+  'expiring-soon': 'reorder_expiring',
+  'expired':       'reorder_expired',
+}
+
+// Track which products have been reorder-requested this session
+const reorderRequestedIds = ref<Set<number>>(new Set())
+
+async function requestReorder(product: any) {
+  const reason = reorderReasonMap[stockDialogType.value]
+  if (!reason) return
+  const result = await productsDataStore.createReorderRequest({ product_id: product.id, reason })
+  if (result?.success) {
+    reorderRequestedIds.value = new Set([...reorderRequestedIds.value, product.id])
+  }
 }
 
 // Logs dialog state
@@ -59,10 +83,8 @@ const showLogsDialog = ref(false)
 const productLogs = ref<LogType[]>([])
 
 const openLogsDialog = async (product: any) => {
-  // Fetch all logs
   await logsStore.fetchLogs()
 
-  // Filter logs related to this product by module (stock_in, stock_out, etc.) and product name in description
   productLogs.value = logsStore.logs.filter((log: LogType) => {
     const isProductRelated =
       (log.module?.toLowerCase().includes('stock') && log.description?.toLowerCase().includes((product.product_name ?? '').toLowerCase())) ||
@@ -81,7 +103,6 @@ const closeLogsDialog = () => {
 const { getCurrentTheme } = useTheme()
 const isDark = computed<'light' | 'dark'>(() => getCurrentTheme())
 
-// Theme-aware stock color logic
 function stockColor(item: any) {
   const stock = item.current_stock ?? 0
   const isOutOfStock = stock <= 0
@@ -140,43 +161,9 @@ function stockColor(item: any) {
       ></v-text-field>
     </div>
 
-    <!-- Low stock alert -->
-    <div class="px-3 pt-2">
-      <v-expansion-panels v-if="lowStockProducts.length > 0">
-        <v-expansion-panel bg-color="warning" elevation="0" rounded="lg">
-          <v-expansion-panel-title class="py-2">
-            <div class="d-flex align-center ga-2">
-              <v-icon icon="mdi-alert-circle-outline" color="primary" size="small"></v-icon>
-              <span class="text-body-2 font-weight-medium">
-                Low Stock Alert —
-                <strong>{{ lowStockProducts.length }} product{{ lowStockProducts.length > 1 ? 's' : '' }}</strong>
-                need{{ lowStockProducts.length > 1 ? '' : 's' }} to be reordered
-              </span>
-            </div>
-          </v-expansion-panel-title>
-          <v-expansion-panel-text class="pa-0">
-            <v-list density="compact" bg-color="transparent">
-              <v-list-item
-                v-for="p in lowStockProducts"
-                :key="p.id"
-                :prepend-icon="(p.current_stock ?? 0) <= 0 ? 'mdi-close-circle' : 'mdi-alert'"
-                density="compact"
-              >
-                <v-list-item-title class="text-body-2">{{ p.product_name }}</v-list-item-title>
-                <v-list-item-subtitle class="text-caption">
-                  {{ p.current_stock ?? 0 }} units left · reorder at {{ p.reorder_level }}
-                </v-list-item-subtitle>
-              </v-list-item>
-            </v-list>
-          </v-expansion-panel-text>
-        </v-expansion-panel>
-      </v-expansion-panels>
-    </div>
-
     <!-- Stock Status Cards -->
     <StockStatusCards
-      :out-of-stock-count="allOutOfStockCount"
-      :low-stock-count="allLowStockCount"
+      :cards="stockStatusCards"
       @show-dialog="handleStockCardClick"
     />
 
@@ -209,10 +196,17 @@ function stockColor(item: any) {
           <span v-if="value != null">{{ formatCurrency(Number(value)) }}</span>
           <span v-else class="text-grey">-</span>
         </template>
+        <template #[`item.unit`]="{ item }">
+          <span>{{ item.unit || 'N/A' }}</span>
+        </template>
         <template #[`item.current_stock`]="{ item }">
           <v-chip :color="stockColor(item)" size="small" variant="outlined">
             {{ item.current_stock ?? 0 }}
           </v-chip>
+        </template>
+        <template #[`item.expiry_date`]="{ value }">
+          <span v-if="value">{{ formatMonthYear(value) }}</span>
+          <span v-else class="text-grey">-</span>
         </template>
         <template #[`expanded-row`]="{ item }">
           <tr>
@@ -338,25 +332,76 @@ function stockColor(item: any) {
     @close="closeLogsDialog"
   />
 
-  <!-- Stock Status Dialog (placeholder for future development) -->
-  <v-dialog v-model="showStockDialog" max-width="500">
+  <!-- Stock Status Dialog -->
+  <v-dialog v-model="showStockDialog" max-width="600">
     <v-card>
       <v-card-title class="d-flex align-center pa-4">
         <v-icon
-          :icon="stockDialogType === 'out-of-stock' ? 'mdi-close-circle-outline' : 'mdi-alert-outline'"
-          :color="stockDialogType === 'out-of-stock' ? 'error' : 'warning'"
+          :icon="activeStockCard?.icon"
+          :color="activeStockCard?.color"
           class="mr-2"
           size="28"
         ></v-icon>
-        <span class="text-h6 font-weight-bold">
-          {{ stockDialogType === 'out-of-stock' ? 'Out of Stock' : 'Low Stock' }}
-        </span>
+        <span class="text-h6 font-weight-bold">{{ activeStockCard?.label }}</span>
         <v-spacer></v-spacer>
         <v-btn icon="mdi-close" variant="text" size="small" @click="showStockDialog = false"></v-btn>
       </v-card-title>
       <v-divider></v-divider>
-      <v-card-text class="pa-4 text-body-1 text-medium-emphasis">
-        <p>This feature is under development.</p>
+      <v-card-text class="pa-0" style="max-height: 400px; overflow-y: auto;">
+        <v-list v-if="stockDialogProducts.length > 0" density="comfortable">
+          <v-list-item
+            v-for="p in stockDialogProducts"
+            :key="p.id"
+            @click="openEditDialog(p); showStockDialog = false"
+          >
+            <v-list-item-title class="font-weight-medium">
+              {{ p.product_name }}
+            </v-list-item-title>
+            <v-list-item-subtitle>
+              <template v-if="stockDialogType === 'out-of-stock' || stockDialogType === 'low-stock'">
+                Stock: {{ p.current_stock ?? 0 }}
+                <span v-if="p.reorder_level != null"> · reorder at {{ p.reorder_level }}</span>
+              </template>
+              <template v-else-if="stockDialogType === 'no-reorder-level'">
+                Current stock: {{ p.current_stock ?? 0 }} units
+              </template>
+              <template v-else-if="stockDialogType === 'expiring-soon' || stockDialogType === 'expired'">
+                Expiry: {{ p.expiry_date || 'N/A' }}
+              </template>
+            </v-list-item-subtitle>
+
+               <template #append>
+                <div class="d-flex align-center ga-2">
+                  <v-chip size="small" variant="outlined">{{ p.sku || 'No SKU' }}</v-chip>
+                    <v-btn
+                      v-if="stockDialogType !== 'no-reorder-level' && !reorderRequestedIds.has(p.id)"
+                      size="small"
+                      variant="outlined"
+                      color="primary"
+                      prepend-icon="mdi-cart-plus"
+                      class="text-none"
+                      @click.stop="requestReorder(p)"
+                    >
+                    Reorder
+                  </v-btn>
+                  <v-chip
+                    v-else-if="reorderRequestedIds.has(p.id)"
+                    size="small"
+                    color="green"
+                    variant="tonal"
+                    class="font-weight-medium"
+                  >
+                    <v-icon start size="14">mdi-check-circle</v-icon>
+                    Pending
+                  </v-chip>
+                </div>
+              </template>
+          </v-list-item>
+        </v-list>
+        <div v-else class="text-center py-8">
+          <v-icon icon="mdi-check-circle-outline" size="40" color="success"></v-icon>
+          <p class="text-grey mt-2">No products in this category</p>
+        </div>
       </v-card-text>
     </v-card>
   </v-dialog>
