@@ -1,12 +1,9 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useOrderDetail } from '../composables/useOrderDetail'
-import SupplierCanvass from '@/components/canvass/SupplierCanvass.vue'
 import DeliveryReceiptDialog from '@/components/deliveryReceipts/DeliveryReceiptDialog.vue'
-import { useInhouseDataStore, type InhouseOrderType } from '@/stores/inhouseData'
+import type { InhouseOrderType } from '@/stores/inhouseData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
-
-const inhouse = useInhouseDataStore()
 
 const props = defineProps<{
   modelValue: boolean
@@ -21,9 +18,10 @@ const {
   loading, rounds, shortfall, payments, lineEdits, lineProductEdits, lineCostEdits, productOptions, offerNote, deliverQtys,
   receivedBy, issuedReceipt,
   payAmount, payReference, payRemarks,
+  requestedAt, requestNote,
   items, isNegotiating, isAwaitingStock, isReady, isDelivered, isPartiallyPaid, isPaid, canRecordPayment,
   proposedTotal, proposedCost, proposedProfit, proposedMarginPct, deliveredPct, remaining, balance, paidPct,
-  onLineProductChange, recordCounter, agree, recheck, deliver, recordPayment,
+  onLineProductChange, recordCounter, agree, recheck, deliver, recordPayment, notifyPurchasing,
 } = useOrderDetail(() => props.order, () => emit('changed'))
 
 // Pop the printable DR as soon as one is issued by a delivery.
@@ -42,7 +40,7 @@ const productName = (id: number | null) =>
         <div>
           <div class="text-h6 font-weight-bold">{{ order.order_no }}</div>
           <div class="text-caption text-medium-emphasis">
-            {{ order.customer?.name ?? '—' }} · PO: {{ order.po_no ?? '— (assigned on agree)' }} · Govt PO: {{ order.govt_po_no ?? '—' }}
+            {{ order.customer?.name ?? '—' }} · PO: {{ order.po_no ?? '— (assigned once stock is confirmed)' }} · Govt PO: {{ order.govt_po_no ?? '—' }}
           </div>
         </div>
         <v-btn icon="mdi-close" variant="text" size="small" @click="emit('update:modelValue', false)" />
@@ -139,12 +137,29 @@ const productName = (id: number | null) =>
                 </tr>
               </tbody>
             </v-table>
-            <div class="text-caption text-medium-emphasis mt-2">Canvass suppliers below to auto-raise Purchase Requisitions, then re-check once stock arrives.</div>
+            <div class="text-caption text-medium-emphasis mt-2">
+              Purchasing sources these items — you don't need to canvass suppliers. Re-check once stock has arrived.
+            </div>
             <v-btn variant="text" size="small" color="info" class="text-none mt-1" @click="recheck">Re-check stock</v-btn>
 
             <v-divider class="my-3" />
-            <div class="text-subtitle-2 font-weight-bold mb-2">Supplier Canvass</div>
-            <SupplierCanvass :order="order" :shortfall="shortfall" :commit-fn="inhouse.canvassToPRs" @created="recheck" />
+            <div class="text-subtitle-2 font-weight-bold mb-1">Notify Purchasing</div>
+            <template v-if="requestedAt">
+              <div class="text-caption text-success">
+                <v-icon icon="mdi-check-circle" size="14" class="mr-1" />
+                Sent to Purchasing on {{ formatDatePR_ISO(requestedAt) }}
+              </div>
+              <v-btn variant="text" size="small" color="info" class="text-none mt-1 pl-0" @click="requestedAt = null">
+                Send again
+              </v-btn>
+            </template>
+            <template v-else>
+              <div class="text-caption text-medium-emphasis mb-2">Let Purchasing know these items need to be bought.</div>
+              <v-textarea v-model="requestNote" placeholder="Note for Purchasing (optional)" variant="outlined" density="compact" rows="2" hide-details class="mb-2" />
+              <v-btn color="info" size="small" class="text-none font-weight-bold" elevation="0" :loading="loading" @click="notifyPurchasing">
+                Notify Purchasing
+              </v-btn>
+            </template>
           </v-card-text>
         </v-card>
 
