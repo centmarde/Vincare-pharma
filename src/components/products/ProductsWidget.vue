@@ -12,11 +12,14 @@ import StockStatusCards from '../products/StockStatusCards.vue'
 import LogsViewDialog from '@/pages/logs/dialogs/LogsViewDialog.vue'
 import { useRouter } from 'vue-router'
 import { useProductsDataStore } from '@/stores/productsData'
+import { useAuthUserStore } from '@/stores/authUser'
+import { canViewSupplierName } from '@/utils/roleHelpers'
 
 const { mobile } = useDisplay()
 const router = useRouter()
 const logsStore = useLogsDataStore()
 const productsDataStore = useProductsDataStore()
+const authUser = useAuthUserStore()
 
 const {
   form,
@@ -234,7 +237,7 @@ function stockColor(item: any) {
                     <div>
                       <div class="text-caption text-grey-darken-1">Supplier</div>
                       <div class="text-body-1 font-weight-medium">
-                        {{ item.suppliers?.name || 'N/A' }}
+                        {{ canViewSupplierName(authUser.userRole) ? (item.suppliers?.name || 'N/A') : 'Restricted' }}
                       </div>
                     </div>
                   </v-col>
