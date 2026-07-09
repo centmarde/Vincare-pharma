@@ -5,6 +5,7 @@ import { useSuppliersDataStore } from '@/stores/suppliersData'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import { useLogsDataStore } from '@/stores/logsData'
 import { useAuthUserStore } from '@/stores/authUser'
+import { useProductsDataStore } from '@/stores/productsData'
 import { storeToRefs } from 'pinia'
 import { ref, watch } from 'vue'
 export const headers = [
@@ -25,8 +26,10 @@ export function usePurchaseRequisitionList() {
   const supplierStore = useSuppliersDataStore()
   const logsStore     = useLogsDataStore()
   const authStore     = useAuthUserStore()
+  const productsStore = useProductsDataStore()
   const { loading }   = storeToRefs(txStore)
   const { totalQty, totalCost, itemSummary, itemNames, statusConfig, statusOptions } = useTransactionsData()
+  const { reorderRequests, reorderCount } = storeToRefs(productsStore)
 
   const search        = ref('')
   const filterStatus  = ref<string | null>(null)
@@ -40,6 +43,7 @@ export function usePurchaseRequisitionList() {
   const itemsPerPage  = ref(10)
   const searchInput      = ref(search.value)
   const stats = ref({ total: 0, pending: 0, approved: 0, totalCost: 0 , rejected: 0 })
+  const showReorderDialog = ref(false)
 
   const confirmDialog = ref({ show: false, action: '' as 'APPROVE' | 'REJECT', prId: 0, prNumber: '' })
   const confirmLoading = ref(false)
@@ -92,12 +96,18 @@ export function usePurchaseRequisitionList() {
   }
 }
 
+  async function openReorderDialog() {
+    await productsStore.fetchReorderRequests()
+    showReorderDialog.value = true
+  }
+
 
   watch([search, filterStatus], () =>
     loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
   )
 
   async function init() {
+    await productsStore.fetchReorderCount()
     await supplierStore.fetchSuppliers()
     await loadStats()
   }
@@ -162,10 +172,12 @@ export function usePurchaseRequisitionList() {
     selectedPR, selectedPRForPO, confirmDialog, confirmLoading,
     page, itemsPerPage, serverItems, totalItems,
     searchInput, commitSearch, clearSearch,
+    openReorderDialog, reorderRequests, showReorderDialog, reorderCount,
     totalQty, totalCost, itemSummary, itemNames, statusConfig, statusOptions,
     openDetail, openConfirm, closeConfirm,
     handleConfirm, openPurchaseOrder,
     loadItems, init,
     stats,
+
   }
 }

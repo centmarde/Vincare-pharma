@@ -33,6 +33,7 @@ export type RequisitionItemType = {
   supplier_id:      string | null
   actual_count_stock_in?:    number | null
   expiry_date?:     string | null
+  product_id?:      number | null
 }
 
 export type PR = {
@@ -236,7 +237,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     const names = [...new Set(items.value.map(i => i.item_description))]
     const { data: existingProducts, error: existingError } = await supabase
       .from('products')
-      .select('id, product_name, supplier_id')
+      .select('id, product_name, supplier_id, unit')
       .in('product_name', names)
 
     if (existingError) {
@@ -247,15 +248,24 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       return { success: false }
     }
 
-    const findExisting = (name: string, supplierId: number | null) =>
+    const findExisting = (name: string, supplierId: number | null, unit: string) =>
       (existingProducts || []).find(
-        p => p.product_name === name && (p.supplier_id ?? null) === (supplierId ?? null)
+        p => p.product_name === name && (p.supplier_id ?? null) === (supplierId ?? null) && p.unit === unit
       )
 
     // One slot per PR item: existing product id, or null if it needs to be created
     const productIdByIndex: (number | null)[] = items.value.map(item => {
       const supplierId = item.supplier_id ? Number(item.supplier_id) : null
-      const match = findExisting(item.item_description, supplierId)
+      
+      if (item.product_id != null) {
+        const pickedProduct = (existingProducts || []).find(p => p.id === item.product_id)
+        
+        if (pickedProduct && pickedProduct.unit === item.unit && pickedProduct.product_name === item.item_description) {
+          return item.product_id   // NEW: trust reorder-sourced items directly
+        }
+      }
+
+      const match = findExisting(item.item_description, supplierId, item.unit)
       return match ? match.id : null
     })
 
