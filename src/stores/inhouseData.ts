@@ -390,15 +390,17 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     return { success: true, shortfall }
   }
 
-  // Re-attempt the same warehouse stock check for an awaiting_stock/ready order
-  // (was inhouse_recheck_stock).
-  const recheckStock = async (orderId: number): Promise<Shortfall[]> => {
+  // Read-only warehouse stock check for display — NO status flip, NO po_no
+  // minting. Used when a detail view merely OPENS an awaiting_stock order, so
+  // simply looking at an order never advances it or mints a document number.
+  // Any state change is the explicit "Re-check stock" button's job (recheckStock).
+  const computeShortfall = async (orderId: number): Promise<Shortfall[]> => {
     const { data: order, error: fetchError } = await supabase
       .from('transactions')
-      .select('po_no, transaction_items(product_id, qty_stock_out)')
+      .select('transaction_items(product_id, qty_stock_out)')
       .eq('id', orderId)
       .maybeSingle()
-    if (fetchError || !order) { handleError(fetchError, 'Failed to recheck stock'); return [] }
+    if (fetchError || !order) { handleError(fetchError, 'Failed to check stock'); return [] }
 
     const shortfall: Shortfall[] = []
     const lines = ((order.transaction_items ?? []) as unknown as { product_id: number; qty_stock_out: number | null }[])
@@ -410,6 +412,23 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
         shortfall.push({ product_id: line.product_id, ordered: line.qty, on_hand: onHand, needed: line.qty - onHand } as Shortfall)
       }
     }
+    return shortfall
+  }
+
+  // Explicit "Re-check stock" action: recompute the shortfall AND advance the
+  // order — flip awaiting_stock↔ready, and mint the company po_no the moment
+  // the shortfall clears (agreeOrder withheld it while short). This is the only
+  // path that mutates, so state only changes on a deliberate user click, never
+  // on view. (Was inhouse_recheck_stock.)
+  const recheckStock = async (orderId: number): Promise<Shortfall[]> => {
+    const { data: order, error: fetchError } = await supabase
+      .from('transactions')
+      .select('po_no')
+      .eq('id', orderId)
+      .maybeSingle()
+    if (fetchError || !order) { handleError(fetchError, 'Failed to recheck stock'); return [] }
+
+    const shortfall = await computeShortfall(orderId)
 
     // Shortfall just resolved (stock arrived) and agreeOrder withheld po_no
     // while it was short — mint it now, same shared Purchasing PO series.
@@ -677,7 +696,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
   return {
     orders, loading, error,
     fetchOrders, fetchOrderById, createOrder, recordOffer, agreeOrder,
-    recheckStock, deliver, recordPayment, fetchPayments, canvassToPRs, fetchNegotiation,
+    computeShortfall, recheckStock, deliver, recordPayment, fetchPayments, canvassToPRs, fetchNegotiation,
     startRealtime, stopRealtime, clearError, resetStore,
   }
 })

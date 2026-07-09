@@ -122,7 +122,10 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   }, { immediate: true })
 
   async function loadRounds(id: number) { rounds.value = await store.fetchNegotiation(id) }
-  async function refreshShortfall(id: number) { shortfall.value = await store.recheckStock(id) }
+  // Passive: opening an awaiting_stock order only READS the shortfall for display.
+  // Advancing the order + minting the PO is the explicit "Re-check stock" button
+  // (recheck() → store.recheckStock), never a side effect of viewing.
+  async function refreshShortfall(id: number) { shortfall.value = await store.computeShortfall(id) }
   async function loadPayments(id: number) { payments.value = await store.fetchPayments(id) }
   async function loadRequestStatus(id: number) {
     const latest = await procurementStore.fetchLatestRequest(id)
