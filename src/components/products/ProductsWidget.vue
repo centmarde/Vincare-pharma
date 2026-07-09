@@ -55,7 +55,7 @@ const {
 } = useProductsWidget()
 
 function handleStockCardClick(type: string) {
-  stockDialogType.value = type as any // or import StockStatusCardDef['type'] if you want it tight
+  stockDialogType.value = type as any
   showStockDialog.value = true
 }
 
@@ -66,10 +66,16 @@ const reorderReasonMap: Record<string, 'reorder_outofstock' | 'reorder_lowstock'
   'expired':       'reorder_expired',
 }
 
+// Track which products have been reorder-requested this session
+const reorderRequestedIds = ref<Set<number>>(new Set())
+
 async function requestReorder(product: any) {
   const reason = reorderReasonMap[stockDialogType.value]
   if (!reason) return
-  await productsDataStore.createReorderRequest({ product_id: product.id, reason })
+  const result = await productsDataStore.createReorderRequest({ product_id: product.id, reason })
+  if (result?.success) {
+    reorderRequestedIds.value = new Set([...reorderRequestedIds.value, product.id])
+  }
 }
 
 // Logs dialog state
@@ -77,10 +83,8 @@ const showLogsDialog = ref(false)
 const productLogs = ref<LogType[]>([])
 
 const openLogsDialog = async (product: any) => {
-  // Fetch all logs
   await logsStore.fetchLogs()
 
-  // Filter logs related to this product by module (stock_in, stock_out, etc.) and product name in description
   productLogs.value = logsStore.logs.filter((log: LogType) => {
     const isProductRelated =
       (log.module?.toLowerCase().includes('stock') && log.description?.toLowerCase().includes((product.product_name ?? '').toLowerCase())) ||
@@ -99,7 +103,6 @@ const closeLogsDialog = () => {
 const { getCurrentTheme } = useTheme()
 const isDark = computed<'light' | 'dark'>(() => getCurrentTheme())
 
-// Theme-aware stock color logic
 function stockColor(item: any) {
   const stock = item.current_stock ?? 0
   const isOutOfStock = stock <= 0
@@ -156,72 +159,6 @@ function stockColor(item: any) {
         hide-details
         @keyup.enter="handleSearch"
       ></v-text-field>
-    </div>
-
-    <!-- I want to have another alert to have if the product is don't have a reoder level or null -->
-     <!-- I want all products from the all rows count products in v-data-table-server -->
-    <div class="px-3 pt-2">
-      <v-expansion-panels v-if="products.length > 0">
-        <v-expansion-panel bg-color="info" elevation="0" rounded="lg">
-          <v-expansion-panel-title class="py-2">
-            <div class="d-flex align-center ga-2">
-              <v-icon icon="mdi-information-outline" color="primary" size="small"></v-icon>
-              <span class="text-body-2 font-weight-medium">
-                Info —
-                <strong>{{ products.filter(p => p.reorder_level === null).length }} product{{ products.filter(p => p.reorder_level === null).length > 1 ? 's' : '' }}</strong>
-                does not have a reorder level set
-              </span>
-            </div>
-          </v-expansion-panel-title>
-          <v-expansion-panel-text class="pa-0">
-            <v-list density="compact" bg-color="transparent">
-              <v-list-item
-                v-for="p in products.filter(p => p.reorder_level === null)"
-                :key="p.id"
-                density="compact"
-              >
-                <v-list-item-title class="text-body-2">{{ p.product_name }}</v-list-item-title>
-                <v-list-item-subtitle class="text-caption">
-                  Current stock: {{ p.current_stock ?? 0 }} units
-                </v-list-item-subtitle>
-              </v-list-item>
-            </v-list>
-          </v-expansion-panel-text>
-        </v-expansion-panel>
-      </v-expansion-panels>
-    </div>
-
-    <!-- Low stock alert -->
-    <div class="px-3 pt-2">
-      <v-expansion-panels v-if="lowStockProducts.length > 0">
-        <v-expansion-panel bg-color="warning" elevation="0" rounded="lg">
-          <v-expansion-panel-title class="py-2">
-            <div class="d-flex align-center ga-2">
-              <v-icon icon="mdi-alert-circle-outline" color="primary" size="small"></v-icon>
-              <span class="text-body-2 font-weight-medium">
-                Low Stock Alert —
-                <strong>{{ lowStockProducts.length }} product{{ lowStockProducts.length > 1 ? 's' : '' }}</strong>
-                need{{ lowStockProducts.length > 1 ? '' : 's' }} to be reordered
-              </span>
-            </div>
-          </v-expansion-panel-title>
-          <v-expansion-panel-text class="pa-0">
-            <v-list density="compact" bg-color="transparent">
-              <v-list-item
-                v-for="p in lowStockProducts"
-                :key="p.id"
-                :prepend-icon="(p.current_stock ?? 0) <= 0 ? 'mdi-close-circle' : 'mdi-alert'"
-                density="compact"
-              >
-                <v-list-item-title class="text-body-2">{{ p.product_name }}</v-list-item-title>
-                <v-list-item-subtitle class="text-caption">
-                  {{ p.current_stock ?? 0 }} units left · reorder at {{ p.reorder_level }}
-                </v-list-item-subtitle>
-              </v-list-item>
-            </v-list>
-          </v-expansion-panel-text>
-        </v-expansion-panel>
-      </v-expansion-panels>
     </div>
 
     <!-- Stock Status Cards -->
@@ -388,7 +325,7 @@ function stockColor(item: any) {
     @close="closeLogsDialog"
   />
 
-  <!-- Stock Status Dialog (placeholder for future development) -->
+  <!-- Stock Status Dialog -->
   <v-dialog v-model="showStockDialog" max-width="600">
     <v-card>
       <v-card-title class="d-flex align-center pa-4">
@@ -430,7 +367,7 @@ function stockColor(item: any) {
                 <div class="d-flex align-center ga-2">
                   <v-chip size="small" variant="outlined">{{ p.sku || 'No SKU' }}</v-chip>
                     <v-btn
-                      v-if="stockDialogType !== 'no-reorder-level'"
+                      v-if="stockDialogType !== 'no-reorder-level' && !reorderRequestedIds.has(p.id)"
                       size="small"
                       variant="outlined"
                       color="primary"
@@ -440,6 +377,16 @@ function stockColor(item: any) {
                     >
                     Reorder
                   </v-btn>
+                  <v-chip
+                    v-else-if="reorderRequestedIds.has(p.id)"
+                    size="small"
+                    color="green"
+                    variant="tonal"
+                    class="font-weight-medium"
+                  >
+                    <v-icon start size="14">mdi-check-circle</v-icon>
+                    Pending
+                  </v-chip>
                 </div>
               </template>
           </v-list-item>

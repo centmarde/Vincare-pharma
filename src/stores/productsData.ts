@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import type { SupplierType } from '@/stores/suppliersData'
 import { useAuthUserStore } from './authUser'
+import { useLogsDataStore } from './logsData'
 import { useToast } from 'vue-toastification'
 
 const toast = useToast()
@@ -376,12 +377,33 @@ export const useProductsDataStore = defineStore('productsData', () => {
         product_id:     payload.product_id,
       })
 
-    loading.value = false
     if (itemError) {
       toast.error('Failed to save reorder item.')
+      loading.value = false
       return { success: false }
     }
 
+    // Fetch product name for a meaningful log description
+    const { data: productData } = await supabase
+      .from('products')
+      .select('product_name')
+      .eq('id', payload.product_id)
+      .single()
+
+    const reasonLabel = payload.reason.replace('reorder_', '').replace('_', ' ')
+    const productName = productData?.product_name ?? `Product #${payload.product_id}`
+
+    // Log the reorder request
+    const logsStore = useLogsDataStore()
+    await logsStore.createLog({
+      action:         'reorder_request',
+      description:    `Reorder requested for "${productName}" — ${reasonLabel}`,
+      module:         'reorder',
+      transaction_id: txData.id,
+      created_by:     user.id,
+    })
+
+    loading.value = false
     toast.success('Reorder request submitted.')
     return { success: true }
   }
@@ -396,7 +418,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
         id, transaction_type, status, created_at, created_by, remarks,
         transaction_items (
           id, product_id,
-          products ( id, product_name, sku, unit, current_stock, reorder_level, expiry_date, supplier_id, suppliers ( name ) )
+          products ( id, product_name, sku, unit, current_stock, reorder_level, expiry_date, supplier_id, cost_price, selling_price, suppliers ( name ) )
         )
       `)
       .in('transaction_type', REORDER_TYPES)
@@ -431,6 +453,23 @@ export const useProductsDataStore = defineStore('productsData', () => {
       .in('transaction_type', REORDER_TYPES)
       .eq('status', 'pending')
     reorderCount.value = count ?? 0
+  }
+
+  async function resolveReorderRequests(ids: number[]) {
+    if (!ids.length) return
+    const { error } = await supabase
+      .from('transactions')
+      .update({ status: 'resolved' })
+      .in('id', ids)
+
+    if (error) {
+      toast.error('Failed to update reorder request status.')
+      return
+    }
+
+    // Optimistically drop them locally
+    reorderRequests.value = reorderRequests.value.filter(r => !ids.includes(r.id))
+    reorderCount.value = reorderRequests.value.length
   }
 
   const updateProduct = async (id: number, updateData: UpdateProductData) => {
@@ -572,6 +611,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     fetchReorderRequests,
     fetchReorderCount,
     createReorderRequest,
+    resolveReorderRequests,
     reorderRequests,
     reorderCount,
 

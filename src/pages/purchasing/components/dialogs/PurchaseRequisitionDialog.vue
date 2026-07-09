@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { usePurchaseRequisition, unitOptions } from '../../composables/usePurchaseRequisition'
+import type { ReorderPrefillItem } from '../../composables/usePurchaseRequisition'
 import type { ProductPickerResult } from '@/stores/productsData'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
 import ProductPickerDialog from './ProductPicker.vue'
@@ -10,11 +11,12 @@ import { ref, watch } from 'vue'
 
 const props = defineProps<{
   modelValue: boolean
+  prefillItems?: ReorderPrefillItem[]
 }>()
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
-  (e: 'submitted', pr: unknown): void
+  (e: 'submitted', resolvedReorderIds: number[]): void
 }>()
 
 const supplierStore = useSuppliersDataStore()
@@ -34,6 +36,7 @@ const {
   removeItem,
   handleSubmit,
   reset,
+  addReorderItems,
 } = usePurchaseRequisition()
 
 // ─── Product picker ─────────────────────────────────────────────
@@ -83,15 +86,17 @@ function formatMonthYear(value: Date | null): string {
 }
 
 function close() {
+  reset()
   emit('update:modelValue', false)
 }
 
 async function onSubmit() {
-  const success = await handleSubmit()
-  if (success) {
+  const result = await handleSubmit()
+  if (result.success) {
     // handleSubmit already resets currentPR/items internally on success,
     // so there's no meaningful payload to pass along here
-    emit('submitted', true)
+    emit('submitted', result.resolvedReorderIds)
+
     close()
   }
   // on failure, handleSubmit already surfaced a toast — dialog stays open so the
@@ -105,6 +110,9 @@ watch(
     if (isOpen) {
       supplierStore.fetchSuppliers({ activeOnly: true })
       reset()
+      if (props.prefillItems?.length) {
+        addReorderItems(props.prefillItems)
+      }
       expiryMenuOpen.value = {}
     }
   }
@@ -147,8 +155,8 @@ watch(
             <v-col cols="auto" style="width: 36px" class="text-center">NO.</v-col>
             <v-col cols="1" class="pl-2">UNIT</v-col>
             <v-col cols="2" class="pl-2">PRODUCT</v-col>
-            <v-col cols="1" class="pl-2">SUPPLIER</v-col>
-            <v-col cols="2" class="pl-2">EXPIRY</v-col>
+            <v-col cols="1.5" class="pl-2">SUPPLIER</v-col>
+            <v-col cols="1.5" class="pl-2">EXPIRY</v-col>
             <v-col cols="1" class="pl-2">QTY</v-col>
             <v-col cols="1" class="pl-2">OFFER/UNIT</v-col>
             <v-col cols="1" class="text-right pr-4">OFFER TOTAL</v-col>
@@ -190,7 +198,7 @@ watch(
               />
             </v-col>
 
-            <v-col cols="1" class="pl-2">
+            <v-col cols="1.5" class="pl-2">
               <v-select
                 v-model="item.supplier_id"
                 :items="activeSuppliers"
@@ -204,7 +212,7 @@ watch(
               />
             </v-col>
 
-            <v-col cols="2" class="pl-2">
+            <v-col cols="1.5" class="pl-2">
               <v-menu
                     :model-value="expiryMenuOpen[index] ?? false"
                     @update:model-value="(val) => (expiryMenuOpen[index] = val)"

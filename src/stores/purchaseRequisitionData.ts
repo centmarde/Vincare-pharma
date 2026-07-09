@@ -33,6 +33,7 @@ export type RequisitionItemType = {
   supplier_id:      string | null
   actual_count_stock_in?:    number | null
   expiry_date?:     string | null
+  product_id?:      number | null
 }
 
 export type PR = {
@@ -244,6 +245,8 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
 
     // One slot per PR item: existing product id, or null if it needs to be created
     const productIdByIndex: (number | null)[] = items.value.map(item => {
+      if (item.product_id != null) return item.product_id   // NEW: trust reorder-sourced items directly
+
       const supplierId = item.supplier_id ? Number(item.supplier_id) : null
       const match = findExisting(item.item_description, supplierId)
       return match ? match.id : null

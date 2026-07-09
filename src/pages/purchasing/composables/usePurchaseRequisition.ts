@@ -14,6 +14,20 @@ type PRFormItem = {
   offer_per_unit: number
   cost_per_unit: number
   expiry_date: Date | null
+  product_id?: number | null // NEW
+  reorder_request_id?: number | null // NEW — tracked so we can resolve it after save
+}
+
+type SubmitResult = { success: boolean; resolvedReorderIds: number[] }
+
+export type ReorderPrefillItem = {
+  reorder_request_id: number
+  product_id: number
+  item_description: string
+  unit: string
+  supplier_id: number | null
+  cost_per_unit: number
+  offer_per_unit: number
 }
 
 export function usePurchaseRequisition() {
@@ -73,13 +87,39 @@ export function usePurchaseRequisition() {
     items.value.forEach((item, i) => (item.no = i + 1))
   }
 
+  function addReorderItems(entries: ReorderPrefillItem[]) {
+    // Drop the single blank starter row if it hasn't been touched
+    if (
+      items.value.length === 1 &&
+      !items.value[0].item_description.trim() &&
+      !items.value[0].qty
+    ) {
+      items.value = []
+    }
+
+    entries.forEach(entry => {
+      items.value.push({
+        no:                 items.value.length + 1,
+        unit:               entry.unit || 'Box',
+        item_description:   entry.item_description,
+        qty:                0,
+        offer_per_unit:     entry.offer_per_unit,
+        cost_per_unit:      entry.cost_per_unit,
+        supplier_id:        entry.supplier_id,
+        expiry_date:        null, // still needs to be picked — batch-specific
+        product_id:         entry.product_id,
+        reorder_request_id: entry.reorder_request_id,
+      })
+    })
+  }
+
   // ─── Submit ───────────────────────────────────────────────────────
-  async function handleSubmit(): Promise<boolean> {
+  async function handleSubmit(): Promise<SubmitResult> {
 
     const validItems = items.value.filter(i => i.item_description.trim())
     if (!validItems.length) {
       toast.warning('Please add at least one item.')
-      return false
+      return { success: false, resolvedReorderIds: [] }
     }
 
     const rules: { check: (i: typeof validItems[number]) => boolean; message: string }[] = [
@@ -97,7 +137,7 @@ export function usePurchaseRequisition() {
 
     if (failedMessages.length) {
       toast.info(`Please provide ${failedMessages.join(', ')} for each item.`)
-      return false
+      return { success: false, resolvedReorderIds: [] }
     }
 
     loading.value = true
@@ -106,10 +146,20 @@ export function usePurchaseRequisition() {
     prStore.currentPR.remarks     = currentPR.value.remarks || null
     prStore.currentPR.supplier_id = null
     prStore.items                 = validItems.map(i => ({
-      ...i,
-      supplier_id: i.supplier_id != null ? String(i.supplier_id) : null,
-      expiry_date: i.expiry_date ? i.expiry_date.toISOString().slice(0, 10) : null,
+      no:               i.no,
+      unit:             i.unit,
+      item_description: i.item_description,
+      qty:              i.qty,
+      offer_per_unit:   i.offer_per_unit,
+      cost_per_unit:    i.cost_per_unit,
+      supplier_id:      i.supplier_id != null ? String(i.supplier_id) : null,
+      expiry_date:      i.expiry_date ? i.expiry_date.toISOString().slice(0, 10) : null,
+      product_id:       i.product_id ?? undefined,
     }))
+
+    const resolvedReorderIds = validItems
+      .map(i => i.reorder_request_id)
+      .filter((id): id is number => id != null)
 
     const result = await prStore.savePurchaseRequisition()
 
@@ -124,10 +174,10 @@ export function usePurchaseRequisition() {
         validItems.length,
       )
       reset()
-      return true
+      return { success: true, resolvedReorderIds }
     }
 
-    return false
+    return { success: false, resolvedReorderIds: [] }
   }
 
   // ─── Reset ────────────────────────────────────────────────────────
@@ -150,6 +200,7 @@ export function usePurchaseRequisition() {
     isProfitable,
     offerCostRatio,
     marginPercent,
+    addReorderItems,
     addItem,
     removeItem,
     handleSubmit,

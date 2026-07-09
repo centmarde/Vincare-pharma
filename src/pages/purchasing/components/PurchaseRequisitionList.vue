@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import { usePurchaseRequisitionList, headers } from '../composables/usePurchaseRequisitionList'
+import type { ReorderPrefillItem } from '../composables/usePurchaseRequisition'
+import PurchaseRequisitionDialog from './dialogs/PurchaseRequisitionDialog.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import { useProductsDataStore } from '@/stores/productsData'
 import PRDetailModal from './dialogs/PRDetailModal.vue'
 import IssuePOModal from './dialogs/IssuePOModal.vue'
-import PurchaseRequisitionDialog from './dialogs/PurchaseRequisitionDialog.vue'
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useDisplay } from 'vuetify'
+
+const selectedReorderIds = ref<number[]>([])
+const prefillItemsForDialog = ref<ReorderPrefillItem[]>([])
+const productsStore = useProductsDataStore()
 
 const {
   stats,
@@ -51,12 +57,26 @@ onMounted(() => {
 })
 const showNewPRDialog = ref(false)
 
-function onPRSubmitted() {
-  // New PRs land as pending_approval and sort to the top by created_at,
-  // so jump back to page 1 to make the new record visible
-  page.value = 1
-  loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
-}
+// Clear prefill items when the dialog is closed without submitting
+watch(showNewPRDialog, (isOpen) => {
+  if (!isOpen) {
+    prefillItemsForDialog.value = []
+  }
+})
+
+// Clear reorder selection when the reorder dialog is closed
+watch(() => showReorderDialog.value, (isOpen) => {
+  if (!isOpen) {
+    selectedReorderIds.value = []
+  }
+})
+
+// function onPRSubmitted() {
+//   // New PRs land as pending_approval and sort to the top by created_at,
+//   // so jump back to page 1 to make the new record visible
+//   page.value = 1
+//   loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
+// }
 
 const totalPages = computed(() => Math.max(1, Math.ceil(totalItems.value / itemsPerPage.value)))
 function goToPage(p: number) {
@@ -64,6 +84,38 @@ function goToPage(p: number) {
   if (p < 1 || p > totalPages.value || p === page.value) return
   page.value = p
   loadItems({ page: p, itemsPerPage: itemsPerPage.value, sortBy: [] })
+}
+
+function createPRFromReorder() {
+  prefillItemsForDialog.value = reorderRequests.value
+    .filter(r => selectedReorderIds.value.includes(r.id))
+    .filter(r => r.product) // guard against orphaned rows
+    .map(r => {
+      const shortfall = (r.product.reorder_level ?? 0) - (r.product.current_stock ?? 0)
+      return {
+        reorder_request_id: r.id,
+        product_id:         r.product.id,
+        item_description:   r.product.product_name ?? '',
+        unit:                r.product.unit ?? 'Box',
+        supplier_id:         r.product.supplier_id ?? null,
+        cost_per_unit:       r.product.cost_price ?? 0,
+        offer_per_unit:      r.product.selling_price ?? 0,
+        suggested_qty:       Math.max(shortfall, 1),
+      }
+    })
+
+  showReorderDialog.value = false
+  showNewPRDialog.value = true
+}
+
+function onPRSubmitted(resolvedReorderIds: number[]) {
+  page.value = 1
+  loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
+  if (resolvedReorderIds.length) {
+    productsStore.resolveReorderRequests(resolvedReorderIds)
+  }
+  selectedReorderIds.value = []
+  prefillItemsForDialog.value = []
 }
 </script>
 
@@ -505,7 +557,7 @@ function goToPage(p: number) {
     </v-card>
 
     <!-- New Purchase Requisition -->
-    <PurchaseRequisitionDialog v-model="showNewPRDialog" @submitted="onPRSubmitted" />
+    <PurchaseRequisitionDialog v-model="showNewPRDialog" :prefill-items="prefillItemsForDialog" @submitted="onPRSubmitted" />
 
     <!-- 3. Add the Modal Component -->
     <IssuePOModal v-model="showPOModal" :pr="selectedPRForPO" />
@@ -569,6 +621,15 @@ function goToPage(p: number) {
         <v-card-text class="pa-0" style="max-height: 400px; overflow-y: auto;">
           <v-list v-if="reorderRequests.length" density="comfortable">
             <v-list-item v-for="r in reorderRequests" :key="r.id">
+              <template #prepend>
+                <v-checkbox-btn
+                  :model-value="selectedReorderIds.includes(r.id)"
+                  @update:model-value="(val) => {
+                    if (val) selectedReorderIds.push(r.id)
+                    else selectedReorderIds = selectedReorderIds.filter(id => id !== r.id)
+                  }"
+                />
+              </template>
               <v-list-item-title class="font-weight-medium">
                 {{ r.product?.product_name }}
               </v-list-item-title>
@@ -592,6 +653,17 @@ function goToPage(p: number) {
             No pending reorder requests
           </div>
         </v-card-text>
+        <v-divider />
+        <v-card-actions class="pa-4 d-flex justify-end">
+          <v-btn
+            color="primary"
+            class="text-none font-weight-bold"
+            :disabled="!selectedReorderIds.length"
+            @click="createPRFromReorder"
+          >
+            Create Purchase Requisition ({{ selectedReorderIds.length }})
+          </v-btn>
+        </v-card-actions>
       </v-card>
     </v-dialog>
   </v-container>
