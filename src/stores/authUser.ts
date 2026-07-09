@@ -3,6 +3,7 @@ import type { Ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useRouter } from 'vue-router'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { clearAllFormDrafts } from '@/composables/useFormDraft'
 interface UserData {
   id: string
   email?: string
@@ -118,6 +119,8 @@ export const useAuthUserStore = defineStore('authUser', () => {
       localStorage.removeItem('access_token')
       localStorage.removeItem('refresh_token')
       localStorage.removeItem('auth_id')
+      // Drop any in-progress form drafts so they don't linger for the next user.
+      clearAllFormDrafts()
 
       // Clear user data
       userData.value = null

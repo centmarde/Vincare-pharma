@@ -3,6 +3,7 @@ import { classificationMeta } from '@/utils/cashAccountTypes'
 import type { AddExpensePayload, ClassifiedCashAccount } from '@/utils/cashAccountTypes'
 import type { ExpenseCategory, ExpenseDepartment } from '@/stores/financeData'
 import { formatCurrency } from '@/utils/helpers'
+import { useFormDraft } from '@/composables/useFormDraft'
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
 
@@ -23,6 +24,17 @@ export function useAddExpense(
   const paidTo = ref('')
   const requestReplenishment = ref(false)
 
+  // Persist a draft so a reload / crash mid-entry doesn't wipe the expense.
+  // expenseDate defaults to today and requestReplenishment is a derived toggle,
+  // so neither counts toward the "touched" check.
+  const draft = useFormDraft({
+    key: 'finance-add-expense',
+    version: 1,
+    refs: { category, description, amount, expenseDate, cashAccountId, department, orSiNo, paidTo },
+    isEmpty: () => category.value == null && !description.value && amount.value == null
+      && cashAccountId.value == null && department.value == null && !orSiNo.value && !paidTo.value,
+  })
+
   function resetForm() {
     category.value = null
     description.value = ''
@@ -33,6 +45,7 @@ export function useAddExpense(
     orSiNo.value = ''
     paidTo.value = ''
     requestReplenishment.value = false
+    draft.clear()
   }
 
   const accountOptions = computed(() =>
@@ -103,5 +116,6 @@ export function useAddExpense(
     accountOptions, isPettyCash, pettyCashBalance, disbursedAmount, remainingBalance,
     insufficientPettyCash, isBelowThreshold, canSubmit,
     resetForm, buildPayload,
+    restoreDraft: draft.restore,
   }
 }

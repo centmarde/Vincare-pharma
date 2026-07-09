@@ -6,6 +6,7 @@ import { useCustomersDataStore } from '@/stores/customersData'
 import { useProductsDataStore } from '@/stores/productsData'
 import { useAgentsDataStore } from '@/stores/agentsData'
 import { useOutletsDataStore } from '@/stores/outletsData'
+import { useFormDraft } from '@/composables/useFormDraft'
 
 const toast = useToast()
 
@@ -36,6 +37,18 @@ export function useCreateOrder(onCreated: () => void) {
   const termsDays = ref(0)
   const remarks = ref('')
   const lines = ref<FormLine[]>([])
+
+  // Persist a draft so a reload / crash mid-entry doesn't wipe the order.
+  // outletId is deliberately excluded from the "touched" check — it auto-defaults
+  // to the first branch on open, so it isn't a sign the user actually started.
+  const draft = useFormDraft({
+    key: 'ethical-create-order',
+    version: 1,
+    refs: { customerId, agentId, outletId, discount, rebate, termsDays, remarks, lines },
+    isEmpty: () => customerId.value == null && agentId.value == null && !remarks.value
+      && discount.value === 0 && rebate.value === 0 && termsDays.value === 0
+      && !lines.value.some((l) => l.product_id != null || l.unit_price > 0),
+  })
 
   const customerOptions = computed(() =>
     customers.value
@@ -101,7 +114,7 @@ export function useCreateOrder(onCreated: () => void) {
       })),
     })
     loading.value = false
-    if (result.success) { reset(); onCreated() }
+    if (result.success) { draft.clear(); reset(); onCreated() }
   }
 
   function reset() {
@@ -121,6 +134,8 @@ export function useCreateOrder(onCreated: () => void) {
     if (!agents.value.length) await agentsStore.fetchAgents({ activeOnly: true })
     if (!products.value.length) await productsStore.fetchProducts()
     if (!outlets.value.length) await outletsStore.fetchOutlets()
+    // Restore a saved draft first, then fall back to defaults for anything blank.
+    draft.restore()
     if (!outletId.value) outletId.value = outletOptions.value[0]?.value ?? null
     if (!lines.value.length) addLine()
   }
