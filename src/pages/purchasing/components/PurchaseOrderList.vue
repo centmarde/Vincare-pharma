@@ -44,8 +44,8 @@ function goToPage(p: number) {
 </script>
 <template>
   <v-container fluid class="pa-2 fill-height align-start">
-    <v-row class="mb-2" dense>
-      <v-col cols="6" sm="3">
+
+      <div class="stats-grid mb-2">
         <v-card elevation="1" class="stat-card rounded-xl" 
           @click="filterStatus = null">
           <v-card-text class="d-flex align-center" style="gap: 12px">
@@ -58,9 +58,7 @@ function goToPage(p: number) {
             </div>
           </v-card-text>
         </v-card>
-      </v-col>
 
-      <v-col cols="6" sm="3">
         <v-card elevation="1" class="stat-card rounded-xl"
           :class="{ 'stat-card--active': filterStatus === 'issued' }"
           @click="filterStatus = 'issued'"
@@ -75,9 +73,7 @@ function goToPage(p: number) {
             </div>
           </v-card-text>
         </v-card>
-      </v-col>
 
-      <v-col cols="6" sm="3">
         <v-card elevation="1" class="stat-card rounded-xl"
           :class="{ 'stat-card--active': filterStatus === 'complete' }"
           @click="filterStatus = 'complete'"
@@ -92,9 +88,7 @@ function goToPage(p: number) {
             </div>
           </v-card-text>
         </v-card>
-      </v-col>
 
-      <v-col cols="6" sm="3">
         <v-card elevation="1" class="stat-card rounded-xl">
           <v-card-text class="d-flex align-center" style="gap: 12px">
             <v-avatar color="green" variant="tonal" size="40">
@@ -106,8 +100,7 @@ function goToPage(p: number) {
             </div>
           </v-card-text>
         </v-card>
-      </v-col>
-    </v-row>
+      </div>
     <v-card class="mx-auto w-100 pa-0" rounded="lg" elevation="1">
       <!-- Header -->
       <v-card-title class="pa-4 pa-sm-5">
@@ -502,5 +495,11 @@ function goToPage(p: number) {
   border-color: #3F51B5;
   background-color: rgba(50, 75, 219, 0.08);
   box-shadow: 0 4px 12px rgba(var(--v-theme-primary), 0.2);
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  width: 100%;
 }
 </style>

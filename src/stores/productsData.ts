@@ -457,19 +457,57 @@ export const useProductsDataStore = defineStore('productsData', () => {
 
   async function resolveReorderRequests(ids: number[]) {
     if (!ids.length) return
+
+    loading.value = true
+
+    // Need the current user for created_by on the log entries —
+    // same pattern as createReorderRequest above.
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) {
+      toast.error('User not authenticated.')
+      loading.value = false
+      return
+    }
+
     const { error } = await supabase
       .from('transactions')
       .update({ status: 'resolved' })
       .in('id', ids)
 
+    // Check the update result BEFORE logging anything — a failed status
+    // update shouldn't produce a "resolved" log entry.
     if (error) {
       toast.error('Failed to update reorder request status.')
+      loading.value = false
       return
     }
+
+    // Snapshot the matching requests before reorderRequests.value gets filtered
+    // below, so we still have product info to describe in the log.
+    const resolvedRequests = ids
+      .map(id => reorderRequests.value.find(r => r.id === id))
+      .filter((r): r is NonNullable<typeof r> => r != null)
+
+    // Log each resolution — don't let a logging hiccup block the UI update,
+    // but surface it if it happens so it isn't silently lost.
+    const logsStore = useLogsDataStore()
+    await Promise.all(resolvedRequests.map(request =>
+      logsStore.createLog({
+        action:         'reorder_resolved',
+        description:    `Reorder resolved for "${request.product?.product_name ?? `Product #${request.product_id}`}"`,
+        module:         'reorder',
+        transaction_id: request.id,
+        created_by:     user.id,
+      })
+    )).catch(err => {
+      console.error('Failed to log reorder resolution:', err)
+    })
 
     // Optimistically drop them locally
     reorderRequests.value = reorderRequests.value.filter(r => !ids.includes(r.id))
     reorderCount.value = reorderRequests.value.length
+
+    loading.value = false
   }
 
   const updateProduct = async (id: number, updateData: UpdateProductData) => {

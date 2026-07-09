@@ -71,13 +71,6 @@ watch(() => showReorderDialog.value, (isOpen) => {
   }
 })
 
-// function onPRSubmitted() {
-//   // New PRs land as pending_approval and sort to the top by created_at,
-//   // so jump back to page 1 to make the new record visible
-//   page.value = 1
-//   loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
-// }
-
 const totalPages = computed(() => Math.max(1, Math.ceil(totalItems.value / itemsPerPage.value)))
 function goToPage(p: number) {
   // window.scrollTo({ top: 100, behavior: 'smooth' as ScrollBehavior })
@@ -121,11 +114,9 @@ function onPRSubmitted(resolvedReorderIds: number[]) {
 
 <template>
   <v-container fluid class="pa-2 fill-height align-start">
-    <v-row class="mb-2" dense>
-      <v-col cols="6" sm="3">
-        <v-card elevation="1" class="stat-card rounded-xl"
-        
-          @click="filterStatus = null">
+
+    <div class="stats-grid mb-2">
+        <v-card elevation="1" class="stat-card rounded-xl" @click="filterStatus = null">
           <v-card-text class="d-flex align-center" style="gap: 12px">
             <v-avatar color="purple" variant="tonal" size="40">
               <v-icon icon="mdi-file-document-multiple-outline" />
@@ -136,8 +127,7 @@ function onPRSubmitted(resolvedReorderIds: number[]) {
             </div>
           </v-card-text>
         </v-card>
-      </v-col>
-      <v-col cols="6" sm="3">
+
         <v-card elevation="1" class="stat-card rounded-xl" @click="openReorderDialog">
           <v-card-text class="d-flex align-center" style="gap: 12px">
             <v-avatar color="teal" variant="tonal" size="40">
@@ -149,9 +139,7 @@ function onPRSubmitted(resolvedReorderIds: number[]) {
             </div>
           </v-card-text>
         </v-card>
-      </v-col>
 
-      <v-col cols="6" sm="3">
         <v-card elevation="1" class="stat-card rounded-xl"
           :class="{ 'stat-card--active': filterStatus === 'pending_approval' }"
           @click="filterStatus = 'pending_approval'"
@@ -166,9 +154,7 @@ function onPRSubmitted(resolvedReorderIds: number[]) {
             </div>
           </v-card-text>
         </v-card>
-      </v-col>
 
-      <v-col cols="6" sm="3">
         <v-card elevation="1" class="stat-card rounded-xl"
           :class="{ 'stat-card--active': filterStatus === 'approved' }"
           @click="filterStatus = 'approved'"
@@ -183,9 +169,7 @@ function onPRSubmitted(resolvedReorderIds: number[]) {
             </div>
           </v-card-text>
         </v-card>
-      </v-col>
 
-      <v-col cols="6" sm="3">
         <v-card rounded="lg" elevation="1" class="stat-card rounded-xl"
           :class="{ 'stat-card--active': filterStatus === 'rejected' }"
           @click="filterStatus = 'rejected'">
@@ -199,8 +183,7 @@ function onPRSubmitted(resolvedReorderIds: number[]) {
             </div>
           </v-card-text>
         </v-card>
-      </v-col>
-    </v-row>
+      </div>  
 
     <!-- V-Data-Table -->
     <v-card class="mx-auto w-100" rounded="lg" elevation="1">
@@ -755,5 +738,11 @@ function onPRSubmitted(resolvedReorderIds: number[]) {
   border-color: #A63EB8;
   background-color: rgba(50, 75, 219, 0.08);
   box-shadow: 0 4px 12px rgba(var(--v-theme-primary), 0.2);
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  width: 100%;
 }
 </style>

@@ -109,6 +109,9 @@ export function usePurchaseOrderList() {
     itemsPerPage: number
     sortBy:       { key: string; order: string }[]
   }) {
+
+    if (!authStore.users.length) await authStore.getAllUsers()
+      
     const { rows, totalCount } = await txStore.fetchPurchaseOrdersRPC({
       status:     filterStatus.value ?? undefined,
       search:     search.value.trim() || undefined,
