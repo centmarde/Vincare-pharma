@@ -4,12 +4,16 @@ import { useInhouseDataStore } from '@/stores/inhouseData'
 import type { InhouseOrderType, Shortfall, NegotiationRound } from '@/stores/inhouseData'
 import { useDeliveryReceiptsDataStore, type DeliveryReceiptType } from '@/stores/deliveryReceiptsData'
 import { useProductsDataStore } from '@/stores/productsData'
+import { useProcurementDataStore } from '@/stores/procurementData'
+import { useAuthUserStore } from '@/stores/authUser'
 import type { CollectionType } from '@/stores/ethicalData'
 
 export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: () => void) {
   const store = useInhouseDataStore()
   const drStore = useDeliveryReceiptsDataStore()
   const productsStore = useProductsDataStore()
+  const procurementStore = useProcurementDataStore()
+  const authStore = useAuthUserStore()
   const { products } = storeToRefs(productsStore)
   if (!products.value.length) void productsStore.fetchProducts()
 
@@ -17,6 +21,10 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   const rounds = ref<NegotiationRound[]>([])
   const shortfall = ref<Shortfall[]>([])
   const payments = ref<CollectionType[]>([])
+  // Purchasing hand-off: staff no longer canvass suppliers themselves — they
+  // send a request and Purchasing does the sourcing (lead-dev directive).
+  const requestedAt = ref<string | null>(null)
+  const requestNote = ref('')
 
   // negotiate panel: editable per-line offer prices + a note
   const lineEdits = ref<Record<number, number>>({})
@@ -96,6 +104,8 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     payReference.value = ''
     payRemarks.value = ''
     payAmount.value = null
+    requestedAt.value = null
+    requestNote.value = ''
     if (!o) return
     for (const it of o.items ?? []) {
       lineEdits.value[it.id] = it.unit_price
@@ -107,13 +117,33 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     // it for a partial tranche.
     payAmount.value = (o.total_amount ?? 0) - (o.amount_paid ?? 0)
     void loadRounds(o.id)
-    if (o.status === 'awaiting_stock') void refreshShortfall(o.id)
+    if (o.status === 'awaiting_stock') { void refreshShortfall(o.id); void loadRequestStatus(o.id) }
     if (o.status === 'delivered' || o.status === 'partial' || o.status === 'paid') void loadPayments(o.id)
   }, { immediate: true })
 
   async function loadRounds(id: number) { rounds.value = await store.fetchNegotiation(id) }
-  async function refreshShortfall(id: number) { shortfall.value = await store.recheckStock(id) }
+  // Passive: opening an awaiting_stock order only READS the shortfall for display.
+  // Advancing the order + minting the PO is the explicit "Re-check stock" button
+  // (recheck() → store.recheckStock), never a side effect of viewing.
+  async function refreshShortfall(id: number) { shortfall.value = await store.computeShortfall(id) }
   async function loadPayments(id: number) { payments.value = await store.fetchPayments(id) }
+  async function loadRequestStatus(id: number) {
+    const latest = await procurementStore.fetchLatestRequest(id)
+    requestedAt.value = latest?.created_at ?? null
+  }
+
+  // Send the "we need these items, can you buy some?" ping to Purchasing.
+  // Staff never see supplier info — canvassing now happens only on the
+  // Purchasing side (Procurement Requests queue).
+  async function notifyPurchasing() {
+    const o = order(); if (!o) return
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) return
+    loading.value = true
+    const ok = await procurementStore.notifyPurchasing('inhouse_order', o.id, requestNote.value || undefined, user.id)
+    loading.value = false
+    if (ok) { requestNote.value = ''; await loadRequestStatus(o.id) }
+  }
 
   // Customer wants a different product on this line — snapshot the new
   // product's cost so profitability stays accurate; offer price is left for
@@ -195,8 +225,9 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     loading, rounds, shortfall, payments, lineEdits, lineProductEdits, lineCostEdits, productOptions, offerNote, deliverQtys,
     receivedBy, issuedReceipt,
     payAmount, payReference, payRemarks,
+    requestedAt, requestNote,
     items, status, isNegotiating, isAwaitingStock, isReady, isDelivered, isPartiallyPaid, isPaid, canRecordPayment,
     proposedTotal, proposedCost, proposedProfit, proposedMarginPct, deliveredPct, remaining, balance, paidPct,
-    onLineProductChange, recordCounter, agree, recheck, deliver, recordPayment,
+    onLineProductChange, recordCounter, agree, recheck, deliver, recordPayment, notifyPurchasing,
   }
 }

@@ -115,16 +115,26 @@ export const useDeliveryReceiptsDataStore = defineStore('deliveryReceiptsData', 
   // across the whole chain — only the letter-code prefix changes, e.g.
   // IH-2026-009 -> PO-2026-009 -> DR-2026-009). An order can spawn more than
   // one DR (partial deliveries in In-House, reprints in Ethical), so a
-  // per-order suffix disambiguates: DR-2026-009-1, DR-2026-009-2, ...
+  // suffix disambiguates: DR-2026-009-1, DR-2026-009-2, ...
+  //
+  // The suffix is counted per BASE prefix (all DRs whose dr_no starts with
+  // e.g. "DR-2026-002-"), NOT per order_id. In-House (inhouse_no) and Ethical
+  // (ethical_no) are independent per-type series, so IH-2026-002 and
+  // EO-2026-002 both derive to the SAME base "DR-2026-002". A per-order count
+  // would restart each at -1 and collide on the globally-unique
+  // delivery_receipts.dr_no. Counting by base keeps the number unique across
+  // both modules.
   const createDeliveryReceipt = async (
     payload: CreateDeliveryReceiptPayload,
     userId: string,
   ): Promise<{ success: boolean; drId?: number; drNo?: string }> => {
     const base = (payload.orderNo ?? '').replace(/^(IH|EO)-/, 'DR-')
-    const { count } = await supabase
-      .from('delivery_receipts')
-      .select('id', { count: 'exact', head: true })
-      .eq('order_id', payload.orderId)
+    const { count } = base
+      ? await supabase
+          .from('delivery_receipts')
+          .select('id', { count: 'exact', head: true })
+          .like('dr_no', `${base}-%`)
+      : { count: 0 }
     const drNo = base ? `${base}-${(count ?? 0) + 1}` : null
 
     const { data: dr, error: drError } = await supabase

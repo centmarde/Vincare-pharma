@@ -2,6 +2,7 @@ import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import { useLogRequisition } from './useLogRequisition'
 import { useToast } from 'vue-toastification'
 import { ref, computed } from 'vue'
+import { useFormDraft } from '@/composables/useFormDraft'
 
 export const unitOptions = ['Box', 'Pcs', 'Set', 'Unit', 'Kg', 'M']
 
@@ -29,6 +30,27 @@ export function usePurchaseRequisition() {
   })
 
   const items = ref<PRFormItem[]>([])
+
+  // Persist a draft so a reload / crash mid-entry doesn't wipe the requisition.
+  // expiry_date is a Date; JSON stores it as an ISO string, so revive it on
+  // restore or the datepicker's .getFullYear()/.getMonth() calls would crash.
+  const draft = useFormDraft({
+    key: 'purchasing-requisition',
+    version: 1,
+    refs: { currentPR, items },
+    isEmpty: () => !currentPR.value.remarks
+      && !items.value.some((i) => i.item_description.trim() || i.supplier_id != null
+        || i.qty > 0 || i.offer_per_unit > 0 || i.cost_per_unit > 0 || i.expiry_date != null),
+    deserialize: (data) => ({
+      ...data,
+      items: Array.isArray(data.items)
+        ? (data.items as PRFormItem[]).map((i) => ({
+            ...i,
+            expiry_date: i.expiry_date ? new Date(i.expiry_date as unknown as string) : null,
+          }))
+        : data.items,
+    }),
+  })
 
   // ─── Computed ─────────────────────────────────────────────────────
   const customerOfferTotal = computed(() =>
@@ -123,6 +145,7 @@ export function usePurchaseRequisition() {
         'purchase_requisition',
         validItems.length,
       )
+      draft.clear()
       reset()
       return true
     }
@@ -138,7 +161,8 @@ export function usePurchaseRequisition() {
   }
 
   // ─── Init ─────────────────────────────────────────────────────────
-  if (items.value.length === 0) addItem()
+  // Restore a saved draft first; only seed an empty row if there's nothing to restore.
+  if (!draft.restore() && items.value.length === 0) addItem()
 
   return {
     currentPR,

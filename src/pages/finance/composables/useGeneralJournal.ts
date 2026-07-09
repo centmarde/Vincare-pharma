@@ -2,6 +2,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useToast } from 'vue-toastification'
 import { useGLDataStore } from '@/stores/glData'
 import type { ReferenceType, JournalLineInput } from '@/stores/glData'
+import { useFormDraft } from '@/composables/useFormDraft'
 
 const toast = useToast()
 
@@ -36,6 +37,16 @@ export function useGeneralJournal() {
     { account_code: '', debit: 0, credit: 0 },
   ])
 
+  // Persist a draft so a reload / crash mid-entry doesn't wipe the journal entry.
+  // manualEntryDate defaults to today, so it isn't part of the "touched" check.
+  const manualDraft = useFormDraft({
+    key: 'finance-manual-journal-entry',
+    version: 1,
+    refs: { manualEntryDate, manualDescription, manualLines },
+    isEmpty: () => !manualDescription.value
+      && !manualLines.value.some((l) => l.account_code || l.debit > 0 || l.credit > 0),
+  })
+
   const manualTotalDebit = computed(() => manualLines.value.reduce((s, l) => s + (l.debit || 0), 0))
   const manualTotalCredit = computed(() => manualLines.value.reduce((s, l) => s + (l.credit || 0), 0))
   const manualIsBalanced = computed(() =>
@@ -49,6 +60,8 @@ export function useGeneralJournal() {
   }
 
   async function init() {
+    // Restore any in-progress manual journal entry from a previous session.
+    manualDraft.restore()
     await Promise.all([gl.fetchAccounts(), fetchJournal()])
   }
 
@@ -71,6 +84,7 @@ export function useGeneralJournal() {
       lines,
     })
     if (result.success) {
+      manualDraft.clear()
       showManualEntryDialog.value = false
       manualDescription.value = ''
       manualLines.value = [

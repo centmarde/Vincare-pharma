@@ -793,6 +793,18 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       toast.error(`Expense ${id} not found.`); loading.value = false; return { success: false }
     }
 
+    // Delete first, guarded — the cash-balance restore is a compensating side
+    // effect and must only happen once the expense is actually gone. Doing it
+    // beforehand (as this used to) meant a failed delete left the balance
+    // credited back for an expense that was still sitting on the books.
+    const { error: deleteError } = await supabase.from('transactions').delete().eq('id', id).eq('transaction_type', 'expense')
+    if (deleteError) {
+      handleError(deleteError, 'Failed to delete expense.')
+      toast.error(deleteError.message || 'Failed to delete expense.')
+      loading.value = false
+      return { success: false }
+    }
+
     if (expense.cash_account_id && (expense.total_amount ?? 0) > 0) {
       const { data: account } = await supabase
         .from('cash_accounts').select('balance').eq('id', expense.cash_account_id).maybeSingle()
@@ -808,14 +820,6 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       module: 'finance', transaction_id: id,
     })
     if (logError) console.warn('deleteExpense: activity log insert failed:', logError.message)
-
-    const { error: deleteError } = await supabase.from('transactions').delete().eq('id', id).eq('transaction_type', 'expense')
-    if (deleteError) {
-      handleError(deleteError, 'Failed to delete expense.')
-      toast.error(deleteError.message || 'Failed to delete expense.')
-      loading.value = false
-      return { success: false }
-    }
 
     toast.success('Expense deleted.')
     await fetchExpenses()

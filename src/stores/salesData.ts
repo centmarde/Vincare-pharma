@@ -177,10 +177,22 @@ export const useSalesDataStore = defineStore('salesData', () => {
   }
 
   // Header + pos_sale_details + items + branch stock decrement (was
-  // pos_create_sale). Best-effort, not atomic: a failure partway through can
-  // leave a partial sale (accepted trade-off, JS-over-RPC convention). Assumes
-  // the cart already merges duplicate product lines (existing POS UI behavior),
-  // so each product's on-hand snapshot only needs to be read once per checkout.
+  // pos_create_sale). Not atomic — a failure partway through can leave
+  // pos_sale_details/some items/some stock decrements written — but the
+  // header always gets rolled back (deleted) on any downstream failure so a
+  // partial sale never sits around with status='completed': remittancesData's
+  // submitRemittance sums total_amount for every status='completed' sale, so
+  // a stray "completed" row with no items/stock movement would silently
+  // inflate expected cash. Assumes the cart already merges duplicate product
+  // lines (existing POS UI behavior), so each product's on-hand snapshot only
+  // needs to be read once per checkout.
+  const rollbackSale = async (id: number) => {
+    await supabase.from('transaction_items').delete().eq('transaction_id', id)
+    await supabase.from('pos_sale_details').delete().eq('transaction_id', id)
+    const { error } = await supabase.from('transactions').delete().eq('id', id).eq('transaction_type', 'sale')
+    if (error) console.warn('createSale: rollback of partial sale failed — status=\'completed\' row left behind, id:', id, error.message)
+  }
+
   const createSale = async (payload: {
     outletId: number
     lines: SaleLineInput[]
@@ -321,6 +333,7 @@ export const useSalesDataStore = defineStore('salesData', () => {
     if (detailsError) {
       handleError(detailsError, 'Failed to save sale details.')
       toast.error(detailsError.message || 'Failed to save sale details.')
+      await rollbackSale(created.id)
       loading.value = false
       return { success: false }
     }
@@ -340,6 +353,7 @@ export const useSalesDataStore = defineStore('salesData', () => {
       if (itemError) {
         handleError(itemError, 'Failed to save sale line item.')
         toast.error(itemError.message || 'Failed to save sale line item.')
+        await rollbackSale(created.id)
         loading.value = false
         return { success: false }
       }
@@ -352,6 +366,11 @@ export const useSalesDataStore = defineStore('salesData', () => {
       if (stockUpdateError) {
         handleError(stockUpdateError, 'Failed to update branch stock.')
         toast.error(stockUpdateError.message || 'Failed to update branch stock (partway through — verify stock manually).')
+        // Header/items/details still get rolled back so the sale doesn't get
+        // swept into a remittance as "completed" — any stock already
+        // decremented for earlier lines in this loop is NOT restored here
+        // (pre-existing trade-off; the toast says to verify stock manually).
+        await rollbackSale(created.id)
         loading.value = false
         return { success: false }
       }

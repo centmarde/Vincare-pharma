@@ -416,19 +416,28 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
       .eq('transaction_id', payload.orderId)
     if (detailsError) console.warn('recordCollection: ethical_details update failed:', detailsError.message)
 
-    const { error: statusError } = await supabase
-      .from('transactions')
-      .update({ status: newStatus, updated_at: nowIso })
-      .eq('id', payload.orderId)
-    if (statusError) console.warn('recordCollection: status flip failed:', statusError.message)
+    // Only flip status if the amount_paid cache write above actually landed —
+    // status='paid'/'partial' otherwise implies a balance that the cache
+    // doesn't reflect, and once status leaves invoiced/partial the guard at
+    // the top of this function permanently blocks any further collection
+    // that could have corrected it.
+    if (!detailsError) {
+      const { error: statusError } = await supabase
+        .from('transactions')
+        .update({ status: newStatus, updated_at: nowIso })
+        .eq('id', payload.orderId)
+      if (statusError) console.warn('recordCollection: status flip failed:', statusError.message)
+    }
 
     const { error: logError } = await supabase.from('logs').insert({
-      created_by: user.id, action: 'collection', description: `Collection of ${payload.amount} recorded`,
+      created_by: user.id, action: 'collection',
+      description: `Collection of ${payload.amount} recorded${detailsError ? ' — WARNING: balance cache update failed, verify manually' : ''}`,
       module: 'ethical', transaction_id: payload.orderId,
     })
     if (logError) console.warn('recordCollection: activity log insert failed:', logError.message)
 
-    toast.success('Collection recorded.')
+    if (detailsError) toast.warning('Collection recorded, but the order balance may be out of sync — verify manually.')
+    else toast.success('Collection recorded.')
     await fetchOrders()
     await fetchCollections(payload.orderId)
     loading.value = false
@@ -476,11 +485,45 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
       toast.error('Nothing has been fulfilled on this order yet to receipt.')
       loading.value = false; return { success: false }
     }
-    const fulfilledItems = fulfilledItemRows.map((row: any) => ({
-      product_id: row.product_id,
-      delivered_qty: row.actual_count_stock_out,
-      unit_price: row.unit_price,
-    }))
+
+    // actual_count_stock_out is CUMULATIVE (the order's running total, not a
+    // per-delivery amount), so a second DR after a recheck resolves more of
+    // the shortfall must only list the NEW quantity, not the full cumulative
+    // total again — otherwise units already on a prior DR get re-listed as if
+    // newly delivered. Subtract what earlier DRs for this order already put
+    // on paper, per product.
+    const { data: priorDrLines, error: priorDrError } = await supabase
+      .from('delivery_receipts')
+      .select('delivery_receipt_items(product_id, qty)')
+      .eq('order_id', payload.orderId)
+      .eq('source', 'ethical_order')
+    if (priorDrError) {
+      handleError(priorDrError, 'Failed to issue delivery receipt.')
+      toast.error(priorDrError.message || 'Failed to issue delivery receipt.')
+      loading.value = false; return { success: false }
+    }
+    const alreadyReceipted = new Map<number, number>()
+    for (const dr of (priorDrLines ?? []) as { delivery_receipt_items: { product_id: number | null; qty: number }[] }[]) {
+      for (const line of dr.delivery_receipt_items ?? []) {
+        if (line.product_id == null) continue
+        alreadyReceipted.set(line.product_id, (alreadyReceipted.get(line.product_id) ?? 0) + line.qty)
+      }
+    }
+
+    const fulfilledItems = fulfilledItemRows
+      .map((row: any) => {
+        const already = row.product_id != null ? (alreadyReceipted.get(row.product_id) ?? 0) : 0
+        return {
+          product_id: row.product_id,
+          delivered_qty: (row.actual_count_stock_out ?? 0) - already,
+          unit_price: row.unit_price,
+        }
+      })
+      .filter((item) => item.delivered_qty > 0)
+    if (!fulfilledItems.length) {
+      toast.error('Nothing new to receipt since the last delivery receipt.')
+      loading.value = false; return { success: false }
+    }
 
     // Document-only DR (no stock movement) into the dedicated tables via drStore.
     const dr = await drStore.createDeliveryReceipt({
@@ -547,6 +590,12 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
       stock_sources: (row.stock_sources ?? null) as Record<string, number> | null,
     }))
 
+    // Best-effort restore, but — unlike other best-effort loops in this file —
+    // a silent failure here used to leave stock permanently short while the
+    // order still got marked 'cancelled' (implying the full restore
+    // happened), with zero trace anywhere. Track failures so the log/toast
+    // below actually reflect what happened.
+    let restoreFailed = false
     for (const item of items) {
       const sources = (item.stock_sources ?? {}) as { branch?: number; warehouse?: number }
       if (sources.branch != null) {
@@ -554,19 +603,22 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
           .from('outlet_stock').select('quantity')
           .eq('outlet_id', order.outlet_id).eq('product_id', item.product_id).maybeSingle()
         if (existingStock) {
-          await supabase.from('outlet_stock')
+          const { error } = await supabase.from('outlet_stock')
             .update({ quantity: existingStock.quantity + sources.branch, updated_at: new Date().toISOString() })
             .eq('outlet_id', order.outlet_id).eq('product_id', item.product_id)
+          if (error) { console.warn('cancelOrder: branch stock restore failed:', error.message); restoreFailed = true }
         } else {
-          await supabase.from('outlet_stock')
+          const { error } = await supabase.from('outlet_stock')
             .insert({ outlet: outlet?.code ?? null, outlet_id: order.outlet_id, product_id: item.product_id, quantity: sources.branch })
+          if (error) { console.warn('cancelOrder: branch stock insert failed:', error.message); restoreFailed = true }
         }
       }
       if (sources.warehouse != null) {
         const { data: product } = await supabase.from('products').select('current_stock').eq('id', item.product_id).maybeSingle()
-        await supabase.from('products')
+        const { error } = await supabase.from('products')
           .update({ current_stock: (product?.current_stock ?? 0) + sources.warehouse })
           .eq('id', item.product_id)
+        if (error) { console.warn('cancelOrder: warehouse stock restore failed:', error.message); restoreFailed = true }
       }
     }
 
@@ -582,12 +634,14 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     }
 
     const { error: logError } = await supabase.from('logs').insert({
-      created_by: user.id, action: 'cancelled', description: `Ethical order cancelled: ${reason || '(no reason)'}`,
+      created_by: user.id, action: 'cancelled',
+      description: `Ethical order cancelled: ${reason || '(no reason)'}${restoreFailed ? ' — WARNING: stock restore partially failed, verify manually' : ''}`,
       module: 'ethical', transaction_id: orderId,
     })
     if (logError) console.warn('cancelOrder: activity log insert failed:', logError.message)
 
-    toast.success('Order cancelled and stock restored.')
+    if (restoreFailed) toast.warning('Order cancelled, but stock restore partially failed — verify stock manually.')
+    else toast.success('Order cancelled and stock restored.')
     await fetchOrders()
     loading.value = false
     return { success: true }

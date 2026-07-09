@@ -4,6 +4,7 @@ import { useToast } from 'vue-toastification'
 import { useInhouseDataStore } from '@/stores/inhouseData'
 import { useCustomersDataStore } from '@/stores/customersData'
 import { useProductsDataStore } from '@/stores/productsData'
+import { useFormDraft } from '@/composables/useFormDraft'
 
 const toast = useToast()
 
@@ -27,6 +28,15 @@ export function useRaiseOrder(onCreated: () => void) {
   const remarks = ref('')
   const lines = ref<FormLine[]>([])
 
+  // Persist a draft so a reload / crash mid-entry doesn't wipe the order.
+  const draft = useFormDraft({
+    key: 'inhouse-raise-order',
+    version: 1,
+    refs: { customerId, govtPoNo, remarks, lines },
+    isEmpty: () => customerId.value == null && !govtPoNo.value && !remarks.value
+      && !lines.value.some((l) => l.product_id != null || l.offer_unit > 0 || l.cost_unit > 0),
+  })
+
   const customerOptions = computed(() =>
     customers.value.map((c) => ({ title: `${c.name}${c.agency_type ? ` (${c.agency_type})` : ''}`, value: c.id })))
 
@@ -36,7 +46,14 @@ export function useRaiseOrder(onCreated: () => void) {
       value: p.id,
       cost: p.cost_price ?? 0,
       selling: p.selling_price ?? 0,
+      unit: p.unit ?? '—',
     })))
+
+  // Unit (Box/Bottle/Piece/…) is a property of the product master, same as
+  // Purchasing's PR table — not something staff choose per order line.
+  function unitFor(productId: number | null): string {
+    return productOptions.value.find((o) => o.value === productId)?.unit ?? '—'
+  }
 
   const validLines = computed(() => lines.value.filter((l) => l.product_id != null && l.qty > 0))
   const offerTotal = computed(() => lines.value.reduce((s, l) => s + l.qty * l.offer_unit, 0))
@@ -68,7 +85,7 @@ export function useRaiseOrder(onCreated: () => void) {
       })),
     })
     loading.value = false
-    if (result.success) { reset(); onCreated() }
+    if (result.success) { draft.clear(); reset(); onCreated() }
   }
 
   function reset() {
@@ -78,13 +95,14 @@ export function useRaiseOrder(onCreated: () => void) {
   async function init() {
     await customersStore.fetchCustomers({ activeOnly: true, department: 'inhouse' })
     if (!products.value.length) await productsStore.fetchProducts()
-    if (!lines.value.length) addLine()
+    // Restore a saved draft first; only seed an empty line if there's nothing to restore.
+    if (!draft.restore() && !lines.value.length) addLine()
   }
 
   return {
     loading, customerId, govtPoNo, remarks, lines,
     customerOptions, productOptions,
     offerTotal, costTotal, profit, marginPct,
-    addLine, removeLine, onProductChange, submit, reset, init,
+    addLine, removeLine, onProductChange, unitFor, submit, reset, init,
   }
 }

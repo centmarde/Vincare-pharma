@@ -151,7 +151,10 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       if (Array.isArray(status)) q = q.in('status', status)
       else                       q = q.eq('status', status)
     }
-    if (po_no_not_null)    q = q.ilike('po_no', 'PO%')
+    // Same transaction_type guard as fetchTransactionsCount below — po_no is
+    // overloaded (In-House also writes PO-YYYY-### into it), so filtering on
+    // the prefix alone leaks inhouse_order rows in as fake POs.
+    if (po_no_not_null)    q = q.ilike('po_no', 'PO%').in('transaction_type', ['purchase_order', 'stock_in'])
     if (requisition_no_not_null) q = q.ilike('requisition_no', 'PR%')
     if (search?.trim()) {
       const s = search.trim().replace(/,/g, '')
