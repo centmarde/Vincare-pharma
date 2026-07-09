@@ -364,6 +364,20 @@ export const useProductsDataStore = defineStore('productsData', () => {
     }
   }
 
+  // The caller (PODetailViewModal.vue's saveAllItems) rebuilds `updates` from
+  // local form state on every call, including "Mark as Received" retries
+  // after a partial failure — it has no way to know which lines already
+  // landed. Without a guard, retrying re-applies `current_stock + actual_count`
+  // for lines that already succeeded, double-counting real physical stock.
+  // Fix: skip a line entirely if its transaction_item already carries a
+  // non-null actual_count_stock_in (only the SKU can still be corrected).
+  // Within a not-yet-applied line, the stock increment is written BEFORE the
+  // actual_count_stock_in marker (reverse of the old order) so that "marker
+  // is set" reliably implies "stock was applied" — matching every other
+  // premature-marker fix in this sweep. This isn't fully atomic (a failure
+  // between those two writes is still possible, same best-effort trade-off
+  // accepted project-wide for JS-over-RPC) but it closes the actual retry
+  // scenario that caused double-counting.
   const updateProductSkuAndCount = async (
     updates: ReceiveStockUpdate[]
   ): Promise<boolean> => {
@@ -372,27 +386,42 @@ export const useProductsDataStore = defineStore('productsData', () => {
 
     try {
       for (const { transaction_item_id, product_id, sku, actual_count_stock_in } of updates) {
-        // 1. Record the actual delivered qty on the transaction line
-        const { error: tiError } = await supabase
+        const { data: existingItem, error: existingError } = await supabase
           .from('transaction_items')
-          .update({ actual_count_stock_in })
+          .select('actual_count_stock_in')
           .eq('id', transaction_item_id)
+          .maybeSingle()
+        if (existingError) throw existingError
 
-        if (tiError) throw tiError
+        if (existingItem?.actual_count_stock_in != null) {
+          // Already applied in a prior attempt — stock was already
+          // incremented, so only the SKU can still be corrected here.
+          if (sku) {
+            const result = await updateProduct(product_id, { sku })
+            if (!result) throw new Error(`Failed to update product ID ${product_id}`)
+          }
+          continue
+        }
 
-        // 2. Fetch current product stock so we can increment it correctly
+        // 1. Fetch current product stock so we can increment it correctly
         const product = await fetchProductById(product_id)
         if (!product) throw new Error(`Failed to fetch product ID ${product_id}`)
 
         const newStock = (product.current_stock ?? 0) + actual_count_stock_in
 
-        // 3. Update product: new stock total, and sku if provided
+        // 2. Apply the stock increment first
         const result = await updateProduct(product_id, {
           current_stock: newStock,
           ...(sku ? { sku } : {}),
         })
-
         if (!result) throw new Error(`Failed to update product ID ${product_id}`)
+
+        // 3. Only now stamp the "this was received" marker
+        const { error: tiError } = await supabase
+          .from('transaction_items')
+          .update({ actual_count_stock_in })
+          .eq('id', transaction_item_id)
+        if (tiError) throw tiError
       }
       return true
     } catch (err) {

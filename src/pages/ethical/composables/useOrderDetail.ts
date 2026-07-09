@@ -3,12 +3,16 @@ import { useToast } from 'vue-toastification'
 import { useEthicalDataStore } from '@/stores/ethicalData'
 import type { EthicalOrderType, CollectionType, Shortfall } from '@/stores/ethicalData'
 import { useDeliveryReceiptsDataStore, type DeliveryReceiptType } from '@/stores/deliveryReceiptsData'
+import { useProcurementDataStore } from '@/stores/procurementData'
+import { useAuthUserStore } from '@/stores/authUser'
 
 const toast = useToast()
 
 export function useOrderDetail(order: () => EthicalOrderType | undefined) {
   const ethical = useEthicalDataStore()
   const drStore = useDeliveryReceiptsDataStore()
+  const procurementStore = useProcurementDataStore()
+  const authStore = useAuthUserStore()
 
   const loading = ref(false)
   const collectionAmount = ref(0)
@@ -18,6 +22,10 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
   // delivery receipt: consignee's printed name + the DR to print once issued
   const receivedBy = ref('')
   const issuedReceipt = ref<DeliveryReceiptType | null>(null)
+  // Purchasing hand-off: staff no longer canvass suppliers themselves — they
+  // send a request and Purchasing does the sourcing (lead-dev directive).
+  const requestedAt = ref<string | null>(null)
+  const requestNote = ref('')
 
   const isInvoiced = computed(() => order()?.status === 'invoiced')
   const isPartial = computed(() => order()?.status === 'partial')
@@ -55,12 +63,33 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
     async (o) => {
       receivedBy.value = ''
       issuedReceipt.value = null
+      requestedAt.value = null
+      requestNote.value = ''
       if (o?.id) {
         await ethical.fetchCollections(o.id)
+        if (o.fulfillment_status === 'awaiting_stock') void loadRequestStatus(o.id)
       }
     },
     { immediate: true },
   )
+
+  async function loadRequestStatus(id: number) {
+    const latest = await procurementStore.fetchLatestRequest(id)
+    requestedAt.value = latest?.created_at ?? null
+  }
+
+  // Send the "we need these items, can you buy some?" ping to Purchasing.
+  // Staff never see supplier info — canvassing now happens only on the
+  // Purchasing side (Procurement Requests queue).
+  async function notifyPurchasing() {
+    const o = order(); if (!o) return
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) return
+    loading.value = true
+    const ok = await procurementStore.notifyPurchasing('ethical_order', o.id, requestNote.value || undefined, user.id)
+    loading.value = false
+    if (ok) { requestNote.value = ''; await loadRequestStatus(o.id) }
+  }
 
   // A DR can be issued once any quantity has been fulfilled (not cancelled).
   const canIssueDR = computed(() => {
@@ -139,6 +168,8 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
     collectionRemarks,
     receivedBy,
     issuedReceipt,
+    requestedAt,
+    requestNote,
     canIssueDR,
     isInvoiced,
     isPartial,
@@ -154,5 +185,6 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
     markCommissionPaid,
     recheck,
     issueDR,
+    notifyPurchasing,
   }
 }

@@ -4,6 +4,7 @@ import { useToast } from 'vue-toastification'
 import { useStockTransfersDataStore } from '@/stores/stockTransfersData'
 import { useProductsDataStore } from '@/stores/productsData'
 import { useOutletsDataStore } from '@/stores/outletsData'
+import { useFormDraft } from '@/composables/useFormDraft'
 
 const toast = useToast()
 
@@ -25,6 +26,15 @@ export function useStockTransferRequest(onCreated: () => void) {
   const outletId = ref<number | null>(null)
   const remarks = ref('')
   const items   = ref<RequestLineItem[]>([])
+
+  // Persist a draft so a reload / crash mid-entry doesn't wipe the request.
+  const draft = useFormDraft({
+    key: 'stock-transfer-request',
+    version: 1,
+    refs: { outletId, remarks, items },
+    isEmpty: () => outletId.value == null && !remarks.value
+      && !items.value.some((i) => i.product_id != null),
+  })
 
   // ─── Computed ─────────────────────────────────────────────────────
   // Destination can be any active branch — POS or Ethical.
@@ -73,6 +83,7 @@ export function useStockTransferRequest(onCreated: () => void) {
     loading.value = false
 
     if (result.success) {
+      draft.clear()
       reset()
       onCreated()
     }
@@ -90,7 +101,8 @@ export function useStockTransferRequest(onCreated: () => void) {
   async function init() {
     if (!products.value.length) await productsStore.fetchProducts()
     if (!outlets.value.length) await outletsStore.fetchOutlets()
-    if (items.value.length === 0) addItem()
+    // Restore a saved draft first; only seed an empty row if there's nothing to restore.
+    if (!draft.restore() && items.value.length === 0) addItem()
   }
 
   return {

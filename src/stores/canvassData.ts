@@ -79,7 +79,24 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
 
     const supplierIds = Array.from(new Set(selections.map(s => s.supplier_id))).sort((a, b) => a - b)
     const results: CanvassPRResult[] = []
+    const decidedAt = new Date().toISOString()
 
+    // Roll back every PR created so far. A partial commit must leave NO PRs
+    // behind: the failure toast (useCanvass) tells the purchaser to retry, and
+    // a retry over leftover partial PRs would duplicate them. Best-effort — if
+    // a delete itself fails, warn (there's nothing safer to do from the client).
+    const rollback = async () => {
+      for (const r of results) {
+        const { error: itemsErr } = await supabase.from('transaction_items').delete().eq('transaction_id', r.pr_id)
+        if (itemsErr) console.warn('commitToPRs: rollback of PR line items failed:', itemsErr.message)
+        const { error: hdrErr } = await supabase.from('transactions').delete().eq('id', r.pr_id).eq('transaction_type', 'purchase_requisition')
+        if (hdrErr) console.warn('commitToPRs: rollback of PR header failed:', hdrErr.message)
+      }
+    }
+
+    // ── Phase A: create every PR header + its line items. Any failure rolls
+    //    back all PRs created so far and returns failure — the order's own
+    //    lines are NOT touched yet, so a rollback + retry is clean.
     for (const supplierId of supplierIds) {
       seq += 1
       const prNo = `PR-${year}-${String(seq).padStart(3, '0')}`
@@ -98,39 +115,51 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
         .select('id')
         .single()
       if (prError || !pr) {
+        await rollback()
         loading.value = false
         handleError(prError, 'Failed to raise purchase requisition.')
-        return { success: false, error: prError?.message || 'Failed to raise purchase requisition.', prs: results }
+        return { success: false, error: prError?.message || 'Failed to raise purchase requisition.' }
       }
+      // Record it now so a rollback triggered by a LATER failure also removes this PR.
+      results.push({ supplier_id: supplierId, pr_id: pr.id, pr_no: prNo, item_count: count, total })
 
+      // The Purchasing module reads line qty from transaction_items.qty_stock_in
+      // (its stock-in/out model — manual PR write, PR/PO list, receiving all use
+      // it), so a canvass-raised PR must set it or it shows blank quantities in
+      // the purchasing lists. Line values + the supplier_quotes audit trail now
+      // live directly on transaction_items (transaction_item_details was merged in).
+      const lineRows = supplierSelections.map(sel => ({
+        transaction_id: pr.id, product_id: sel.product_id,
+        qty_stock_in: sel.qty, unit_price: sel.unit_price,
+        line_total: sel.qty * sel.unit_price,
+        supplier_quotes: {
+          source: `${logModule}_canvass`, order_type: orderType, order_id: orderId, order_no: orderNo,
+          winner_supplier_id: supplierId, unit_price: sel.unit_price, qty: sel.qty,
+          quotes: sel.canvass ?? [], decided_at: decidedAt,
+        },
+      }))
+      const { error: prItemError } = await supabase.from('transaction_items').insert(lineRows)
+      if (prItemError) {
+        await rollback()
+        loading.value = false
+        handleError(prItemError, 'Failed to raise purchase requisition.')
+        return { success: false, error: prItemError.message || 'Failed to save purchase requisition line items.' }
+      }
+    }
+
+    // ── Phase B: every PR is fully written. Now mirror the canvass decision
+    //    back onto the order's own lines (drives the "PRs raised" sub-status)
+    //    + log. Best-effort audit writes — a failure here doesn't invalidate
+    //    the PRs, so it warns rather than rolling back.
+    for (const supplierId of supplierIds) {
+      const pr = results.find(r => r.supplier_id === supplierId)!
+      const supplierSelections = selections.filter(s => s.supplier_id === supplierId)
       for (const sel of supplierSelections) {
-        const decidedAt = new Date().toISOString()
-
-        // The Purchasing module reads line qty from transaction_items.qty_stock_in
-        // (its stock-in/out model — manual PR write, PR/PO list, receiving all use
-        // it), so a canvass-raised PR must set it or it shows blank quantities in
-        // the purchasing lists. Line values + the supplier_quotes audit trail now
-        // live directly on transaction_items (transaction_item_details was merged in).
-        const { error: prItemError } = await supabase
-          .from('transaction_items')
-          .insert({
-            transaction_id: pr.id, product_id: sel.product_id,
-            qty_stock_in: sel.qty, unit_price: sel.unit_price,
-            line_total: sel.qty * sel.unit_price,
-            supplier_quotes: {
-              source: `${logModule}_canvass`, order_type: orderType, order_id: orderId, order_no: orderNo,
-              winner_supplier_id: supplierId, unit_price: sel.unit_price, qty: sel.qty,
-              quotes: sel.canvass ?? [], decided_at: decidedAt,
-            },
-          })
-        if (prItemError) console.warn('commitToPRs: PR line insert failed:', prItemError.message)
-
-        // Mirror the canvass decision back onto the originating order's own line.
         const { error: mirrorError } = await supabase
           .from('transaction_items')
           .update({
             supplier_quotes: {
-              source: `${logModule}_canvass`, pr_id: pr.id, pr_no: prNo,
+              source: `${logModule}_canvass`, pr_id: pr.pr_id, pr_no: pr.pr_no,
               winner_supplier_id: supplierId, unit_price: sel.unit_price, order_qty: sel.qty,
               quotes: sel.canvass ?? [], decided_at: decidedAt,
             },
@@ -141,12 +170,10 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
 
       const { error: logError } = await supabase.from('logs').insert({
         created_by: userId, action: 'canvass_pr',
-        description: `Raised ${prNo} (supplier ${supplierId}, ${count} item(s), total ${total})`,
+        description: `Raised ${pr.pr_no} (supplier ${supplierId}, ${pr.item_count} item(s), total ${pr.total})`,
         module: logModule, transaction_id: orderId,
       })
       if (logError) console.warn('commitToPRs: activity log insert failed:', logError.message)
-
-      results.push({ supplier_id: supplierId, pr_id: pr.id, pr_no: prNo, item_count: count, total })
     }
 
     loading.value = false

@@ -14,7 +14,7 @@ const internalValue = computed({
 const {
   loading, customerId, agentId, outletId, discount, rebate, termsDays, remarks, lines,
   customerOptions, agentOptions, outletOptions, productOptions, subtotal, totalWithDiscount,
-  addLine, removeLine, onProductChange, onCustomerChange, submit, reset, init,
+  addLine, removeLine, onProductChange, onCustomerChange, unitFor, submit, reset, init,
 } = useCreateOrder(() => {
   emit('created')
   internalValue.value = false
@@ -68,6 +68,7 @@ watch(() => internalValue.value, (v) => {
             <thead>
               <tr>
                 <th>Product</th>
+                <th>Unit</th>
                 <th class="text-right">Qty</th>
                 <th class="text-right">Unit Price</th>
                 <th class="text-right">Total</th>
@@ -86,6 +87,7 @@ watch(() => internalValue.value, (v) => {
                     @update:model-value="onProductChange(i)"
                   />
                 </td>
+                <td class="text-medium-emphasis">{{ unitFor(line.product_id) }}</td>
                 <td><v-text-field v-model.number="line.quantity" type="number" density="compact" class="text-right" /></td>
                 <td><v-text-field v-model.number="line.unit_price" type="number" density="compact" class="text-right" /></td>
                 <td class="text-right">{{ formatCurrency(line.quantity * line.unit_price) }}</td>

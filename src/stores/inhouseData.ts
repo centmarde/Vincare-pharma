@@ -34,9 +34,10 @@ export type InhouseOrderType = {
   id: number
   created_at: string
   order_no: string | null        // internal IH-YYYY-### (never changes across the order's life)
-  po_no: string | null           // COMPANY PO number, derived: the IH- number with the prefix
-                                 // swapped (IH-2026-005 → PO-2026-005), stamped at the agree
-                                 // step — Purchasing-style formatting, never typed in
+  po_no: string | null           // COMPANY PO number, minted from the shared Purchasing PO
+                                 // series at the agree step — but ONLY once stock is confirmed
+                                 // sufficient. Stays null while awaiting_stock (not yet sourced),
+                                 // minted later by recheckStock once the shortfall clears.
   govt_po_no: string | null      // the government's own external PO number, typed at raise
                                  // time — pure transparency/documentation, no logic keys off
                                  // it (lives in inhouse_details, NOT transactions.po_no)
@@ -353,12 +354,14 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       }
     }
 
-    // Agreement is the PO stage: mint the company PO number from the SHARED
-    // Purchasing PO series (PO-YYYY-###, numeric max + 1), so po_no is one clean
-    // incremental sequence across Purchasing and In-House — no longer derived
-    // from the IH- number. The inhouse_no itself never changes; only the header
-    // advances. Not typed in, not the government's external PO number.
-    const poNo = await generateDocNumber('PO', getLatestReferenceNo)
+    // Agreement is the PO stage — but only when the order can actually be
+    // fulfilled from stock. Minting the company PO number (from the SHARED
+    // Purchasing PO series, PO-YYYY-###, numeric max + 1) while the order is
+    // still short would stamp a "PO" onto something Purchasing hasn't sourced
+    // yet — reads as an auto-created PO despite no canvassing having happened.
+    // So: sufficient stock → mint po_no now (as before). Short → leave po_no
+    // null; it gets minted once recheckStock finds the shortfall resolved.
+    const poNo = shortfall.length > 0 ? null : await generateDocNumber('PO', getLatestReferenceNo)
 
     const nowIso = new Date().toISOString()
     const { error: statusError } = await supabase
@@ -376,7 +379,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const { error: logError } = await supabase.from('logs').insert({
       created_by: user.id, action: 'agree',
-      description: poNo ? `Terms agreed — ${poNo} issued` : 'Terms agreed',
+      description: poNo ? `Terms agreed — ${poNo} issued` : 'Terms agreed — awaiting stock, PO withheld',
       module: 'inhouse_negotiation', transaction_id: orderId,
     })
     if (logError) console.warn('agreeOrder: activity log insert failed:', logError.message)
@@ -387,15 +390,17 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     return { success: true, shortfall }
   }
 
-  // Re-attempt the same warehouse stock check for an awaiting_stock/ready order
-  // (was inhouse_recheck_stock).
-  const recheckStock = async (orderId: number): Promise<Shortfall[]> => {
+  // Read-only warehouse stock check for display — NO status flip, NO po_no
+  // minting. Used when a detail view merely OPENS an awaiting_stock order, so
+  // simply looking at an order never advances it or mints a document number.
+  // Any state change is the explicit "Re-check stock" button's job (recheckStock).
+  const computeShortfall = async (orderId: number): Promise<Shortfall[]> => {
     const { data: order, error: fetchError } = await supabase
       .from('transactions')
       .select('transaction_items(product_id, qty_stock_out)')
       .eq('id', orderId)
       .maybeSingle()
-    if (fetchError || !order) { handleError(fetchError, 'Failed to recheck stock'); return [] }
+    if (fetchError || !order) { handleError(fetchError, 'Failed to check stock'); return [] }
 
     const shortfall: Shortfall[] = []
     const lines = ((order.transaction_items ?? []) as unknown as { product_id: number; qty_stock_out: number | null }[])
@@ -407,10 +412,37 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
         shortfall.push({ product_id: line.product_id, ordered: line.qty, on_hand: onHand, needed: line.qty - onHand } as Shortfall)
       }
     }
+    return shortfall
+  }
+
+  // Explicit "Re-check stock" action: recompute the shortfall AND advance the
+  // order — flip awaiting_stock↔ready, and mint the company po_no the moment
+  // the shortfall clears (agreeOrder withheld it while short). This is the only
+  // path that mutates, so state only changes on a deliberate user click, never
+  // on view. (Was inhouse_recheck_stock.)
+  const recheckStock = async (orderId: number): Promise<Shortfall[]> => {
+    const { data: order, error: fetchError } = await supabase
+      .from('transactions')
+      .select('po_no')
+      .eq('id', orderId)
+      .maybeSingle()
+    if (fetchError || !order) { handleError(fetchError, 'Failed to recheck stock'); return [] }
+
+    const shortfall = await computeShortfall(orderId)
+
+    // Shortfall just resolved (stock arrived) and agreeOrder withheld po_no
+    // while it was short — mint it now, same shared Purchasing PO series.
+    const poNo = shortfall.length === 0 && !order.po_no
+      ? await generateDocNumber('PO', getLatestReferenceNo)
+      : undefined
 
     await supabase
       .from('transactions')
-      .update({ status: shortfall.length > 0 ? 'awaiting_stock' : 'ready', updated_at: new Date().toISOString() })
+      .update({
+        status: shortfall.length > 0 ? 'awaiting_stock' : 'ready',
+        updated_at: new Date().toISOString(),
+        ...(poNo ? { po_no: poNo } : {}),
+      })
       .eq('id', orderId)
       .eq('transaction_type', 'inhouse_order')
       .in('status', ['awaiting_stock', 'ready'])
@@ -664,7 +696,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
   return {
     orders, loading, error,
     fetchOrders, fetchOrderById, createOrder, recordOffer, agreeOrder,
-    recheckStock, deliver, recordPayment, fetchPayments, canvassToPRs, fetchNegotiation,
+    computeShortfall, recheckStock, deliver, recordPayment, fetchPayments, canvassToPRs, fetchNegotiation,
     startRealtime, stopRealtime, clearError, resetStore,
   }
 })

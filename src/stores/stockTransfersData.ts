@@ -366,7 +366,10 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
   // Outlet receives: record received_qty per line + add to outlet_stock (was
   // transfer_receive). Best-effort, not atomic: a failure partway through a
   // multi-line receipt can leave some lines recorded / stock updated and others
-  // not (accepted trade-off, JS-over-RPC convention).
+  // not (accepted trade-off, JS-over-RPC convention) — status stays 'approved'
+  // in that case so the UI lets the caller retry. Each line is guarded by its
+  // own actual_count_stock_out (skip if already set) so a retry can't
+  // re-credit outlet_stock for lines that already fully succeeded.
   const receiveTransfer = async (
     transferId: number,
     receivedItems: { item_id: number; received_qty: number }[],
@@ -402,9 +405,12 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
     const outletCode = (transfer.outlet as unknown as { code: string | null } | null)?.code ?? null
 
     for (const received of receivedItems) {
+      // Guard against a retry (after a partial earlier failure) re-crediting
+      // outlet_stock for a line that already fully succeeded: a non-null
+      // actual_count_stock_out means this line's stock was already applied.
       const { data: item, error: itemFetchError } = await supabase
         .from('transaction_items')
-        .select('product_id')
+        .select('product_id, actual_count_stock_out')
         .eq('id', received.item_id)
         .eq('transaction_id', transferId)
         .maybeSingle()
@@ -415,17 +421,8 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
         return false
       }
       if (!item?.product_id) continue
+      if (item.actual_count_stock_out != null) continue
 
-      const { error: itemError } = await supabase
-        .from('transaction_items')
-        .update({ actual_count_stock_out: received.received_qty })
-        .eq('id', received.item_id)
-      if (itemError) {
-        loading.value = false
-        handleError(itemError, 'Failed to record received quantity.')
-        toast.error(itemError.message || 'Failed to record received quantity.')
-        return false
-      }
       const { data: existingStock } = await supabase
         .from('outlet_stock')
         .select('quantity')
@@ -433,6 +430,8 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
         .eq('product_id', item.product_id)
         .maybeSingle()
 
+      // Apply the stock credit first, mark the line as received last — so
+      // "actual_count_stock_out is set" reliably implies "stock was applied."
       const { error: stockError } = existingStock
         ? await supabase
             .from('outlet_stock')
@@ -447,6 +446,17 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
         loading.value = false
         handleError(stockError, 'Failed to update outlet stock.')
         toast.error(stockError.message || 'Failed to update outlet stock.')
+        return false
+      }
+
+      const { error: itemError } = await supabase
+        .from('transaction_items')
+        .update({ actual_count_stock_out: received.received_qty })
+        .eq('id', received.item_id)
+      if (itemError) {
+        loading.value = false
+        handleError(itemError, 'Failed to record received quantity.')
+        toast.error(itemError.message || 'Failed to record received quantity.')
         return false
       }
     }
