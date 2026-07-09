@@ -79,6 +79,11 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
 
     const supplierIds = Array.from(new Set(selections.map(s => s.supplier_id))).sort((a, b) => a - b)
     const results: CanvassPRResult[] = []
+    // A PR line insert failing used to only console.warn — commit() in
+    // useCanvass.ts only checks `result.success`, so the purchaser would see
+    // "success" and walk away believing a PR with N items was raised when the
+    // DB row may have fewer. Track it so a partial PR is reported as a failure.
+    let hadItemError = false
 
     for (const supplierId of supplierIds) {
       seq += 1
@@ -123,7 +128,7 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
               quotes: sel.canvass ?? [], decided_at: decidedAt,
             },
           })
-        if (prItemError) console.warn('commitToPRs: PR line insert failed:', prItemError.message)
+        if (prItemError) { console.warn('commitToPRs: PR line insert failed:', prItemError.message); hadItemError = true }
 
         // Mirror the canvass decision back onto the originating order's own line.
         const { error: mirrorError } = await supabase
@@ -150,6 +155,9 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
     }
 
     loading.value = false
+    if (hadItemError) {
+      return { success: false, error: 'One or more purchase requisitions were raised but some line items failed to save — check the Purchase Requisitions list before assuming this canvass fully committed.', prs: results }
+    }
     return { success: true, prs: results }
   }
 

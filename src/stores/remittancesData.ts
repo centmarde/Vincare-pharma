@@ -148,9 +148,18 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
   }
 
   // Snapshot expected cash, create the remittance row + remittance_details, and
-  // tag the swept sales (was remittance_submit). Best-effort, not atomic: a
-  // failure after the header insert can leave a remittance with no tagged sales
-  // (accepted trade-off, JS-over-RPC convention).
+  // tag the swept sales (was remittance_submit). Not atomic — but the header
+  // (+ remittance_details) is rolled back (deleted) on any downstream failure
+  // rather than left behind: a lingering 'submitted' remittance with no tagged
+  // sales would both mis-state that cash as already reconciled AND let the
+  // same unremitted sales get swept into a second remittance on retry,
+  // double-counting them.
+  const rollbackRemittance = async (id: number) => {
+    await supabase.from('remittance_details').delete().eq('transaction_id', id)
+    const { error } = await supabase.from('transactions').delete().eq('id', id).eq('transaction_type', 'remittance')
+    if (error) console.warn('submitRemittance: rollback of partial remittance failed — status=\'submitted\' row left behind, id:', id, error.message)
+  }
+
   const submitRemittance = async (payload: { outletId: number; actualAmount: number; notes?: string }) => {
     loading.value = true
     clearError()
@@ -214,6 +223,7 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
     if (detailsError) {
       handleError(detailsError, 'Failed to save remittance details.')
       toast.error(detailsError.message || 'Failed to save remittance details.')
+      await rollbackRemittance(created.id)
       loading.value = false
       return { success: false }
     }
@@ -228,6 +238,7 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
     if (tagError) {
       handleError(tagError, 'Failed to tag remitted sales.')
       toast.error(tagError.message || 'Failed to tag remitted sales.')
+      await rollbackRemittance(created.id)
       loading.value = false
       return { success: false }
     }
