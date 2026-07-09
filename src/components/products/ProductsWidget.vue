@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useDisplay } from 'vuetify'
-import { formatCurrency } from '@/utils/helpers'
+import { formatCurrency, parseMonthYear, formatMonthYear } from '@/utils/helpers'
 import { useProductsWidget } from '@/components/products/composables/useProductsWidget.ts'
 import { useTheme } from '@/stores/useTheme'
 import { useLogsDataStore, type LogType } from '@/stores/logsData'
@@ -196,10 +196,17 @@ function stockColor(item: any) {
           <span v-if="value != null">{{ formatCurrency(Number(value)) }}</span>
           <span v-else class="text-grey">-</span>
         </template>
+        <template #[`item.unit`]="{ item }">
+          <span>{{ item.unit || 'N/A' }}</span>
+        </template>
         <template #[`item.current_stock`]="{ item }">
           <v-chip :color="stockColor(item)" size="small" variant="outlined">
             {{ item.current_stock ?? 0 }}
           </v-chip>
+        </template>
+        <template #[`item.expiry_date`]="{ value }">
+          <span v-if="value">{{ formatMonthYear(value) }}</span>
+          <span v-else class="text-grey">-</span>
         </template>
         <template #[`expanded-row`]="{ item }">
           <tr>

@@ -59,6 +59,7 @@ function onProductSelected(product: ProductPickerResult) {
   // Starting value only — the person can still override per line item
   item.offer_per_unit = product.selling_price ?? item.offer_per_unit
   if (product.supplier_id != null) item.supplier_id = product.supplier_id
+  item.product_id = product.id ?? null
 
   productPickerTargetIndex.value = null
 }

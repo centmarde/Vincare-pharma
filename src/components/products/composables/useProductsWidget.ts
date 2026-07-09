@@ -79,7 +79,7 @@ export function useProductsWidget() {
     { title: 'SKU', key: 'sku', sortable: true },
     { title: 'Stock', key: 'current_stock', sortable: true },
     { title: 'Selling Price', key: 'selling_price', sortable: true },
-    { title: 'Cost Price', key: 'cost_price', sortable: true },
+    { title: 'Unit', key: 'unit', sortable: true },
     { title: 'Batch No.', key: 'batch_no' },
     { title: 'Expiry Date', key: 'expiry_date' },
     { title: 'Actions', key: 'actions', sortable: false },
