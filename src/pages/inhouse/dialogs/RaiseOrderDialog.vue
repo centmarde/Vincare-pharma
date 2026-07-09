@@ -13,7 +13,7 @@ const {
   loading, customerId, govtPoNo, remarks, lines,
   customerOptions, productOptions,
   offerTotal, costTotal, profit, marginPct,
-  addLine, removeLine, onProductChange, submit, init,
+  addLine, removeLine, onProductChange, unitFor, submit, init,
 } = useRaiseOrder(() => emit('created'))
 
 onMounted(init)
@@ -52,6 +52,7 @@ onMounted(init)
           <thead>
             <tr>
               <th class="text-left">Product</th>
+              <th class="text-left" style="width:80px">Unit</th>
               <th class="text-right" style="width:100px">Qty</th>
               <th class="text-right" style="width:130px">Offer/Unit</th>
               <th class="text-right" style="width:130px">Cost/Unit</th>
@@ -65,6 +66,7 @@ onMounted(init)
                 <v-select v-model="line.product_id" :items="productOptions" placeholder="Select"
                   variant="outlined" density="compact" hide-details @update:model-value="onProductChange(i)" />
               </td>
+              <td class="text-medium-emphasis">{{ unitFor(line.product_id) }}</td>
               <td><v-text-field v-model.number="line.qty" type="number" min="1" variant="outlined" density="compact" hide-details class="input-number" /></td>
               <td><v-text-field v-model.number="line.offer_unit" type="number" min="0" prefix="₱" variant="outlined" density="compact" hide-details /></td>
               <td><v-text-field v-model.number="line.cost_unit" type="number" min="0" prefix="₱" variant="outlined" density="compact" hide-details /></td>

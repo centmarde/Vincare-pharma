@@ -53,7 +53,14 @@ export function useCreateOrder(onCreated: () => void) {
       title: `${p.product_name ?? '—'}${p.sku ? ` (${p.sku})` : ''}`,
       value: p.id,
       selling: p.selling_price ?? 0,
+      unit: p.unit ?? '—',
     })))
+
+  // Unit (Box/Bottle/Piece/…) is a property of the product master, same as
+  // Purchasing's PR table and In-House's Raise Order dialog.
+  function unitFor(productId: number | null): string {
+    return productOptions.value.find(o => o.value === productId)?.unit ?? '—'
+  }
 
   const validLines = computed(() => lines.value.filter(l => l.product_id != null && l.quantity > 0))
   const subtotal = computed(() => lines.value.reduce((s, l) => s + l.quantity * l.unit_price, 0))
@@ -121,6 +128,6 @@ export function useCreateOrder(onCreated: () => void) {
   return {
     loading, customerId, agentId, outletId, discount, rebate, termsDays, remarks, lines,
     customerOptions, agentOptions, outletOptions, productOptions, subtotal, totalWithDiscount,
-    addLine, removeLine, onProductChange, onCustomerChange, submit, reset, init,
+    addLine, removeLine, onProductChange, onCustomerChange, unitFor, submit, reset, init,
   }
 }

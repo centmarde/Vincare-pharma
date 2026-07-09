@@ -36,7 +36,14 @@ export function useRaiseOrder(onCreated: () => void) {
       value: p.id,
       cost: p.cost_price ?? 0,
       selling: p.selling_price ?? 0,
+      unit: p.unit ?? '—',
     })))
+
+  // Unit (Box/Bottle/Piece/…) is a property of the product master, same as
+  // Purchasing's PR table — not something staff choose per order line.
+  function unitFor(productId: number | null): string {
+    return productOptions.value.find((o) => o.value === productId)?.unit ?? '—'
+  }
 
   const validLines = computed(() => lines.value.filter((l) => l.product_id != null && l.qty > 0))
   const offerTotal = computed(() => lines.value.reduce((s, l) => s + l.qty * l.offer_unit, 0))
@@ -85,6 +92,6 @@ export function useRaiseOrder(onCreated: () => void) {
     loading, customerId, govtPoNo, remarks, lines,
     customerOptions, productOptions,
     offerTotal, costTotal, profit, marginPct,
-    addLine, removeLine, onProductChange, submit, reset, init,
+    addLine, removeLine, onProductChange, unitFor, submit, reset, init,
   }
 }
