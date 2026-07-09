@@ -793,6 +793,18 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       toast.error(`Expense ${id} not found.`); loading.value = false; return { success: false }
     }
 
+    // Delete first, guarded — the cash-balance restore is a compensating side
+    // effect and must only happen once the expense is actually gone. Doing it
+    // beforehand (as this used to) meant a failed delete left the balance
+    // credited back for an expense that was still sitting on the books.
+    const { error: deleteError } = await supabase.from('transactions').delete().eq('id', id).eq('transaction_type', 'expense')
+    if (deleteError) {
+      handleError(deleteError, 'Failed to delete expense.')
+      toast.error(deleteError.message || 'Failed to delete expense.')
+      loading.value = false
+      return { success: false }
+    }
+
     if (expense.cash_account_id && (expense.total_amount ?? 0) > 0) {
       const { data: account } = await supabase
         .from('cash_accounts').select('balance').eq('id', expense.cash_account_id).maybeSingle()
@@ -808,14 +820,6 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       module: 'finance', transaction_id: id,
     })
     if (logError) console.warn('deleteExpense: activity log insert failed:', logError.message)
-
-    const { error: deleteError } = await supabase.from('transactions').delete().eq('id', id).eq('transaction_type', 'expense')
-    if (deleteError) {
-      handleError(deleteError, 'Failed to delete expense.')
-      toast.error(deleteError.message || 'Failed to delete expense.')
-      loading.value = false
-      return { success: false }
-    }
 
     toast.success('Expense deleted.')
     await fetchExpenses()
@@ -1382,13 +1386,15 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       // Fetch voided POS sale IDs from pos_sale_details (hub redesign) so we
       // can exclude them in the reconciliation loop without breaking the nested
       // transaction_items join (PostgREST can't express NOT EXISTS through !inner).
-      // Line values now live in the 1:1 transaction_item_details embed.
+      // Line values now live directly on transaction_items: inbound qty is
+      // qty_stock_in, outbound qty is qty_stock_out, and the actual moved-out
+      // count (transfer received / inhouse delivered) is actual_count_stock_out.
       const [stockInRes, transferRes, saleRes, ethicalRes, inhouseRes, warehouseRes, outletRes, voidedPsdRes] = await Promise.all([
-        supabase.from('transaction_items').select('product_id, transaction_item_details(qty), transaction:transaction_id!inner(transaction_type)').eq('transaction.transaction_type', 'stock_in'),
-        supabase.from('transaction_items').select('product_id, transaction_item_details(qty, received_qty), transaction:transaction_id!inner(transaction_type, status, outlet)').eq('transaction.transaction_type', 'stock_transfer'),
-        supabase.from('transaction_items').select('product_id, transaction_id, transaction_item_details(qty), transaction:transaction_id!inner(transaction_type, status, outlet)').eq('transaction.transaction_type', 'sale'),
-        supabase.from('transaction_items').select('product_id, transaction_item_details(stock_sources), transaction:transaction_id!inner(transaction_type, status)').eq('transaction.transaction_type', 'ethical_order'),
-        supabase.from('transaction_items').select('product_id, transaction_item_details(delivered_qty), transaction:transaction_id!inner(transaction_type)').eq('transaction.transaction_type', 'inhouse_order'),
+        supabase.from('transaction_items').select('product_id, qty_stock_in, transaction:transaction_id!inner(transaction_type)').eq('transaction.transaction_type', 'stock_in'),
+        supabase.from('transaction_items').select('product_id, qty_stock_out, actual_count_stock_out, transaction:transaction_id!inner(transaction_type, status, outlet)').eq('transaction.transaction_type', 'stock_transfer'),
+        supabase.from('transaction_items').select('product_id, transaction_id, qty_stock_out, transaction:transaction_id!inner(transaction_type, status, outlet)').eq('transaction.transaction_type', 'sale'),
+        supabase.from('transaction_items').select('product_id, stock_sources, transaction:transaction_id!inner(transaction_type, status)').eq('transaction.transaction_type', 'ethical_order'),
+        supabase.from('transaction_items').select('product_id, actual_count_stock_out, transaction:transaction_id!inner(transaction_type)').eq('transaction.transaction_type', 'inhouse_order'),
         supabase.from('products').select('id, product_name, current_stock'),
         supabase.from('outlet_stock').select('product_id, outlet, quantity, product:product_id(product_name)'),
         supabase.from('pos_sale_details').select('transaction_id').not('voided_at', 'is', null),
@@ -1403,27 +1409,26 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       const bump = (map: Map<number, number>, pid: number, delta: number) => map.set(pid, (map.get(pid) ?? 0) + delta)
 
       for (const r of (stockInRes.data || []) as any[]) {
-        if (r.product_id != null) bump(expectedWarehouse, r.product_id, r.transaction_item_details?.qty ?? 0)
+        if (r.product_id != null) bump(expectedWarehouse, r.product_id, r.qty_stock_in ?? 0)
       }
       for (const r of (transferRes.data || []) as any[]) {
         const t = r.transaction
         if (!t || !['approved', 'completed'].includes(t.status)) continue
-        const d = r.transaction_item_details ?? {}
-        if (r.product_id != null) bump(expectedWarehouse, r.product_id, -(d.qty ?? 0))
+        if (r.product_id != null) bump(expectedWarehouse, r.product_id, -(r.qty_stock_out ?? 0))
         if (t.status === 'completed' && r.product_id != null && (t.outlet === 'EXELMED' || t.outlet === 'ETHICAL')) {
-          bump(expectedOutlet[t.outlet as 'EXELMED' | 'ETHICAL'], r.product_id, d.received_qty ?? 0)
+          bump(expectedOutlet[t.outlet as 'EXELMED' | 'ETHICAL'], r.product_id, r.actual_count_stock_out ?? 0)
         }
       }
       for (const r of (saleRes.data || []) as any[]) {
         const t = r.transaction
         if (!t || t.status !== 'completed') continue
         if (voidedByPsd.has(r.transaction_id)) continue
-        if (r.product_id != null && t.outlet === 'EXELMED') bump(expectedOutlet.EXELMED, r.product_id, -(r.transaction_item_details?.qty ?? 0))
+        if (r.product_id != null && t.outlet === 'EXELMED') bump(expectedOutlet.EXELMED, r.product_id, -(r.qty_stock_out ?? 0))
       }
       for (const r of (ethicalRes.data || []) as any[]) {
         const t = r.transaction
         if (!t || t.status === 'cancelled') continue
-        const sources = r.transaction_item_details?.stock_sources || {}
+        const sources = r.stock_sources || {}
         if (r.product_id != null) {
           if (sources.ethical) bump(expectedOutlet.ETHICAL, r.product_id, -sources.ethical)
           if (sources.exelmed) bump(expectedOutlet.EXELMED, r.product_id, -sources.exelmed)
@@ -1431,7 +1436,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         }
       }
       for (const r of (inhouseRes.data || []) as any[]) {
-        if (r.product_id != null) bump(expectedWarehouse, r.product_id, -(r.transaction_item_details?.delivered_qty ?? 0))
+        if (r.product_id != null) bump(expectedWarehouse, r.product_id, -(r.actual_count_stock_out ?? 0))
       }
 
       const rows: StockReconRow[] = []

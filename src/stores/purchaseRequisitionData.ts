@@ -188,6 +188,15 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
   }
 
   // ─── PR Actions ─────────────────────────────────────────────────
+  // A failure after the header insert used to leave a real, numbered PR
+  // (status='pending_approval') sitting in the DB with zero line items —
+  // approvable-looking but nothing to actually approve. Roll it back instead.
+  async function rollbackPR(id: number) {
+    await supabase.from('transaction_items').delete().eq('transaction_id', id)
+    const { error } = await supabase.from('transactions').delete().eq('id', id).eq('transaction_type', 'purchase_requisition')
+    if (error) console.warn('savePurchaseRequisition: rollback of partial PR failed — orphan header left behind, id:', id, error.message)
+  }
+
   async function savePurchaseRequisition() {
     loading.value = true
     error.value   = ''
@@ -234,6 +243,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     if (existingError) {
       handleError(existingError, 'Failed to check existing products.')
       toast.error('Failed to check existing products. Please try again.')
+      await rollbackPR(txData.id)
       loading.value = false
       return { success: false }
     }
@@ -285,6 +295,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       if (productError || !productData) {
         handleError(productError, 'Failed to save products.')
         toast.error('Failed to save products. Please try again.')
+        await rollbackPR(txData.id)
         loading.value = false
         return { success: false }
       }
@@ -305,6 +316,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     if (itemsError) {
       handleError(itemsError, 'Failed to save transaction items.')
       toast.error('Failed to save transaction items. Please try again.')
+      await rollbackPR(txData.id)
       loading.value = false
       return { success: false }
     }
@@ -430,7 +442,11 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
 
     const poNumber = await generateDocNumber('PO', getLatestReferenceNo)
 
-    const { error: updateError } = await supabase
+    // Guarded on status='approved' + .select() so a stale/duplicate click
+    // (e.g. the PR got rejected in another tab between load and confirm)
+    // can't re-issue a PO and re-mint a number for it — a no-op update
+    // (0 rows) is reported as a failure instead of silently "succeeding."
+    const { data, error: updateError } = await supabase
       .from('transactions')
       .update({
         transaction_type: 'purchase_order',
@@ -441,12 +457,18 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         updated_at:       new Date().toISOString(),
       })
       .eq('id', payload.pr.id)
+      .eq('status', 'approved')
+      .select('id')
 
     loading.value = false
 
     if (updateError) {
       handleError(updateError, 'Failed to issue purchase order.')
       toast.error('Failed to issue purchase order.')
+      return { success: false }
+    }
+    if (!data?.length) {
+      toast.error('This purchase requisition is no longer approved — refresh and try again.')
       return { success: false }
     }
 
@@ -458,7 +480,9 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     loading.value = true
 
     const siNumber = await generateDocNumber('SI', getLatestReferenceNo)
-    const { error: updateError } = await supabase
+    // Guarded on status='issued' so a retry after a failed/partial receive
+    // can't re-mint a second SI number for a PO already marked complete.
+    const { data, error: updateError } = await supabase
       .from('transactions')
       .update({
         reference_no:     siNumber,
@@ -467,12 +491,18 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         updated_at:       new Date().toISOString(),
       })
       .eq('id', poId)
+      .eq('status', 'issued')
+      .select('id')
 
     loading.value = false
 
     if (updateError) {
       handleError(updateError, 'Failed to mark as received.')
       toast.error('Failed to mark purchase order as received.')
+      return false
+    }
+    if (!data?.length) {
+      toast.error('This purchase order was already marked received — refresh the list.')
       return false
     }
 

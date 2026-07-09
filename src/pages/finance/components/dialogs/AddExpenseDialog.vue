@@ -26,11 +26,13 @@ const {
   requestReplenishment,
   accountOptions, isPettyCash, pettyCashBalance, disbursedAmount, remainingBalance,
   insufficientPettyCash, isBelowThreshold, canSubmit,
-  resetForm, buildPayload,
+  resetForm, buildPayload, restoreDraft,
 } = useAddExpense(() => props.accounts, () => props.replenishThreshold)
 
 watch(() => props.modelValue, (open) => {
-  if (!open) resetForm()
+  // Restore any in-progress draft when opening; clear the form on close.
+  if (open) restoreDraft()
+  else resetForm()
 })
 
 const submit = () => {

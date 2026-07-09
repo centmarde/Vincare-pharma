@@ -125,6 +125,13 @@ export const navigationConfig: NavigationGroup[] = [
         permission: 'purchasing.orders.view',
         keywords: 'PO, order, supplier order, release',
       },
+      {
+        title: 'Procurement Requests',
+        icon: 'mdi-bell-alert-outline',
+        route: '/purchasing/procurement-requests',
+        permission: 'purchasing.procurement.view',
+        keywords: 'canvass, supplier, shortfall, in-house, ethical, request',
+      },
     ],
   },
   {

@@ -2,9 +2,9 @@
 import { computed, ref, watch } from 'vue'
 import { useOrderDetail } from '../../composables/useOrderDetail'
 import { useEthicalDataStore } from '@/stores/ethicalData'
-import SupplierCanvass from '@/components/canvass/SupplierCanvass.vue'
 import EthicalInvoiceDialog from './EthicalInvoiceDialog.vue'
 import DeliveryReceiptDialog from '@/components/deliveryReceipts/DeliveryReceiptDialog.vue'
+import { formatDatePR_ISO } from '@/utils/helpers'
 
 const props = defineProps<{ modelValue: boolean; orderId: number | null }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
@@ -23,8 +23,9 @@ const order = computed(() => ethical.currentOrder)
 const {
   loading, collectionAmount, collectionMethod, collectionReference,
   receivedBy, issuedReceipt, canIssueDR,
+  requestedAt, requestNote,
   isInvoiced, isPartial, isPaid, isAwaitingStock, isCancellable, isOverdue, balance, shortfall, collections,
-  recordCollection, cancelOrder, markCommissionPaid, recheck, issueDR,
+  recordCollection, cancelOrder, markCommissionPaid, recheck, issueDR, notifyPurchasing,
 } = useOrderDetail(() => order.value)
 
 // Pop the printable DR as soon as one is issued.
@@ -116,7 +117,7 @@ watch(
           <v-divider />
           <v-card-text class="pa-3">
             <div class="text-caption text-medium-emphasis mb-2">
-              Ethical, Exelmed, and warehouse stock combined still can't cover the following — canvass suppliers below to raise Purchase Requisitions, then re-check once stock arrives.
+              Ethical, Exelmed, and warehouse stock combined still can't cover the following. Purchasing sources these items — re-check once stock has arrived.
             </div>
             <v-table density="compact">
               <thead><tr><th class="text-left">Product</th><th class="text-right">Ordered</th><th class="text-right">On hand</th><th class="text-right">Needed</th></tr></thead>
@@ -130,8 +131,23 @@ watch(
             <v-btn variant="text" size="small" color="info" class="text-none mt-1" @click="recheck">Re-check stock</v-btn>
 
             <v-divider class="my-3" />
-            <div class="text-subtitle-2 font-weight-bold mb-2">Supplier Canvass</div>
-            <SupplierCanvass :order="order" :shortfall="shortfall" :commit-fn="ethical.canvassToPRs" @created="recheck" />
+            <div class="text-subtitle-2 font-weight-bold mb-1">Notify Purchasing</div>
+            <template v-if="requestedAt">
+              <div class="text-caption text-success">
+                <v-icon icon="mdi-check-circle" size="14" class="mr-1" />
+                Sent to Purchasing on {{ formatDatePR_ISO(requestedAt) }}
+              </div>
+              <v-btn variant="text" size="small" color="info" class="text-none mt-1 pl-0" @click="requestedAt = null">
+                Send again
+              </v-btn>
+            </template>
+            <template v-else>
+              <div class="text-caption text-medium-emphasis mb-2">Let Purchasing know these items need to be bought.</div>
+              <v-textarea v-model="requestNote" placeholder="Note for Purchasing (optional)" variant="outlined" density="compact" rows="2" hide-details class="mb-2" />
+              <v-btn color="info" size="small" class="text-none font-weight-bold" elevation="0" :loading="loading" @click="notifyPurchasing">
+                Notify Purchasing
+              </v-btn>
+            </template>
           </v-card-text>
         </v-card>
 

@@ -34,9 +34,10 @@ export type InhouseOrderType = {
   id: number
   created_at: string
   order_no: string | null        // internal IH-YYYY-### (never changes across the order's life)
-  po_no: string | null           // COMPANY PO number, derived: the IH- number with the prefix
-                                 // swapped (IH-2026-005 → PO-2026-005), stamped at the agree
-                                 // step — Purchasing-style formatting, never typed in
+  po_no: string | null           // COMPANY PO number, minted from the shared Purchasing PO
+                                 // series at the agree step — but ONLY once stock is confirmed
+                                 // sufficient. Stays null while awaiting_stock (not yet sourced),
+                                 // minted later by recheckStock once the shortfall clears.
   govt_po_no: string | null      // the government's own external PO number, typed at raise
                                  // time — pure transparency/documentation, no logic keys off
                                  // it (lives in inhouse_details, NOT transactions.po_no)
@@ -64,10 +65,11 @@ export type NegotiationRound = { id: number; created_at: string; created_by: str
 
 export type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult }
 
-// Line values live in the 1:1 transaction_item_details extension table —
-// transaction_items is a pure link (id/transaction_id/product_id).
+// Line values live directly on transaction_items (transaction_item_details was
+// merged back in). An in-house order is outbound, so the ordered quantity is
+// qty_stock_out and the delivered count is actual_count_stock_out.
 const SELECT_ORDER =
-  '*, transaction_items(id, product_id, transaction_item_details(qty, unit_price, line_total, cost_price, delivered_qty), product:product_id(*)), customer:customer_id(*), inhouse_details(*)'
+  '*, transaction_items(id, product_id, qty_stock_out, unit_price, line_total, cost_price, actual_count_stock_out, product:product_id(*)), customer:customer_id(*), inhouse_details(*)'
 
 function mapRow(row: any): InhouseOrderType {
   const details = row.inhouse_details ?? {}
@@ -87,19 +89,16 @@ function mapRow(row: any): InhouseOrderType {
     approved_at:  row.approved_at,
     remarks:      row.remarks,
     customer:     row.customer,
-    items: (row.transaction_items ?? []).map((li: any) => {
-      const d = li.transaction_item_details ?? {}
-      return {
-        id:            li.id,
-        product_id:    li.product_id,
-        qty:           d.qty,
-        unit_price:    d.unit_price,
-        line_total:    d.line_total,
-        cost_price:    d.cost_price,
-        delivered_qty: d.delivered_qty ?? 0,
-        product:       li.product,
-      }
-    }),
+    items: (row.transaction_items ?? []).map((li: any) => ({
+      id:            li.id,
+      product_id:    li.product_id,
+      qty:           li.qty_stock_out,
+      unit_price:    li.unit_price,
+      line_total:    li.line_total,
+      cost_price:    li.cost_price,
+      delivered_qty: li.actual_count_stock_out ?? 0,
+      product:       li.product,
+    })),
   }
 }
 
@@ -215,21 +214,16 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const { data: createdItems, error: itemsError } = await supabase
       .from('transaction_items')
-      .insert(payload.lines.map(l => ({ transaction_id: created.id, product_id: l.product_id })))
+      // One insert per line now that line values live on transaction_items.
+      // Ordered quantity is outbound -> qty_stock_out.
+      .insert(payload.lines.map(l => ({
+        transaction_id: created.id, product_id: l.product_id,
+        qty_stock_out: l.qty, unit_price: l.unit_price,
+        line_total: l.qty * l.unit_price, cost_price: l.cost_price,
+      })))
       .select('id')
     if (itemsError || !createdItems) {
       handleError(itemsError, 'Failed to save order line items.'); toast.error(itemsError?.message || 'Failed to save order line items.')
-      loading.value = false; return { success: false }
-    }
-
-    const { error: itemDetailsError } = await supabase.from('transaction_item_details').insert(
-      createdItems.map((row, i) => ({
-        transaction_item_id: row.id, qty: payload.lines[i].qty, unit_price: payload.lines[i].unit_price,
-        line_total: payload.lines[i].qty * payload.lines[i].unit_price, cost_price: payload.lines[i].cost_price,
-      })),
-    )
-    if (itemDetailsError) {
-      handleError(itemDetailsError, 'Failed to save order line items.'); toast.error(itemDetailsError.message || 'Failed to save order line items.')
       loading.value = false; return { success: false }
     }
 
@@ -279,28 +273,17 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     }
 
     for (const u of payload.lineUpdates ?? []) {
-      // product_id is a link-table column (stays on transaction_items); the
-      // rest are line values (transaction_item_details). Omitting cost_price
-      // keeps the existing value (mirrors the RPC's coalesce-with-existing-row
-      // behavior) — never overwrite with null.
-      if (u.product_id != null) {
-        const { error: linkError } = await supabase
-          .from('transaction_items')
-          .update({ product_id: u.product_id })
-          .eq('id', u.item_id)
-          .eq('transaction_id', payload.orderId)
-        if (linkError) {
-          handleError(linkError, 'Failed to update order line.'); toast.error(linkError.message || 'Failed to update order line.')
-          loading.value = false; return { success: false }
-        }
-      }
-
-      const detailsUpdatePayload: Record<string, unknown> = { unit_price: u.unit_price, line_total: u.unit_price * u.qty }
-      if (u.cost_price != null) detailsUpdatePayload.cost_price = u.cost_price
+      // All line fields now live on transaction_items, so one update per line.
+      // Omitting cost_price keeps the existing value (mirrors the RPC's
+      // coalesce-with-existing-row behavior) — never overwrite with null.
+      const lineUpdatePayload: Record<string, unknown> = { unit_price: u.unit_price, line_total: u.unit_price * u.qty }
+      if (u.product_id != null) lineUpdatePayload.product_id = u.product_id
+      if (u.cost_price != null) lineUpdatePayload.cost_price = u.cost_price
       const { error: lineError } = await supabase
-        .from('transaction_item_details')
-        .update(detailsUpdatePayload)
-        .eq('transaction_item_id', u.item_id)
+        .from('transaction_items')
+        .update(lineUpdatePayload)
+        .eq('id', u.item_id)
+        .eq('transaction_id', payload.orderId)
       if (lineError) {
         handleError(lineError, 'Failed to update order line.'); toast.error(lineError.message || 'Failed to update order line.')
         loading.value = false; return { success: false }
@@ -347,7 +330,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const { data: order, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, transaction_items(product_id, transaction_item_details(qty))')
+      .select('id, status, transaction_items(product_id, qty_stock_out)')
       .eq('id', orderId)
       .eq('transaction_type', 'inhouse_order')
       .maybeSingle()
@@ -361,8 +344,8 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     }
 
     const shortfall: Shortfall[] = []
-    const lines = ((order.transaction_items ?? []) as unknown as { product_id: number; transaction_item_details: { qty: number } | null }[])
-      .map(li => ({ product_id: li.product_id, qty: li.transaction_item_details?.qty ?? 0 }))
+    const lines = ((order.transaction_items ?? []) as unknown as { product_id: number; qty_stock_out: number | null }[])
+      .map(li => ({ product_id: li.product_id, qty: li.qty_stock_out ?? 0 }))
     for (const line of lines) {
       const { data: product } = await supabase.from('products').select('current_stock').eq('id', line.product_id).maybeSingle()
       const onHand = product?.current_stock ?? 0
@@ -371,12 +354,14 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       }
     }
 
-    // Agreement is the PO stage: mint the company PO number from the SHARED
-    // Purchasing PO series (PO-YYYY-###, numeric max + 1), so po_no is one clean
-    // incremental sequence across Purchasing and In-House — no longer derived
-    // from the IH- number. The inhouse_no itself never changes; only the header
-    // advances. Not typed in, not the government's external PO number.
-    const poNo = await generateDocNumber('PO', getLatestReferenceNo)
+    // Agreement is the PO stage — but only when the order can actually be
+    // fulfilled from stock. Minting the company PO number (from the SHARED
+    // Purchasing PO series, PO-YYYY-###, numeric max + 1) while the order is
+    // still short would stamp a "PO" onto something Purchasing hasn't sourced
+    // yet — reads as an auto-created PO despite no canvassing having happened.
+    // So: sufficient stock → mint po_no now (as before). Short → leave po_no
+    // null; it gets minted once recheckStock finds the shortfall resolved.
+    const poNo = shortfall.length > 0 ? null : await generateDocNumber('PO', getLatestReferenceNo)
 
     const nowIso = new Date().toISOString()
     const { error: statusError } = await supabase
@@ -394,7 +379,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const { error: logError } = await supabase.from('logs').insert({
       created_by: user.id, action: 'agree',
-      description: poNo ? `Terms agreed — ${poNo} issued` : 'Terms agreed',
+      description: poNo ? `Terms agreed — ${poNo} issued` : 'Terms agreed — awaiting stock, PO withheld',
       module: 'inhouse_negotiation', transaction_id: orderId,
     })
     if (logError) console.warn('agreeOrder: activity log insert failed:', logError.message)
@@ -405,19 +390,21 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     return { success: true, shortfall }
   }
 
-  // Re-attempt the same warehouse stock check for an awaiting_stock/ready order
-  // (was inhouse_recheck_stock).
-  const recheckStock = async (orderId: number): Promise<Shortfall[]> => {
+  // Read-only warehouse stock check for display — NO status flip, NO po_no
+  // minting. Used when a detail view merely OPENS an awaiting_stock order, so
+  // simply looking at an order never advances it or mints a document number.
+  // Any state change is the explicit "Re-check stock" button's job (recheckStock).
+  const computeShortfall = async (orderId: number): Promise<Shortfall[]> => {
     const { data: order, error: fetchError } = await supabase
       .from('transactions')
-      .select('transaction_items(product_id, transaction_item_details(qty))')
+      .select('transaction_items(product_id, qty_stock_out)')
       .eq('id', orderId)
       .maybeSingle()
-    if (fetchError || !order) { handleError(fetchError, 'Failed to recheck stock'); return [] }
+    if (fetchError || !order) { handleError(fetchError, 'Failed to check stock'); return [] }
 
     const shortfall: Shortfall[] = []
-    const lines = ((order.transaction_items ?? []) as unknown as { product_id: number; transaction_item_details: { qty: number } | null }[])
-      .map(li => ({ product_id: li.product_id, qty: li.transaction_item_details?.qty ?? 0 }))
+    const lines = ((order.transaction_items ?? []) as unknown as { product_id: number; qty_stock_out: number | null }[])
+      .map(li => ({ product_id: li.product_id, qty: li.qty_stock_out ?? 0 }))
     for (const line of lines) {
       const { data: product } = await supabase.from('products').select('current_stock').eq('id', line.product_id).maybeSingle()
       const onHand = product?.current_stock ?? 0
@@ -425,10 +412,37 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
         shortfall.push({ product_id: line.product_id, ordered: line.qty, on_hand: onHand, needed: line.qty - onHand } as Shortfall)
       }
     }
+    return shortfall
+  }
+
+  // Explicit "Re-check stock" action: recompute the shortfall AND advance the
+  // order — flip awaiting_stock↔ready, and mint the company po_no the moment
+  // the shortfall clears (agreeOrder withheld it while short). This is the only
+  // path that mutates, so state only changes on a deliberate user click, never
+  // on view. (Was inhouse_recheck_stock.)
+  const recheckStock = async (orderId: number): Promise<Shortfall[]> => {
+    const { data: order, error: fetchError } = await supabase
+      .from('transactions')
+      .select('po_no')
+      .eq('id', orderId)
+      .maybeSingle()
+    if (fetchError || !order) { handleError(fetchError, 'Failed to recheck stock'); return [] }
+
+    const shortfall = await computeShortfall(orderId)
+
+    // Shortfall just resolved (stock arrived) and agreeOrder withheld po_no
+    // while it was short — mint it now, same shared Purchasing PO series.
+    const poNo = shortfall.length === 0 && !order.po_no
+      ? await generateDocNumber('PO', getLatestReferenceNo)
+      : undefined
 
     await supabase
       .from('transactions')
-      .update({ status: shortfall.length > 0 ? 'awaiting_stock' : 'ready', updated_at: new Date().toISOString() })
+      .update({
+        status: shortfall.length > 0 ? 'awaiting_stock' : 'ready',
+        updated_at: new Date().toISOString(),
+        ...(poNo ? { po_no: poNo } : {}),
+      })
       .eq('id', orderId)
       .eq('transaction_type', 'inhouse_order')
       .in('status', ['awaiting_stock', 'ready'])
@@ -478,7 +492,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
       const { data: item, error: itemFetchError } = await supabase
         .from('transaction_items')
-        .select('product_id, transaction_item_details(qty, delivered_qty, unit_price)')
+        .select('product_id, qty_stock_out, actual_count_stock_out, unit_price')
         .eq('id', line.item_id)
         .eq('transaction_id', orderId)
         .maybeSingle()
@@ -487,10 +501,9 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
         loading.value = false; return { success: false }
       }
       if (!item?.product_id) continue
-      const itemDetails = (item.transaction_item_details ?? {}) as unknown as { qty?: number; delivered_qty?: number; unit_price?: number }
 
-      const delivered = itemDetails.delivered_qty ?? 0
-      if (delivered + line.qty > (itemDetails.qty ?? 0)) {
+      const delivered = item.actual_count_stock_out ?? 0
+      if (delivered + line.qty > (item.qty_stock_out ?? 0)) {
         toast.error(`Delivery exceeds ordered qty for item ${line.item_id}.`)
         loading.value = false; return { success: false }
       }
@@ -511,12 +524,12 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       }
 
       const { error: deliveredError } = await supabase
-        .from('transaction_item_details')
-        .update({ delivered_qty: delivered + line.qty })
-        .eq('transaction_item_id', line.item_id)
-      if (deliveredError) console.warn('deliver: delivered_qty update failed:', deliveredError.message)
+        .from('transaction_items')
+        .update({ actual_count_stock_out: delivered + line.qty })
+        .eq('id', line.item_id)
+      if (deliveredError) console.warn('deliver: delivered count update failed:', deliveredError.message)
 
-      drLines.push({ product_id: item.product_id, qty: line.qty, unit_price: itemDetails.unit_price ?? null })
+      drLines.push({ product_id: item.product_id, qty: line.qty, unit_price: item.unit_price ?? null })
     }
 
     // Issue the DR document (dedicated delivery_receipts tables, owned by drStore).
@@ -532,9 +545,9 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     // Supabase can't compare two columns server-side, so check client-side.
     const { data: allItems } = await supabase
-      .from('transaction_items').select('transaction_item_details(qty, delivered_qty)').eq('transaction_id', orderId)
-    const stillShort = ((allItems ?? []) as unknown as { transaction_item_details: { qty?: number; delivered_qty?: number } | null }[])
-      .some(i => (i.transaction_item_details?.delivered_qty ?? 0) < (i.transaction_item_details?.qty ?? 0))
+      .from('transaction_items').select('qty_stock_out, actual_count_stock_out').eq('transaction_id', orderId)
+    const stillShort = ((allItems ?? []) as unknown as { qty_stock_out?: number; actual_count_stock_out?: number }[])
+      .some(i => (i.actual_count_stock_out ?? 0) < (i.qty_stock_out ?? 0))
 
     if (!stillShort) {
       await supabase.from('transactions').update({ status: 'delivered', updated_at: new Date().toISOString() }).eq('id', orderId)
@@ -683,7 +696,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
   return {
     orders, loading, error,
     fetchOrders, fetchOrderById, createOrder, recordOffer, agreeOrder,
-    recheckStock, deliver, recordPayment, fetchPayments, canvassToPRs, fetchNegotiation,
+    computeShortfall, recheckStock, deliver, recordPayment, fetchPayments, canvassToPRs, fetchNegotiation,
     startRealtime, stopRealtime, clearError, resetStore,
   }
 })
