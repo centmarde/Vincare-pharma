@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { getModuleColor } from '../composables/logsHelpers'
+
 const props = defineProps<{
   activeFilter: string | null
   moduleCounts: Record<string, number>
@@ -9,33 +11,37 @@ const emit = defineEmits<{
   'update:activeFilter': [value: string | null]
 }>()
 
-// Module definitions — colors matching LogsWidget getModuleColor
+// Module definitions — colors are driven by the SAME getModuleColor() used by
+// the LogsWidget module chip, so the cards and table always match.
 const modules = [
   {
     key: 'purchase_requisition',
     label: 'Requisition',
     icon: 'mdi-file-document-edit-outline',
-    color: 'purple',
   },
   {
     key: 'purchase_order',
     label: 'Purchase Order',
     icon: 'mdi-file-document-outline',
-    color: 'indigo',
   },
-  { key: 'stock_in', label: 'Stock In', icon: 'mdi-arrow-collapse-down', color: 'teal' },
-  { key: 'stock_out', label: 'Stock Out', icon: 'mdi-arrow-collapse-up', color: 'orange' },
-  { key: 'sale', label: 'Sale', icon: 'mdi-cart-outline', color: 'green' },
-  { key: 'transfer', label: 'Transfer', icon: 'mdi-swap-horizontal-bold', color: 'blue' },
-  { key: 'expense', label: 'Expense', icon: 'mdi-cash-remove', color: 'red' },
+  { key: 'stock_in', label: 'Stock In', icon: 'mdi-arrow-collapse-down' },
+  { key: 'stock_out', label: 'Stock Out', icon: 'mdi-arrow-collapse-up' },
+  { key: 'sale', label: 'Sale', icon: 'mdi-cart-outline' },
+  { key: 'transfer', label: 'Transfer', icon: 'mdi-swap-horizontal-bold' },
+  {
+    key: 'reorder',
+    label: 'Reorders',
+    icon: 'mdi-cart-arrow-down',
+  },
   {
     key: 'purchase_return',
     label: 'Return (Purchase)',
     icon: 'mdi mdi-keyboard-return',
-    color: 'purple',
   },
-  { key: 'sales_return', label: 'Return (Sales)', icon: 'mdi-archive-arrow-up', color: 'pink' },
+  { key: 'sales_return', label: 'Return (Sales)', icon: 'mdi-archive-arrow-up' },
 ]
+
+const colorFor = (key: string) => getModuleColor(key)
 
 const isActive = (key: string) => props.activeFilter === key
 const isAll = () => props.activeFilter === null
@@ -61,20 +67,22 @@ const setFilter = (key: string | null) => {
         <v-card-text class="pa-3 text-center">
           <v-icon
             :icon="mod.icon"
-            :color="isActive(mod.key) ? 'white' : mod.color"
+            :color="isActive(mod.key) ? 'white' : colorFor(mod.key)"
             size="24"
             class="mb-1"
           />
           <div
             class="text-h6 font-weight-bold"
-            :class="isActive(mod.key) ? 'text-white' : `text-${mod.color}`"
+            :class="isActive(mod.key) ? 'text-white' : `text-${colorFor(mod.key)}`"
           >
             {{ moduleCounts[mod.key] || 0 }}
           </div>
           <div
             class="text-caption font-weight-medium"
             :class="
-              isActive(mod.key) ? 'text-white text-opacity-85' : `text-${mod.color} text-opacity-70`
+              isActive(mod.key)
+                ? 'text-white text-opacity-85'
+                : `text-${colorFor(mod.key)} text-opacity-70`
             "
           >
             {{ mod.label }}

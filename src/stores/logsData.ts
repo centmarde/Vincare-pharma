@@ -26,6 +26,7 @@ export type LogType = {
   requisition_no?: string | null  // from joined transactions
   po_no?: string | null           // from joined transactions
   status?: string | null          // from joined transactions
+  transaction_type?: string | null // from joined transactions
 }
 
 export type CreateLogData = {
@@ -118,6 +119,7 @@ export const useLogsDataStore = defineStore('logsData', () => {
           requisition_no: tx.requisition_no ?? null,
           po_no: tx.po_no ?? null,
           status: tx.status ?? null,
+          transaction_type: tx.transaction_type ?? null,
         }
       }),
     )
@@ -146,6 +148,7 @@ export const useLogsDataStore = defineStore('logsData', () => {
             inhouse_no,
             ethical_no,
             expense_no,
+            transaction_type,
             status
           )
         `,
