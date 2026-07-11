@@ -1,4 +1,9 @@
-create or replace function fetch_purchase_orders(
+-- RPC to fetch Purchase Orders for the PO list.
+-- A PO-originated row carries its number in reference_no while issued but
+-- not yet received (status='issued'), then that number migrates into po_no
+-- once received — see markPOAsReceived(). Filtering/searching must check
+-- both columns, or a freshly issued PO (pre-receipt) disappears from the list.
+create or replace function new_fetch_purchase_orders(
   p_search    text    default null,
   p_status    text[]  default null,
   p_order_by  text    default 'created_at',
@@ -10,6 +15,7 @@ returns table (
   id             bigint,
   requisition_no text,
   po_no          text,
+  reference_no   text,
   status         text,
   remarks        text,
   total_amount   numeric,
@@ -42,7 +48,13 @@ begin
   return query execute format(
     $f$
     select
-      t.id, t.requisition_no, t.po_no, t.status, t.remarks, t.total_amount,
+      t.id, t.requisition_no,
+      -- PO number lives in reference_no while issued-but-unreceived, and
+      -- archives into po_no on receipt. Coalesce so the list always shows
+      -- the current PO number regardless of which side of receipt it's on.
+      coalesce(t.po_no, t.reference_no) as po_no,
+      t.reference_no,
+      t.status, t.remarks, t.total_amount,
       t.supplier_id, t.created_at, t.created_by, t.approved_by, t.updated_at,
       t.ship_via, t.ship_method,
       coalesce(items.items, '[]'::jsonb) as items,
@@ -67,10 +79,18 @@ begin
       left join suppliers s on s.id = p.supplier_id
       where ti.transaction_id = t.id
     ) items on true
-    where t.po_no is not null
+    -- A row belongs in the PO list if a PO number is sitting in EITHER
+    -- column — reference_no (issued, awaiting receipt) or po_no (received,
+    -- archived here). Replaces the old `po_no is not null`, which silently
+    -- excluded every issued-but-unreceived PO.
+    where (t.reference_no ilike 'PO%%' or t.po_no ilike 'PO%%')
+      -- Purchasing-only: In-House orders also derive a PO-YYYY-### number,
+      -- so this type constraint is still required to keep them out.
+      and t.transaction_type in ('purchase_order', 'stock_in')
       and ($1 is null or (
         t.requisition_no ilike '%%' || $1 || '%%' or
         t.po_no           ilike '%%' || $1 || '%%' or
+        t.reference_no    ilike '%%' || $1 || '%%' or
         t.remarks         ilike '%%' || $1 || '%%' or
         t.status          ilike '%%' || $1 || '%%'
       ))
