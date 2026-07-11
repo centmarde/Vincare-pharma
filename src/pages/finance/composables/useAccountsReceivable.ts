@@ -1,7 +1,7 @@
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useFinanceDataStore } from '@/stores/financeData'
-import type { ARAgingBucket, ARAgingRow } from '@/stores/financeData'
+import type { ARAgingBucket, ARAgingRow, ARReceivableDetail } from '@/stores/financeData'
 
 export const arHeaders = [
   { title: 'SOURCE',       key: 'source',        sortable: true,  align: 'center' as const },
@@ -33,6 +33,24 @@ export type ARCustomerJacket = {
 export function useAccountsReceivable() {
   const store = useFinanceDataStore()
   const { arAging, loading } = storeToRefs(store)
+
+  // Drill-down dialog: a single receivable traced to its source document.
+  const detailOpen = ref(false)
+  const detailLoading = ref(false)
+  const selectedDetail = ref<ARReceivableDetail | null>(null)
+
+  async function openDetail(row: ARAgingRow) {
+    detailOpen.value = true
+    detailLoading.value = true
+    selectedDetail.value = null
+    selectedDetail.value = await store.fetchReceivableDetail(row.source, row.id)
+    detailLoading.value = false
+  }
+
+  function closeDetail() {
+    detailOpen.value = false
+    selectedDetail.value = null
+  }
 
   async function init() {
     await store.fetchARAging()
@@ -87,6 +105,7 @@ export function useAccountsReceivable() {
   return {
     arAging, loading,
     totalReceivable, bucketTotals, overdueReceivable, customerJackets,
+    detailOpen, detailLoading, selectedDetail, openDetail, closeDetail,
     init,
   }
 }

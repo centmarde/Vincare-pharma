@@ -1,8 +1,19 @@
 <script setup lang="ts">
 import { useAccountsReceivable, arHeaders } from '../composables/useAccountsReceivable'
+import type { ARAgingRow } from '@/stores/financeData'
 import { formatCurrency } from '@/utils/helpers'
+import ARDetailDialog from './dialogs/ARDetailDialog.vue'
 
-const { loading, totalReceivable, bucketTotals, overdueReceivable, customerJackets } = useAccountsReceivable()
+const {
+  loading, totalReceivable, bucketTotals, overdueReceivable, customerJackets,
+  detailOpen, detailLoading, selectedDetail, openDetail,
+} = useAccountsReceivable()
+
+// v-data-table @click:row passes (pointerEvent, { item }); typing lives here in
+// <script> because an inline type annotation in the template is a parse error.
+function onRowClick(_event: unknown, { item }: { item: ARAgingRow }) {
+  openDetail(item)
+}
 
 const bucketColor: Record<string, string> = {
   current: 'success',
@@ -87,6 +98,7 @@ const bucketLabels: Record<string, string> = {
                 :items="jacket.rows"
                 hide-default-footer
                 hover
+                @click:row="onRowClick"
               >
                 <template #item.source="{ item }">
                   <v-chip size="small" variant="tonal">{{ item.source === 'ethical_order' ? 'Ethical' : 'In-House' }}</v-chip>
@@ -119,6 +131,12 @@ const bucketLabels: Record<string, string> = {
         </v-expansion-panels>
       </v-card>
 
+      <ARDetailDialog
+        v-model="detailOpen"
+        :loading="detailLoading"
+        :detail="selectedDetail"
+      />
+
     </div>
   </v-container>
 </template>
@@ -133,5 +151,8 @@ const bucketLabels: Record<string, string> = {
 }
 :deep(.v-data-table td) {
   text-align: center !important;
+}
+:deep(.v-data-table tbody tr) {
+  cursor: pointer;
 }
 </style>

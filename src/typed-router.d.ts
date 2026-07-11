@@ -63,6 +63,7 @@ declare module 'vue-router/auto-routes' {
     '/finance/components/CashAccountsManager': RouteRecordInfo<'/finance/components/CashAccountsManager', '/finance/components/CashAccountsManager', Record<never, never>, Record<never, never>>,
     '/finance/components/CashAccountsPanel': RouteRecordInfo<'/finance/components/CashAccountsPanel', '/finance/components/CashAccountsPanel', Record<never, never>, Record<never, never>>,
     '/finance/components/dialogs/AddExpenseDialog': RouteRecordInfo<'/finance/components/dialogs/AddExpenseDialog', '/finance/components/dialogs/AddExpenseDialog', Record<never, never>, Record<never, never>>,
+    '/finance/components/dialogs/ARDetailDialog': RouteRecordInfo<'/finance/components/dialogs/ARDetailDialog', '/finance/components/dialogs/ARDetailDialog', Record<never, never>, Record<never, never>>,
     '/finance/components/dialogs/ManualEntryDialog': RouteRecordInfo<'/finance/components/dialogs/ManualEntryDialog', '/finance/components/dialogs/ManualEntryDialog', Record<never, never>, Record<never, never>>,
     '/finance/components/dialogs/SupplierPaymentDialog': RouteRecordInfo<'/finance/components/dialogs/SupplierPaymentDialog', '/finance/components/dialogs/SupplierPaymentDialog', Record<never, never>, Record<never, never>>,
     '/finance/components/DiscrepanciesPanel': RouteRecordInfo<'/finance/components/DiscrepanciesPanel', '/finance/components/DiscrepanciesPanel', Record<never, never>, Record<never, never>>,

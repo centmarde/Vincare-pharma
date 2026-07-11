@@ -178,6 +178,46 @@ export type ARAgingRow = {
   bucket: ARAgingBucket
 }
 
+// A single receivable, drilled down for the AR jacket detail dialog. Read-only:
+// the transactions row (+ its ethical/inhouse extension), the billed line items,
+// and the payment ledger. Both In-House and Ethical record payments into
+// `collections`, so one query shape serves both sources.
+export type ARReceivableLine = {
+  product_name: string | null
+  unit: string | null
+  qty: number
+  unit_price: number
+  line_total: number
+}
+
+export type ARReceivablePayment = {
+  id: number
+  date: string
+  amount: number
+  payment_method: string | null
+  reference_no: string | null
+}
+
+export type ARReceivableDetail = {
+  id: number
+  source: 'ethical_order' | 'inhouse_order'
+  reference_no: string | null
+  status: string | null
+  customer_name: string | null
+  invoice_date: string | null
+  // trace-back / terms
+  po_no: string | null          // In-House company PO
+  govt_po_no: string | null     // In-House government PO
+  terms_days: number | null     // Ethical credit terms
+  due_date: string | null       // Ethical due date
+  // money
+  total_amount: number
+  amount_paid: number
+  balance: number
+  lines: ARReceivableLine[]
+  payments: ARReceivablePayment[]
+}
+
 export type CommissionLiabilityRow = {
   agent_id: number | null
   agent_name: string | null
@@ -1257,7 +1297,14 @@ export const useFinanceDataStore = defineStore('financeData', () => {
           .eq('transaction_type', 'ethical_order').in('status', ['invoiced', 'partial']),
         supabase.from('transactions')
           .select('id, inhouse_no, total_amount, customer_id, inhouse_details(amount_paid), status, customer:customer_id(name)')
-          .eq('transaction_type', 'inhouse_order').not('status', 'in', '("paid","cancelled")'),
+          // Must match gl_project_events' own in-house recognition gate: AR/revenue
+          // isn't booked until delivery (the invoice point for a govt contract), so
+          // an order still raised/negotiating/agreed/awaiting_stock/ready has no GL
+          // impact yet and isn't a receivable — counting it here overstated AR by
+          // ~20M against orders nothing has shipped for. 'paid' stays in the list
+          // (harmless — filtered by the balance<=0.01 check below) so a rounding
+          // underpayment still surfaces.
+          .eq('transaction_type', 'inhouse_order').in('status', ['delivered', 'paid', 'partial']),
       ])
       if (ethicalRes.error) throw ethicalRes.error
       if (inhouseRes.error) throw inhouseRes.error
@@ -1298,6 +1345,88 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     } catch (err) {
       handleError(err, 'Failed to fetch AR aging')
       return []
+    } finally {
+      loading.value = false
+    }
+  }
+
+  // ─── AR jacket drill-down: one receivable's full detail, traced to its source
+  //     document. Read-only — Finance never mutates the order. The billed qty
+  //     comes off the direction-specific column (Ethical bills at order time
+  //     from qty_stock_out; In-House bills at delivery from
+  //     actual_count_stock_out), so displayed qty × unit price reconciles to
+  //     line_total. Payments read from the shared `collections` ledger, which
+  //     both In-House recordPayment and Ethical recordCollection write to. ──
+  const fetchReceivableDetail = async (
+    source: 'ethical_order' | 'inhouse_order',
+    transactionId: number,
+  ): Promise<ARReceivableDetail | null> => {
+    loading.value = true
+    clearError()
+    try {
+      const extension = source === 'ethical_order'
+        ? 'ethical_details(amount_paid, due_date, terms_days)'
+        : 'inhouse_details(amount_paid, govt_po_no)'
+
+      const [txnRes, paymentsRes] = await Promise.all([
+        supabase.from('transactions')
+          .select(`id, status, created_at, total_amount, po_no, ethical_no, inhouse_no,
+                   customer:customer_id(name),
+                   ${extension},
+                   transaction_items(qty_stock_out, actual_count_stock_out, unit_price, line_total, products(product_name, unit))`)
+          .eq('id', transactionId)
+          .eq('transaction_type', source)
+          .maybeSingle(),
+        supabase.from('collections')
+          .select('id, created_at, amount, payment_method, reference_no')
+          .eq('transaction_id', transactionId)
+          .order('created_at', { ascending: true }),
+      ])
+      if (txnRes.error) throw txnRes.error
+      if (paymentsRes.error) throw paymentsRes.error
+      const t = txnRes.data as any
+      if (!t) { handleError(null, 'Receivable not found'); return null }
+
+      const ext = t[source === 'ethical_order' ? 'ethical_details' : 'inhouse_details'] ?? {}
+      const amountPaid = ext.amount_paid ?? 0
+      const total = t.total_amount ?? 0
+
+      const lines: ARReceivableLine[] = (t.transaction_items || []).map((li: any) => ({
+        product_name: li.products?.product_name ?? null,
+        unit: li.products?.unit ?? null,
+        qty: (source === 'ethical_order' ? li.qty_stock_out : li.actual_count_stock_out) ?? 0,
+        unit_price: li.unit_price ?? 0,
+        line_total: li.line_total ?? 0,
+      }))
+
+      const payments: ARReceivablePayment[] = (paymentsRes.data || []).map((p: any) => ({
+        id: p.id,
+        date: p.created_at,
+        amount: p.amount ?? 0,
+        payment_method: p.payment_method ?? null,
+        reference_no: p.reference_no ?? null,
+      }))
+
+      return {
+        id: t.id,
+        source,
+        reference_no: source === 'ethical_order' ? t.ethical_no : t.inhouse_no,
+        status: t.status ?? null,
+        customer_name: t.customer?.name ?? null,
+        invoice_date: t.created_at ?? null,
+        po_no: source === 'inhouse_order' ? (t.po_no ?? null) : null,
+        govt_po_no: source === 'inhouse_order' ? (ext.govt_po_no ?? null) : null,
+        terms_days: source === 'ethical_order' ? (ext.terms_days ?? null) : null,
+        due_date: source === 'ethical_order' ? (ext.due_date ?? null) : null,
+        total_amount: total,
+        amount_paid: amountPaid,
+        balance: total - amountPaid,
+        lines,
+        payments,
+      }
+    } catch (err) {
+      handleError(err, 'Failed to fetch receivable detail')
+      return null
     } finally {
       loading.value = false
     }
@@ -1550,7 +1679,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     requestReplenishment, approveReplenishment, rejectReplenishment,
     fetchSupplierPayments, recordSupplierPayment, fetchSupplierAP,
     fetchPnL,
-    fetchRemittanceDiscrepancies, fetchARAging, fetchCommissionLiability, fetchStockReconciliation,
+    fetchRemittanceDiscrepancies, fetchARAging, fetchReceivableDetail, fetchCommissionLiability, fetchStockReconciliation,
     fetchIncomeStatement, fetchBalanceSheet, fetchTrialBalance,
     clearError, resetStore,
   }
