@@ -34,10 +34,12 @@ export type RequisitionItemType = {
   actual_count_stock_in?:    number | null
   expiry_date?:     string | null
   product_id?:      number | null
+  reorder_request_id?: number | null
 }
 
 export type PR = {
   id:              number
+  reference_no:    string | null   // NEW — the "live" doc number for this stage
   requisition_no:  string
   po_no:           string | null
   status:          string
@@ -143,6 +145,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       updated_at:     tx.updated_at,
       requester_name: names.requester_name,
       reviewer_name:  names.reviewer_name,
+      reference_no:   tx.reference_no,
       actual_count_stock_in:   tx.actual_count_stock_in,
       items:          prItems,
     }
@@ -182,6 +185,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       updated_at:            row.updated_at,
       requester_name:        names.requester_name,
       reviewer_name:         names.reviewer_name,
+      reference_no:          row.reference_no,
       actual_count_stock_in: null,
       items:                 mapRPCItemsToPR(row.items),
     }
@@ -211,10 +215,30 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     const prNumber = await generateDocNumber('PR', getLatestReferenceNo)
     const companyCostTotal = items.value.reduce((sum, i) => sum + i.qty * i.cost_per_unit, 0)
 
+    // Collect the source reorder request ids (if any) so we can stamp their
+    // RO-####-### reference numbers onto this PR for traceability.
+    const reorderRequestIds = items.value
+      .map(i => i.reorder_request_id)
+      .filter((id): id is number => id != null)
+
+    let reorderNo: string | null = null
+    if (reorderRequestIds.length) {
+      const { data: roRows, error: roError } = await supabase
+        .from('transactions')
+        .select('reference_no')
+        .in('id', reorderRequestIds)
+
+      if (!roError && roRows?.length) {
+        // Unique, non-null RO numbers joined with commas, e.g. "RO-2026-003,RO-2026-005"
+        reorderNo = [...new Set(roRows.map(r => r.reference_no).filter((n): n is string => !!n))].join(',')
+      }
+    }
+
     const { data: txData, error: txError } = await supabase
       .from('transactions')
       .insert({
-        requisition_no:   prNumber,
+        reference_no:   prNumber,
+        reorder_no:       reorderNo,
         po_no:            null,
         transaction_type: 'purchase_requisition',
         status:           'pending_approval',
@@ -223,7 +247,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         supplier_id:      null,
         created_by:       user.id,
       })
-      .select('id, requisition_no')
+      .select('id, reference_no')
       .single()
 
     if (txError || !txData) {
@@ -256,10 +280,10 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     // One slot per PR item: existing product id, or null if it needs to be created
     const productIdByIndex: (number | null)[] = items.value.map(item => {
       const supplierId = item.supplier_id ? Number(item.supplier_id) : null
-      
+
       if (item.product_id != null) {
         const pickedProduct = (existingProducts || []).find(p => p.id === item.product_id)
-        
+
         if (pickedProduct && pickedProduct.unit === item.unit && pickedProduct.product_name === item.item_description) {
           return item.product_id   // NEW: trust reorder-sourced items directly
         }
@@ -442,6 +466,14 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
 
     const poNumber = await generateDocNumber('PO', getLatestReferenceNo)
 
+    console.log('[issuePurchaseOrder] Updating transaction:', {
+      id: payload.pr.id,
+      po_no: poNumber,
+      reference_no: poNumber,
+      ship_via: payload.ship_via,
+      ship_method: payload.ship_method,
+    })
+
     // Guarded on status='approved' + .select() so a stale/duplicate click
     // (e.g. the PR got rejected in another tab between load and confirm)
     // can't re-issue a PO and re-mint a number for it — a no-op update
@@ -451,14 +483,19 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       .update({
         transaction_type: 'purchase_order',
         status:           'issued',
-        po_no:            poNumber,
+        reference_no:     poNumber,
+        requisition_no:   payload.pr.reference_no,
         ship_via:         payload.ship_via,
         ship_method:      payload.ship_method,
         updated_at:       new Date().toISOString(),
       })
       .eq('id', payload.pr.id)
       .eq('status', 'approved')
+      .eq('reference_no', payload.pr.reference_no)
       .select('id')
+
+    console.log('[issuePurchaseOrder] Supabase response:', { data, error: updateError })
+    console.log('[issuePurchaseOrder] poNumber value:', poNumber)
 
     loading.value = false
 
@@ -476,7 +513,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     return { success: true }
   }
 
-  async function markPOAsReceived(poId: number): Promise<boolean> {
+  async function markPOAsReceived(po: { id: number; reference_no: string | null }): Promise<boolean> {
     loading.value = true
 
     const siNumber = await generateDocNumber('SI', getLatestReferenceNo)
@@ -486,11 +523,12 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       .from('transactions')
       .update({
         reference_no:     siNumber,
+        po_no:            po.reference_no,
         transaction_type: 'stock_in',
         status:           'complete',
         updated_at:       new Date().toISOString(),
       })
-      .eq('id', poId)
+      .eq('id', po.id)
       .eq('status', 'issued')
       .select('id')
 

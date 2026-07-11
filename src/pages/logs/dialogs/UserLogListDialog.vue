@@ -3,6 +3,8 @@ import { computed, watch, ref } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useLogsDataStore } from '@/stores/logsData'
 import type { LogType } from '@/stores/logsData'
+import { getReferenceLabel, getActionColor, getModuleColor } from '../composables/logsHelpers'
+import { formatDate } from '@/utils/helpers'
 
 const props = defineProps<{
   modelValue: boolean
@@ -66,43 +68,6 @@ const userLogs = computed(() => {
 
   return filtered
 })
-
-const formatDate = (dateString: string | null) => {
-  if (!dateString) return '—'
-  return new Date(dateString).toLocaleString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-const getActionColor = (action: string | null) => {
-  if (!action) return 'grey'
-  const lower = action.toLowerCase()
-  if (lower.includes('submit') || lower.includes('create')) return 'success'
-  if (lower.includes('update') || lower.includes('edit')) return 'info'
-  if (lower.includes('delete') || lower.includes('remove')) return 'error'
-  if (lower.includes('approve')) return 'primary'
-  if (lower.includes('reject')) return 'warning'
-  return 'grey'
-}
-
-const getModuleColor = (module: string | null) => {
-  if (!module) return 'grey'
-  const lower = module.toLowerCase()
-  if (lower.includes('purchase_requisition') || lower.includes('requisition')) return 'purple'
-  if (lower.includes('purchase_order') || lower.includes('po') || lower.includes('order')) return 'indigo'
-  if (lower.includes('stock_in') || lower.includes('stock in')) return 'teal'
-  if (lower.includes('stock_out') || lower.includes('stock out')) return 'orange'
-  if (lower.includes('sale') && !lower.includes('sales_return') && !lower.includes('return')) return 'green'
-  if (lower.includes('transfer')) return 'blue'
-  if (lower.includes('expense')) return 'red'
-  if (lower.includes('purchase_return')) return 'purple'
-  if (lower.includes('sales_return') || lower.includes('return')) return 'pink'
-  return 'grey'
-}
 
 const handleClose = () => {
   emit('close')
@@ -208,9 +173,9 @@ const handleClose = () => {
             <v-divider class="mb-2" />
 
             <div class="d-flex flex-wrap align-center ga-3 text-caption text-medium-emphasis">
-              <div v-if="log.reference_no" class="d-flex align-center ga-1">
+              <div v-if="getReferenceLabel(log)" class="d-flex align-center ga-1">
                 <v-icon size="12">mdi-hash</v-icon>
-                <span>{{ log.reference_no }}</span>
+                <span>{{ getReferenceLabel(log) }}</span>
               </div>
               <div v-else class="d-flex align-center ga-1">
                 <v-icon size="12">mdi-clock-outline</v-icon>

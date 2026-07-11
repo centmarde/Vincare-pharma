@@ -2,6 +2,7 @@ import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import { useTransactionsDataStore } from '@/stores/transactionsData'
 import { useTransactionsData } from '@/composables/useTransactionsData'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
+import { useProductsDataStore } from '@/stores/productsData'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import type { PurchaseOrder } from './usePODetailModal'
 import { useLogsDataStore } from '@/stores/logsData'
@@ -9,6 +10,7 @@ import { useAuthUserStore } from '@/stores/authUser'
 import { useToast } from 'vue-toastification'
 import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+
 
 const toast = useToast()
 
@@ -48,6 +50,7 @@ export function usePurchaseOrderList() {
   const { loading }   = storeToRefs(txStore)
   const logsStore = useLogsDataStore()
   const authStore = useAuthUserStore()
+  const productsStore = useProductsDataStore()
   const { poStatusOptions } = useTransactionsData()
 
   // ─── State ────────────────────────────────────────────────────────
@@ -67,7 +70,7 @@ export function usePurchaseOrderList() {
   const stats = ref({ total: 0, pending: 0, complete: 0, totalCost: 0 })
 
   const prItemsCache  = ref<Record<number, PR>>({})
-  const confirmDialog = ref({ show: false, poId: 0, poNumber: '' })
+  const confirmDialog = ref({ show: false, poId: 0, poNumber: '', referenceNo: '' as string | null })
 
 
   // ─── Helpers ──────────────────────────────────────────────────────
@@ -123,7 +126,7 @@ export function usePurchaseOrderList() {
 
     serverItems.value = rows.map((row: any) => ({
       id:             row.id,
-      reference_no:   row.po_no,
+      reference_no:   row.reference_no,
       requisition_no: row.requisition_no,
       po_no:          row.po_no,
       status:         row.status ?? 'issued',
@@ -179,12 +182,17 @@ export function usePurchaseOrderList() {
   }
 
   function openConfirm(po: PurchaseOrder) {
-    confirmDialog.value = { show: true, poId: po.id, poNumber: po.po_no ?? po.reference_no }
+      confirmDialog.value = {
+    show:        true,
+    poId:        po.id,
+    poNumber:    po.po_no ?? po.reference_no,
+    referenceNo: po.reference_no,
+  }
   }
 
   async function handleMarkReceived() {
-    const { poId, poNumber } = confirmDialog.value
-    const success = await prsStore.markPOAsReceived(poId)
+    const { poId, poNumber, referenceNo } = confirmDialog.value
+    const success = await prsStore.markPOAsReceived({ id: poId, reference_no: referenceNo })
     if (success) {
       const { user } = await authStore.getCurrentUser()
       if (user) {
@@ -196,6 +204,15 @@ export function usePurchaseOrderList() {
         module:         'stock_in',
       })
     }
+
+      // NEW — complete any reorder requests tied to the products just received
+    const productIds = (selectedPR.value?.items ?? [])
+        .map(i => i.product_id)
+        .filter((id): id is number => id != null)
+      if (productIds.length) {
+        await productsStore.completeReorderRequests(productIds)
+      }
+
       confirmDialog.value.show = false
       await Promise.all([
         loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] }),

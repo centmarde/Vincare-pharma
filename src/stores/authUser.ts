@@ -98,7 +98,7 @@ export const useAuthUserStore = defineStore('authUser', () => {
       }
 
       // Log successful login with current user role ID
-      console.log('Successful login - Current user role ID:', user.user_metadata?.role)
+      //console.log('Successful login - Current user role ID:', user.user_metadata?.role)
 
       return { user }
     } finally {
@@ -150,8 +150,8 @@ export const useAuthUserStore = defineStore('authUser', () => {
 
       // Log user role ID from metadata on mount
       const roleId = result.user.user_metadata?.role
-      console.log('User initialized on mount - Role ID:', roleId)
-      console.log('User metadata:', result.user.user_metadata)
+      //console.log('User initialized on mount - Role ID:', roleId)
+      //console.log('User metadata:', result.user.user_metadata)
     } catch (error) {
       console.error('Error initializing auth:', error)
       userData.value = null
@@ -230,9 +230,9 @@ export const useAuthUserStore = defineStore('authUser', () => {
 
       // Log user role ID from metadata
       const roleId = user.user_metadata?.role
-      console.log('getCurrentUser - User Role ID from metadata:', roleId)
-      console.log('getCurrentUser - Full user metadata:', user.user_metadata)
-      console.log('getCurrentUser - Full user name:', user.user_metadata.full_name)
+      //console.log('getCurrentUser - User Role ID from metadata:', roleId)
+      //console.log('getCurrentUser - Full user metadata:', user.user_metadata)
+      //console.log('getCurrentUser - Full user name:', user.user_metadata.full_name)
 
       return { user: userData }
     } catch (error) {
