@@ -35,19 +35,30 @@ export function nextDocNumber(
 
 type DocType = 'PR' | 'PO' | 'SI'
 
-const DOC_CONFIG: Record<DocType, { column: 'requisition_no' | 'po_no' | 'reference_no' }> = {
-  PR: { column: 'requisition_no' },
-  PO: { column: 'po_no' },
-  SI: { column: 'reference_no' },
+// Every doc type mints its number into reference_no — that's the "live"
+// column for whatever stage a row is currently at (see purchaseRequisitionData's
+// issuePurchaseOrder/markPOAsReceived). alsoScan lists the archive column(s)
+// that ALSO hold numbers of this prefix, once a row has moved past that
+// stage — without scanning them too, a new PR could mint a sequence number
+// already used by an issued PR now sitting in requisition_no.
+const DOC_CONFIG: Record<DocType, { column: 'reference_no'; alsoScan: string[] }> = {
+  PR: { column: 'reference_no', alsoScan: ['requisition_no'] },
+  PO: { column: 'reference_no', alsoScan: ['po_no'] },
+  SI: { column: 'reference_no', alsoScan: [] }, // SI is terminal — never archived elsewhere
 }
 
 export async function generateDocNumber(
   type: DocType,
-  getLatest: (column: 'requisition_no' | 'po_no' | 'reference_no', prefix: string) => Promise<number>
+  getLatest: (
+    column: 'requisition_no' | 'po_no' | 'reference_no',
+    prefix: string,
+    alsoScan?: string[],
+  ) => Promise<number>
 ): Promise<string> {
   const year   = new Date().getFullYear()
   const prefix = `${type}-${year}-`
-  const last   = await getLatest(DOC_CONFIG[type].column, prefix)
+  const config = DOC_CONFIG[type]
+  const last   = await getLatest(config.column, prefix, config.alsoScan)
   return `${prefix}${String(last + 1).padStart(3, '0')}`
 }
 
@@ -92,12 +103,17 @@ export async function generateNextNumber(
 export async function getLatestReferenceNo(
   column: 'requisition_no' | 'po_no' | 'reference_no',
   prefix: string,
+  alsoScan: string[] = [],
 ): Promise<number> {
-  const { data } = await supabase
-    .from('transactions')
-    .select(column)
-    .like(column, `${prefix}%`)
-  return maxDocSeq(((data ?? []) as unknown as Record<string, string>[]).map((r) => r[column]))
+  const nums: (string | null | undefined)[] = []
+  for (const col of [column, ...alsoScan]) {
+    const { data } = await supabase
+      .from('transactions')
+      .select(col)
+      .like(col, `${prefix}%`)
+    nums.push(...((data ?? []) as unknown as Record<string, string>[]).map((r) => r[col]))
+  }
+  return maxDocSeq(nums)
 }
 
 /** Generate a Purchase Requisition number (PR-YYYY-NNN). */
@@ -118,6 +134,11 @@ export async function generateSINumber(): Promise<string> {
 /** Generate an In-House Order number (IH-YYYY-NNN) — minted into inhouse_no. */
 export async function generateIHNumber(): Promise<string> {
   return generateNextNumber('inhouse_no', `IH-${new Date().getFullYear()}-`, ['reference_no'])
+}
+
+/** Generate a Reorder number (RO-YYYY-NNN) — minted into reference_no. */
+export async function generateRONumber(): Promise<string> {
+  return generateNextNumber('reference_no', `RO-${new Date().getFullYear()}-`)
 }
 
 // ─── Date formatters ─────────────────────────────────────────────────────────
