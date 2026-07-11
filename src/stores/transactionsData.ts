@@ -154,8 +154,17 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
     // Same transaction_type guard as fetchTransactionsCount below — po_no is
     // overloaded (In-House also writes PO-YYYY-### into it), so filtering on
     // the prefix alone leaks inhouse_order rows in as fake POs.
-    if (po_no_not_null)    q = q.ilike('po_no', 'PO%').in('transaction_type', ['purchase_order', 'stock_in'])
-    if (requisition_no_not_null) q = q.ilike('requisition_no', 'PR%')
+    if (po_no_not_null) {
+      // PO number lives in reference_no while issued (pre-receipt), and moves to
+      // po_no once received — OR both to cover the full PO lifecycle. Still
+      // scoped to purchase_order/stock_in so In-House's reuse of po_no doesn't leak in.
+      q = q.or('reference_no.ilike.PO%,po_no.ilike.PO%').in('transaction_type', ['purchase_order', 'stock_in'])
+    }
+    if (requisition_no_not_null) {
+      // Same idea: PR number lives in reference_no until issued, then archives
+      // into requisition_no for the rest of the lifecycle.
+      q = q.or('reference_no.ilike.PR%,requisition_no.ilike.PR%')
+    }
     if (search?.trim()) {
       const s = search.trim().replace(/,/g, '')
       q = q.or(`requisition_no.ilike.%${s}%,po_no.ilike.%${s}%,remarks.ilike.%${s}%,status.ilike.%${s}%`)
@@ -231,7 +240,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
     loading.value = true
     clearError()
 
-    const { data, error: rpcError } = await supabase.rpc('fetch_purchase_requisitions', {
+    const { data, error: rpcError } = await supabase.rpc('new_fetch_purchase_requisitions', {
       p_search:    options.search?.trim() || null,
       p_status:    normalizeStatus(options.status),
       p_order_by:  options.orderBy ?? 'created_at',
@@ -255,7 +264,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
     loading.value = true
     clearError()
 
-    const { data, error: rpcError } = await supabase.rpc('fetch_purchase_orders', {
+    const { data, error: rpcError } = await supabase.rpc('new_fetch_purchase_orders', {
       p_search:    options.search?.trim() || null,
       p_status:    normalizeStatus(options.status),
       p_order_by:  options.orderBy ?? 'created_at',

@@ -38,6 +38,7 @@ export type RequisitionItemType = {
 
 export type PR = {
   id:              number
+  reference_no:    string | null   // NEW — the "live" doc number for this stage
   requisition_no:  string
   po_no:           string | null
   status:          string
@@ -143,6 +144,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       updated_at:     tx.updated_at,
       requester_name: names.requester_name,
       reviewer_name:  names.reviewer_name,
+      reference_no:   tx.reference_no,
       actual_count_stock_in:   tx.actual_count_stock_in,
       items:          prItems,
     }
@@ -182,6 +184,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       updated_at:            row.updated_at,
       requester_name:        names.requester_name,
       reviewer_name:         names.reviewer_name,
+      reference_no:          row.reference_no,
       actual_count_stock_in: null,
       items:                 mapRPCItemsToPR(row.items),
     }
@@ -214,7 +217,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     const { data: txData, error: txError } = await supabase
       .from('transactions')
       .insert({
-        requisition_no:   prNumber,
+        reference_no:   prNumber,
         po_no:            null,
         transaction_type: 'purchase_requisition',
         status:           'pending_approval',
@@ -223,7 +226,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         supplier_id:      null,
         created_by:       user.id,
       })
-      .select('id, requisition_no')
+      .select('id, reference_no')
       .single()
 
     if (txError || !txData) {
@@ -451,13 +454,15 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       .update({
         transaction_type: 'purchase_order',
         status:           'issued',
-        po_no:            poNumber,
+        reference_no:     poNumber,
+        requisition_no:   payload.pr.reference_no,
         ship_via:         payload.ship_via,
         ship_method:      payload.ship_method,
         updated_at:       new Date().toISOString(),
       })
       .eq('id', payload.pr.id)
       .eq('status', 'approved')
+      .eq('reference_no', payload.pr.reference_no)
       .select('id')
 
     loading.value = false
@@ -476,7 +481,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     return { success: true }
   }
 
-  async function markPOAsReceived(poId: number): Promise<boolean> {
+  async function markPOAsReceived(po: { id: number; reference_no: string | null }): Promise<boolean> {
     loading.value = true
 
     const siNumber = await generateDocNumber('SI', getLatestReferenceNo)
@@ -486,11 +491,12 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       .from('transactions')
       .update({
         reference_no:     siNumber,
+        po_no:            po.reference_no,
         transaction_type: 'stock_in',
         status:           'complete',
         updated_at:       new Date().toISOString(),
       })
-      .eq('id', poId)
+      .eq('id', po.id)
       .eq('status', 'issued')
       .select('id')
 
