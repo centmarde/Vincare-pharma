@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import { useDisplay } from 'vuetify'
 import type { LogType } from '@/stores/logsData'
+import { getReferenceLabel, getActionColor, getModuleColor } from '../composables/logsHelpers'
+import { formatDate } from '@/utils/helpers'
 
 const props = defineProps<{
   modelValue: boolean
@@ -19,39 +21,6 @@ const dialog = computed({
   get: () => props.modelValue,
   set: (val) => emit('update:modelValue', val),
 })
-
-const formatDate = (dateString: string | null) => {
-  if (!dateString) return '—'
-  return new Date(dateString).toLocaleString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-const getActionColor = (action: string | null) => {
-  if (!action) return 'grey'
-  const lower = action.toLowerCase()
-  if (lower.includes('submit') || lower.includes('create')) return 'success'
-  if (lower.includes('update') || lower.includes('edit')) return 'info'
-  if (lower.includes('delete') || lower.includes('remove')) return 'error'
-  if (lower.includes('approve')) return 'primary'
-  if (lower.includes('reject')) return 'warning'
-  return 'grey'
-}
-
-const getModuleColor = (module: string | null) => {
-  if (!module) return 'grey'
-  const lower = module.toLowerCase()
-  if (lower.includes('purchase')) return 'purple'
-  if (lower.includes('order') || lower.includes('po')) return 'indigo'
-  if (lower.includes('product')) return 'teal'
-  if (lower.includes('user') || lower.includes('auth')) return 'blue'
-  if (lower.includes('supplier')) return 'orange'
-  return 'grey'
-}
 
 const handleClose = () => {
   emit('close')
@@ -121,9 +90,9 @@ const handleClose = () => {
                 <v-icon size="12">mdi-account</v-icon>
                 <span>{{ log.created_by_email || '—' }}</span>
               </div>
-              <div v-if="log.reference_no" class="d-flex align-center ga-1">
+              <div v-if="getReferenceLabel(log)" class="d-flex align-center ga-1">
                 <v-icon size="12">mdi-hash</v-icon>
-                <span>{{ log.reference_no }}</span>
+                <span>{{ getReferenceLabel(log) }}</span>
               </div>
               <div class="d-flex align-center ga-1">
                 <v-icon size="12">mdi-calendar</v-icon>
