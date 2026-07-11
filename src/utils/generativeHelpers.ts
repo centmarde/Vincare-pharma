@@ -136,6 +136,11 @@ export async function generateIHNumber(): Promise<string> {
   return generateNextNumber('inhouse_no', `IH-${new Date().getFullYear()}-`, ['reference_no'])
 }
 
+/** Generate a Reorder number (RO-YYYY-NNN) — minted into reference_no. */
+export async function generateRONumber(): Promise<string> {
+  return generateNextNumber('reference_no', `RO-${new Date().getFullYear()}-`)
+}
+
 // ─── Date formatters ─────────────────────────────────────────────────────────
 
 export const formatDatePR_ISO = (dateString: string | null | undefined) => {

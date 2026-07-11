@@ -1,12 +1,14 @@
-import { computed, ref } from 'vue'
-import type { Ref } from 'vue'
-import { defineStore } from 'pinia'
-import { supabase } from '@/lib/supabase'
+import { generateRONumber } from '@/utils/generativeHelpers'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import type { SupplierType } from '@/stores/suppliersData'
 import { useAuthUserStore } from './authUser'
 import { useLogsDataStore } from './logsData'
 import { useToast } from 'vue-toastification'
+import { supabase } from '@/lib/supabase'
+import { computed, ref } from 'vue'
+import { defineStore } from 'pinia'
+import type { Ref } from 'vue'
+
 
 const toast = useToast()
 
@@ -354,13 +356,26 @@ export const useProductsDataStore = defineStore('productsData', () => {
       return { success: false }
     }
 
+    // Fetch product name for a meaningful log description
+    const { data: productData } = await supabase
+      .from('products')
+      .select('product_name')
+      .eq('id', payload.product_id)
+      .single()
+
+
+    const productName = productData?.product_name ?? `Product #${payload.product_id}`
+    const reasonLabel = payload.reason.replace('reorder_', '').replace('_', ' ')  
+
+    const referenceNo = await generateRONumber()
     const { data: txData, error: txError } = await supabase
       .from('transactions')
       .insert({
         transaction_type: payload.reason,
         status:           'pending',
         created_by:       user.id,
-        remarks:          `Reorder flagged from warehouse (${payload.reason})`,
+        reference_no:     referenceNo,
+        remarks:          `Reorder "${productName}" flagged from warehouse (${reasonLabel})`,
       })
       .select('id')
       .single()
@@ -384,15 +399,6 @@ export const useProductsDataStore = defineStore('productsData', () => {
       return { success: false }
     }
 
-    // Fetch product name for a meaningful log description
-    const { data: productData } = await supabase
-      .from('products')
-      .select('product_name')
-      .eq('id', payload.product_id)
-      .single()
-
-    const reasonLabel = payload.reason.replace('reorder_', '').replace('_', ' ')
-    const productName = productData?.product_name ?? `Product #${payload.product_id}`
 
     // Log the reorder request
     const logsStore = useLogsDataStore()
