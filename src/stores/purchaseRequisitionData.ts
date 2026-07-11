@@ -34,6 +34,7 @@ export type RequisitionItemType = {
   actual_count_stock_in?:    number | null
   expiry_date?:     string | null
   product_id?:      number | null
+  reorder_request_id?: number | null
 }
 
 export type PR = {
@@ -214,10 +215,30 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     const prNumber = await generateDocNumber('PR', getLatestReferenceNo)
     const companyCostTotal = items.value.reduce((sum, i) => sum + i.qty * i.cost_per_unit, 0)
 
+    // Collect the source reorder request ids (if any) so we can stamp their
+    // RO-####-### reference numbers onto this PR for traceability.
+    const reorderRequestIds = items.value
+      .map(i => i.reorder_request_id)
+      .filter((id): id is number => id != null)
+
+    let reorderNo: string | null = null
+    if (reorderRequestIds.length) {
+      const { data: roRows, error: roError } = await supabase
+        .from('transactions')
+        .select('reference_no')
+        .in('id', reorderRequestIds)
+
+      if (!roError && roRows?.length) {
+        // Unique, non-null RO numbers joined with commas, e.g. "RO-2026-003,RO-2026-005"
+        reorderNo = [...new Set(roRows.map(r => r.reference_no).filter((n): n is string => !!n))].join(',')
+      }
+    }
+
     const { data: txData, error: txError } = await supabase
       .from('transactions')
       .insert({
         reference_no:   prNumber,
+        reorder_no:       reorderNo,
         po_no:            null,
         transaction_type: 'purchase_requisition',
         status:           'pending_approval',

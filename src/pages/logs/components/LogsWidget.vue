@@ -69,7 +69,20 @@ const loadItems = async ({ page: p, itemsPerPage: ipp, sortBy: sb }: any) => {
 
   // Apply module filter if set
   if (props.moduleFilter) {
-    sorted = sorted.filter((log) => log.module?.toLowerCase() === props.moduleFilter!.toLowerCase())
+    if (props.moduleFilter === 'reorder') {
+      // The Reorders card tracks only low-stock / out-of-stock reorder
+      // transactions (reorder_lowstock / reorder_outofstock).
+      sorted = sorted.filter(
+        (log) =>
+          log.module?.toLowerCase() === 'reorder' &&
+          (log.transaction_type === 'reorder_lowstock' ||
+            log.transaction_type === 'reorder_outofstock'),
+      )
+    } else {
+      sorted = sorted.filter(
+        (log) => log.module?.toLowerCase() === props.moduleFilter!.toLowerCase(),
+      )
+    }
   }
 
   // Apply status filter

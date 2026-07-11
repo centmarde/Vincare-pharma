@@ -177,6 +177,7 @@ export function usePurchaseRequisition() {
       supplier_id:      i.supplier_id != null ? String(i.supplier_id) : null,
       expiry_date:      i.expiry_date ? i.expiry_date.toISOString().slice(0, 10) : null,
       product_id:       i.product_id ?? undefined,
+      reorder_request_id: i.reorder_request_id ?? null,
     }))
 
     const resolvedReorderIds = validItems

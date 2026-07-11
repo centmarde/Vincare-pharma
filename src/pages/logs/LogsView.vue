@@ -45,7 +45,16 @@ const moduleCounts = computed(() => {
   const counts: Record<string, number> = {}
   latestByTransaction.forEach((log) => {
     const mod = log.module
-    if (mod) {
+    // The "Reorders" card tracks only low-stock / out-of-stock reorder
+    // transactions (reorder_lowstock / reorder_outofstock), per the logs
+    // filter requirement. Bucket those under a synthetic 'reorder' key so the
+    // card count and the active-filter in LogsWidget stay aligned.
+    if (mod === 'reorder') {
+      const tt = log.transaction_type
+      if (tt === 'reorder_lowstock' || tt === 'reorder_outofstock') {
+        counts['reorder'] = (counts['reorder'] || 0) + 1
+      }
+    } else if (mod) {
       counts[mod] = (counts[mod] || 0) + 1
     }
   })
