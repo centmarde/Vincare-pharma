@@ -23,6 +23,9 @@ export type LogType = {
   // Resolved at display time
   created_by_email?: string | null
   reference_no?: string | null
+  requisition_no?: string | null  // from joined transactions
+  po_no?: string | null           // from joined transactions
+  status?: string | null          // from joined transactions
 }
 
 export type CreateLogData = {
@@ -112,6 +115,9 @@ export const useLogsDataStore = defineStore('logsData', () => {
           transaction_id: log.transaction_id ?? null,
           created_by_email: createdByEmail,
           reference_no: referenceNo,
+          requisition_no: tx.requisition_no ?? null,
+          po_no: tx.po_no ?? null,
+          status: tx.status ?? null,
         }
       }),
     )
@@ -139,7 +145,8 @@ export const useLogsDataStore = defineStore('logsData', () => {
             remittance_no,
             inhouse_no,
             ethical_no,
-            expense_no
+            expense_no,
+            status
           )
         `,
         )

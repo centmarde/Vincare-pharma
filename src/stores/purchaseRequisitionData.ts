@@ -215,6 +215,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       .from('transactions')
       .insert({
         requisition_no:   prNumber,
+        reference_no:     prNumber,
         po_no:            null,
         transaction_type: 'purchase_requisition',
         status:           'pending_approval',
@@ -256,10 +257,10 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     // One slot per PR item: existing product id, or null if it needs to be created
     const productIdByIndex: (number | null)[] = items.value.map(item => {
       const supplierId = item.supplier_id ? Number(item.supplier_id) : null
-      
+
       if (item.product_id != null) {
         const pickedProduct = (existingProducts || []).find(p => p.id === item.product_id)
-        
+
         if (pickedProduct && pickedProduct.unit === item.unit && pickedProduct.product_name === item.item_description) {
           return item.product_id   // NEW: trust reorder-sourced items directly
         }
@@ -442,6 +443,14 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
 
     const poNumber = await generateDocNumber('PO', getLatestReferenceNo)
 
+    console.log('[issuePurchaseOrder] Updating transaction:', {
+      id: payload.pr.id,
+      po_no: poNumber,
+      reference_no: poNumber,
+      ship_via: payload.ship_via,
+      ship_method: payload.ship_method,
+    })
+
     // Guarded on status='approved' + .select() so a stale/duplicate click
     // (e.g. the PR got rejected in another tab between load and confirm)
     // can't re-issue a PO and re-mint a number for it — a no-op update
@@ -452,6 +461,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         transaction_type: 'purchase_order',
         status:           'issued',
         po_no:            poNumber,
+        reference_no:     poNumber,
         ship_via:         payload.ship_via,
         ship_method:      payload.ship_method,
         updated_at:       new Date().toISOString(),
@@ -459,6 +469,9 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       .eq('id', payload.pr.id)
       .eq('status', 'approved')
       .select('id')
+
+    console.log('[issuePurchaseOrder] Supabase response:', { data, error: updateError })
+    console.log('[issuePurchaseOrder] poNumber value:', poNumber)
 
     loading.value = false
 
