@@ -109,6 +109,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
   const reorderCount:    Ref<number> = ref(0)
   const REORDER_TYPES = ['reorder_outofstock', 'reorder_lowstock', 'reorder_expiring', 'reorder_expired']
   
+  
 
   // Realtime
   const realtimeChannel: Ref<RealtimeChannel | null> = ref(null)
@@ -408,9 +409,11 @@ export const useProductsDataStore = defineStore('productsData', () => {
     return { success: true }
   }
 
-  async function fetchReorderRequests() {
+  async function fetchReorderRequests(includeResolved = false) {
     loading.value = true
     if (!authStore.users.length) await authStore.getAllUsers()
+
+    const statuses = includeResolved ? ['pending', 'approved'] : ['pending']
 
     const { data, error } = await supabase
       .from('transactions')
@@ -422,7 +425,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
         )
       `)
       .in('transaction_type', REORDER_TYPES)
-      .eq('status', 'pending')
+      .in('status', statuses)
       .order('created_at', { ascending: false })
 
     loading.value = false
@@ -436,6 +439,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
       return {
         id:               tx.id,
         transaction_type: tx.transaction_type,
+        status:           tx.status,
         product:          item?.products
           ? { ...item.products, supplier_name: item.products.suppliers?.name ?? null }
           : null,
@@ -471,7 +475,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
 
     const { error } = await supabase
       .from('transactions')
-      .update({ status: 'resolved' })
+      .update({ status: 'approved' })
       .in('id', ids)
 
     // Check the update result BEFORE logging anything — a failed status
@@ -493,8 +497,8 @@ export const useProductsDataStore = defineStore('productsData', () => {
     const logsStore = useLogsDataStore()
     await Promise.all(resolvedRequests.map(request =>
       logsStore.createLog({
-        action:         'reorder_resolved',
-        description:    `Reorder resolved for "${request.product?.product_name ?? `Product #${request.product_id}`}"`,
+        action:         'reorder_approved',
+        description:    `Reorder approved for "${request.product?.product_name ?? `Product #${request.product_id}`}"`,
         module:         'reorder',
         transaction_id: request.id,
         created_by:     user.id,
@@ -504,6 +508,75 @@ export const useProductsDataStore = defineStore('productsData', () => {
     })
 
     // Optimistically drop them locally
+    reorderRequests.value = reorderRequests.value.filter(r => !ids.includes(r.id))
+    reorderCount.value = reorderRequests.value.length
+
+    loading.value = false
+  }
+
+  async function completeReorderRequests(productIds: number[]) {
+  if (!productIds.length) return
+
+  loading.value = true
+
+  const { user, error: authError } = await authStore.getCurrentUser()
+  if (authError || !user) {
+    toast.error('User not authenticated.')
+    loading.value = false
+    return
+  }
+
+  // Find approved reorder requests whose product was just received
+  const { data: matches, error: fetchError } = await supabase
+    .from('transactions')
+    .select(`
+      id,
+      transaction_items!inner ( product_id, products ( product_name ) )
+    `)
+    .in('transaction_type', REORDER_TYPES)
+    .eq('status', 'approved')
+    .in('transaction_items.product_id', productIds)
+
+  if (fetchError) {
+    toast.error('Failed to look up reorder requests.')
+    loading.value = false
+    return
+  }
+
+  const ids = (matches || []).map((m: any) => m.id)
+  if (!ids.length) {
+    loading.value = false
+    return
+  }
+
+  const { error: updateError } = await supabase
+    .from('transactions')
+    .update({ status: 'complete' })
+    .in('id', ids)
+
+  if (updateError) {
+    toast.error('Failed to complete reorder requests.')
+    loading.value = false
+    return
+  }
+
+  // Log each completion — mirrors resolveReorderRequests' logging pattern
+  const logsStore = useLogsDataStore()
+    await Promise.all((matches || []).map((m: any) => {
+      const productName = m.transaction_items?.[0]?.products?.product_name
+        ?? `Product #${m.transaction_items?.[0]?.product_id}`
+      return logsStore.createLog({
+        action:         'reorder_completed',
+        description:    `Reorder completed for "${productName}"`,
+        module:         'reorder',
+        transaction_id: m.id,
+        created_by:     user.id,
+      })
+    })).catch(err => {
+      console.error('Failed to log reorder completion:', err)
+    })
+
+    // Drop locally if present (relevant if the reorder dialog was fetched with includeResolved)
     reorderRequests.value = reorderRequests.value.filter(r => !ids.includes(r.id))
     reorderCount.value = reorderRequests.value.length
 
@@ -610,6 +683,12 @@ export const useProductsDataStore = defineStore('productsData', () => {
         })
         if (!result) throw new Error(`Failed to update product ID ${product_id}`)
 
+          // NEW — check if the delivery cleared the shortage
+        if (product.reorder_level != null && newStock < product.reorder_level) {
+          const reason = newStock <= 0 ? 'reorder_outofstock' : 'reorder_lowstock'
+          await createReorderRequest({ product_id, reason })
+        }
+
         // 3. Only now stamp the "this was received" marker
         const { error: tiError } = await supabase
           .from('transaction_items')
@@ -679,6 +758,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     fetchReorderCount,
     createReorderRequest,
     resolveReorderRequests,
+    completeReorderRequests,
     reorderRequests,
     reorderCount,
 

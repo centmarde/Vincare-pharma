@@ -2,6 +2,7 @@ import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import { useTransactionsDataStore } from '@/stores/transactionsData'
 import { useTransactionsData } from '@/composables/useTransactionsData'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
+import { useProductsDataStore } from '@/stores/productsData'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import type { PurchaseOrder } from './usePODetailModal'
 import { useLogsDataStore } from '@/stores/logsData'
@@ -9,6 +10,7 @@ import { useAuthUserStore } from '@/stores/authUser'
 import { useToast } from 'vue-toastification'
 import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+
 
 const toast = useToast()
 
@@ -48,6 +50,7 @@ export function usePurchaseOrderList() {
   const { loading }   = storeToRefs(txStore)
   const logsStore = useLogsDataStore()
   const authStore = useAuthUserStore()
+  const productsStore = useProductsDataStore()
   const { poStatusOptions } = useTransactionsData()
 
   // ─── State ────────────────────────────────────────────────────────
@@ -196,6 +199,15 @@ export function usePurchaseOrderList() {
         module:         'stock_in',
       })
     }
+
+      // NEW — complete any reorder requests tied to the products just received
+    const productIds = (selectedPR.value?.items ?? [])
+        .map(i => i.product_id)
+        .filter((id): id is number => id != null)
+      if (productIds.length) {
+        await productsStore.completeReorderRequests(productIds)
+      }
+
       confirmDialog.value.show = false
       await Promise.all([
         loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] }),

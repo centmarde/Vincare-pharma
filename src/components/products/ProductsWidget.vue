@@ -57,6 +57,7 @@ const {
 function handleStockCardClick(type: string) {
   stockDialogType.value = type as any
   showStockDialog.value = true
+  productsDataStore.fetchReorderRequests(true) // Fetch all reorder requests, including resolved ones
 }
 
 const reorderReasonMap: Record<string, 'reorder_outofstock' | 'reorder_lowstock' | 'reorder_expiring' | 'reorder_expired'> = {
@@ -67,14 +68,20 @@ const reorderReasonMap: Record<string, 'reorder_outofstock' | 'reorder_lowstock'
 }
 
 // Track which products have been reorder-requested this session
-const reorderRequestedIds = ref<Set<number>>(new Set())
+const reorderRequestedIds = computed(() => {
+  const map = new Map<number, string>()
+  for (const r of productsDataStore.reorderRequests) {
+    if (r.product?.id != null) map.set(r.product.id, r.status)
+  }
+  return map
+})
 
 async function requestReorder(product: any) {
   const reason = reorderReasonMap[stockDialogType.value]
   if (!reason) return
   const result = await productsDataStore.createReorderRequest({ product_id: product.id, reason })
   if (result?.success) {
-    reorderRequestedIds.value = new Set([...reorderRequestedIds.value, product.id])
+    await productsDataStore.fetchReorderRequests() // NEW — refresh so the computed picks up the new pending row
   }
 }
 
@@ -385,7 +392,7 @@ function stockColor(item: any) {
                     Reorder
                   </v-btn>
                   <v-chip
-                    v-else-if="reorderRequestedIds.has(p.id)"
+                    v-else-if="reorderRequestedIds.get(p.id) === 'pending'"
                     size="small"
                     color="green"
                     variant="tonal"
@@ -393,6 +400,16 @@ function stockColor(item: any) {
                   >
                     <v-icon start size="14">mdi-check-circle</v-icon>
                     Pending
+                  </v-chip>
+                      <v-chip
+                    v-else-if="reorderRequestedIds.get(p.id) === 'approved'"
+                    size="small"
+                    color="blue"
+                    variant="tonal"
+                    class="font-weight-medium"
+                  >
+                    <v-icon start size="14">mdi-truck-delivery-outline</v-icon>
+                    Awaiting Stock
                   </v-chip>
                 </div>
               </template>
