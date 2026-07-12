@@ -69,13 +69,23 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
     const orderNo = row[orderNoColumn] as string | null
 
     const year = new Date().getFullYear().toString()
-    const { data: existingPRs } = await supabase
-      .from('transactions')
-      .select('requisition_no')
-      .like('requisition_no', `PR-${year}-%`)
+    // PR numbers live in reference_no — the "live" stage column, per the
+    // purchasing DOC_CONFIG convention (see generativeHelpers). requisition_no
+    // only holds the archived PR number AFTER a PR has been issued into a PO.
+    // Scan BOTH columns for the max so a canvass PR can't mint a sequence
+    // already taken by a manual PR (number in reference_no) or an issued one
+    // (archived in requisition_no) — scanning requisition_no alone was the
+    // source of duplicate PR numbers across the manual/canvass paths.
+    const [refPRs, reqPRs] = await Promise.all([
+      supabase.from('transactions').select('reference_no').like('reference_no', `PR-${year}-%`),
+      supabase.from('transactions').select('requisition_no').like('requisition_no', `PR-${year}-%`),
+    ])
     // One canvass commit raises several PRs; start from the numeric max and
     // increment per supplier (numeric, not lexical — see nextDocNumber).
-    let seq = maxDocSeq((existingPRs ?? []).map(r => r.requisition_no))
+    let seq = maxDocSeq([
+      ...(refPRs.data ?? []).map(r => r.reference_no),
+      ...(reqPRs.data ?? []).map(r => r.requisition_no),
+    ])
 
     const supplierIds = Array.from(new Set(selections.map(s => s.supplier_id))).sort((a, b) => a - b)
     const results: CanvassPRResult[] = []
@@ -107,7 +117,12 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
       const { data: pr, error: prError } = await supabase
         .from('transactions')
         .insert({
-          requisition_no: prNo, po_no: null, transaction_type: 'purchase_requisition', status: 'pending_approval',
+          // Write into reference_no (the live stage column), NOT requisition_no,
+          // so a canvass PR is identical to a manual one and flows through the
+          // purchasing PR→PO→SI mutation (issuePurchaseOrder/markPOAsReceived
+          // guard + snapshot on reference_no). requisition_no gets the archived
+          // PR number later, when the PO is issued.
+          reference_no: prNo, po_no: null, transaction_type: 'purchase_requisition', status: 'pending_approval',
           supplier_id: supplierId, total_amount: total,
           remarks: `Auto-raised from ${logModule} ${orderNo ?? `#${orderId}`} supplier canvass (${count} item(s))`,
           created_by: userId,

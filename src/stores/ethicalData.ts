@@ -256,6 +256,12 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     const { data: created, error: insertError } = await supabase
       .from('transactions')
       .insert({
+        // Mirror the order number into reference_no too (parity with purchasing /
+        // in-house), so the transactions row shows its live document number in the
+        // same column the other modules use. Constant EO- number for the whole
+        // lifecycle — ethical_no stays the canonical per-type column; the
+        // reference_no unique index already reserves the EO- prefix.
+        reference_no: orderNo,
         ethical_no: orderNo, transaction_type: 'ethical_order', status: 'invoiced',
         outlet_id: payload.outletId, customer_id: payload.customerId, agent_id: payload.agentId ?? null,
         total_amount: total, remarks: payload.remarks || null, created_by: user.id,

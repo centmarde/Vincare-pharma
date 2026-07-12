@@ -19,6 +19,14 @@ const toast = useToast()
 // transaction_type = 'inhouse_order'; lines in transaction_items; negotiation
 // rounds in logs. View-model mapped from the hub (same style as salesData).
 
+// Negotiation-round log actions. These logs are written under module 'inhouse'
+// (same as every other event in an order's lifecycle) so a whole order stays a
+// single run in the activity logs (deduped by transaction_id). They used to
+// carry a separate module 'inhouse_negotiation', which fragmented one order
+// across two module buckets; fetchNegotiation now isolates them by ACTION
+// instead. If a new negotiation action is ever added, add it here too.
+export const NEGOTIATION_ACTIONS = ['offer', 'counter', 'agree'] as const
+
 export type InhouseItemType = {
   id: number
   product_id: number | null
@@ -184,6 +192,15 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       .from('transactions')
       .insert({
         inhouse_no: orderNo,
+        // Mirror the order number into reference_no too, so the transactions row
+        // carries its live document number in the same column purchasing uses
+        // (parity with the other modules; the reference_no unique index already
+        // reserves the IH- prefix in its shared series space). Kept constant as
+        // the IH- number for the whole lifecycle — deliberately NOT mutated to
+        // the PO number at agree: in-house and purchasing share the PO series,
+        // and both would write it to reference_no, colliding on that unique
+        // index. inhouse_no stays as the canonical per-type column.
+        reference_no: orderNo,
         // Company PO stays null while negotiating — it's stamped (PO-YYYY-###,
         // minted from the shared Purchasing PO series) when terms are agreed,
         // see agreeOrder. The government's own PO number goes to
@@ -311,7 +328,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       created_by: user.id,
       action: payload.party === 'company' ? 'counter' : 'offer',
       description: `${payload.note ?? ''} | proposed: ${payload.total}`,
-      module: 'inhouse_negotiation', transaction_id: payload.orderId,
+      module: 'inhouse', transaction_id: payload.orderId,
     })
     if (logError) console.warn('recordOffer: activity log insert failed:', logError.message)
 
@@ -380,7 +397,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     const { error: logError } = await supabase.from('logs').insert({
       created_by: user.id, action: 'agree',
       description: poNo ? `Terms agreed — ${poNo} issued` : 'Terms agreed — awaiting stock, PO withheld',
-      module: 'inhouse_negotiation', transaction_id: orderId,
+      module: 'inhouse', transaction_id: orderId,
     })
     if (logError) console.warn('agreeOrder: activity log insert failed:', logError.message)
 
@@ -685,7 +702,11 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
   const fetchNegotiation = async (orderId: number): Promise<NegotiationRound[]> => {
     const { data, error: e } = await supabase
       .from('logs').select('id, created_at, created_by, action, description')
-      .eq('transaction_id', orderId).eq('module', 'inhouse_negotiation')
+      // Isolate negotiation rounds by ACTION, not module — the module is now
+      // 'inhouse' for the whole order lifecycle (one run). This also still
+      // matches legacy rows written under module 'inhouse_negotiation', since
+      // those carry the same actions.
+      .eq('transaction_id', orderId).in('action', NEGOTIATION_ACTIONS)
       .order('created_at', { ascending: true })
     if (e) { handleError(e, 'Failed to load negotiation history'); return [] }
     return (data || []) as NegotiationRound[]

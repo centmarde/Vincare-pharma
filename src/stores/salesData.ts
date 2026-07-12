@@ -304,6 +304,11 @@ export const useSalesDataStore = defineStore('salesData', () => {
     const { data: created, error: insertError } = await supabase
       .from('transactions')
       .insert({
+        // Mirror the sale number into reference_no too (parity with purchasing /
+        // in-house / ethical), so the transactions row shows its live document
+        // number in the same column the other modules use. sale_no stays the
+        // canonical per-type column; the reference_no unique index reserves SO-.
+        reference_no: saleNo,
         sale_no: saleNo,
         transaction_type: 'sale',
         status: 'completed',
