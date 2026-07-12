@@ -7,6 +7,8 @@ import { getReferenceLabel, getActionColor, getModuleColor } from '../composable
 import { useDisplay } from 'vuetify'
 import { formatCurrency, formatDate } from '@/utils/helpers'
 import LogsViewDialog from '@/pages/logs/dialogs/LogsViewDialog.vue'
+import AdvanceFilterDialog from '@/pages/logs/dialogs/AdvanceFilterDialog.vue'
+import type { AdvanceFilters } from '@/pages/logs/dialogs/AdvanceFilterDialog.vue'
 import MobileLogsWidget from '@/pages/logs/mobile/LogsWidget.vue'
 
 const logsStore = useLogsDataStore()
@@ -29,6 +31,23 @@ const search = ref('')
 const statusFilter = ref('all')
 const selectedLog = ref<LogType | null>(null)
 const showDialog = ref(false)
+
+// Advance filter state
+const showAdvanceFilter = ref(false)
+const advanceFilters = ref<AdvanceFilters>({
+  datePreset: 'all',
+  fromDate: null,
+  toDate: null,
+  specificDay: null,
+  specificMonth: null,
+  specificYear: null,
+  modules: [],
+  actions: [],
+  status: 'all',
+  transactionTypes: [],
+  createdByEmail: '',
+  search: '',
+})
 
 // Date range filters
 const fromDate = ref<string | null>(null)
@@ -75,8 +94,6 @@ const loadItems = async ({ page: p, itemsPerPage: ipp, sortBy: sb }: any) => {
   // Apply module filter if set
   if (props.moduleFilter) {
     if (props.moduleFilter === 'reorder') {
-      // The Reorders card tracks only low-stock / out-of-stock reorder
-      // transactions (reorder_lowstock / reorder_outofstock).
       sorted = sorted.filter(
         (log) =>
           log.module?.toLowerCase() === 'reorder' &&
@@ -118,6 +135,129 @@ const loadItems = async ({ page: p, itemsPerPage: ipp, sortBy: sb }: any) => {
     })
   }
 
+  // ── Apply advance filters ──────────────────────────────────────────
+  const af = advanceFilters.value
+
+  // Advance date presets
+  if (af.datePreset !== 'all') {
+    if (af.datePreset === 'today') {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const tomorrow = new Date(today)
+      tomorrow.setDate(tomorrow.getDate() + 1)
+      sorted = sorted.filter((log) => {
+        const d = new Date(log.created_at)
+        return d >= today && d < tomorrow
+      })
+    } else if (af.datePreset === 'this_week') {
+      const now = new Date()
+      const dayOfWeek = now.getDay()
+      const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)
+      const monday = new Date(now.setDate(diff))
+      monday.setHours(0, 0, 0, 0)
+      sorted = sorted.filter((log) => new Date(log.created_at) >= monday)
+    } else if (af.datePreset === 'this_month') {
+      const now = new Date()
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
+      firstDay.setHours(0, 0, 0, 0)
+      sorted = sorted.filter((log) => new Date(log.created_at) >= firstDay)
+    } else if (af.datePreset === 'this_year') {
+      const now = new Date()
+      const firstDay = new Date(now.getFullYear(), 0, 1)
+      firstDay.setHours(0, 0, 0, 0)
+      sorted = sorted.filter((log) => new Date(log.created_at) >= firstDay)
+    } else if (af.datePreset === 'custom') {
+      if (af.fromDate) {
+        const from = new Date(af.fromDate)
+        from.setHours(0, 0, 0, 0)
+        sorted = sorted.filter((log) => new Date(log.created_at) >= from)
+      }
+      if (af.toDate) {
+        const to = new Date(af.toDate)
+        to.setHours(23, 59, 59, 999)
+        sorted = sorted.filter((log) => new Date(log.created_at) <= to)
+      }
+    } else if (af.datePreset === 'specific_day') {
+      if (af.specificDay) {
+        const dayStart = new Date(af.specificDay)
+        dayStart.setHours(0, 0, 0, 0)
+        const dayEnd = new Date(dayStart)
+        dayEnd.setDate(dayEnd.getDate() + 1)
+        sorted = sorted.filter((log) => {
+          const d = new Date(log.created_at)
+          return d >= dayStart && d < dayEnd
+        })
+      }
+    } else if (af.datePreset === 'specific_month') {
+      if (af.specificMonth) {
+        const year = af.specificYear || new Date().getFullYear()
+        const monthStart = new Date(year, af.specificMonth - 1, 1)
+        monthStart.setHours(0, 0, 0, 0)
+        const monthEnd = new Date(year, af.specificMonth, 0, 23, 59, 59, 999)
+        sorted = sorted.filter((log) => {
+          const d = new Date(log.created_at)
+          return d >= monthStart && d <= monthEnd
+        })
+      }
+    } else if (af.datePreset === 'specific_year') {
+      if (af.specificYear) {
+        const yearStart = new Date(af.specificYear, 0, 1)
+        yearStart.setHours(0, 0, 0, 0)
+        const yearEnd = new Date(af.specificYear, 11, 31, 23, 59, 59, 999)
+        sorted = sorted.filter((log) => {
+          const d = new Date(log.created_at)
+          return d >= yearStart && d <= yearEnd
+        })
+      }
+    }
+  }
+
+  // Advance module filter
+  if (af.modules.length > 0) {
+    sorted = sorted.filter((log) => log.module && af.modules.includes(log.module))
+  }
+
+  // Advance action filter
+  if (af.actions.length > 0) {
+    sorted = sorted.filter((log) => log.action && af.actions.includes(log.action))
+  }
+
+  // Advance status filter
+  if (af.status !== 'all') {
+    sorted = sorted.filter((log) => {
+      const status = (log.status ?? '').toLowerCase()
+      if (af.status === 'active') return status !== 'complete' && status !== ''
+      if (af.status === 'complete') return status === 'complete'
+      return true
+    })
+  }
+
+  // Advance transaction type filter
+  if (af.transactionTypes.length > 0) {
+    sorted = sorted.filter(
+      (log) => log.transaction_type && af.transactionTypes.includes(log.transaction_type),
+    )
+  }
+
+  // Advance created by email filter
+  if (af.createdByEmail) {
+    sorted = sorted.filter((log) => log.created_by_email === af.createdByEmail)
+  }
+
+  // Advance search text filter
+  if (af.search.trim()) {
+    const term = af.search.toLowerCase()
+    sorted = sorted.filter(
+      (log) =>
+        log.action?.toLowerCase().includes(term) ||
+        log.description?.toLowerCase().includes(term) ||
+        log.module?.toLowerCase().includes(term) ||
+        log.created_by_email?.toLowerCase().includes(term) ||
+        log.reference_no?.toLowerCase().includes(term),
+    )
+  }
+  // ── End advance filters ─────────────────────────────────────────────
+
   if (sb.length) {
     const { key, order } = sb[0]
     sorted.sort((a: any, b: any) => {
@@ -154,11 +294,8 @@ const loadItems = async ({ page: p, itemsPerPage: ipp, sortBy: sb }: any) => {
 const openLogsDialog = async (log: any) => {
   if (!log.transaction_id) return
 
-  // Fetch all logs for this transaction
   await logsStore.fetchLogs()
   const txLogs = logs.value.filter((l: any) => l.transaction_id === log.transaction_id)
-
-  // Sort by id descending to show latest first
   txLogs.sort((a: any, b: any) => b.id - a.id)
 
   selectedLog.value = txLogs[0] || log
@@ -192,7 +329,7 @@ watch(() => props.moduleFilter, () => {
   loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
 })
 
-// Watch search to reload when search term changes (reacts on every keystroke)
+// Watch search to reload when search term changes
 watch(search, () => {
   page.value = 1
   loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
@@ -209,6 +346,37 @@ watch([fromDate, toDate], () => {
   page.value = 1
   loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
 })
+
+// Handle advance filter apply
+const handleAdvanceFilterApply = (filters: AdvanceFilters) => {
+  advanceFilters.value = { ...filters }
+  page.value = 1
+  loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
+}
+
+// Clear all filters back to defaults
+const clearAllFilters = () => {
+  search.value = ''
+  statusFilter.value = 'all'
+  fromDate.value = null
+  toDate.value = null
+  advanceFilters.value = {
+    datePreset: 'all',
+    fromDate: null,
+    toDate: null,
+    specificDay: null,
+    specificMonth: null,
+    specificYear: null,
+    modules: [],
+    actions: [],
+    status: 'all',
+    transactionTypes: [],
+    createdByEmail: '',
+    search: '',
+  }
+  page.value = 1
+  loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
+}
 </script>
 
 <template>
@@ -274,6 +442,30 @@ watch([fromDate, toDate], () => {
             clearable
             @click:clear="page = 1; loadItems({ page: 1, itemsPerPage, sortBy: [] })"
           ></v-text-field>
+          <v-tooltip text="Advanced Filters" location="top">
+            <template #activator="{ props: tp }">
+              <v-btn
+                v-bind="tp"
+                icon="mdi-tune-vertical-variant"
+                variant="text"
+                size="small"
+                color="primary"
+                @click="showAdvanceFilter = true"
+              ></v-btn>
+            </template>
+          </v-tooltip>
+          <v-tooltip text="Clear all filters" location="top">
+            <template #activator="{ props: tp }">
+              <v-btn
+                v-bind="tp"
+                icon="mdi-filter-remove"
+                variant="text"
+                size="small"
+                color="error"
+                @click="clearAllFilters"
+              ></v-btn>
+            </template>
+          </v-tooltip>
           <v-btn
             icon="mdi-refresh"
             variant="text"
@@ -331,6 +523,30 @@ watch([fromDate, toDate], () => {
             hide-details
             style="max-width: 100px"
           />
+          <v-tooltip text="Advanced Filters" location="top">
+            <template #activator="{ props: tp }">
+              <v-btn
+                v-bind="tp"
+                icon="mdi-tune-vertical-variant"
+                variant="text"
+                size="small"
+                color="primary"
+                @click="showAdvanceFilter = true"
+              ></v-btn>
+            </template>
+          </v-tooltip>
+          <v-tooltip text="Clear all filters" location="top">
+            <template #activator="{ props: tp }">
+              <v-btn
+                v-bind="tp"
+                icon="mdi-filter-remove"
+                variant="text"
+                size="small"
+                color="error"
+                @click="clearAllFilters"
+              ></v-btn>
+            </template>
+          </v-tooltip>
           <v-btn
             icon="mdi-refresh"
             variant="text"
@@ -383,7 +599,6 @@ watch([fromDate, toDate], () => {
         density="comfortable"
         @update:options="loadItems"
       >
-        <!-- Action column -->
         <template #[`item.action`]="{ value }">
           <v-chip
             :color="getActionColor(value)"
@@ -395,12 +610,10 @@ watch([fromDate, toDate], () => {
           </v-chip>
         </template>
 
-        <!-- Description column -->
         <template #[`item.description`]="{ value }">
           <span class="text-body-2">{{ value || '—' }}</span>
         </template>
 
-        <!-- Module column -->
         <template #[`item.module`]="{ value }">
           <v-chip
             :color="getModuleColor(value)"
@@ -412,12 +625,10 @@ watch([fromDate, toDate], () => {
           </v-chip>
         </template>
 
-        <!-- Created By (email) column -->
         <template #[`item.created_by_email`]="{ value }">
           <span class="text-body-2">{{ value || '—' }}</span>
         </template>
 
-        <!-- Reference No. column -->
         <template #[`item.reference_no`]="{ item }">
           <v-chip
             v-if="getReferenceLabel(item)"
@@ -433,12 +644,10 @@ watch([fromDate, toDate], () => {
           </v-chip>
         </template>
 
-        <!-- Created At column -->
         <template #[`item.created_at`]="{ value }">
           <span class="text-caption">{{ formatDate(value) }}</span>
         </template>
 
-        <!-- Actions column -->
         <template #[`item.actions`]="{ item }">
           <v-btn
             icon="mdi-history"
@@ -466,8 +675,16 @@ watch([fromDate, toDate], () => {
         />
       </template>
 
-      <!-- Logs Detail Dialog (outside v-if/v-else to avoid template errors) -->
+      <!-- Logs Detail Dialog -->
       <LogsViewDialog v-model="showDialog" :logs="dialogLogs" @close="closeDialog" />
+
+      <!-- Advance Filter Dialog -->
+      <AdvanceFilterDialog
+        v-model="showAdvanceFilter"
+        :initial-filters="advanceFilters"
+        @apply="handleAdvanceFilterApply"
+        @close="showAdvanceFilter = false"
+      />
     </v-card-text>
   </v-card>
 </template>
