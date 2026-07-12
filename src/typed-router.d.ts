@@ -98,6 +98,7 @@ declare module 'vue-router/auto-routes' {
     '/logs/components/LogsCard': RouteRecordInfo<'/logs/components/LogsCard', '/logs/components/LogsCard', Record<never, never>, Record<never, never>>,
     '/logs/components/LogsInAllUsers': RouteRecordInfo<'/logs/components/LogsInAllUsers', '/logs/components/LogsInAllUsers', Record<never, never>, Record<never, never>>,
     '/logs/components/LogsWidget': RouteRecordInfo<'/logs/components/LogsWidget', '/logs/components/LogsWidget', Record<never, never>, Record<never, never>>,
+    '/logs/dialogs/AdvanceFilterDialog': RouteRecordInfo<'/logs/dialogs/AdvanceFilterDialog', '/logs/dialogs/AdvanceFilterDialog', Record<never, never>, Record<never, never>>,
     '/logs/dialogs/LogsViewDialog': RouteRecordInfo<'/logs/dialogs/LogsViewDialog', '/logs/dialogs/LogsViewDialog', Record<never, never>, Record<never, never>>,
     '/logs/dialogs/UserLogListDialog': RouteRecordInfo<'/logs/dialogs/UserLogListDialog', '/logs/dialogs/UserLogListDialog', Record<never, never>, Record<never, never>>,
     '/logs/LogsView': RouteRecordInfo<'/logs/LogsView', '/logs/LogsView', Record<never, never>, Record<never, never>>,

@@ -27,7 +27,7 @@ const modules = [
   { key: 'stock_in', label: 'Stock In', icon: 'mdi-arrow-collapse-down' },
   { key: 'stock_out', label: 'Stock Out', icon: 'mdi-arrow-collapse-up' },
   { key: 'sale', label: 'Sale', icon: 'mdi-cart-outline' },
-  { key: 'transfer', label: 'Transfer', icon: 'mdi-swap-horizontal-bold' },
+  { key: 'inhouse', label: 'Inhouse Order', icon: 'mdi-swap-horizontal-bold' },
   {
     key: 'reorder',
     label: 'Reorders',

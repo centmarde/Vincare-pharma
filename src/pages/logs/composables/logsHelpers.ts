@@ -52,3 +52,50 @@ export function getModuleColor(module: string | null): string {
   if (lower.includes('sales_return') || lower.includes('return')) return 'pink'
   return 'grey'
 }
+
+/**
+ * Returns a Material Design icon name for a timeline dot based on the action.
+ */
+export function getTimelineIcon(action: string | null): string {
+  if (!action) return 'mdi-circle-small'
+  const lower = action.toLowerCase()
+  if (lower.includes('submit') || lower.includes('create')) return 'mdi-plus-circle-outline'
+  if (lower.includes('update') || lower.includes('edit')) return 'mdi-pencil-circle-outline'
+  if (lower.includes('delete') || lower.includes('remove')) return 'mdi-delete-circle-outline'
+  if (lower.includes('approve')) return 'mdi-check-circle-outline'
+  if (lower.includes('reject')) return 'mdi-close-circle-outline'
+  if (lower.includes('cancel')) return 'mdi-cancel'
+  if (lower.includes('send') || lower.includes('issue')) return 'mdi-send-circle-outline'
+  if (lower.includes('print')) return 'mdi-printer-outline'
+  if (lower.includes('view') || lower.includes('read')) return 'mdi-eye-circle-outline'
+  if (lower.includes('procurement_requested') || lower.includes('procurement')) return 'mdi-clipboard-text-clock-outline'
+  if (lower.includes('agree')) return 'mdi-handshake-outline'
+  if (lower.includes('reorder_request') || lower.includes('reorder')) return 'mdi-cart-outline'
+  return 'mdi-circle-small'
+}
+
+/**
+ * Returns the most relevant text description for the timeline opposite slot (date/time).
+ */
+export function getTimelineDate(log: LogType): string {
+  if (!log.created_at) return ''
+  const date = new Date(log.created_at)
+  // Return a short date for the opposite side
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+/**
+ * Returns the time portion for the timeline opposite slot.
+ */
+export function getTimelineTime(log: LogType): string {
+  if (!log.created_at) return ''
+  const date = new Date(log.created_at)
+  return date.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
