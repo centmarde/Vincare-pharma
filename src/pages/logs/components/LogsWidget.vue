@@ -29,6 +29,10 @@ const statusFilter = ref('all')
 const selectedLog = ref<LogType | null>(null)
 const showDialog = ref(false)
 
+// Date range filters
+const fromDate = ref<string | null>(null)
+const toDate = ref<string | null>(null)
+
 // Headers definition (ID column intentionally omitted)
 const headers = computed(() => [
   { title: 'Action', key: 'action', sortable: true, width: 120 },
@@ -92,6 +96,24 @@ const loadItems = async ({ page: p, itemsPerPage: ipp, sortBy: sb }: any) => {
       if (statusFilter.value === 'active') return status !== 'complete' && status !== ''
       if (statusFilter.value === 'complete') return status === 'complete'
       return true
+    })
+  }
+
+  // Apply date range filter
+  if (fromDate.value) {
+    const from = new Date(fromDate.value)
+    from.setHours(0, 0, 0, 0)
+    sorted = sorted.filter((log) => {
+      const logDate = new Date(log.created_at)
+      return logDate >= from
+    })
+  }
+  if (toDate.value) {
+    const to = new Date(toDate.value)
+    to.setHours(23, 59, 59, 999)
+    sorted = sorted.filter((log) => {
+      const logDate = new Date(log.created_at)
+      return logDate <= to
     })
   }
 
@@ -180,87 +202,155 @@ watch(statusFilter, () => {
   page.value = 1
   loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
 })
+
+// Watch date filters to reload when they change
+watch([fromDate, toDate], () => {
+  page.value = 1
+  loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
+})
 </script>
 
 <template>
   <v-card>
-    <!-- Toolbar -->
-    <v-card-title class="d-flex align-center flex-wrap ga-2 pa-3">
-      <v-icon icon="mdi-text-box-search-outline" class="mr-1" color="primary"></v-icon>
-      <span class="text-h6 font-weight-bold">Activity Logs</span>
-      <v-spacer></v-spacer>
+    <!-- Filters toolbar -->
+    <v-card-item>
       <template v-if="!mobile">
-        <v-select
-          v-model="statusFilter"
-          :items="[
-            { title: 'All', value: 'all' },
-            { title: 'Active', value: 'active' },
-            { title: 'Complete', value: 'complete' },
-          ]"
-          item-title="title"
-          item-value="value"
-          variant="outlined"
-          density="compact"
-          hide-details
-          style="max-width: 160px"
-          class="mr-2"
-        />
+        <div class="d-flex align-center ga-2 flex-wrap">
+          <v-menu :close-on-content-click="false">
+            <template #activator="{ props: menuProps }">
+              <v-text-field
+                v-model="fromDate"
+                v-bind="menuProps"
+                label="From"
+                variant="outlined"
+                density="compact"
+                hide-details
+                clearable
+                readonly
+                style="max-width: 160px"
+              ></v-text-field>
+            </template>
+            <v-date-picker v-model="fromDate" control-variant="modal"></v-date-picker>
+          </v-menu>
+          <v-menu :close-on-content-click="false">
+            <template #activator="{ props: menuProps }">
+              <v-text-field
+                v-model="toDate"
+                v-bind="menuProps"
+                label="To"
+                variant="outlined"
+                density="compact"
+                hide-details
+                clearable
+                readonly
+                style="max-width: 160px"
+              ></v-text-field>
+            </template>
+            <v-date-picker v-model="toDate" control-variant="modal"></v-date-picker>
+          </v-menu>
+          <v-select
+            v-model="statusFilter"
+            :items="[
+              { title: 'All', value: 'all' },
+              { title: 'Active', value: 'active' },
+              { title: 'Complete', value: 'complete' },
+            ]"
+            item-title="title"
+            item-value="value"
+            variant="outlined"
+            density="compact"
+            hide-details
+            style="max-width: 120px"
+          />
+          <v-text-field
+            v-model="search"
+            label="Search logs..."
+            prepend-inner-icon="mdi-magnify"
+            variant="outlined"
+            density="compact"
+            hide-details
+            style="min-width: 160px"
+            clearable
+            @click:clear="page = 1; loadItems({ page: 1, itemsPerPage, sortBy: [] })"
+          ></v-text-field>
+          <v-btn
+            icon="mdi-refresh"
+            variant="text"
+            size="small"
+            :loading="loadingTable"
+            @click="page = 1; loadItems({ page: 1, itemsPerPage, sortBy: [] })"
+          ></v-btn>
+        </div>
+      </template>
+      <template v-else>
+        <div class="d-flex align-center ga-1 flex-wrap">
+          <v-menu :close-on-content-click="false">
+            <template #activator="{ props: menuProps }">
+              <v-text-field
+                v-model="fromDate"
+                v-bind="menuProps"
+                label="From"
+                variant="outlined"
+                density="compact"
+                hide-details
+                clearable
+                readonly
+                class="flex-1-1"
+              ></v-text-field>
+            </template>
+            <v-date-picker v-model="fromDate" control-variant="modal"></v-date-picker>
+          </v-menu>
+          <v-menu :close-on-content-click="false">
+            <template #activator="{ props: menuProps }">
+              <v-text-field
+                v-model="toDate"
+                v-bind="menuProps"
+                label="To"
+                variant="outlined"
+                density="compact"
+                hide-details
+                clearable
+                readonly
+                class="flex-1-1"
+              ></v-text-field>
+            </template>
+            <v-date-picker v-model="toDate" control-variant="modal"></v-date-picker>
+          </v-menu>
+          <v-select
+            v-model="statusFilter"
+            :items="[
+              { title: 'All', value: 'all' },
+              { title: 'Active', value: 'active' },
+              { title: 'Complete', value: 'complete' },
+            ]"
+            item-title="title"
+            item-value="value"
+            variant="outlined"
+            density="compact"
+            hide-details
+            style="max-width: 100px"
+          />
+          <v-btn
+            icon="mdi-refresh"
+            variant="text"
+            size="small"
+            :loading="loadingTable"
+            @click="page = 1; loadItems({ page: 1, itemsPerPage, sortBy: [] })"
+          ></v-btn>
+        </div>
         <v-text-field
           v-model="search"
           label="Search logs..."
           prepend-inner-icon="mdi-magnify"
           variant="outlined"
-          density="comfortable"
+          density="compact"
           hide-details
-          class="max-width-300"
           clearable
+          class="mt-1"
           @click:clear="page = 1; loadItems({ page: 1, itemsPerPage, sortBy: [] })"
         ></v-text-field>
-        <v-btn
-          icon="mdi-refresh"
-          variant="text"
-          :loading="loadingTable"
-          @click="page = 1; loadItems({ page: 1, itemsPerPage, sortBy: [] })"
-        ></v-btn>
       </template>
-      <template v-else>
-        <v-btn
-          icon="mdi-refresh"
-          variant="text"
-          size="small"
-          :loading="loadingTable"
-          @click="page = 1; loadItems({ page: 1, itemsPerPage, sortBy: [] })"
-        ></v-btn>
-      </template>
-    </v-card-title>
-
-    <!-- Mobile search -->
-    <div v-if="mobile" class="px-3 pb-2">
-      <v-select
-        v-model="statusFilter"
-        :items="[
-          { title: 'All', value: 'all' },
-          { title: 'Active', value: 'active' },
-          { title: 'Complete', value: 'complete' },
-        ]"
-        item-title="title"
-        item-value="value"
-        variant="outlined"
-        density="compact"
-        hide-details
-        class="mb-2"
-      />
-      <v-text-field
-        v-model="search"
-        label="Search logs..."
-        prepend-inner-icon="mdi-magnify"
-        variant="outlined"
-        density="compact"
-        hide-details
-        clearable
-          @click:clear="page = 1; loadItems({ page: 1, itemsPerPage, sortBy: [] })"
-      ></v-text-field>
-    </div>
+    </v-card-item>
 
     <v-divider></v-divider>
 
@@ -387,5 +477,8 @@ watch(statusFilter, () => {
 }
 .border-b-sm {
   border-bottom: 1px solid rgba(var(--v-border-color), 0.08);
+}
+.flex-1-1 {
+  flex: 1 1 0;
 }
 </style>
