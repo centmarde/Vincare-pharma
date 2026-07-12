@@ -37,6 +37,10 @@ const navItems = computed<NavSearchItem[]>(() => {
   }))
 })
 
+function getRaw(item: any): NavSearchItem {
+  return item?.raw as NavSearchItem
+}
+
 function goToRoute(route: string | null) {
   if (route) {
     searchQuery.value = ''
@@ -91,10 +95,10 @@ function goToRoute(route: string | null) {
             <template #item="{ props, item }">
               <v-list-item v-bind="props" class="rounded-lg">
                 <template #prepend>
-                  <v-icon :icon="item.raw.icon" size="18" color="primary" class="mr-2" />
+                  <v-icon :icon="getRaw(item).icon" size="18" color="primary" class="mr-2" />
                 </template>
                 <v-list-item-subtitle class="text-caption text-medium-emphasis">
-                  {{ item.raw.group }}
+                  {{ getRaw(item).group }}
                 </v-list-item-subtitle>
                 <template #append>
                   <v-icon size="14" color="grey">mdi-arrow-right-thin</v-icon>
