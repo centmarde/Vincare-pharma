@@ -28,25 +28,7 @@ defineEmits<{
     >
       <!-- Card header: action + module chips -->
       <v-card-title class="d-flex align-center ga-2 pa-3 pb-1">
-        <v-avatar size="32" :color="getActionColor(log.action)" variant="tonal">
-          <v-icon size="16" color="white">
-            {{
-              log.action?.toLowerCase().includes('submit')
-                ? 'mdi-send'
-                : log.action?.toLowerCase().includes('create')
-                  ? 'mdi-plus-circle'
-                  : log.action?.toLowerCase().includes('update') || log.action?.toLowerCase().includes('edit')
-                    ? 'mdi-pencil'
-                    : log.action?.toLowerCase().includes('delete') || log.action?.toLowerCase().includes('remove')
-                      ? 'mdi-delete'
-                      : log.action?.toLowerCase().includes('approve')
-                        ? 'mdi-check-circle'
-                        : log.action?.toLowerCase().includes('reject')
-                          ? 'mdi-close-circle'
-                          : 'mdi-circle-small'
-            }}
-          </v-icon>
-        </v-avatar>
+
         <div class="d-flex flex-wrap ga-1">
           <v-chip
             :color="getActionColor(log.action)"

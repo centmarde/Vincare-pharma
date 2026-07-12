@@ -7,6 +7,7 @@ import { getReferenceLabel, getActionColor, getModuleColor } from '../composable
 import { useDisplay } from 'vuetify'
 import { formatCurrency, formatDate } from '@/utils/helpers'
 import LogsViewDialog from '@/pages/logs/dialogs/LogsViewDialog.vue'
+import MobileLogsWidget from '@/pages/logs/mobile/LogsWidget.vue'
 
 const logsStore = useLogsDataStore()
 const { logs, loading, logsCount, hasLogs, isLoading, hasError, error } = storeToRefs(logsStore)
