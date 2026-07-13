@@ -12,7 +12,7 @@ export const TRANSACTION_CLASSES = [
   'stock_in',
   'stock_out',
   'sale',
-  'transfer',
+  'inhouse_order',
   'expense',
   'purchase_return',
   'sales_return',

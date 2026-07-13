@@ -127,19 +127,18 @@ function stockColor(item: any) {
 <template>
   <v-card>
     <!-- Toolbar -->
-    <v-card-title class="d-flex align-center flex-wrap ga-2 pa-3">
-      <v-icon icon="mdi-package-variant" class="mr-1" color="primary"></v-icon>
-      <span class="text-h6 font-weight-bold">Products</span>
-      <v-spacer></v-spacer>
+    <div class="d-flex align-center ga-2 pa-3">
+      <v-icon icon="mdi-package-variant" color="primary"></v-icon>
+      <span class="text-h6 font-weight-bold mr-auto">Products</span>
       <template v-if="!mobile">
         <v-text-field
           v-model="searchQuery"
           label="Search products..."
           prepend-inner-icon="mdi-magnify"
           variant="outlined"
-          density="comfortable"
+          density="compact"
           hide-details
-          class="max-width-300"
+          class="search-field"
           @keyup.enter="handleSearch"
         ></v-text-field>
         <v-btn color="primary" variant="elevated" @click="openCreateDialog">
@@ -156,7 +155,7 @@ function stockColor(item: any) {
           @click="openCreateDialog"
         ></v-btn>
       </template>
-    </v-card-title>
+    </div>
 
     <!-- Mobile search -->
     <div v-if="mobile" class="px-3 pb-2">
@@ -428,7 +427,9 @@ function stockColor(item: any) {
 </template>
 
 <style scoped>
-.max-width-300 {
-  max-width: 300px;
+.search-field {
+  min-width: 280px;
+  max-width: 420px;
+  width: 100%;
 }
 </style>

@@ -21,6 +21,10 @@ export function useSuppliers() {
     address: null as string | null,
     balance: null as number | null,
     is_active: true,
+    tin_no: null as string | null,
+    dti_no: null as string | null,
+    lto_no: null as string | null,
+    bank_details: null as string | null,
   })
 
   // ─── Table Headers ──────────────────────────────────────────────
@@ -52,6 +56,10 @@ export function useSuppliers() {
       address: null,
       balance: null,
       is_active: true,
+      tin_no: null,
+      dti_no: null,
+      lto_no: null,
+      bank_details: null,
     }
   }
 
@@ -71,6 +79,10 @@ export function useSuppliers() {
       address: supplier.address,
       balance: supplier.balance,
       is_active: supplier.is_active ?? true,
+      tin_no: supplier.tin_no,
+      dti_no: supplier.dti_no,
+      lto_no: supplier.lto_no,
+      bank_details: supplier.bank_details,
     }
     clearError()
   }
@@ -80,18 +92,14 @@ export function useSuppliers() {
   }
 
   // ─── Actions ────────────────────────────────────────────────────
-  async function handleSubmit(formRef: any): Promise<boolean> {
-    const { valid } = await formRef.validate()
-    if (!valid) return false
-
-    if (editingSupplier.value) {
-      await updateSupplier(editingSupplier.value.id, form.value)
-    } else {
-      await createSupplier(form.value)
-    }
-
-    return !error.value
+async function handleSubmit(): Promise<boolean> {
+  if (editingSupplier.value) {
+    await updateSupplier(editingSupplier.value.id, form.value)
+  } else {
+    await createSupplier(form.value)
   }
+  return !error.value
+}
 
   async function handleDelete(): Promise<boolean> {
     if (!supplierToDelete.value) return false
