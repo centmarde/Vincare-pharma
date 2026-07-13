@@ -136,6 +136,7 @@ declare module 'vue-router/auto-routes' {
     '/sales/SalesHistoryView': RouteRecordInfo<'/sales/SalesHistoryView', '/sales/SalesHistoryView', Record<never, never>, Record<never, never>>,
     '/sales/SalesView': RouteRecordInfo<'/sales/SalesView', '/sales/SalesView', Record<never, never>, Record<never, never>>,
     '/sales/StockTransfersView': RouteRecordInfo<'/sales/StockTransfersView', '/sales/StockTransfersView', Record<never, never>, Record<never, never>>,
+    '/suppliers/components/dialogs/SupplierFormDialog': RouteRecordInfo<'/suppliers/components/dialogs/SupplierFormDialog', '/suppliers/components/dialogs/SupplierFormDialog', Record<never, never>, Record<never, never>>,
     '/suppliers/components/SuppliersCRUD': RouteRecordInfo<'/suppliers/components/SuppliersCRUD', '/suppliers/components/SuppliersCRUD', Record<never, never>, Record<never, never>>,
     '/suppliers/SuppliersView': RouteRecordInfo<'/suppliers/SuppliersView', '/suppliers/SuppliersView', Record<never, never>, Record<never, never>>,
     '/warehouse/components/POlistWidget': RouteRecordInfo<'/warehouse/components/POlistWidget', '/warehouse/components/POlistWidget', Record<never, never>, Record<never, never>>,
