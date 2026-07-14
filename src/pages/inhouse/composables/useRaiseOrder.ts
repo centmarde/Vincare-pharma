@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useInhouseDataStore } from '@/stores/inhouseData'
@@ -40,6 +40,13 @@ export function useRaiseOrder(onCreated: () => void) {
   const customerOptions = computed(() =>
     customers.value.map((c) => ({ title: `${c.name}${c.agency_type ? ` (${c.agency_type})` : ''}`, value: c.id })))
 
+  // The govt PO # field is documentation for actual government/LGU accounts only —
+  // a private in-house client has no external govt PO to record.
+  const isGovtCustomer = computed(() => {
+    const c = customers.value.find((x) => x.id === customerId.value)
+    return c?.agency_type === 'government' || c?.agency_type === 'lgu'
+  })
+
   const productOptions = computed(() =>
     products.value.map((p) => ({
       title: `${p.product_name ?? '—'}${p.sku ? ` (${p.sku})` : ''}`,
@@ -60,6 +67,9 @@ export function useRaiseOrder(onCreated: () => void) {
   const costTotal = computed(() => lines.value.reduce((s, l) => s + l.qty * l.cost_unit, 0))
   const profit = computed(() => offerTotal.value - costTotal.value)
   const marginPct = computed(() => offerTotal.value === 0 ? 0 : Math.round((profit.value / offerTotal.value) * 100))
+
+  // Clear a stale govt PO # if the user switches to a customer that isn't govt/LGU.
+  watch(isGovtCustomer, (govt) => { if (!govt) govtPoNo.value = '' })
 
   function addLine() { lines.value.push({ product_id: null, qty: 1, offer_unit: 0, cost_unit: 0 }) }
   function removeLine(i: number) { lines.value.splice(i, 1) }
@@ -101,7 +111,7 @@ export function useRaiseOrder(onCreated: () => void) {
 
   return {
     loading, customerId, govtPoNo, remarks, lines,
-    customerOptions, productOptions,
+    customerOptions, productOptions, isGovtCustomer,
     offerTotal, costTotal, profit, marginPct,
     addLine, removeLine, onProductChange, unitFor, submit, reset, init,
   }

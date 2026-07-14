@@ -471,6 +471,7 @@ export {
   generateNextNumber,
   generateDocNumber,
   getLatestReferenceNo,
+  insertWithDocRetry,
   generatePRNumber,
   generatePONumber,
   generateSINumber,

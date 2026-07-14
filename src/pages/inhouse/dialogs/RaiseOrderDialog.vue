@@ -11,7 +11,7 @@ defineProps<{ modelValue: boolean }>()
 
 const {
   loading, customerId, govtPoNo, remarks, lines,
-  customerOptions, productOptions,
+  customerOptions, productOptions, isGovtCustomer,
   offerTotal, costTotal, profit, marginPct,
   addLine, removeLine, onProductChange, unitFor, submit, init,
 } = useRaiseOrder(() => emit('created'))
@@ -32,7 +32,7 @@ onMounted(init)
             <v-select v-model="customerId" :items="customerOptions" placeholder="Select customer"
               variant="outlined" density="compact" hide-details />
           </v-col>
-          <v-col cols="12" md="6">
+          <v-col v-if="isGovtCustomer" cols="12" md="6">
             <label class="lbl">Government PO # (documentation)</label>
             <v-text-field v-model="govtPoNo" placeholder="Their PO number, for the record" variant="outlined" density="compact" hide-details />
           </v-col>

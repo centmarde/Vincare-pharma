@@ -4,7 +4,7 @@ import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
-import { nextDocNumber } from '@/utils/helpers'
+import { nextDocNumber, insertWithDocRetry } from '@/utils/helpers'
 
 const toast = useToast()
 
@@ -190,21 +190,24 @@ export const useGLDataStore = defineStore('glData', () => {
     }
 
     const year = new Date().getFullYear().toString()
-    const { data: existingEntries } = await supabase
-      .from('journal_entries')
-      .select('entry_no')
-      .like('entry_no', `JE-${year}-%`)
-    const entryNo = nextDocNumber((existingEntries ?? []).map(r => r.entry_no), `JE-${year}-`, 5)
-
     const nowIso = new Date().toISOString()
-    const { data: entry, error: entryError } = await supabase
-      .from('journal_entries')
-      .insert({
-        entry_no: entryNo, entry_date: entryDate, reference_type: referenceType, reference_id: referenceId,
-        description, status: 'posted', posted_at: nowIso, posted_by: userId, created_by: userId,
-      })
-      .select('id')
-      .single()
+    const { data: entry, error: entryError } = await insertWithDocRetry<{ id: number }>(
+      async () => {
+        const { data: existingEntries } = await supabase
+          .from('journal_entries')
+          .select('entry_no')
+          .like('entry_no', `JE-${year}-%`)
+        return nextDocNumber((existingEntries ?? []).map(r => r.entry_no), `JE-${year}-`, 5)
+      },
+      async (docNo) => supabase
+        .from('journal_entries')
+        .insert({
+          entry_no: docNo, entry_date: entryDate, reference_type: referenceType, reference_id: referenceId,
+          description, status: 'posted', posted_at: nowIso, posted_by: userId, created_by: userId,
+        })
+        .select('id')
+        .single(),
+    )
     if (entryError || !entry) return { success: false, error: entryError?.message || 'Failed to post journal entry' }
 
     const { error: linesError } = await supabase.from('journal_entry_lines').insert(
@@ -283,20 +286,23 @@ export const useGLDataStore = defineStore('glData', () => {
     }
 
     const year = new Date().getFullYear().toString()
-    const { data: existingEntries } = await supabase
-      .from('journal_entries')
-      .select('entry_no')
-      .like('entry_no', `JE-${year}-%`)
-    const entryNo = nextDocNumber((existingEntries ?? []).map(r => r.entry_no), `JE-${year}-`, 5)
-
-    const { data: entry, error: entryError } = await supabase
-      .from('journal_entries')
-      .insert({
-        entry_no: entryNo, entry_date: payload.entryDate, reference_type: 'manual', reference_id: null,
-        description: payload.description || null, status: 'draft', created_by: user.id,
-      })
-      .select('id')
-      .single()
+    const { data: entry, error: entryError } = await insertWithDocRetry<{ id: number }>(
+      async () => {
+        const { data: existingEntries } = await supabase
+          .from('journal_entries')
+          .select('entry_no')
+          .like('entry_no', `JE-${year}-%`)
+        return nextDocNumber((existingEntries ?? []).map(r => r.entry_no), `JE-${year}-`, 5)
+      },
+      async (docNo) => supabase
+        .from('journal_entries')
+        .insert({
+          entry_no: docNo, entry_date: payload.entryDate, reference_type: 'manual', reference_id: null,
+          description: payload.description || null, status: 'draft', created_by: user.id,
+        })
+        .select('id')
+        .single(),
+    )
     if (entryError || !entry) {
       handleError(entryError, 'Failed to post manual entry.')
       toast.error(entryError?.message || 'Failed to post manual entry.')
@@ -395,22 +401,25 @@ export const useGLDataStore = defineStore('glData', () => {
       .from('journal_entry_lines').select('account_code, debit, credit, line_memo').eq('journal_entry_id', entryId)
 
     const year = new Date().getFullYear().toString()
-    const { data: existingEntries } = await supabase
-      .from('journal_entries').select('entry_no').like('entry_no', `JE-${year}-%`)
-    const entryNo = nextDocNumber((existingEntries ?? []).map(r => r.entry_no), `JE-${year}-`, 5)
-
     const nowIso = new Date().toISOString()
-    const { data: reversal, error: reversalError } = await supabase
-      .from('journal_entries')
-      .insert({
-        entry_no: entryNo, entry_date: new Date().toISOString().slice(0, 10),
-        reference_type: overrideReferenceType ?? original.reference_type,
-        reference_id: overrideReferenceId ?? original.reference_id,
-        description: `Reversal of ${original.entry_no}${original.description ? ' — ' + original.description : ''}`,
-        status: 'posted', reverses_entry: entryId, posted_at: nowIso, posted_by: userId, created_by: userId,
-      })
-      .select('id')
-      .single()
+    const { data: reversal, error: reversalError } = await insertWithDocRetry<{ id: number }>(
+      async () => {
+        const { data: existingEntries } = await supabase
+          .from('journal_entries').select('entry_no').like('entry_no', `JE-${year}-%`)
+        return nextDocNumber((existingEntries ?? []).map(r => r.entry_no), `JE-${year}-`, 5)
+      },
+      async (docNo) => supabase
+        .from('journal_entries')
+        .insert({
+          entry_no: docNo, entry_date: new Date().toISOString().slice(0, 10),
+          reference_type: overrideReferenceType ?? original.reference_type,
+          reference_id: overrideReferenceId ?? original.reference_id,
+          description: `Reversal of ${original.entry_no}${original.description ? ' — ' + original.description : ''}`,
+          status: 'posted', reverses_entry: entryId, posted_at: nowIso, posted_by: userId, created_by: userId,
+        })
+        .select('id')
+        .single(),
+    )
     if (reversalError || !reversal) return { success: false, error: reversalError?.message || 'Failed to create reversal entry' }
 
     const { error: linesError } = await supabase.from('journal_entry_lines').insert(

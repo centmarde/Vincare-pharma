@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
-import { generateNextNumber } from '@/utils/helpers'
+import { generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
 import type { ProductType } from '@/stores/productsData'
 import type { OutletType } from '@/stores/outletsData'
 
@@ -188,20 +188,21 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
     }
 
     const year = new Date().getFullYear().toString()
-    const transferNo = await generateNextNumber('transfer_no', `ST-${year}-`, ['reference_no'])
-
-    const { data: created, error: insertError } = await supabase
-      .from('transactions')
-      .insert({
-        transfer_no: transferNo,
-        transaction_type: 'stock_transfer',
-        status: 'pending_approval',
-        outlet_id: outletId,
-        remarks: remarks || null,
-        created_by: user.id,
-      })
-      .select('id')
-      .single()
+    const { data: created, docNo: transferNo, error: insertError } = await insertWithDocRetry<{ id: number }>(
+      () => generateNextNumber('transfer_no', `ST-${year}-`, ['reference_no']),
+      async (docNo) => supabase
+        .from('transactions')
+        .insert({
+          transfer_no: docNo,
+          transaction_type: 'stock_transfer',
+          status: 'pending_approval',
+          outlet_id: outletId,
+          remarks: remarks || null,
+          created_by: user.id,
+        })
+        .select('id')
+        .single(),
+    )
 
     if (insertError || !created) {
       handleError(insertError, 'Failed to create stock transfer request.')

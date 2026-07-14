@@ -97,6 +97,36 @@ export async function generateNextNumber(
 }
 
 /**
+ * Retries an insert whose row includes a freshly-minted document number, when
+ * that insert fails on the number's unique-index collision (Postgres 23505).
+ *
+ * Client-side numbering is read-max-then-insert across two separate requests
+ * (see the note atop this file) — two concurrent creates can both read the
+ * same max and mint the same number. The partial-unique indexes on the
+ * document-number columns turn that into a safe-fail insert error rather than
+ * a silent duplicate; this wrapper turns that safe-fail into an invisible
+ * retry instead of surfacing a raw DB error to the user. `regenerate` is
+ * called again on each retry so it re-reads the now-updated max. Any error
+ * OTHER than 23505 (network, RLS, validation, ...) is returned immediately
+ * un-retried — existing handleError/toast call sites see it exactly as before.
+ */
+export async function insertWithDocRetry<T>(
+  regenerate: () => Promise<string>,
+  attemptInsert: (docNo: string) => Promise<{ data: T | null; error: { code?: string; message: string } | null }>,
+  maxAttempts = 3,
+): Promise<{ data: T | null; docNo: string | null; error: { code?: string; message: string } | null }> {
+  let lastError: { code?: string; message: string } | null = null
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const docNo = await regenerate()
+    const { data, error } = await attemptInsert(docNo)
+    if (!error) return { data, docNo, error: null }
+    if (error.code !== '23505') return { data: null, docNo: null, error }
+    lastError = error
+  }
+  return { data: null, docNo: null, error: lastError }
+}
+
+/**
  * Highest existing sequence number for a column+prefix (numeric max, or 0).
  * Kept for {@link generateDocNumber}'s callback signature; numeric-based now.
  */

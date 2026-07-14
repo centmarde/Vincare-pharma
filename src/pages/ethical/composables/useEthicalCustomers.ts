@@ -3,9 +3,11 @@ import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useCustomersDataStore } from '@/stores/customersData'
 import { useAgentsDataStore } from '@/stores/agentsData'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import type { CreateCustomerData } from '@/stores/customersData'
 
 const toast = useToast()
+const { confirmDialog } = useConfirmDialog()
 
 export function useEthicalCustomers() {
   const customersStore = useCustomersDataStore()
@@ -104,7 +106,7 @@ export function useEthicalCustomers() {
   }
 
   async function deleteCustomer(id: number) {
-    if (!confirm('Delete this customer?')) return
+    if (!(await confirmDialog('Delete this customer?', { title: 'Confirm Delete', confirmText: 'Delete' }))) return
     const result = await customersStore.deleteCustomer(id)
     if (result) toast.success('Customer deleted.')
   }

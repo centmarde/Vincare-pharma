@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useGLDataStore } from '@/stores/glData'
-import { nextDocNumber, generateNextNumber } from '@/utils/helpers'
+import { nextDocNumber, generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
 
 const toast = useToast()
 
@@ -160,6 +160,9 @@ export type RemittanceDiscrepancyRow = {
   expected_amount: number
   actual_amount: number
   discrepancy: number
+  notes: string | null
+  resolution: 'paid_on_spot' | 'employee_receivable' | null
+  receivable_status: 'outstanding' | 'paid' | null
 }
 
 export type ARAgingBucket = 'current' | '1-30' | '31-60' | '61-90' | '90+' | 'no-term'
@@ -430,18 +433,19 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     }
 
     const year = new Date().getFullYear().toString()
-    const expenseNo = await generateNextNumber('expense_no', `EXP-${year}-`, ['reference_no'])
-
-    const { data: created, error: insertError } = await supabase
-      .from('transactions')
-      .insert({
-        expense_no: expenseNo, transaction_type: 'expense', status: 'recorded',
-        payment_method: payload.paymentMethod || null, subtotal: payload.amount, total_amount: payload.amount,
-        paid_at: payload.valueDate || new Date().toISOString().slice(0, 10),
-        remarks: payload.remarks || null, created_by: user.id, cash_account_id: payload.cashAccountId,
-      })
-      .select('id')
-      .single()
+    const { data: created, docNo: expenseNo, error: insertError } = await insertWithDocRetry<{ id: number }>(
+      () => generateNextNumber('expense_no', `EXP-${year}-`, ['reference_no']),
+      async (docNo) => supabase
+        .from('transactions')
+        .insert({
+          expense_no: docNo, transaction_type: 'expense', status: 'recorded',
+          payment_method: payload.paymentMethod || null, subtotal: payload.amount, total_amount: payload.amount,
+          paid_at: payload.valueDate || new Date().toISOString().slice(0, 10),
+          remarks: payload.remarks || null, created_by: user.id, cash_account_id: payload.cashAccountId,
+        })
+        .select('id')
+        .single(),
+    )
     if (insertError || !created) {
       handleError(insertError, 'Failed to record expense.')
       toast.error(insertError?.message || 'Failed to record expense.')
@@ -675,21 +679,24 @@ export const useFinanceDataStore = defineStore('financeData', () => {
 
     const prefix = pettyAccount.account_type === 'revolving_fund' ? 'RVF' : 'PCR'
     const year = new Date().getFullYear().toString()
-    const { data: existingRequests } = await supabase
-      .from('transactions')
-      .select('reference_no')
-      .like('reference_no', `${prefix}-${year}-%`)
-    const requestNo = nextDocNumber((existingRequests ?? []).map(r => r.reference_no), `${prefix}-${year}-`)
-
-    const { data: created, error: insertError } = await supabase
-      .from('transactions')
-      .insert({
-        reference_no: requestNo, transaction_type: 'petty_cash_replenishment', status: 'pending_approval',
-        total_amount: shortfall, subtotal: shortfall, remarks: payload.remarks || null, created_by: user.id,
-        cash_account_id: payload.pettyCashAccountId, funding_account_id: payload.fundingAccountId,
-      })
-      .select('id')
-      .single()
+    const { data: created, docNo: requestNo, error: insertError } = await insertWithDocRetry<{ id: number }>(
+      async () => {
+        const { data: existingRequests } = await supabase
+          .from('transactions')
+          .select('reference_no')
+          .like('reference_no', `${prefix}-${year}-%`)
+        return nextDocNumber((existingRequests ?? []).map(r => r.reference_no), `${prefix}-${year}-`)
+      },
+      async (docNo) => supabase
+        .from('transactions')
+        .insert({
+          reference_no: docNo, transaction_type: 'petty_cash_replenishment', status: 'pending_approval',
+          total_amount: shortfall, subtotal: shortfall, remarks: payload.remarks || null, created_by: user.id,
+          cash_account_id: payload.pettyCashAccountId, funding_account_id: payload.fundingAccountId,
+        })
+        .select('id')
+        .single(),
+    )
     if (insertError || !created) {
       handleError(insertError, 'Failed to request replenishment.')
       toast.error(insertError?.message || 'Failed to request replenishment.')
@@ -945,26 +952,29 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     }
 
     const year = new Date().getFullYear().toString()
-    const { data: existingPayments } = await supabase
-      .from('transactions')
-      .select('reference_no')
-      .like('reference_no', `SP-${year}-%`)
-    const paymentNo = nextDocNumber((existingPayments ?? []).map(r => r.reference_no), `SP-${year}-`)
-
     let remarks = payload.remarks || ''
     if (payload.referenceNo) remarks = `${remarks} | Ref: ${payload.referenceNo}`.replace(/^\s*\|\s*/, '')
 
-    const { data: created, error: insertError } = await supabase
-      .from('transactions')
-      .insert({
-        reference_no: paymentNo, transaction_type: 'supplier_payment', status: 'recorded',
-        supplier_id: payload.supplierId, payment_method: payload.paymentMethod || null,
-        subtotal: payload.amount, total_amount: payload.amount,
-        paid_at: payload.valueDate || new Date().toISOString().slice(0, 10),
-        remarks: remarks || null, created_by: user.id,
-      })
-      .select('id')
-      .single()
+    const { data: created, docNo: paymentNo, error: insertError } = await insertWithDocRetry<{ id: number }>(
+      async () => {
+        const { data: existingPayments } = await supabase
+          .from('transactions')
+          .select('reference_no')
+          .like('reference_no', `SP-${year}-%`)
+        return nextDocNumber((existingPayments ?? []).map(r => r.reference_no), `SP-${year}-`)
+      },
+      async (docNo) => supabase
+        .from('transactions')
+        .insert({
+          reference_no: docNo, transaction_type: 'supplier_payment', status: 'recorded',
+          supplier_id: payload.supplierId, payment_method: payload.paymentMethod || null,
+          subtotal: payload.amount, total_amount: payload.amount,
+          paid_at: payload.valueDate || new Date().toISOString().slice(0, 10),
+          remarks: remarks || null, created_by: user.id,
+        })
+        .select('id')
+        .single(),
+    )
     if (insertError || !created) {
       handleError(insertError, 'Failed to record supplier payment.')
       toast.error(insertError?.message || 'Failed to record supplier payment.')
@@ -1247,7 +1257,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       // actual_amount moved to remittance_details in hub redesign; old rows
       // still have it on transactions — coalesce handles both.
       const { data, error: fetchError } = await supabase.from('transactions')
-        .select('id, remittance_no, outlet, outlet_id, created_at, total_amount, actual_amount, remittance_details(actual_amount)')
+        .select('id, remittance_no, outlet, outlet_id, created_at, total_amount, actual_amount, remarks, remittance_details(actual_amount, resolution, receivable_status)')
         .eq('transaction_type', 'remittance')
         .order('created_at', { ascending: false })
       if (fetchError) throw fetchError
@@ -1263,6 +1273,9 @@ export const useFinanceDataStore = defineStore('financeData', () => {
             expected_amount: r.total_amount ?? 0,
             actual_amount: actualAmount,
             discrepancy: actualAmount - (r.total_amount ?? 0),
+            notes: r.remarks ?? null,
+            resolution: r.remittance_details?.resolution ?? null,
+            receivable_status: r.remittance_details?.receivable_status ?? null,
           }
         })
         .filter((r) => Math.abs(r.discrepancy) > threshold)

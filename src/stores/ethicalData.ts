@@ -7,7 +7,7 @@ import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useCanvassDataStore } from '@/stores/canvassData'
 import { useDeliveryReceiptsDataStore } from '@/stores/deliveryReceiptsData'
-import { generateNextNumber } from '@/utils/helpers'
+import { generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
 import type { ProductType } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
 import type { AgentType } from '@/stores/agentsData'
@@ -247,27 +247,29 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     }
 
     const year = new Date().getFullYear().toString()
-    const orderNo = await generateNextNumber('ethical_no', `EO-${year}-`, ['reference_no'])
 
     const termsDays = payload.termsDays ?? 0
     const dueDate = new Date()
     dueDate.setDate(dueDate.getDate() + termsDays)
 
-    const { data: created, error: insertError } = await supabase
-      .from('transactions')
-      .insert({
-        // Mirror the order number into reference_no too (parity with purchasing /
-        // in-house), so the transactions row shows its live document number in the
-        // same column the other modules use. Constant EO- number for the whole
-        // lifecycle — ethical_no stays the canonical per-type column; the
-        // reference_no unique index already reserves the EO- prefix.
-        reference_no: orderNo,
-        ethical_no: orderNo, transaction_type: 'ethical_order', status: 'invoiced',
-        outlet_id: payload.outletId, customer_id: payload.customerId, agent_id: payload.agentId ?? null,
-        total_amount: total, remarks: payload.remarks || null, created_by: user.id,
-      })
-      .select('id')
-      .single()
+    const { data: created, docNo: orderNo, error: insertError } = await insertWithDocRetry<{ id: number }>(
+      () => generateNextNumber('ethical_no', `EO-${year}-`, ['reference_no']),
+      async (docNo) => supabase
+        .from('transactions')
+        .insert({
+          // Mirror the order number into reference_no too (parity with purchasing /
+          // in-house), so the transactions row shows its live document number in the
+          // same column the other modules use. Constant EO- number for the whole
+          // lifecycle — ethical_no stays the canonical per-type column; the
+          // reference_no unique index already reserves the EO- prefix.
+          reference_no: docNo,
+          ethical_no: docNo, transaction_type: 'ethical_order', status: 'invoiced',
+          outlet_id: payload.outletId, customer_id: payload.customerId, agent_id: payload.agentId ?? null,
+          total_amount: total, remarks: payload.remarks || null, created_by: user.id,
+        })
+        .select('id')
+        .single(),
+    )
 
     if (insertError || !created) {
       handleError(insertError, 'Failed to create order.')

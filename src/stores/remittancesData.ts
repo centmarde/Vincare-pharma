@@ -6,8 +6,12 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useSalesDataStore } from '@/stores/salesData'
-import { generateNextNumber } from '@/utils/helpers'
+import { generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
 import type { OutletType } from '@/stores/outletsData'
+
+// A shortfall this large is flagged as too big to reasonably ask a cashier to
+// cover out of pocket on the spot — still an editable choice, not a hard gate.
+export const LARGE_DISCREPANCY_THRESHOLD = 1000
 
 const toast = useToast()
 
@@ -28,11 +32,32 @@ export type RemittanceType = {
   discrepancy: number | null
   status: string | null
   notes: string | null
+  resolution: 'paid_on_spot' | 'employee_receivable' | null
+  resolved_at: string | null
+  // Only meaningful when resolution === 'employee_receivable' — whether the
+  // employee has since repaid it (set from Finance's Employee Receivables tab).
+  receivable_status: 'outstanding' | 'paid' | null
 }
 
 export type ExpectedSummary = {
   expected: number
   saleCount: number
+}
+
+// A remittance shortfall being carried as a debt owed BY the employee TO the
+// company — derived from a remittance's own row, not a separate table:
+// "employee" is just that remittance's `created_by`, and the amount owed is
+// the same discrepancy math already used elsewhere in this file.
+export type EmployeeReceivableRow = {
+  id: number
+  created_at: string
+  remittance_no: string | null
+  employee_id: string | null
+  employee_email: string | null
+  amount: number
+  remarks: string | null
+  status: 'outstanding' | 'paid'
+  paid_at: string | null
 }
 
 type FetchRemittancesOptions = {
@@ -41,7 +66,9 @@ type FetchRemittancesOptions = {
   ascending?: boolean
 }
 
-const SELECT_REMITTANCE = '*, outlet:outlet_id(*), remittance_details(actual_amount)'
+const SELECT_REMITTANCE = '*, outlet:outlet_id(*), remittance_details(actual_amount, resolution, resolved_at, receivable_status)'
+const SELECT_EMPLOYEE_RECEIVABLE =
+  'id, created_at, remittance_no, created_by, total_amount, remarks, remittance_details!inner(actual_amount, receivable_status, receivable_paid_at)'
 
 function mapRowToRemittance(row: any): RemittanceType {
   const actualAmount = row.remittance_details?.actual_amount ?? null
@@ -57,6 +84,9 @@ function mapRowToRemittance(row: any): RemittanceType {
     discrepancy:     actualAmount === null ? null : actualAmount - (row.total_amount ?? 0),
     status:          row.status,
     notes:           row.remarks,
+    resolution:        row.remittance_details?.resolution ?? null,
+    resolved_at:       row.remittance_details?.resolved_at ?? null,
+    receivable_status: row.remittance_details?.receivable_status ?? null,
   }
 }
 
@@ -65,6 +95,7 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
   const salesStore = useSalesDataStore()
 
   const remittances: Ref<RemittanceType[]> = ref([])
+  const employeeReceivables: Ref<EmployeeReceivableRow[]> = ref([])
   const loading = ref(false)
   const error: Ref<string> = ref('')
 
@@ -160,7 +191,12 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
     if (error) console.warn('submitRemittance: rollback of partial remittance failed — status=\'submitted\' row left behind, id:', id, error.message)
   }
 
-  const submitRemittance = async (payload: { outletId: number; actualAmount: number; notes?: string }) => {
+  const submitRemittance = async (payload: {
+    outletId: number
+    actualAmount: number
+    notes?: string
+    resolution?: 'paid_on_spot' | 'employee_receivable' | null
+  }) => {
     loading.value = true
     clearError()
 
@@ -194,21 +230,22 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
     const expected = rows.reduce((sum, r) => sum + (r.total_amount ?? 0), 0)
 
     const year = new Date().getFullYear().toString()
-    const remittanceNo = await generateNextNumber('remittance_no', `RM-${year}-`, ['reference_no'])
-
-    const { data: created, error: insertError } = await supabase
-      .from('transactions')
-      .insert({
-        remittance_no: remittanceNo,
-        transaction_type: 'remittance',
-        status: 'submitted',
-        outlet_id: payload.outletId,
-        total_amount: expected,
-        remarks: payload.notes || null,
-        created_by: user.id,
-      })
-      .select('id')
-      .single()
+    const { data: created, docNo: remittanceNo, error: insertError } = await insertWithDocRetry<{ id: number }>(
+      () => generateNextNumber('remittance_no', `RM-${year}-`, ['reference_no']),
+      async (docNo) => supabase
+        .from('transactions')
+        .insert({
+          remittance_no: docNo,
+          transaction_type: 'remittance',
+          status: 'submitted',
+          outlet_id: payload.outletId,
+          total_amount: expected,
+          remarks: payload.notes || null,
+          created_by: user.id,
+        })
+        .select('id')
+        .single(),
+    )
 
     if (insertError || !created) {
       handleError(insertError, 'Failed to submit remittance.')
@@ -219,7 +256,16 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
 
     const { error: detailsError } = await supabase
       .from('remittance_details')
-      .insert({ transaction_id: created.id, actual_amount: payload.actualAmount })
+      .insert({
+        transaction_id: created.id,
+        actual_amount: payload.actualAmount,
+        resolution: payload.resolution ?? null,
+        resolved_by: payload.resolution ? user.id : null,
+        resolved_at: payload.resolution ? new Date().toISOString() : null,
+        // The employee for this receivable is just this remittance's own
+        // created_by — no separate ledger row needed.
+        receivable_status: payload.resolution === 'employee_receivable' ? 'outstanding' : null,
+      })
     if (detailsError) {
       handleError(detailsError, 'Failed to save remittance details.')
       toast.error(detailsError.message || 'Failed to save remittance details.')
@@ -255,14 +301,77 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
     return { success: true }
   }
 
+  // Every remittance resolved as 'employee_receivable' — the employee is
+  // that remittance's own created_by, the amount owed is the same
+  // discrepancy math as everywhere else in this file.
+  const fetchEmployeeReceivables = async () => {
+    loading.value = true
+    clearError()
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('transactions')
+        .select(SELECT_EMPLOYEE_RECEIVABLE)
+        .eq('transaction_type', 'remittance')
+        .eq('remittance_details.resolution', 'employee_receivable')
+        .order('created_at', { ascending: false })
+      if (fetchError) throw fetchError
+
+      if (!authStore.users.length) await authStore.getAllUsers()
+      employeeReceivables.value = ((data || []) as any[]).map((r) => ({
+        id: r.id,
+        created_at: r.created_at,
+        remittance_no: r.remittance_no,
+        employee_id: r.created_by,
+        employee_email: authStore.users.find((u: any) => u.id === r.created_by)?.email ?? null,
+        amount: Math.abs((r.remittance_details?.actual_amount ?? 0) - (r.total_amount ?? 0)),
+        remarks: r.remarks,
+        status: r.remittance_details?.receivable_status ?? 'outstanding',
+        paid_at: r.remittance_details?.receivable_paid_at ?? null,
+      }))
+      return employeeReceivables.value
+    } catch (err) {
+      handleError(err, 'Failed to fetch employee receivables')
+      return []
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const markReceivablePaid = async (remittanceId: number) => {
+    loading.value = true
+    clearError()
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) {
+      toast.error('User not authenticated.')
+      loading.value = false
+      return false
+    }
+    const { error: updateError } = await supabase
+      .from('remittance_details')
+      .update({ receivable_status: 'paid', receivable_paid_at: new Date().toISOString(), receivable_paid_by: user.id })
+      .eq('transaction_id', remittanceId)
+      .eq('receivable_status', 'outstanding')
+    loading.value = false
+    if (updateError) {
+      handleError(updateError, 'Failed to mark receivable as paid.')
+      toast.error(updateError.message || 'Failed to mark receivable as paid.')
+      return false
+    }
+    toast.success('Receivable marked as paid.')
+    await fetchEmployeeReceivables()
+    return true
+  }
+
   const resetStore = () => {
     remittances.value = []
+    employeeReceivables.value = []
     loading.value = false
     error.value = ''
   }
 
   return {
     remittances,
+    employeeReceivables,
     loading,
     error,
     isLoading,
@@ -271,6 +380,8 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
     fetchRemittances,
     computeExpected,
     submitRemittance,
+    fetchEmployeeReceivables,
+    markReceivablePaid,
     clearError,
     resetStore,
     startRealtime,

@@ -1,7 +1,10 @@
 import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useOutletsDataStore } from '@/stores/outletsData'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import type { CreateOutletData } from '@/stores/outletsData'
+
+const { confirmDialog } = useConfirmDialog()
 
 export function useOutlets() {
   const store = useOutletsDataStore()
@@ -58,7 +61,7 @@ export function useOutlets() {
   }
 
   async function deleteOutlet(id: number) {
-    if (!confirm('Delete this branch? If it already has stock or transactions, deactivate it instead.')) return
+    if (!(await confirmDialog('Delete this branch? If it already has stock or transactions, deactivate it instead.', { title: 'Confirm Delete', confirmText: 'Delete' }))) return
     await store.deleteOutlet(id)
   }
 

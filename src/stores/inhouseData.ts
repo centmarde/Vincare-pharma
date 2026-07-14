@@ -6,7 +6,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useCanvassDataStore } from '@/stores/canvassData'
-import { generateIHNumber, generateDocNumber, getLatestReferenceNo } from '@/utils/generativeHelpers'
+import { generateIHNumber, generateDocNumber, getLatestReferenceNo, insertWithDocRetry } from '@/utils/generativeHelpers'
 import { useDeliveryReceiptsDataStore } from '@/stores/deliveryReceiptsData'
 import type { ProductType } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
@@ -186,35 +186,36 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const subtotal = payload.lines.reduce((sum, l) => sum + l.qty * l.unit_price, 0)
 
-    const orderNo = await generateIHNumber()
-
-    const { data: created, error: insertError } = await supabase
-      .from('transactions')
-      .insert({
-        inhouse_no: orderNo,
-        // Mirror the order number into reference_no too, so the transactions row
-        // carries its live document number in the same column purchasing uses
-        // (parity with the other modules; the reference_no unique index already
-        // reserves the IH- prefix in its shared series space). Kept constant as
-        // the IH- number for the whole lifecycle — deliberately NOT mutated to
-        // the PO number at agree: in-house and purchasing share the PO series,
-        // and both would write it to reference_no, colliding on that unique
-        // index. inhouse_no stays as the canonical per-type column.
-        reference_no: orderNo,
-        // Company PO stays null while negotiating — it's stamped (PO-YYYY-###,
-        // minted from the shared Purchasing PO series) when terms are agreed,
-        // see agreeOrder. The government's own PO number goes to
-        // inhouse_details.govt_po_no below.
-        po_no: null,
-        transaction_type: 'inhouse_order',
-        status: 'negotiating',
-        customer_id: payload.customerId,
-        total_amount: subtotal,
-        remarks: payload.remarks || null,
-        created_by: user.id,
-      })
-      .select('id')
-      .single()
+    const { data: created, docNo: orderNo, error: insertError } = await insertWithDocRetry<{ id: number }>(
+      () => generateIHNumber(),
+      async (docNo) => supabase
+        .from('transactions')
+        .insert({
+          inhouse_no: docNo,
+          // Mirror the order number into reference_no too, so the transactions row
+          // carries its live document number in the same column purchasing uses
+          // (parity with the other modules; the reference_no unique index already
+          // reserves the IH- prefix in its shared series space). Kept constant as
+          // the IH- number for the whole lifecycle — deliberately NOT mutated to
+          // the PO number at agree: in-house and purchasing share the PO series,
+          // and both would write it to reference_no, colliding on that unique
+          // index. inhouse_no stays as the canonical per-type column.
+          reference_no: docNo,
+          // Company PO stays null while negotiating — it's stamped (PO-YYYY-###,
+          // minted from the shared Purchasing PO series) when terms are agreed,
+          // see agreeOrder. The government's own PO number goes to
+          // inhouse_details.govt_po_no below.
+          po_no: null,
+          transaction_type: 'inhouse_order',
+          status: 'negotiating',
+          customer_id: payload.customerId,
+          total_amount: subtotal,
+          remarks: payload.remarks || null,
+          created_by: user.id,
+        })
+        .select('id')
+        .single(),
+    )
 
     if (insertError || !created) {
       handleError(insertError, 'Failed to create order.'); toast.error(insertError?.message || 'Failed to create order.')

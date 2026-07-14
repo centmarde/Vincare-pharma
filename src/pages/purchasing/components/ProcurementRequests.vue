@@ -58,9 +58,11 @@ onMounted(init)
       <v-card v-if="selected" rounded="lg">
         <v-card-title class="pa-4 pa-sm-5 pb-2 d-flex justify-space-between align-center">
           <div>
-            <div class="text-h6 font-weight-bold">{{ selected.order_no }}</div>
-            <div class="text-caption text-medium-emphasis">
+            <div class="text-h6 font-weight-bold">
               {{ moduleLabel(selected.order_type) }} · {{ selected.customer_name ?? '—' }}
+            </div>
+            <div class="text-caption text-medium-emphasis">
+              {{ selected.order_no }}
               <span v-if="selected.note"> · "{{ selected.note }}"</span>
             </div>
           </div>

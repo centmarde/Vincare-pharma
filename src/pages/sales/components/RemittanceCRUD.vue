@@ -7,8 +7,8 @@ import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 const {
   remittances, loading,
   selectedOutletId, outletOptions, setOutlet,
-  showSubmitDialog, expected, actualAmount, notes,
-  discrepancy, requiresNote, canSubmit,
+  showSubmitDialog, expected, actualAmount, notes, resolution,
+  discrepancy, requiresNote, canSubmit, isShortfall, recommendReceivable,
   init, openSubmitDialog, handleSubmit,
 } = useRemittance()
 
@@ -66,7 +66,7 @@ onMounted(init)
 
         <template #item.remittance_date="{ item }">
           <span class="text-body-2 text-medium-emphasis">
-            {{ item.remittance_date ?? formatDatePR_ISO(item.created_at) }}
+            {{ formatDatePR_ISO(item.remittance_date ?? item.created_at) }}
           </span>
         </template>
 
@@ -88,6 +88,22 @@ onMounted(init)
             {{ formatCurrency(item.discrepancy ?? 0) }}
           </v-chip>
         </template>
+
+        <template #item.resolution="{ item }">
+          <v-chip v-if="item.resolution === 'paid_on_spot'" size="small" variant="tonal" color="success">Paid on spot — Balanced</v-chip>
+          <v-chip
+            v-else-if="item.resolution === 'employee_receivable'"
+            size="small" variant="tonal"
+            :color="item.receivable_status === 'paid' ? 'success' : 'warning'"
+          >
+            {{ item.receivable_status === 'paid' ? 'Employee AR — Paid, Balanced' : 'Employee AR — Outstanding' }}
+          </v-chip>
+          <span v-else class="text-medium-emphasis">—</span>
+        </template>
+
+        <template #item.notes="{ item }">
+          <span class="text-caption">{{ item.notes ?? '—' }}</span>
+        </template>
       </v-data-table>
 
     </v-card>
@@ -101,8 +117,12 @@ onMounted(init)
       :requires-note="requiresNote"
       :can-submit="canSubmit"
       :loading="loading"
+      :is-shortfall="isShortfall"
+      :recommend-receivable="recommendReceivable"
+      :resolution="resolution"
       @update:actual-amount="actualAmount = $event"
       @update:notes="notes = $event"
+      @update:resolution="resolution = $event"
       @submit="handleSubmit"
     />
 

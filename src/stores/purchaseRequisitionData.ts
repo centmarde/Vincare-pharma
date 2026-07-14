@@ -1,4 +1,4 @@
-import { generateDocNumber, getLatestReferenceNo } from '@/utils/helpers'
+import { generateDocNumber, getLatestReferenceNo, insertWithDocRetry } from '@/utils/helpers'
 import type { TransactionRPCRow } from './transactionsData'
 import { useAuthUserStore } from './authUser'
 import { useToast } from 'vue-toastification'
@@ -212,7 +212,6 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       return { success: false }
     }
 
-    const prNumber = await generateDocNumber('PR', getLatestReferenceNo)
     const companyCostTotal = items.value.reduce((sum, i) => sum + i.qty * i.cost_per_unit, 0)
 
     // Collect the source reorder request ids (if any) so we can stamp their
@@ -234,21 +233,24 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       }
     }
 
-    const { data: txData, error: txError } = await supabase
-      .from('transactions')
-      .insert({
-        reference_no:   prNumber,
-        reorder_no:       reorderNo,
-        po_no:            null,
-        transaction_type: 'purchase_requisition',
-        status:           'pending_approval',
-        remarks:          currentPR.value.remarks ?? '',
-        total_amount:     companyCostTotal,
-        supplier_id:      null,
-        created_by:       user.id,
-      })
-      .select('id, reference_no')
-      .single()
+    const { data: txData, docNo: prNumber, error: txError } = await insertWithDocRetry<{ id: number; reference_no: string | null }>(
+      () => generateDocNumber('PR', getLatestReferenceNo),
+      async (docNo) => supabase
+        .from('transactions')
+        .insert({
+          reference_no:   docNo,
+          reorder_no:       reorderNo,
+          po_no:            null,
+          transaction_type: 'purchase_requisition',
+          status:           'pending_approval',
+          remarks:          currentPR.value.remarks ?? '',
+          total_amount:     companyCostTotal,
+          supplier_id:      null,
+          created_by:       user.id,
+        })
+        .select('id, reference_no')
+        .single(),
+    )
 
     if (txError || !txData) {
       handleError(txError, 'Failed to save purchase requisition.')
@@ -464,38 +466,33 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
   }) {
     loading.value = true
 
-    const poNumber = await generateDocNumber('PO', getLatestReferenceNo)
-
-    console.log('[issuePurchaseOrder] Updating transaction:', {
-      id: payload.pr.id,
-      po_no: poNumber,
-      reference_no: poNumber,
-      ship_via: payload.ship_via,
-      ship_method: payload.ship_method,
-    })
-
     // Guarded on status='approved' + .select() so a stale/duplicate click
     // (e.g. the PR got rejected in another tab between load and confirm)
     // can't re-issue a PO and re-mint a number for it — a no-op update
     // (0 rows) is reported as a failure instead of silently "succeeding."
-    const { data, error: updateError } = await supabase
-      .from('transactions')
-      .update({
-        transaction_type: 'purchase_order',
-        status:           'issued',
-        reference_no:     poNumber,
-        requisition_no:   payload.pr.reference_no,
-        ship_via:         payload.ship_via,
-        ship_method:      payload.ship_method,
-        updated_at:       new Date().toISOString(),
-      })
-      .eq('id', payload.pr.id)
-      .eq('status', 'approved')
-      .eq('reference_no', payload.pr.reference_no)
-      .select('id')
+    // PO number lands in reference_no (unique-indexed) here — unlike In-House's
+    // agreeOrder, which stamps its company PO into po_no (no unique index) —
+    // so a same-instant collision is possible and worth retrying on.
+    const { data, docNo: poNumber, error: updateError } = await insertWithDocRetry<{ id: number }[]>(
+      () => generateDocNumber('PO', getLatestReferenceNo),
+      async (docNo) => supabase
+        .from('transactions')
+        .update({
+          transaction_type: 'purchase_order',
+          status:           'issued',
+          reference_no:     docNo,
+          requisition_no:   payload.pr.reference_no,
+          ship_via:         payload.ship_via,
+          ship_method:      payload.ship_method,
+          updated_at:       new Date().toISOString(),
+        })
+        .eq('id', payload.pr.id)
+        .eq('status', 'approved')
+        .eq('reference_no', payload.pr.reference_no)
+        .select('id'),
+    )
 
-    console.log('[issuePurchaseOrder] Supabase response:', { data, error: updateError })
-    console.log('[issuePurchaseOrder] poNumber value:', poNumber)
+    console.log('[issuePurchaseOrder] Supabase response:', { data, error: updateError, poNumber })
 
     loading.value = false
 
@@ -516,21 +513,23 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
   async function markPOAsReceived(po: { id: number; reference_no: string | null }): Promise<boolean> {
     loading.value = true
 
-    const siNumber = await generateDocNumber('SI', getLatestReferenceNo)
     // Guarded on status='issued' so a retry after a failed/partial receive
     // can't re-mint a second SI number for a PO already marked complete.
-    const { data, error: updateError } = await supabase
-      .from('transactions')
-      .update({
-        reference_no:     siNumber,
-        po_no:            po.reference_no,
-        transaction_type: 'stock_in',
-        status:           'complete',
-        updated_at:       new Date().toISOString(),
-      })
-      .eq('id', po.id)
-      .eq('status', 'issued')
-      .select('id')
+    const { data, error: updateError } = await insertWithDocRetry<{ id: number }[]>(
+      () => generateDocNumber('SI', getLatestReferenceNo),
+      async (docNo) => supabase
+        .from('transactions')
+        .update({
+          reference_no:     docNo,
+          po_no:            po.reference_no,
+          transaction_type: 'stock_in',
+          status:           'complete',
+          updated_at:       new Date().toISOString(),
+        })
+        .eq('id', po.id)
+        .eq('status', 'issued')
+        .select('id'),
+    )
 
     loading.value = false
 
