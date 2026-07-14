@@ -104,6 +104,13 @@ export const navigationConfig: NavigationGroup[] = [
         permission: 'executive.dashboard.view',
         keywords: 'exec, overview, kpi, metrics, reports',
       },
+      {
+        title: 'Purchase Requisition Dashboard',
+        icon: 'mdi-view-dashboard',
+        route: '/executive/purchase-requisition-dashboard',
+        permission: 'requisition.dashboard.view',
+        keywords: 'exec, overview, kpi, metrics, reports',
+      },
     ],
   },
   {
