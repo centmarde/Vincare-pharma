@@ -273,8 +273,16 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
       return { success: false }
     }
 
-    await writeResolution(requestLogId, request, user.id, ACTION_APPROVE, { note: 'Applied.', result_ref: applied.resultRef ?? null })
-    toast.success('Change request approved and applied.')
+    // The change is applied at this point; the resolution log is what flips the
+    // request out of 'pending'. If it fails to write, the change stuck but the
+    // request would still show pending — surface that rather than reporting a
+    // clean success.
+    const wrote = await writeResolution(requestLogId, request, user.id, ACTION_APPROVE, { note: 'Applied.', result_ref: applied.resultRef ?? null })
+    if (!wrote) {
+      toast.warning('Change applied, but recording the approval failed — the request may still show as pending.')
+    } else {
+      toast.success('Change request approved and applied.')
+    }
     await fetchRequests({ status: 'pending' })
     loading.value = false
     return { success: true }
@@ -288,10 +296,14 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     extra: { note: string | null; result_ref: string | null },
   ): Promise<boolean> {
     const payload: ResolutionPayload = { request_log_id: requestLogId, note: extra.note, result_ref: extra.result_ref }
+    // transaction_id is intentionally null: a resolution links to its request
+    // via request_log_id (in the description), and a void may have just DELETED
+    // the target transaction — FK-ing to it here would fail the insert and
+    // leave the request stuck showing 'pending' even though it was applied.
     const { error: e } = await supabase.from('logs').insert({
       created_by: userId, action, module: request.module,
       description: JSON.stringify(payload),
-      transaction_id: isTransactionTarget(request.target_type) ? request.target_id : null,
+      transaction_id: null,
     })
     if (e) { handleError(e, 'Failed to record the approval decision.'); toast.error(e.message || 'Failed to record the approval decision.'); return false }
     return true
