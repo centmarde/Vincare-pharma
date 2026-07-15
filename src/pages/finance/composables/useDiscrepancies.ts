@@ -34,7 +34,7 @@ export const arAgingHeaders = [
   { title: 'CUSTOMER',    key: 'customer_name',  sortable: false, align: 'center' as const },
   { title: 'BALANCE',     key: 'balance',        sortable: true,  align: 'center' as const },
   { title: 'DAYS OVERDUE',key: 'days_overdue',   sortable: true,  align: 'center' as const },
-  { title: 'BUCKET',      key: 'bucket',         sortable: false, align: 'center' as const },
+  { title: 'TERM',        key: 'term',           sortable: false, align: 'center' as const },
 ] as const
 
 export const commissionHeaders = [

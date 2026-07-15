@@ -165,7 +165,7 @@ export type RemittanceDiscrepancyRow = {
   receivable_status: 'outstanding' | 'paid' | null
 }
 
-export type ARAgingBucket = 'current' | '1-30' | '31-60' | '61-90' | '90+' | 'no-term'
+export type ARAgingTerm = 'current' | '1-30' | '31-60' | '61-90' | '90+' | 'no-term'
 
 export type ARAgingRow = {
   id: number
@@ -178,7 +178,7 @@ export type ARAgingRow = {
   balance: number
   due_date: string | null
   days_overdue: number | null
-  bucket: ARAgingBucket
+  term: ARAgingTerm
 }
 
 // A single receivable, drilled down for the AR jacket detail dialog. Read-only:
@@ -219,6 +219,35 @@ export type ARReceivableDetail = {
   balance: number
   lines: ARReceivableLine[]
   payments: ARReceivablePayment[]
+}
+
+// Statement of Account — per CUSTOMER, not per order (that's what ARReceivableDetail
+// above is). Every order (charge) and every payment (from the shared `collections`
+// ledger) across the customer's whole history, chronological, with a running
+// balance — the actual document an accountant would send a customer, as opposed
+// to the per-order drill-down.
+export type SOAEntry = {
+  date: string
+  type: 'charge' | 'payment'
+  reference_no: string | null
+  description: string
+  charge: number
+  payment: number
+  running_balance: number
+}
+
+export type StatementOfAccount = {
+  customer_id: number
+  customer_name: string | null
+  customer_address: string | null
+  customer_contact: string | null
+  customer_tin: string | null
+  source: 'ethical_order' | 'inhouse_order'
+  entries: SOAEntry[]
+  totalCharges: number
+  totalPayments: number
+  endingBalance: number
+  generated_at: string
 }
 
 export type CommissionLiabilityRow = {
@@ -1291,7 +1320,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
 
   // ─── Discrepancy: AR aging (ethical_order + inhouse_order) ──────────────────
 
-  function bucketFor(daysOverdue: number | null): ARAgingBucket {
+  function termFor(daysOverdue: number | null): ARAgingTerm {
     if (daysOverdue == null) return 'no-term'
     if (daysOverdue <= 0) return 'current'
     if (daysOverdue <= 30) return '1-30'
@@ -1335,7 +1364,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
           id: r.id, source: 'ethical_order', reference_no: r.ethical_no,
           customer_id: r.customer_id ?? null, customer_name: r.customer?.name ?? null, total_amount: r.total_amount ?? 0,
           amount_paid: amountPaid, balance, due_date: dueDate,
-          days_overdue: daysOverdue, bucket: bucketFor(daysOverdue),
+          days_overdue: daysOverdue, term: termFor(daysOverdue),
         })
       }
 
@@ -1348,7 +1377,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
           id: r.id, source: 'inhouse_order', reference_no: r.inhouse_no,
           customer_id: r.customer_id ?? null, customer_name: r.customer?.name ?? null, total_amount: r.total_amount ?? 0,
           amount_paid: amountPaid, balance, due_date: null,
-          days_overdue: null, bucket: 'no-term',
+          days_overdue: null, term: 'no-term',
         })
       }
 
@@ -1439,6 +1468,91 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       }
     } catch (err) {
       handleError(err, 'Failed to fetch receivable detail')
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
+  // ─── Statement of Account (per customer, full order + payment history) ──────
+
+  const fetchStatementOfAccount = async (customerId: number): Promise<StatementOfAccount | null> => {
+    loading.value = true
+    clearError()
+    try {
+      const { data: customer, error: custError } = await supabase
+        .from('customers')
+        .select('id, name, address, contact_no, tin_number, department')
+        .eq('id', customerId)
+        .maybeSingle()
+      if (custError) throw custError
+      if (!customer) { handleError(null, 'Customer not found'); return null }
+
+      // A customer belongs to exactly one department — that's which order
+      // type + which per-type reference column ("refCol") this statement reads.
+      const source: 'ethical_order' | 'inhouse_order' = customer.department === 'ethical' ? 'ethical_order' : 'inhouse_order'
+      const refCol = source === 'ethical_order' ? 'ethical_no' : 'inhouse_no'
+
+      const { data: orders, error: ordersError } = await supabase
+        .from('transactions')
+        .select(`id, created_at, total_amount, ${refCol}`)
+        .eq('transaction_type', source)
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: true })
+      if (ordersError) throw ordersError
+
+      const orderRows = (orders ?? []) as any[]
+      const orderIds = orderRows.map((o) => o.id)
+      const orderRefById = new Map(orderRows.map((o) => [o.id, o[refCol] as string | null]))
+
+      const { data: payments, error: paymentsError } = orderIds.length
+        ? await supabase.from('collections')
+            .select('id, transaction_id, created_at, amount, payment_method, reference_no')
+            .in('transaction_id', orderIds)
+            .order('created_at', { ascending: true })
+        : { data: [] as any[], error: null }
+      if (paymentsError) throw paymentsError
+
+      const unsorted = [
+        ...orderRows.map((o) => ({
+          date: o.created_at as string,
+          type: 'charge' as const,
+          reference_no: (o[refCol] as string | null) ?? null,
+          description: `Order ${o[refCol] ?? `#${o.id}`}`,
+          charge: o.total_amount ?? 0,
+          payment: 0,
+        })),
+        ...(payments ?? []).map((p: any) => ({
+          date: p.created_at as string,
+          type: 'payment' as const,
+          reference_no: p.reference_no ?? orderRefById.get(p.transaction_id) ?? null,
+          description: `Payment${p.payment_method ? ` (${p.payment_method})` : ''}`,
+          charge: 0,
+          payment: p.amount ?? 0,
+        })),
+      ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
+      let runningBalance = 0
+      const entries: SOAEntry[] = unsorted.map((e) => {
+        runningBalance += e.charge - e.payment
+        return { ...e, running_balance: runningBalance }
+      })
+
+      return {
+        customer_id: customerId,
+        customer_name: customer.name ?? null,
+        customer_address: customer.address ?? null,
+        customer_contact: customer.contact_no ?? null,
+        customer_tin: customer.tin_number ?? null,
+        source,
+        entries,
+        totalCharges: entries.reduce((s, e) => s + e.charge, 0),
+        totalPayments: entries.reduce((s, e) => s + e.payment, 0),
+        endingBalance: runningBalance,
+        generated_at: new Date().toISOString(),
+      }
+    } catch (err) {
+      handleError(err, 'Failed to generate statement of account')
       return null
     } finally {
       loading.value = false
@@ -1692,7 +1806,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     requestReplenishment, approveReplenishment, rejectReplenishment,
     fetchSupplierPayments, recordSupplierPayment, fetchSupplierAP,
     fetchPnL,
-    fetchRemittanceDiscrepancies, fetchARAging, fetchReceivableDetail, fetchCommissionLiability, fetchStockReconciliation,
+    fetchRemittanceDiscrepancies, fetchARAging, fetchReceivableDetail, fetchStatementOfAccount, fetchCommissionLiability, fetchStockReconciliation,
     fetchIncomeStatement, fetchBalanceSheet, fetchTrialBalance,
     clearError, resetStore,
   }

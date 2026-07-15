@@ -3,10 +3,12 @@ import { useAccountsReceivable, arHeaders } from '../composables/useAccountsRece
 import type { ARAgingRow } from '@/stores/financeData'
 import { formatCurrency } from '@/utils/helpers'
 import ARDetailDialog from './dialogs/ARDetailDialog.vue'
+import SOADialog from './dialogs/SOADialog.vue'
 
 const {
-  loading, totalReceivable, bucketTotals, overdueReceivable, customerJackets,
+  loading, totalReceivable, termTotals, overdueReceivable, customerJackets,
   detailOpen, detailLoading, selectedDetail, openDetail,
+  soaOpen, soaLoading, soaData, openSOA,
 } = useAccountsReceivable()
 
 // v-data-table @click:row passes (pointerEvent, { item }); typing lives here in
@@ -15,7 +17,7 @@ function onRowClick(_event: unknown, { item }: { item: ARAgingRow }) {
   openDetail(item)
 }
 
-const bucketColor: Record<string, string> = {
+const termColor: Record<string, string> = {
   current: 'success',
   'no-term': 'grey',
   '1-30': 'warning',
@@ -24,7 +26,7 @@ const bucketColor: Record<string, string> = {
   '90+': 'error',
 }
 
-const bucketLabels: Record<string, string> = {
+const termLabels: Record<string, string> = {
   current: 'Current',
   '1-30': '1–30 days',
   '31-60': '31–60 days',
@@ -56,11 +58,11 @@ const bucketLabels: Record<string, string> = {
         </v-col>
         <v-col cols="12" sm="6" md="6">
           <v-card rounded="lg" elevation="1" class="pa-4">
-            <div class="text-caption text-medium-emphasis mb-1">By Bucket</div>
+            <div class="text-caption text-medium-emphasis mb-1">By Term</div>
             <div class="d-flex flex-wrap ga-3">
-              <div v-for="b in bucketTotals" :key="b.bucket">
-                <div class="text-caption text-medium-emphasis">{{ bucketLabels[b.bucket] }}</div>
-                <div class="text-body-1 font-weight-bold">{{ formatCurrency(b.total) }}</div>
+              <div v-for="t in termTotals" :key="t.term">
+                <div class="text-caption text-medium-emphasis">{{ termLabels[t.term] }}</div>
+                <div class="text-body-1 font-weight-bold">{{ formatCurrency(t.total) }}</div>
               </div>
             </div>
           </v-card>
@@ -85,9 +87,17 @@ const bucketLabels: Record<string, string> = {
               <div class="d-flex align-center ga-3 flex-grow-1 pr-3">
                 <span class="font-weight-medium">{{ jacket.customerName }}</span>
                 <v-chip size="small" variant="tonal">{{ jacket.docCount }} open doc{{ jacket.docCount === 1 ? '' : 's' }}</v-chip>
+                <v-btn
+                  v-if="jacket.customerId != null"
+                  size="small" variant="text" color="primary" class="text-none"
+                  prepend-icon="mdi-file-document-outline"
+                  @click.stop="openSOA(jacket.customerId)"
+                >
+                  View SOA
+                </v-btn>
                 <v-spacer />
-                <v-chip size="small" variant="tonal" :color="bucketColor[jacket.worstBucket]">
-                  {{ bucketLabels[jacket.worstBucket] }}
+                <v-chip size="small" variant="tonal" :color="termColor[jacket.worstTerm]">
+                  {{ termLabels[jacket.worstTerm] }}
                 </v-chip>
                 <span class="font-weight-bold">{{ formatCurrency(jacket.totalBalance) }}</span>
               </div>
@@ -120,9 +130,9 @@ const bucketLabels: Record<string, string> = {
                   {{ item.days_overdue ?? '—' }}
                 </template>
 
-                <template #item.bucket="{ item }">
-                  <v-chip size="small" variant="tonal" :color="bucketColor[item.bucket]">
-                    {{ bucketLabels[item.bucket] }}
+                <template #item.term="{ item }">
+                  <v-chip size="small" variant="tonal" :color="termColor[item.term]">
+                    {{ termLabels[item.term] }}
                   </v-chip>
                 </template>
               </v-data-table>
@@ -135,6 +145,12 @@ const bucketLabels: Record<string, string> = {
         v-model="detailOpen"
         :loading="detailLoading"
         :detail="selectedDetail"
+      />
+
+      <SOADialog
+        v-model="soaOpen"
+        :loading="soaLoading"
+        :soa="soaData"
       />
 
     </div>

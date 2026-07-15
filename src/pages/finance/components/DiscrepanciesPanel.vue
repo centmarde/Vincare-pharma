@@ -69,7 +69,7 @@ const {
                 size="small" variant="tonal"
                 :color="item.receivable_status === 'paid' ? 'success' : 'warning'"
               >
-                {{ item.receivable_status === 'paid' ? 'Employee AR — Paid, Balanced' : 'Employee AR — Outstanding' }}
+                {{ item.receivable_status === 'paid' ? 'Employee Receivable — Paid, Balanced' : 'Employee Receivable — Outstanding' }}
               </v-chip>
               <span v-else class="text-medium-emphasis">—</span>
             </template>
@@ -138,13 +138,13 @@ const {
             <template #item.days_overdue="{ item }">
               {{ item.days_overdue ?? '—' }}
             </template>
-            <template #item.bucket="{ item }">
+            <template #item.term="{ item }">
               <v-chip
                 size="small"
                 variant="tonal"
-                :color="item.bucket === 'current' ? 'success' : item.bucket === 'no-term' ? 'grey' : 'warning'"
+                :color="item.term === 'current' ? 'success' : item.term === 'no-term' ? 'grey' : 'warning'"
               >
-                {{ item.bucket }}
+                {{ item.term }}
               </v-chip>
             </template>
           </v-data-table>
