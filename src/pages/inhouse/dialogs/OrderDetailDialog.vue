@@ -2,7 +2,10 @@
 import { ref, watch } from 'vue'
 import { useOrderDetail } from '../composables/useOrderDetail'
 import DeliveryReceiptDialog from '@/components/deliveryReceipts/DeliveryReceiptDialog.vue'
+import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
+import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
 import type { InhouseOrderType } from '@/stores/inhouseData'
+import type { CollectionType } from '@/stores/ethicalData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const props = defineProps<{
@@ -27,6 +30,22 @@ const {
 // Pop the printable DR as soon as one is issued by a delivery.
 const showReceipt = ref(false)
 watch(issuedReceipt, (dr) => { if (dr) showReceipt.value = true })
+
+// Undoing a recorded payment now needs executive approval (void-only).
+const { showDialog: crDialog, config: crConfig, isPending: crPending, loadPending: crLoad, open: crOpen, submit: crSubmit, submitting: crSubmitting } =
+  useChangeRequestFiling('inhouse', 'inhouse_payment')
+watch(payments, () => { void crLoad() })
+
+function requestUndoPayment(p: CollectionType) {
+  crOpen({
+    id: p.id,
+    ref: props.order?.order_no ?? null,
+    fields: [],
+    voidSummary: `Void this ${formatCurrency(p.amount ?? 0)} payment on ${props.order?.order_no ?? 'the order'} — reverses it in the ledger (DR AR / CR cash) and rolls the order's paid amount + status back.`,
+    allowEdit: false,
+    allowVoid: true,
+  })
+}
 
 const productName = (id: number | null) =>
   items.value.find((i) => i.product_id === id)?.product?.product_name ?? `#${id}`
@@ -206,13 +225,18 @@ const productName = (id: number | null) =>
             <v-progress-linear :model-value="paidPct" height="8" rounded :color="isPaid ? 'success' : 'amber'" class="mb-3" />
 
             <div v-if="payments.length" class="mb-3">
-              <div v-for="p in payments" :key="p.id" class="d-flex justify-space-between text-caption py-1" style="border-bottom:1px solid #eee">
+              <div v-for="p in payments" :key="p.id" class="d-flex justify-space-between align-center text-caption py-1" style="border-bottom:1px solid #eee">
                 <span>
                   <b>{{ formatCurrency(p.amount ?? 0) }}</b>
                   <span v-if="p.reference_no" class="text-medium-emphasis"> — Ref: {{ p.reference_no }}</span>
                   <span v-if="p.remarks" class="text-medium-emphasis"> ({{ p.remarks }})</span>
                 </span>
-                <span class="text-medium-emphasis">{{ formatDatePR_ISO(p.created_at) }}</span>
+                <span class="d-flex align-center ga-1">
+                  <span class="text-medium-emphasis">{{ formatDatePR_ISO(p.created_at) }}</span>
+                  <v-chip v-if="crPending(p.id)" size="x-small" color="warning" variant="tonal" label>undo pending</v-chip>
+                  <v-btn v-else icon="mdi-undo-variant" size="x-small" variant="text" color="error"
+                    title="Request undo of this payment (needs executive approval)" @click="requestUndoPayment(p)" />
+                </span>
               </div>
             </div>
 
@@ -248,6 +272,17 @@ const productName = (id: number | null) =>
         </v-card>
       </v-card-text>
     </v-card>
+
+    <ChangeRequestDialog
+      v-if="crConfig"
+      v-model="crDialog"
+      :target-ref="crConfig.ref"
+      :fields="crConfig.fields"
+      :allow-edit="crConfig.allowEdit"
+      :allow-void="crConfig.allowVoid"
+      :void-summary="crConfig.voidSummary"
+      :loading="crSubmitting"
+      @submit="crSubmit" />
 
     <!-- Printable Delivery Receipt, auto-opened after a delivery is recorded -->
     <DeliveryReceiptDialog v-model="showReceipt" :receipt="issuedReceipt" />

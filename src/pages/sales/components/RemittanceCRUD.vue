@@ -2,6 +2,9 @@
 import { onMounted } from 'vue'
 import { useRemittance, headers } from '../composables/useRemittance'
 import RemittanceSubmitDialog from './RemittanceSubmitDialog.vue'
+import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
+import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
+import type { RemittanceType } from '@/stores/remittancesData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
@@ -12,7 +15,26 @@ const {
   init, openSubmitDialog, handleSubmit,
 } = useRemittance()
 
-onMounted(init)
+// A remittance is a cash-reconciliation artifact (GL-silent), so a correction
+// to the counted cash / notes is an edit — there's no undo (allowVoid=false).
+const { showDialog, config, isPending, loadPending, open, submit, submitting } =
+  useChangeRequestFiling('sales', 'remittance')
+
+function openChange(r: RemittanceType) {
+  open({
+    id: r.id,
+    ref: r.remittance_no,
+    fields: [
+      { key: 'actual_amount', label: 'Actual Cash Counted', value: r.actual_amount, type: 'number' },
+      { key: 'notes', label: 'Notes', value: r.notes, type: 'text' },
+    ],
+    voidSummary: '',
+    allowEdit: true,
+    allowVoid: false,
+  })
+}
+
+onMounted(async () => { await init(); await loadPending() })
 </script>
 
 <template>
@@ -96,7 +118,7 @@ onMounted(init)
             size="small" variant="tonal"
             :color="item.receivable_status === 'paid' ? 'success' : 'warning'"
           >
-            {{ item.receivable_status === 'paid' ? 'Employee AR — Paid, Balanced' : 'Employee AR — Outstanding' }}
+            {{ item.receivable_status === 'paid' ? 'Employee Receivable — Paid, Balanced' : 'Employee Receivable — Outstanding' }}
           </v-chip>
           <span v-else class="text-medium-emphasis">—</span>
         </template>
@@ -104,9 +126,30 @@ onMounted(init)
         <template #item.notes="{ item }">
           <span class="text-caption">{{ item.notes ?? '—' }}</span>
         </template>
+
+        <template #item.cr_actions="{ item }">
+          <v-chip v-if="isPending(item.id)" size="x-small" color="warning" variant="tonal" label>Change pending</v-chip>
+          <v-btn
+            v-else icon="mdi-pencil-box-outline" size="small" variant="text" color="primary"
+            title="Request a correction (needs executive approval)"
+            @click="openChange(item)"
+          />
+        </template>
       </v-data-table>
 
     </v-card>
+
+    <ChangeRequestDialog
+      v-if="config"
+      v-model="showDialog"
+      :target-ref="config.ref"
+      :fields="config.fields"
+      :allow-edit="config.allowEdit"
+      :allow-void="config.allowVoid"
+      :void-summary="config.voidSummary"
+      :loading="submitting"
+      @submit="submit"
+    />
 
     <RemittanceSubmitDialog
       v-model="showSubmitDialog"

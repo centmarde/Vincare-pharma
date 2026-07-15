@@ -624,7 +624,7 @@ export const useGLDataStore = defineStore('glData', () => {
 
   return {
     accounts, journal, trialBalance, incomeStatement, balanceSheet, loading, error,
-    fetchAccounts, createAccount, fetchJournal, postJournalEntry, postManualEntry, approveManualEntry, reverseEntry,
+    fetchAccounts, createAccount, fetchJournal, postJournalEntry, postManualEntry, approveManualEntry, reverseEntry, reverseJournalEntry,
     projectEvents, fetchTrialBalance, fetchIncomeStatement, fetchBalanceSheet,
     clearError, resetStore,
   }

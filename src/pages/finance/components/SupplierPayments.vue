@@ -2,6 +2,9 @@
 import { onMounted } from 'vue'
 import { useSupplierPayments, apHeaders, paymentHistoryHeaders } from '../composables/useSupplierPayments'
 import SupplierPaymentDialog from './dialogs/SupplierPaymentDialog.vue'
+import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
+import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
+import { EXPENSE_PAYMENT_METHODS, type SupplierPaymentType } from '@/stores/financeData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
@@ -10,7 +13,25 @@ const {
   init, openPaymentDialog, handleSubmit,
 } = useSupplierPayments()
 
-onMounted(init)
+// Edit/undo requests on a recorded supplier payment (executive-approved).
+const { showDialog, config, isPending, loadPending, open, submit, submitting } =
+  useChangeRequestFiling('finance', 'supplier_payment')
+
+function openChange(p: SupplierPaymentType) {
+  open({
+    id: p.id,
+    ref: p.reference_no,
+    fields: [
+      { key: 'payment_method', label: 'Payment Method', value: p.payment_method, type: 'select', items: EXPENSE_PAYMENT_METHODS.map((m) => ({ title: m.title, value: m.value })) },
+      { key: 'remarks', label: 'Remarks', value: p.remarks, type: 'text' },
+    ],
+    voidSummary: `Void ${p.reference_no ?? `payment #${p.id}`} — reverses its ledger entry (DR Accounts Payable / CR cash) and restores ${formatCurrency(p.amount ?? 0)} to ${p.supplier_name ?? 'the supplier'}'s payable balance. To change the amount or supplier, void this and record a new payment.`,
+    allowEdit: true,
+    allowVoid: true,
+  })
+}
+
+onMounted(async () => { await init(); await loadPending() })
 </script>
 
 <template>
@@ -99,10 +120,31 @@ onMounted(init)
           <template #item.payment_method="{ item }">
             {{ item.payment_method ?? '—' }}
           </template>
+
+          <template #item.cr_actions="{ item }">
+            <v-chip v-if="isPending(item.id)" size="x-small" color="warning" variant="tonal" label>Change pending</v-chip>
+            <v-btn
+              v-else icon="mdi-pencil-box-outline" size="small" variant="text" color="primary"
+              title="Request edit or undo (needs executive approval)"
+              @click="openChange(item)"
+            />
+          </template>
         </v-data-table>
       </v-card>
 
     </div>
+
+    <ChangeRequestDialog
+      v-if="config"
+      v-model="showDialog"
+      :target-ref="config.ref"
+      :fields="config.fields"
+      :allow-edit="config.allowEdit"
+      :allow-void="config.allowVoid"
+      :void-summary="config.voidSummary"
+      :loading="submitting"
+      @submit="submit"
+    />
 
     <SupplierPaymentDialog
       v-model="showPaymentDialog"

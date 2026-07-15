@@ -13,6 +13,7 @@ export const headers = [
   { title: 'DISCREPANCY',  key: 'discrepancy',      sortable: false, align: 'center' as const },
   { title: 'RESOLUTION',   key: 'resolution',       sortable: false, align: 'center' as const },
   { title: 'NOTES',        key: 'notes',            sortable: false, align: 'center' as const },
+  { title: '',             key: 'cr_actions',       sortable: false, align: 'center' as const },
 ] as const
 
 export function useRemittance() {

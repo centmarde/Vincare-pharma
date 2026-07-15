@@ -2,9 +2,12 @@
 import { computed, ref, watch } from 'vue'
 import { useOrderDetail } from '../../composables/useOrderDetail'
 import { useEthicalDataStore } from '@/stores/ethicalData'
+import type { CollectionType } from '@/stores/ethicalData'
 import EthicalInvoiceDialog from './EthicalInvoiceDialog.vue'
 import DeliveryReceiptDialog from '@/components/deliveryReceipts/DeliveryReceiptDialog.vue'
-import { formatDatePR_ISO } from '@/utils/helpers'
+import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
+import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
+import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const props = defineProps<{ modelValue: boolean; orderId: number | null }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
@@ -30,6 +33,22 @@ const {
 
 // Pop the printable DR as soon as one is issued.
 watch(issuedReceipt, (dr) => { if (dr) showReceipt.value = true })
+
+// Undoing a recorded collection now needs executive approval (void-only).
+const { showDialog: crDialog, config: crConfig, isPending: crPending, loadPending: crLoad, open: crOpen, submit: crSubmit, submitting: crSubmitting } =
+  useChangeRequestFiling('ethical', 'ethical_collection')
+watch(collections, () => { void crLoad() }, { immediate: true })
+
+function requestUndoCollection(c: CollectionType) {
+  crOpen({
+    id: c.id,
+    ref: order.value?.order_no ?? null,
+    fields: [],
+    voidSummary: `Void this ${formatCurrency(c.amount ?? 0)} collection on ${order.value?.order_no ?? 'the order'} — reverses it in the ledger (DR AR / CR cash) and rolls the order's paid amount + status back.`,
+    allowEdit: false,
+    allowVoid: true,
+  })
+}
 
 const productName = (id: number) =>
   order.value?.items?.find((i) => i.product_id === id)?.product?.product_name ?? `#${id}`
@@ -207,7 +226,7 @@ watch(
                   {{ c.commission_status }}
                 </v-chip>
               </td>
-              <td>
+              <td class="d-flex align-center ga-1">
                 <v-btn
                   v-if="c.commission_status === 'unpaid'"
                   size="x-small"
@@ -215,6 +234,9 @@ watch(
                 >
                   Mark Paid
                 </v-btn>
+                <v-chip v-if="crPending(c.id)" size="x-small" color="warning" variant="tonal" label>undo pending</v-chip>
+                <v-btn v-else icon="mdi-undo-variant" size="x-small" variant="text" color="error"
+                  title="Request undo of this collection (needs executive approval)" @click="requestUndoCollection(c)" />
               </td>
             </tr>
           </tbody>
@@ -258,4 +280,15 @@ watch(
 
   <EthicalInvoiceDialog v-model="showInvoice" :order="order ?? null" />
   <DeliveryReceiptDialog v-model="showReceipt" :receipt="issuedReceipt" />
+
+  <ChangeRequestDialog
+    v-if="crConfig"
+    v-model="crDialog"
+    :target-ref="crConfig.ref"
+    :fields="crConfig.fields"
+    :allow-edit="crConfig.allowEdit"
+    :allow-void="crConfig.allowVoid"
+    :void-summary="crConfig.voidSummary"
+    :loading="crSubmitting"
+    @submit="crSubmit" />
 </template>
