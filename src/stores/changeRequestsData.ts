@@ -5,8 +5,11 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useFinanceDataStore } from '@/stores/financeData'
+import type { ExpenseCategory, ExpenseDepartment } from '@/stores/financeData'
 import { useGLDataStore } from '@/stores/glData'
 import { useSalesDataStore } from '@/stores/salesData'
+import { useInhouseDataStore } from '@/stores/inhouseData'
+import { useEthicalDataStore } from '@/stores/ethicalData'
 
 const toast = useToast()
 
@@ -319,8 +322,8 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
       case 'supplier_payment':   return applySupplierPaymentChange(request, userId)
       case 'sale':               return applySaleChange(request)
       case 'remittance':         return applyRemittanceChange(request)
-      case 'inhouse_payment':    return applyCollectionVoid(request, userId, 'inhouse')
-      case 'ethical_collection': return applyCollectionVoid(request, userId, 'ethical')
+      case 'inhouse_payment':    return applyCollectionChange(request, userId, 'inhouse')
+      case 'ethical_collection': return applyCollectionChange(request, userId, 'ethical')
       case 'journal_entry':      return applyJournalEntryChange(request, userId)
       default:
         return { success: false, error: `Change requests for "${request.target_type}" are not enabled yet.` }
@@ -346,98 +349,153 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     return rev.success ? { ok: true } : { ok: false, error: rev.error }
   }
 
-  // Ledger-affecting fields — an expense edit may NOT change these in place
-  // (they'd desync the GL, which the projection won't re-book). Value/account/
-  // date corrections go through Void + re-record, per the "correct by reversal,
-  // never edit a posted record in place" rule. Only the memo fields below edit
-  // in place (they never appear in the expense's journal entry).
+  // ── Edit model ──────────────────────────────────────────────────────────────
+  // Edits are hold-until-approve. On approval a MEMO field (no GL impact) is
+  // updated in place (same document); a LEDGER field (amount/date/account/
+  // category) is applied by REVERSE + REISSUE — the old document is voided
+  // (its GL cleanly backed out) and a corrected replacement is recorded (new
+  // document number, projects cleanly). This is the auditor-standard way to
+  // fix a posted document and sidesteps the projection's idempotency + the
+  // partial-unique-index wall on re-posting a corrected entry.
+  type Diff = { from: unknown; to: unknown }
+  const toVal = (changes: ProposedChange, key: string): unknown => (key in changes ? (changes[key] as Diff).to : undefined)
+  const normVal = (v: unknown) => (v == null ? '' : String(v))
+  // First changed field whose LIVE value no longer matches the request's `from`
+  // (the document drifted since the request was filed) — don't apply stale edits.
+  function firstStaleField(changes: ProposedChange, current: Record<string, unknown>): string | null {
+    for (const [k, diff] of Object.entries(changes)) {
+      if (normVal((diff as Diff).from) !== normVal(current[k])) return k
+    }
+    return null
+  }
+  const staleError = (k: string) => ({ success: false as const, error: `"${k}" changed since this request was filed — please re-file the edit.` })
+
   const EXPENSE_LEDGER_KEYS = new Set(['amount', 'category', 'cash_account_id', 'paid_at'])
   const EXPENSE_MEMO_TX_KEYS = new Set(['payment_method', 'remarks'])
   const EXPENSE_MEMO_DETAIL_KEYS = new Set(['paid_to', 'department', 'or_si_no'])
 
-  async function applyExpenseChange(request: ChangeRequestType, userId: string): Promise<{ success: boolean; resultRef?: string; error?: string }> {
+  // Reverse the expense's projected GL entry (if booked) + delete + restore cash.
+  async function voidExpense(targetId: number, userId: string): Promise<{ success: boolean; error?: string }> {
     const financeStore = useFinanceDataStore()
+    const rev = await reverseProjectedEntry('disbursement', targetId, userId)
+    if (!rev.ok) return { success: false, error: rev.error || 'Failed to reverse the expense journal entry.' }
+    const result = await financeStore.deleteExpense(targetId)
+    return result.success ? { success: true } : { success: false, error: 'Failed to delete the expense (GL already reversed — please retry).' }
+  }
 
-    // VOID = reverse the expense's projected GL entry (if it was booked), then
-    // delete + restore the cash balance. Expenses project as
-    // (reference_type='disbursement', reference_id=expense id); a never-projected
-    // expense simply has no entry to reverse (deleting the source is enough).
+  async function applyExpenseChange(request: ChangeRequestType, userId: string): Promise<{ success: boolean; resultRef?: string; error?: string }> {
     if (request.request_type === 'void') {
-      const rev = await reverseProjectedEntry('disbursement', request.target_id, userId)
-      if (!rev.ok) return { success: false, error: rev.error || 'Failed to reverse the expense journal entry.' }
-      const result = await financeStore.deleteExpense(request.target_id)
-      return result.success
-        ? { success: true, resultRef: request.target_ref ?? undefined }
-        : { success: false, error: 'Failed to delete the expense (GL already reversed — please retry the delete).' }
+      const v = await voidExpense(request.target_id, userId)
+      return v.success ? { success: true, resultRef: request.target_ref ?? undefined } : v
     }
 
-    // EDIT = memo fields only. Reject a ledger-field change outright so the
-    // approver is never misled into thinking an amount/account/date change was
-    // applied when it can't be (it must be a Void + re-record instead).
+    // EDIT — read live state (for the stale-guard + the reissue base).
     const changes = request.proposed_changes ?? {}
-    const ledgerHit = Object.keys(changes).find((k) => EXPENSE_LEDGER_KEYS.has(k))
-    if (ledgerHit) {
-      return { success: false, error: `"${ledgerHit}" changes the ledger — use Void + re-record instead of an edit.` }
+    const { data: cur } = await supabase.from('transactions')
+      .select('total_amount, cash_account_id, paid_at, payment_method, remarks, finance_details(category, paid_to, department, or_si_no)')
+      .eq('id', request.target_id).eq('transaction_type', 'expense').maybeSingle()
+    if (!cur) return { success: false, error: 'Expense not found.' }
+    const fd = ((Array.isArray(cur.finance_details) ? cur.finance_details[0] : cur.finance_details) ?? {}) as Record<string, unknown>
+    const current: Record<string, unknown> = {
+      amount: cur.total_amount, cash_account_id: cur.cash_account_id, paid_at: (cur.paid_at ?? '').slice(0, 10),
+      payment_method: cur.payment_method, remarks: cur.remarks,
+      category: fd.category, paid_to: fd.paid_to, department: fd.department, or_si_no: fd.or_si_no,
+    }
+    const stale = firstStaleField(changes, current); if (stale) return staleError(stale)
+
+    // Memo-only edit → update in place (same document).
+    if (!Object.keys(changes).some((k) => EXPENSE_LEDGER_KEYS.has(k))) {
+      const txUpdate: Record<string, unknown> = {}, detailUpdate: Record<string, unknown> = {}
+      for (const [key, diff] of Object.entries(changes)) {
+        const to = (diff as Diff).to
+        if (EXPENSE_MEMO_TX_KEYS.has(key)) txUpdate[key] = to
+        else if (EXPENSE_MEMO_DETAIL_KEYS.has(key)) detailUpdate[key] = to
+      }
+      if (Object.keys(txUpdate).length) { const { error: e } = await supabase.from('transactions').update(txUpdate).eq('id', request.target_id); if (e) return { success: false, error: e.message } }
+      if (Object.keys(detailUpdate).length) { const { error: e } = await supabase.from('finance_details').update(detailUpdate).eq('transaction_id', request.target_id); if (e) return { success: false, error: e.message } }
+      return { success: true, resultRef: request.target_ref ?? undefined }
     }
 
-    const txUpdate: Record<string, unknown> = {}
-    const detailUpdate: Record<string, unknown> = {}
-    for (const [key, diff] of Object.entries(changes)) {
-      const to = (diff as { to: unknown }).to
-      if (EXPENSE_MEMO_TX_KEYS.has(key)) txUpdate[key] = to
-      else if (EXPENSE_MEMO_DETAIL_KEYS.has(key)) detailUpdate[key] = to
+    // Ledger edit → reverse the old expense + reissue a corrected one.
+    const financeStore = useFinanceDataStore()
+    const merged = {
+      category: (toVal(changes, 'category') ?? fd.category) as ExpenseCategory,
+      amount: Number(toVal(changes, 'amount') ?? cur.total_amount ?? 0),
+      paidTo: (toVal(changes, 'paid_to') ?? fd.paid_to) as string | undefined || undefined,
+      paymentMethod: (toVal(changes, 'payment_method') ?? cur.payment_method) as string | undefined || undefined,
+      valueDate: (toVal(changes, 'paid_at') ?? (cur.paid_at ?? '').slice(0, 10)) as string | undefined || undefined,
+      remarks: (toVal(changes, 'remarks') ?? cur.remarks) as string | undefined || undefined,
+      department: (toVal(changes, 'department') ?? fd.department) as ExpenseDepartment | undefined || undefined,
+      orSiNo: (toVal(changes, 'or_si_no') ?? fd.or_si_no) as string | undefined || undefined,
+      cashAccountId: Number(toVal(changes, 'cash_account_id') ?? cur.cash_account_id),
     }
-
-    if (Object.keys(txUpdate).length) {
-      const { error: e } = await supabase.from('transactions').update(txUpdate).eq('id', request.target_id)
-      if (e) return { success: false, error: e.message }
-    }
-    if (Object.keys(detailUpdate).length) {
-      const { error: e } = await supabase.from('finance_details').update(detailUpdate).eq('transaction_id', request.target_id)
-      if (e) return { success: false, error: e.message }
-    }
-
-    return { success: true, resultRef: request.target_ref ?? undefined }
+    const v = await voidExpense(request.target_id, userId)
+    if (!v.success) return v
+    const res = await financeStore.recordExpense(merged)
+    if (!res.success) return { success: false, error: 'Old expense reversed, but reissuing the corrected expense failed — please re-record it manually.' }
+    return { success: true, resultRef: `${request.target_ref ?? '#' + request.target_id} → reissued` }
   }
 
   // ── Supplier payment ──────────────────────────────────────────────────────
   // Projects as 'disbursement' (DR AP / CR cash). Void reverses that + restores
   // suppliers.balance (which recordSupplierPayment decremented) + deletes the
   // row. Edit is memo-only; amount/supplier changes go through void + re-record.
-  async function applySupplierPaymentChange(request: ChangeRequestType, userId: string): Promise<{ success: boolean; resultRef?: string; error?: string }> {
-    const changes = request.proposed_changes ?? {}
-    if (request.request_type === 'edit') {
-      const ledgerHit = Object.keys(changes).find((k) => k === 'amount' || k === 'supplier_id')
-      if (ledgerHit) return { success: false, error: `"${ledgerHit}" changes the ledger — use Void + re-record instead of an edit.` }
-      const txUpdate: Record<string, unknown> = {}
-      for (const [key, diff] of Object.entries(changes)) {
-        if (key === 'payment_method' || key === 'remarks') txUpdate[key] = (diff as { to: unknown }).to
-      }
-      if (Object.keys(txUpdate).length) {
-        const { error: e } = await supabase.from('transactions').update(txUpdate).eq('id', request.target_id)
-        if (e) return { success: false, error: e.message }
-      }
-      return { success: true, resultRef: request.target_ref ?? undefined }
-    }
-
+  // Reverse the payment's disbursement entry + restore suppliers.balance + delete.
+  async function voidSupplierPayment(targetId: number, userId: string): Promise<{ success: boolean; error?: string }> {
     const { data: pay } = await supabase.from('transactions')
-      .select('supplier_id, total_amount').eq('id', request.target_id).eq('transaction_type', 'supplier_payment').maybeSingle()
+      .select('supplier_id, total_amount').eq('id', targetId).eq('transaction_type', 'supplier_payment').maybeSingle()
     if (!pay) return { success: false, error: 'Supplier payment not found.' }
-
-    const rev = await reverseProjectedEntry('disbursement', request.target_id, userId)
+    const rev = await reverseProjectedEntry('disbursement', targetId, userId)
     if (!rev.ok) return { success: false, error: rev.error || 'Failed to reverse the payment journal entry.' }
-
     if (pay.supplier_id) {
       const { data: s } = await supabase.from('suppliers').select('balance').eq('id', pay.supplier_id).maybeSingle()
       if (s) {
         const { error: e } = await supabase.from('suppliers').update({ balance: (s.balance ?? 0) + (pay.total_amount ?? 0) }).eq('id', pay.supplier_id)
-        if (e) console.warn('applySupplierPaymentChange: suppliers.balance restore failed:', e.message)
+        if (e) console.warn('voidSupplierPayment: suppliers.balance restore failed:', e.message)
       }
     }
-
-    const { error: delErr } = await supabase.from('transactions').delete().eq('id', request.target_id).eq('transaction_type', 'supplier_payment')
+    const { error: delErr } = await supabase.from('transactions').delete().eq('id', targetId).eq('transaction_type', 'supplier_payment')
     if (delErr) return { success: false, error: delErr.message }
-    return { success: true, resultRef: request.target_ref ?? undefined }
+    return { success: true }
+  }
+
+  async function applySupplierPaymentChange(request: ChangeRequestType, userId: string): Promise<{ success: boolean; resultRef?: string; error?: string }> {
+    if (request.request_type === 'void') {
+      const v = await voidSupplierPayment(request.target_id, userId)
+      return v.success ? { success: true, resultRef: request.target_ref ?? undefined } : v
+    }
+
+    const changes = request.proposed_changes ?? {}
+    const { data: cur } = await supabase.from('transactions')
+      .select('supplier_id, total_amount, payment_method, paid_at, remarks').eq('id', request.target_id).eq('transaction_type', 'supplier_payment').maybeSingle()
+    if (!cur) return { success: false, error: 'Supplier payment not found.' }
+    const current: Record<string, unknown> = { amount: cur.total_amount, payment_method: cur.payment_method, remarks: cur.remarks }
+    const stale = firstStaleField(changes, current); if (stale) return staleError(stale)
+
+    // Memo-only (method/remarks) → in place.
+    if (!('amount' in changes)) {
+      const txUpdate: Record<string, unknown> = {}
+      for (const [key, diff] of Object.entries(changes)) {
+        if (key === 'payment_method' || key === 'remarks') txUpdate[key] = (diff as Diff).to
+      }
+      if (Object.keys(txUpdate).length) { const { error: e } = await supabase.from('transactions').update(txUpdate).eq('id', request.target_id); if (e) return { success: false, error: e.message } }
+      return { success: true, resultRef: request.target_ref ?? undefined }
+    }
+
+    // Amount edit → reverse + reissue.
+    const financeStore = useFinanceDataStore()
+    const merged = {
+      supplierId: Number(cur.supplier_id),
+      amount: Number(toVal(changes, 'amount') ?? cur.total_amount ?? 0),
+      paymentMethod: (toVal(changes, 'payment_method') ?? cur.payment_method) as string | undefined || undefined,
+      valueDate: (cur.paid_at ?? '').slice(0, 10) || undefined,
+      remarks: (toVal(changes, 'remarks') ?? cur.remarks) as string | undefined || undefined,
+    }
+    const v = await voidSupplierPayment(request.target_id, userId)
+    if (!v.success) return v
+    const res = await financeStore.recordSupplierPayment(merged)
+    if (!res.success) return { success: false, error: 'Old payment reversed, but reissuing the corrected payment failed — please re-record it manually.' }
+    return { success: true, resultRef: `${request.target_ref ?? '#' + request.target_id} → reissued` }
   }
 
   // ── POS sale ──────────────────────────────────────────────────────────────
@@ -458,10 +516,16 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
   async function applyRemittanceChange(request: ChangeRequestType): Promise<{ success: boolean; resultRef?: string; error?: string }> {
     if (request.request_type === 'void') return { success: false, error: 'A remittance is corrected by editing the counted amount, not voided.' }
     const changes = request.proposed_changes ?? {}
+    const { data: cur } = await supabase.from('transactions')
+      .select('remarks, remittance_details(actual_amount)').eq('id', request.target_id).eq('transaction_type', 'remittance').maybeSingle()
+    if (!cur) return { success: false, error: 'Remittance not found.' }
+    const rd = (Array.isArray(cur.remittance_details) ? cur.remittance_details[0] : cur.remittance_details) as { actual_amount?: unknown } | null
+    const current: Record<string, unknown> = { actual_amount: rd?.actual_amount, notes: cur.remarks }
+    const stale = firstStaleField(changes, current); if (stale) return staleError(stale)
     const detailUpdate: Record<string, unknown> = {}
     const txUpdate: Record<string, unknown> = {}
     for (const [key, diff] of Object.entries(changes)) {
-      const to = (diff as { to: unknown }).to
+      const to = (diff as Diff).to
       if (key === 'actual_amount') detailUpdate.actual_amount = to
       else if (key === 'notes') txUpdate.remarks = to
     }
@@ -480,17 +544,16 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
   // target_id is the collection id. Both project as 'collection' (DR Cash / CR
   // AR). Void reverses that, deletes the collection, and rolls the order's
   // amount_paid + status back. Payments aren't edited — void + re-record.
-  async function applyCollectionVoid(request: ChangeRequestType, userId: string, kind: 'inhouse' | 'ethical'): Promise<{ success: boolean; resultRef?: string; error?: string }> {
-    if (request.request_type === 'edit') return { success: false, error: 'A payment cannot be edited — void it and re-record instead.' }
-
+  // Reverse the collection's GL entry + delete it + roll the order back.
+  async function voidCollection(collectionId: number, userId: string, kind: 'inhouse' | 'ethical'): Promise<{ success: boolean; error?: string }> {
     const { data: col } = await supabase.from('collections')
-      .select('transaction_id, amount').eq('id', request.target_id).maybeSingle()
+      .select('transaction_id, amount').eq('id', collectionId).maybeSingle()
     if (!col) return { success: false, error: 'Payment not found.' }
 
-    const rev = await reverseProjectedEntry('collection', request.target_id, userId)
+    const rev = await reverseProjectedEntry('collection', collectionId, userId)
     if (!rev.ok) return { success: false, error: rev.error || 'Failed to reverse the collection journal entry.' }
 
-    const { error: delErr } = await supabase.from('collections').delete().eq('id', request.target_id)
+    const { error: delErr } = await supabase.from('collections').delete().eq('id', collectionId)
     if (delErr) return { success: false, error: delErr.message }
 
     // Roll the order back: subtract the voided amount, re-derive status.
@@ -504,11 +567,50 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     const newStatus = newPaid <= 0 ? zeroStatus : (newPaid < total ? 'partial' : 'paid')
     const nowIso = new Date().toISOString()
     const { error: dErr } = await supabase.from(detailsTable).update({ amount_paid: newPaid, paid_at: newPaid > 0 ? nowIso : null }).eq('transaction_id', orderId)
-    if (dErr) console.warn('applyCollectionVoid: amount_paid rollback failed:', dErr.message)
+    if (dErr) console.warn('voidCollection: amount_paid rollback failed:', dErr.message)
     const { error: sErr } = await supabase.from('transactions').update({ status: newStatus, updated_at: nowIso }).eq('id', orderId)
-    if (sErr) console.warn('applyCollectionVoid: status rollback failed:', sErr.message)
+    if (sErr) console.warn('voidCollection: status rollback failed:', sErr.message)
+    return { success: true }
+  }
 
-    return { success: true, resultRef: request.target_ref ?? undefined }
+  async function applyCollectionChange(request: ChangeRequestType, userId: string, kind: 'inhouse' | 'ethical'): Promise<{ success: boolean; resultRef?: string; error?: string }> {
+    if (request.request_type === 'void') {
+      const v = await voidCollection(request.target_id, userId, kind)
+      return v.success ? { success: true, resultRef: request.target_ref ?? undefined } : v
+    }
+
+    const changes = request.proposed_changes ?? {}
+    const { data: cur } = await supabase.from('collections')
+      .select('transaction_id, amount, payment_method, reference_no, remarks').eq('id', request.target_id).maybeSingle()
+    if (!cur) return { success: false, error: 'Payment not found.' }
+    const current: Record<string, unknown> = { amount: cur.amount, payment_method: cur.payment_method, reference_no: cur.reference_no, remarks: cur.remarks }
+    const stale = firstStaleField(changes, current); if (stale) return staleError(stale)
+
+    // Memo-only (method/reference/remarks) → in place.
+    if (!('amount' in changes)) {
+      const colUpdate: Record<string, unknown> = {}
+      for (const [key, diff] of Object.entries(changes)) {
+        if (key === 'payment_method' || key === 'reference_no' || key === 'remarks') colUpdate[key] = (diff as Diff).to
+      }
+      if (Object.keys(colUpdate).length) { const { error: e } = await supabase.from('collections').update(colUpdate).eq('id', request.target_id); if (e) return { success: false, error: e.message } }
+      return { success: true, resultRef: request.target_ref ?? undefined }
+    }
+
+    // Amount edit → reverse the collection + re-record the corrected one.
+    const payload = {
+      orderId: Number(cur.transaction_id),
+      amount: Number(toVal(changes, 'amount') ?? cur.amount ?? 0),
+      method: (toVal(changes, 'payment_method') ?? cur.payment_method) as string | undefined || undefined,
+      reference: (toVal(changes, 'reference_no') ?? cur.reference_no) as string | undefined || undefined,
+      remarks: (toVal(changes, 'remarks') ?? cur.remarks) as string | undefined || undefined,
+    }
+    const v = await voidCollection(request.target_id, userId, kind)
+    if (!v.success) return v
+    const res = kind === 'inhouse'
+      ? await useInhouseDataStore().recordPayment(payload)
+      : await useEthicalDataStore().recordCollection(payload)
+    if (!res.success) return { success: false, error: 'Old payment reversed, but reissuing the corrected payment failed — please re-record it manually.' }
+    return { success: true, resultRef: `${request.target_ref ?? '#' + request.target_id} → reissued` }
   }
 
   // ── GL journal entry ────────────────────────────────────────────────────────

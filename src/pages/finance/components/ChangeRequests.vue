@@ -47,15 +47,20 @@ const moduleColor: Record<string, string> = {
             <div class="text-body-2 mb-3">{{ req.summary ?? (req.request_type === 'void' ? 'Undo this document.' : 'Edit this document.') }}</div>
 
             <template v-if="req.request_type === 'edit' && Object.keys(req.proposed_changes || {}).length">
+              <div class="text-caption font-weight-bold mb-1">Before → After</div>
               <v-table density="compact" class="mb-3" style="border:1px solid #eee; border-radius:8px">
                 <thead>
-                  <tr><th class="text-left">Field</th><th class="text-left">From</th><th class="text-left">To</th></tr>
+                  <tr>
+                    <th class="text-left">Field</th>
+                    <th class="text-left">Before</th>
+                    <th class="text-left">After</th>
+                  </tr>
                 </thead>
                 <tbody>
                   <tr v-for="(diff, key) in req.proposed_changes" :key="key">
                     <td class="font-weight-medium">{{ key }}</td>
-                    <td class="text-medium-emphasis">{{ diff.from ?? '—' }}</td>
-                    <td class="font-weight-bold">{{ diff.to ?? '—' }}</td>
+                    <td class="text-medium-emphasis text-decoration-line-through">{{ diff.from ?? '—' }}</td>
+                    <td class="font-weight-bold text-success">{{ diff.to ?? '—' }}</td>
                   </tr>
                 </tbody>
               </v-table>

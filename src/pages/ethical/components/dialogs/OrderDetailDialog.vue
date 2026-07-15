@@ -7,6 +7,7 @@ import EthicalInvoiceDialog from './EthicalInvoiceDialog.vue'
 import DeliveryReceiptDialog from '@/components/deliveryReceipts/DeliveryReceiptDialog.vue'
 import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
+import { EXPENSE_PAYMENT_METHODS } from '@/stores/financeData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const props = defineProps<{ modelValue: boolean; orderId: number | null }>()
@@ -43,9 +44,13 @@ function requestUndoCollection(c: CollectionType) {
   crOpen({
     id: c.id,
     ref: order.value?.order_no ?? null,
-    fields: [],
+    fields: [
+      { key: 'amount', label: 'Amount', value: c.amount ?? 0, type: 'number' },
+      { key: 'payment_method', label: 'Payment Method', value: c.payment_method, type: 'select', items: EXPENSE_PAYMENT_METHODS.map((m) => ({ title: m.title, value: m.value })) },
+      { key: 'reference_no', label: 'Reference / OR #', value: c.reference_no, type: 'text' },
+    ],
     voidSummary: `Void this ${formatCurrency(c.amount ?? 0)} collection on ${order.value?.order_no ?? 'the order'} — reverses it in the ledger (DR AR / CR cash) and rolls the order's paid amount + status back.`,
-    allowEdit: false,
+    allowEdit: true,
     allowVoid: true,
   })
 }
@@ -235,8 +240,8 @@ watch(
                   Mark Paid
                 </v-btn>
                 <v-chip v-if="crPending(c.id)" size="x-small" color="warning" variant="tonal" label>undo pending</v-chip>
-                <v-btn v-else icon="mdi-undo-variant" size="x-small" variant="text" color="error"
-                  title="Request undo of this collection (needs executive approval)" @click="requestUndoCollection(c)" />
+                <v-btn v-else icon="mdi-pencil-box-outline" size="x-small" variant="text" color="primary"
+                  title="Request edit or undo of this collection (needs executive approval)" @click="requestUndoCollection(c)" />
               </td>
             </tr>
           </tbody>

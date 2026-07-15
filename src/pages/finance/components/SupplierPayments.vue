@@ -22,10 +22,11 @@ function openChange(p: SupplierPaymentType) {
     id: p.id,
     ref: p.reference_no,
     fields: [
+      { key: 'amount', label: 'Amount', value: p.amount ?? 0, type: 'number' },
       { key: 'payment_method', label: 'Payment Method', value: p.payment_method, type: 'select', items: EXPENSE_PAYMENT_METHODS.map((m) => ({ title: m.title, value: m.value })) },
       { key: 'remarks', label: 'Remarks', value: p.remarks, type: 'text' },
     ],
-    voidSummary: `Void ${p.reference_no ?? `payment #${p.id}`} — reverses its ledger entry (DR Accounts Payable / CR cash) and restores ${formatCurrency(p.amount ?? 0)} to ${p.supplier_name ?? 'the supplier'}'s payable balance. To change the amount or supplier, void this and record a new payment.`,
+    voidSummary: `Void ${p.reference_no ?? `payment #${p.id}`} — reverses its ledger entry (DR Accounts Payable / CR cash) and restores ${formatCurrency(p.amount ?? 0)} to ${p.supplier_name ?? 'the supplier'}'s payable balance.`,
     allowEdit: true,
     allowVoid: true,
   })

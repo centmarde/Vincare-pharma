@@ -6,6 +6,7 @@ import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
 import type { InhouseOrderType } from '@/stores/inhouseData'
 import type { CollectionType } from '@/stores/ethicalData'
+import { EXPENSE_PAYMENT_METHODS } from '@/stores/financeData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const props = defineProps<{
@@ -40,9 +41,13 @@ function requestUndoPayment(p: CollectionType) {
   crOpen({
     id: p.id,
     ref: props.order?.order_no ?? null,
-    fields: [],
+    fields: [
+      { key: 'amount', label: 'Amount', value: p.amount ?? 0, type: 'number' },
+      { key: 'payment_method', label: 'Payment Method', value: p.payment_method, type: 'select', items: EXPENSE_PAYMENT_METHODS.map((m) => ({ title: m.title, value: m.value })) },
+      { key: 'reference_no', label: 'Reference / OR #', value: p.reference_no, type: 'text' },
+    ],
     voidSummary: `Void this ${formatCurrency(p.amount ?? 0)} payment on ${props.order?.order_no ?? 'the order'} — reverses it in the ledger (DR AR / CR cash) and rolls the order's paid amount + status back.`,
-    allowEdit: false,
+    allowEdit: true,
     allowVoid: true,
   })
 }
@@ -234,8 +239,8 @@ const productName = (id: number | null) =>
                 <span class="d-flex align-center ga-1">
                   <span class="text-medium-emphasis">{{ formatDatePR_ISO(p.created_at) }}</span>
                   <v-chip v-if="crPending(p.id)" size="x-small" color="warning" variant="tonal" label>undo pending</v-chip>
-                  <v-btn v-else icon="mdi-undo-variant" size="x-small" variant="text" color="error"
-                    title="Request undo of this payment (needs executive approval)" @click="requestUndoPayment(p)" />
+                  <v-btn v-else icon="mdi-pencil-box-outline" size="x-small" variant="text" color="primary"
+                    title="Request edit or undo of this payment (needs executive approval)" @click="requestUndoPayment(p)" />
                 </span>
               </div>
             </div>

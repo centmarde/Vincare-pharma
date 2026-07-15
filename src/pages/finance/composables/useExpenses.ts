@@ -3,7 +3,7 @@ import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import {
   useFinanceDataStore,
-  EXPENSE_DEPARTMENTS, EXPENSE_PAYMENT_METHODS,
+  EXPENSE_CATEGORIES, EXPENSE_DEPARTMENTS, EXPENSE_PAYMENT_METHODS,
 } from '@/stores/financeData'
 import type { ExpenseType } from '@/stores/financeData'
 import { useChangeRequestsDataStore } from '@/stores/changeRequestsData'
@@ -98,13 +98,17 @@ export function useExpenses() {
     if (changeTarget.value) showChangeDialog.value = true
   }
 
-  // Edit is memo-only — amount / category / account / date change the ledger
-  // and can't be corrected in place (the GL projection won't re-book them), so
-  // those go through Void + re-record instead. See applyExpenseChange.
+  // Memo fields edit in place; amount / category / account / date are ledger
+  // fields — an approved edit to those reverses the old expense and reissues a
+  // corrected one (new number). See applyExpenseChange.
   const changeFields = computed<ChangeRequestField[]>(() => {
     const e = changeTarget.value
     if (!e) return []
     return [
+      { key: 'amount', label: 'Amount', value: e.amount ?? 0, type: 'number' },
+      { key: 'category', label: 'Category', value: e.category, type: 'select', items: EXPENSE_CATEGORIES.map((c) => ({ title: c.title, value: c.value })) },
+      { key: 'paid_at', label: 'Date', value: (e.paid_at ?? '').slice(0, 10), type: 'date' },
+      { key: 'cash_account_id', label: 'Account', value: e.cash_account_id, type: 'select', items: cashAccounts.value.map((a) => ({ title: a.name, value: a.id })) },
       { key: 'department', label: 'Department', value: e.department, type: 'select', items: EXPENSE_DEPARTMENTS.map((d) => ({ title: d.title, value: d.value })) },
       { key: 'payment_method', label: 'Payment Method', value: e.payment_method, type: 'select', items: EXPENSE_PAYMENT_METHODS.map((m) => ({ title: m.title, value: m.value })) },
       { key: 'paid_to', label: 'Paid To', value: e.paid_to, type: 'text' },
@@ -116,7 +120,7 @@ export function useExpenses() {
   const voidSummary = computed(() => {
     const e = changeTarget.value
     if (!e) return ''
-    return `Void ${e.reference_no ?? `expense #${e.id}`} — reverses its ledger entry (if posted) and restores ${formatCurrency(e.amount ?? 0)} to ${e.cash_account_name ?? 'its cash account'}. To change the amount, category, account, or date, void this and record a new expense.`
+    return `Void ${e.reference_no ?? `expense #${e.id}`} — reverses its ledger entry (if posted) and restores ${formatCurrency(e.amount ?? 0)} to ${e.cash_account_name ?? 'its cash account'}.`
   })
 
   async function submitChangeRequest(payload: { requestType: 'edit' | 'void'; proposedChanges: ProposedChange; summary: string; reason: string }) {
