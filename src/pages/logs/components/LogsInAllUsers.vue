@@ -75,17 +75,19 @@ watch(
 <template>
   <v-card>
     <!-- Toolbar -->
-    <v-card-title class="d-flex align-center flex-wrap ga-2 pa-3">
-      <v-icon icon="mdi-account-group-outline" class="mr-1" color="primary"></v-icon>
-      <span class="text-h6 font-weight-bold">Users Activity Logs</span>
+    <v-toolbar density="compact" color="transparent">
+      <v-icon icon="mdi-account-group-outline" color="primary" size="20" class="ml-2 mr-1"></v-icon>
+      <v-toolbar-title class="text-subtitle-1 font-weight-bold pa-0">Users Activity Logs</v-toolbar-title>
       <v-spacer></v-spacer>
       <v-btn
         icon="mdi-refresh"
         variant="text"
+        size="small"
         :loading="logsLoading"
         @click="fetchLogs(); fetchUsers()"
+        class="mr-1"
       ></v-btn>
-    </v-card-title>
+    </v-toolbar>
 
     <v-divider></v-divider>
 
