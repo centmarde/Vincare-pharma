@@ -1,6 +1,6 @@
 import { ref, computed, watch } from 'vue'
-import { classificationMeta } from '@/utils/cashAccountTypes'
-import type { AddExpensePayload, ClassifiedCashAccount } from '@/utils/cashAccountTypes'
+import { CASH_CLASSIFICATIONS, classificationMeta } from '@/utils/cashAccountTypes'
+import type { AddExpensePayload, CashClassificationMeta, ClassifiedCashAccount } from '@/utils/cashAccountTypes'
 import type { ExpenseCategory, ExpenseDepartment } from '@/stores/financeData'
 import { formatCurrency } from '@/utils/helpers'
 import { useFormDraft } from '@/composables/useFormDraft'
@@ -58,6 +58,12 @@ export function useAddExpense(
       })),
   )
 
+  // Meta for an option's icon/chip in the account select's #item slot, keyed by
+  // the option's id. The slot's item is only typed as a wrapper (with .raw) when
+  // Volar infers Vuetify's generic item parameter, so resolve it here instead.
+  const metaForAccount = (id: number): CashClassificationMeta =>
+    accountOptions.value.find((o) => o.value === id)?.meta ?? CASH_CLASSIFICATIONS[0]
+
   const selectedAccount = computed(() =>
     accounts().find((a) => a.id === cashAccountId.value) ?? null,
   )
@@ -113,7 +119,7 @@ export function useAddExpense(
   return {
     category, description, amount, expenseDate, cashAccountId, department, orSiNo, paidTo,
     requestReplenishment,
-    accountOptions, isPettyCash, pettyCashBalance, disbursedAmount, remainingBalance,
+    accountOptions, metaForAccount, isPettyCash, pettyCashBalance, disbursedAmount, remainingBalance,
     insufficientPettyCash, isBelowThreshold, canSubmit,
     resetForm, buildPayload,
     restoreDraft: draft.restore,

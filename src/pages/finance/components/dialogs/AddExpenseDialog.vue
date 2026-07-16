@@ -24,7 +24,7 @@ const emit = defineEmits<{
 const {
   category, description, amount, expenseDate, cashAccountId, department, orSiNo, paidTo,
   requestReplenishment,
-  accountOptions, isPettyCash, pettyCashBalance, disbursedAmount, remainingBalance,
+  accountOptions, metaForAccount, isPettyCash, pettyCashBalance, disbursedAmount, remainingBalance,
   insufficientPettyCash, isBelowThreshold, canSubmit,
   resetForm, buildPayload, restoreDraft,
 } = useAddExpense(() => props.accounts, () => props.replenishThreshold)
@@ -118,11 +118,16 @@ const close = () => {
           <template #item="{ props: itemProps, item }">
             <v-list-item v-bind="itemProps">
               <template #prepend>
-                <v-icon :icon="item.raw.meta.icon" :color="item.raw.meta.color" size="20" class="mr-2" />
+                <v-icon
+                  :icon="metaForAccount(item.value).icon"
+                  :color="metaForAccount(item.value).color"
+                  size="20"
+                  class="mr-2"
+                />
               </template>
               <template #append>
-                <v-chip :color="item.raw.meta.color" size="x-small" variant="tonal">
-                  {{ item.raw.meta.title }}
+                <v-chip :color="metaForAccount(item.value).color" size="x-small" variant="tonal">
+                  {{ metaForAccount(item.value).title }}
                 </v-chip>
               </template>
             </v-list-item>

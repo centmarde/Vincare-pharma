@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue'
-import { CASH_CLASSIFICATIONS } from '@/utils/cashAccountTypes'
+import { CASH_CLASSIFICATIONS, classificationMeta } from '@/utils/cashAccountTypes'
 import type { CashClassification, ClassifiedCashAccount, CreateCashAccountPayload } from '@/utils/cashAccountTypes'
 
 // Grouping/display derivations + add-account form state for CashAccountsManager.
@@ -43,6 +43,13 @@ export function useCashAccountsManager(accounts: () => ClassifiedCashAccount[]) 
     showAddDialog.value = false
   }
 
+  // Meta for the chip in the classification select's #selection slot. Resolved
+  // here from the model rather than the slot's item, which is only typed as a
+  // wrapper (with .raw) when Volar infers Vuetify's generic item parameter.
+  const selectedClassificationMeta = computed(() =>
+    classification.value ? classificationMeta(classification.value) : null,
+  )
+
   const canSubmit = computed(() =>
     name.value.trim().length > 0
     && classification.value !== null
@@ -61,7 +68,7 @@ export function useCashAccountsManager(accounts: () => ClassifiedCashAccount[]) 
   }
 
   return {
-    groupedAccounts, totalActiveBalance,
+    groupedAccounts, totalActiveBalance, selectedClassificationMeta,
     showAddDialog, name, classification, openingBalance, isActive, canSubmit,
     openAddDialog, cancelAdd, buildPayload,
   }

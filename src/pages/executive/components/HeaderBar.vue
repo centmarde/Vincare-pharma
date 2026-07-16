@@ -37,8 +37,11 @@ const navItems = computed<NavSearchItem[]>(() => {
   }))
 })
 
-function getRaw(item: any): NavSearchItem {
-  return item?.raw as NavSearchItem
+// The autocomplete's slot item is Vuetify's wrapper (carrying .raw) only when
+// Volar infers its generic item param; accept either shape so the icon/group
+// lookup doesn't depend on that inference resolving.
+function getRaw(item: NavSearchItem | { raw: NavSearchItem }): NavSearchItem {
+  return 'raw' in item ? item.raw : item
 }
 
 function goToRoute(route: string | null) {
