@@ -65,7 +65,30 @@ const {
   showReorderPRConfirm,          // NEW
   confirmCreatePRFromSelection,  // NEW
   proceedCreatePRFromSelection,  // NEW
+  productIgnore,
+  IGNORE_DURATIONS,
 } = useProductsWidget()
+
+// Manage ignored items dialog
+const showManageIgnoredDialog = ref(false)
+
+// Build list of ignored products with their info by matching product IDs from allEligibleProducts
+const ignoredProductEntries = computed(() => {
+  const ignoredIds = productIgnore.activeIgnoredIdsArray.value
+  return ignoredIds
+    .map(id => {
+      const product = productsDataStore.products.find(p => p.id === id)
+      const info = productIgnore.getIgnoreInfo(id)
+      return {
+        id,
+        product_name: product?.product_name ?? `Product #${id}`,
+        sku: product?.sku ?? 'N/A',
+        remainingMs: info?.remainingMs ?? 0,
+        remainingLabel: info ? productIgnore.formatRemainingTime(info.remainingMs) : 'Expired',
+      }
+    })
+    .filter(entry => entry.remainingMs > 0)
+})
 
 function handleStockCardClick(type: string) {
   stockDialogType.value = type as any
@@ -169,6 +192,20 @@ function stockColor(item: any) {
       :cards="stockStatusCards"
       @show-dialog="handleStockCardClick"
     />
+
+    <!-- Manage Ignored Items link -->
+    <div v-if="ignoredProductEntries.length > 0" class="d-flex justify-end px-3 pb-1">
+      <v-btn
+        variant="text"
+        color="grey-darken-1"
+        size="small"
+        class="text-none"
+        prepend-icon="mdi-bell-off-outline"
+        @click="showManageIgnoredDialog = true"
+      >
+        {{ ignoredProductEntries.length }} ignored product{{ ignoredProductEntries.length > 1 ? 's' : '' }}
+      </v-btn>
+    </div>
 
     <v-divider class="mt-3"></v-divider>
 
@@ -392,6 +429,61 @@ function stockColor(item: any) {
                <template #append>
                 <div class="d-flex align-center ga-2">
                   <v-chip size="small" variant="outlined">{{ p.sku || 'No SKU' }}</v-chip>
+                  <!-- Ignore / Dismiss button -->
+                  <v-menu location="bottom" offset-y>
+                    <template #activator="{ props: menuProps }">
+                      <v-btn
+                        v-bind="menuProps"
+                        size="small"
+                        variant="outlined"
+                        color="blue"
+                        @click.stop
+                        class="ignore-btn"
+                      >
+                        <v-icon size="16">mdi-bell-off-outline</v-icon>
+                        <v-tooltip activator="parent" location="top">Ignore this product item</v-tooltip>
+                      </v-btn>
+                    </template>
+                    <v-list density="compact" min-width="200">
+                      <template v-if="!productIgnore.isIgnored(p.id)">
+                        <v-list-item
+                          @click.stop="productIgnore.confirmIgnore(p.id, p.product_name ?? '', IGNORE_DURATIONS.ONE_DAY, '1 day')"
+                        >
+                          <template #prepend>
+                            <v-icon size="small">mdi-clock-outline</v-icon>
+                          </template>
+                          <v-list-item-title>Ignore for 1 day</v-list-item-title>
+                        </v-list-item>
+                        <v-list-item
+                          @click.stop="productIgnore.confirmIgnore(p.id, p.product_name ?? '', IGNORE_DURATIONS.ONE_WEEK, '1 week')"
+                        >
+                          <template #prepend>
+                            <v-icon size="small">mdi-calendar-week</v-icon>
+                          </template>
+                          <v-list-item-title>Ignore for 1 week</v-list-item-title>
+                        </v-list-item>
+                        <v-list-item
+                          @click.stop="productIgnore.confirmIgnore(p.id, p.product_name ?? '', IGNORE_DURATIONS.ONE_MONTH, '1 month')"
+                        >
+                          <template #prepend>
+                            <v-icon size="small">mdi-calendar-month</v-icon>
+                          </template>
+                          <v-list-item-title>Ignore for 1 month</v-list-item-title>
+                        </v-list-item>
+                      </template>
+                      <template v-else>
+                        <v-list-item @click.stop="productIgnore.unignoreProduct(p.id)">
+                          <template #prepend>
+                            <v-icon size="small" color="warning">mdi-bell-ring-outline</v-icon>
+                          </template>
+                          <v-list-item-title>Unignore (show alerts)</v-list-item-title>
+                          <v-list-item-subtitle>
+                            Remaining: {{ productIgnore.formatRemainingTime(productIgnore.getIgnoreInfo(p.id)?.remainingMs ?? 0) }}
+                          </v-list-item-subtitle>
+                        </v-list-item>
+                      </template>
+                    </v-list>
+                  </v-menu>
                   <v-btn
                     v-if="stockDialogType !== 'no-reorder-level' && canRequestReorder(p.id)"
                     size="small"
@@ -504,6 +596,97 @@ function stockColor(item: any) {
         </v-card-actions>
       </v-card>
     </v-dialog>
+  </v-dialog>
+  <!-- Ignore Confirmation Dialog -->
+  <v-dialog :model-value="productIgnore.showIgnoreConfirm.value" @update:model-value="productIgnore.showIgnoreConfirm.value = $event" max-width="420">
+    <v-card>
+      <v-card-title class="d-flex align-center pa-4">
+        <v-icon icon="mdi-bell-off-outline" color="orange-darken-2" class="mr-2"></v-icon>
+        <span class="text-h6 font-weight-bold">Dismiss Alert</span>
+      </v-card-title>
+      <v-divider></v-divider>
+      <v-card-text class="pa-4">
+        <p>
+          Are you sure you want to ignore
+          <strong>{{ productIgnore.pendingIgnoreProductName.value }}</strong>
+          for <strong>{{ productIgnore.pendingIgnoreDurationLabel.value }}</strong>?
+        </p>
+        <p class="text-caption text-grey mt-2">
+          It will be hidden from stock status alerts until the time expires.
+        </p>
+      </v-card-text>
+      <v-divider></v-divider>
+      <v-card-actions class="pa-4 d-flex justify-end ga-2">
+        <v-btn variant="outlined" class="text-none" @click="productIgnore.cancelIgnore">
+          Cancel
+        </v-btn>
+        <v-btn
+          color="primary"
+          variant="elevated"
+          class="text-none font-weight-bold"
+          @click="productIgnore.executeIgnore"
+        >
+          <v-icon start size="18">mdi-bell-off-outline</v-icon>
+          Dismiss
+        </v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+
+  <!-- Manage Ignored Items Dialog -->
+  <v-dialog v-model="showManageIgnoredDialog" max-width="560">
+    <v-card>
+      <v-card-title class="d-flex align-center pa-4">
+        <v-icon icon="mdi-bell-off-outline" color="grey-darken-1" class="mr-2"></v-icon>
+        <span class="text-h6 font-weight-bold">Ignored Products</span>
+        <v-spacer></v-spacer>
+        <v-chip size="small" variant="tonal" color="grey-darken-1">
+          {{ ignoredProductEntries.length }} product{{ ignoredProductEntries.length > 1 ? 's' : '' }}
+        </v-chip>
+        <v-btn icon="mdi-close" variant="text" size="small" @click="showManageIgnoredDialog = false"></v-btn>
+      </v-card-title>
+      <v-divider></v-divider>
+      <v-card-text class="pa-0" style="max-height: 400px; overflow-y: auto;">
+        <v-list v-if="ignoredProductEntries.length > 0" density="comfortable">
+          <v-list-item v-for="entry in ignoredProductEntries" :key="entry.id">
+            <v-list-item-title class="font-weight-medium">
+              {{ entry.product_name }}
+            </v-list-item-title>
+            <v-list-item-subtitle>
+              SKU: {{ entry.sku }} · Remaining: {{ entry.remainingLabel }}
+            </v-list-item-subtitle>
+            <template #append>
+              <v-btn
+                size="small"
+                variant="outlined"
+                color="warning"
+                class="text-none"
+                prepend-icon="mdi-bell-ring-outline"
+                @click="productIgnore.unignoreProduct(entry.id)"
+              >
+                Unignore
+              </v-btn>
+            </template>
+          </v-list-item>
+        </v-list>
+        <div v-else class="text-center py-8">
+          <v-icon icon="mdi-check-circle-outline" size="40" color="success"></v-icon>
+          <p class="text-grey mt-2">No ignored products</p>
+        </div>
+      </v-card-text>
+      <v-divider v-if="ignoredProductEntries.length > 0"></v-divider>
+      <v-card-actions v-if="ignoredProductEntries.length > 0" class="pa-4 d-flex justify-end">
+        <v-btn
+          color="error"
+          variant="tonal"
+          class="text-none"
+          prepend-icon="mdi-bell-off-outline"
+          @click="ignoredProductEntries.forEach(e => productIgnore.unignoreProduct(e.id))"
+        >
+          Unignore All
+        </v-btn>
+      </v-card-actions>
+    </v-card>
   </v-dialog>
 </template>
 

@@ -11,6 +11,7 @@ import { useLogsDataStore } from '@/stores/logsData'
 import type { ReorderPrefillItem } from '@/pages/purchasing/composables/usePurchaseRequisition'
 import { useAuthUserStore } from '@/stores/authUser'
 import { isPurchasingRole, isProductEditRestricted } from '@/utils/roleHelpers'
+import { useProductIgnore, IGNORE_DURATIONS } from '@/components/products/composables/useProductIgnore'
 
 interface StockStatusCardDef {
   type: 'out-of-stock' | 'low-stock' | 'no-reorder-level' | 'expiring-soon' | 'expired'
@@ -32,6 +33,7 @@ export function useProductsWidget() {
   const productsStore = useProductsDataStore()
   const authStore = useAuthUserStore()
   const logsStore = useLogsDataStore()
+  const productIgnore = useProductIgnore()
 
   // Dialog states
   const showDialog = ref(false)
@@ -108,9 +110,10 @@ export function useProductsWidget() {
   const totalProducts = computed(() => productsStore.totalCount)
 
   // All-products stock status counts (not paginated, from the full store)
+  // Filters out products that have been ignored/dismissed by the user
   const allEligibleProducts = computed(() =>
     productsStore.products.filter(
-      p => p.sku != null && p.sku !== 'null' && eligibleProductIds.value.has(p.id)
+      p => p.sku != null && p.sku !== 'null' && eligibleProductIds.value.has(p.id) && !productIgnore.activeIgnoredIds.value.has(p.id)
     )
   )
 
@@ -483,5 +486,8 @@ const stockDialogProducts = computed<ProductType[]>(() => {
     confirmCreatePRFromSelection,
     proceedCreatePRFromSelection,
     showReorderPRConfirm,
+    // Product Ignore / Dismiss
+    productIgnore,
+    IGNORE_DURATIONS,
   }
 }
