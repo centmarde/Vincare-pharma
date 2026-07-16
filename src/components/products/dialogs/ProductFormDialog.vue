@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { parseMonthYear, formatMonthYear, maskMonthYearInput } from '@/utils/helpers'
 import type { CreateProductData, UpdateProductData } from '@/stores/productsData'
 
@@ -13,6 +13,7 @@ const props = defineProps<{
     required: (value: any) => true | string
     positiveNumber: (value: number | null) => true | string
   }
+  isEditRestricted?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -22,6 +23,18 @@ const emit = defineEmits<{
 }>()
 
 const form = defineModel<any>('form')
+
+// When restricted, all non-reorder_level fields are disabled
+const isFieldDisabled = computed(() => {
+  return props.isEditRestricted && props.dialogMode === 'edit'
+})
+
+// Validation rule: value must be greater than 0
+const greaterThanZero = (v: number | null | undefined) => {
+  if (v === null || v === undefined) return 'Field is required'
+  if (v === 0) return 'Must be greater than 0'
+  return true
+}
 
 // Stepper state
 const step = ref(1)
@@ -80,9 +93,11 @@ function onExpiryBlur() {
   commitExpiry(clamped)
 }
 
-// Reset stepper when dialog opens
+// Reset stepper when dialog opens — restricted users jump straight to Step 2
 watch(() => props.modelValue, (val) => {
-  if (val) step.value = 1
+  if (val) {
+    step.value = props.isEditRestricted && props.dialogMode === 'edit' ? 2 : 1
+  }
 })
 </script>
 
@@ -102,7 +117,7 @@ watch(() => props.modelValue, (val) => {
           color="primary"
         ></v-icon>
         <span class="text-h6 font-weight-bold">
-          {{ dialogMode === 'create' ? 'Add New Product' : 'Edit Product' }}
+          {{ dialogMode === 'create' ? 'Add New Product' : (isEditRestricted ? 'Update Reorder Level' : 'Edit Product') }}
         </span>
         <v-spacer></v-spacer>
         <v-btn icon="mdi-close" variant="text" size="small" @click="emit('close')"></v-btn>
@@ -127,7 +142,7 @@ watch(() => props.modelValue, (val) => {
               title="Basic Info"
               subtitle="Name & identifiers"
               color="primary"
-              :editable="true"
+              :editable="!isFieldDisabled"
             >
               <template #icon>
                 <v-icon :icon="step > 1 ? 'mdi-check' : 'mdi-information-outline'"></v-icon>
@@ -140,7 +155,7 @@ watch(() => props.modelValue, (val) => {
               title="Pricing & Stock"
               subtitle="Cost & inventory"
               color="primary"
-              :editable="true"
+              :editable="!isFieldDisabled"
             >
               <template #icon>
                 <v-icon :icon="step > 2 ? 'mdi-check' : 'mdi-currency-usd'"></v-icon>
@@ -152,7 +167,7 @@ watch(() => props.modelValue, (val) => {
               title="Additional Details"
               subtitle="Extra info"
               color="primary"
-              :editable="true"
+              :editable="!isFieldDisabled"
             >
               <template #icon>
                 <v-icon icon="mdi-text-box-outline"></v-icon>
@@ -169,22 +184,22 @@ watch(() => props.modelValue, (val) => {
                 <div class="pa-4">
                   <v-row>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model="productForm.product_name" label="Product Name" prepend-inner-icon="mdi-package-variant" variant="outlined" density="comfortable" :rules="[rules.required]" required></v-text-field>
+                      <v-text-field v-model="productForm.product_name" label="Product Name" prepend-inner-icon="mdi-package-variant" variant="outlined" density="comfortable" :rules="[rules.required]" required :disabled="isFieldDisabled"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model="productForm.generic_name" label="Generic Name" prepend-inner-icon="mdi-label" variant="outlined" density="comfortable"></v-text-field>
+                      <v-text-field v-model="productForm.generic_name" label="Generic Name" prepend-inner-icon="mdi-label" variant="outlined" density="comfortable" :disabled="isFieldDisabled"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model="productForm.barcode" label="Barcode" prepend-inner-icon="mdi-barcode" variant="outlined" density="comfortable"></v-text-field>
+                      <v-text-field v-model="productForm.barcode" label="Barcode" prepend-inner-icon="mdi-barcode" variant="outlined" density="comfortable" :disabled="isFieldDisabled"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model="productForm.sku" label="SKU" prepend-inner-icon="mdi-tag" variant="outlined" density="comfortable" :rules="[rules.required]" required></v-text-field>
+                      <v-text-field v-model="productForm.sku" label="SKU" prepend-inner-icon="mdi-tag" variant="outlined" density="comfortable" :rules="[rules.required]" required :disabled="isFieldDisabled"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model="productForm.category" label="Category" prepend-inner-icon="mdi-shape" variant="outlined" density="comfortable"></v-text-field>
+                      <v-text-field v-model="productForm.category" label="Category" prepend-inner-icon="mdi-shape" variant="outlined" density="comfortable" :disabled="isFieldDisabled"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model="productForm.status" label="Status" prepend-inner-icon="mdi-information" variant="outlined" density="comfortable"></v-text-field>
+                      <v-text-field v-model="productForm.status" label="Status" prepend-inner-icon="mdi-information" variant="outlined" density="comfortable" :disabled="isFieldDisabled"></v-text-field>
                     </v-col>
                   </v-row>
                 </div>
@@ -197,22 +212,22 @@ watch(() => props.modelValue, (val) => {
                 <div class="pa-4">
                   <v-row>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model.number="productForm.current_stock" label="Current Stock" type="number" prepend-inner-icon="mdi-numeric" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
+                      <v-text-field v-model.number="productForm.current_stock" label="Current Stock" type="number" prepend-inner-icon="mdi-numeric" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0" :disabled="isFieldDisabled"></v-text-field>
+                    </v-col>
+                    <v-col v-if="!isFieldDisabled" cols="12" :sm="mobile ? 12 : 6">
+                      <v-text-field v-model.number="productForm.cost_price" label="Cost Price" type="number" step="0.01" prepend-inner-icon="mdi-currency-php" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0" :disabled="isFieldDisabled"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model.number="productForm.cost_price" label="Cost Price" type="number" step="0.01" prepend-inner-icon="mdi-currency-php" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
+                      <v-text-field v-model.number="productForm.selling_price" label="Selling Price" type="number" step="0.01" prepend-inner-icon="mdi-currency-php" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0" :disabled="isFieldDisabled"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model.number="productForm.selling_price" label="Selling Price" type="number" step="0.01" prepend-inner-icon="mdi-currency-php" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
+                      <v-text-field v-model.number="productForm.reorder_level" label="Reorder Level" type="number" step="0.01" prepend-inner-icon="mdi-alert" variant="outlined" density="comfortable" :rules="[rules.positiveNumber, greaterThanZero]" min="0"></v-text-field>
                     </v-col>
-                    <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model.number="productForm.reorder_level" label="Reorder Level" type="number" step="0.01" prepend-inner-icon="mdi-alert" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
+                    <v-col v-if="!isFieldDisabled" cols="12" :sm="mobile ? 12 : 6">
+                      <v-text-field v-model.number="productForm.offer_per_unit" label="Offer Per Unit" type="number" step="0.01" prepend-inner-icon="mdi-percent" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0" :disabled="isFieldDisabled"></v-text-field>
                     </v-col>
-                    <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model.number="productForm.offer_per_unit" label="Offer Per Unit" type="number" step="0.01" prepend-inner-icon="mdi-percent" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
-                    </v-col>
-                    <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model.number="productForm.cost_per_unit" label="Cost Per Unit" type="number" step="0.01" prepend-inner-icon="mdi-currency-php" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0"></v-text-field>
+                    <v-col v-if="!isFieldDisabled" cols="12" :sm="mobile ? 12 : 6">
+                      <v-text-field v-model.number="productForm.cost_per_unit" label="Cost Per Unit" type="number" step="0.01" prepend-inner-icon="mdi-currency-php" variant="outlined" density="comfortable" :rules="[rules.positiveNumber]" min="0" :disabled="isFieldDisabled"></v-text-field>
                     </v-col>
                   </v-row>
                 </div>
@@ -225,22 +240,22 @@ watch(() => props.modelValue, (val) => {
                 <div class="pa-4">
                   <v-row>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model.number="productForm.supplier_id" label="Supplier ID" type="number" prepend-inner-icon="mdi-truck-delivery" variant="outlined" density="comfortable" min="0"></v-text-field>
+                      <v-text-field v-model.number="productForm.supplier_id" label="Supplier ID" type="number" prepend-inner-icon="mdi-truck-delivery" variant="outlined" density="comfortable" min="0" :disabled="isFieldDisabled"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model.number="productForm.batch_no" label="Batch No." type="number" prepend-inner-icon="mdi-numeric" variant="outlined" density="comfortable"></v-text-field>
+                      <v-text-field v-model.number="productForm.batch_no" label="Batch No." type="number" prepend-inner-icon="mdi-numeric" variant="outlined" density="comfortable" :disabled="isFieldDisabled"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field :model-value="expiryText" label="Expiry Date" placeholder="MM/YYYY" maxlength="7" inputmode="numeric" prepend-inner-icon="mdi-calendar-clock" variant="outlined" density="comfortable" @update:model-value="onExpiryInput" @blur="onExpiryBlur"></v-text-field>
+                      <v-text-field :model-value="expiryText" label="Expiry Date" placeholder="MM/YYYY" maxlength="7" inputmode="numeric" prepend-inner-icon="mdi-calendar-clock" variant="outlined" density="comfortable" :disabled="isFieldDisabled" @update:model-value="onExpiryInput" @blur="onExpiryBlur"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model="productForm.item_decription" label="Item Description" prepend-inner-icon="mdi-text" variant="outlined" density="comfortable"></v-text-field>
+                      <v-text-field v-model="productForm.item_decription" label="Item Description" prepend-inner-icon="mdi-text" variant="outlined" density="comfortable" :disabled="isFieldDisabled"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-select v-model="productForm.unit" label="Unit" prepend-inner-icon="mdi-counter" variant="outlined" density="comfortable" :items="['Box', 'Pcs', 'Set', 'Unit', 'Kg', 'M']" clearable ></v-select>
+                      <v-select v-model="productForm.unit" label="Unit" prepend-inner-icon="mdi-counter" variant="outlined" density="comfortable" :items="['Box', 'Pcs', 'Set', 'Unit', 'Kg', 'M']" clearable :disabled="isFieldDisabled"></v-select>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model.number="productForm.no" label="No." type="number" prepend-inner-icon="mdi-numeric" variant="outlined" density="comfortable" min="0"></v-text-field>
+                      <v-text-field v-model.number="productForm.no" label="No." type="number" prepend-inner-icon="mdi-numeric" variant="outlined" density="comfortable" min="0" :disabled="isFieldDisabled"></v-text-field>
                     </v-col>
                   </v-row>
                 </div>
@@ -254,7 +269,7 @@ watch(() => props.modelValue, (val) => {
 
       <v-card-actions class="px-4 py-3">
         <v-btn
-          v-if="step > 1"
+          v-if="step > 1 && !isFieldDisabled"
           color="grey"
           variant="text"
           prepend-icon="mdi-arrow-left"
@@ -266,7 +281,7 @@ watch(() => props.modelValue, (val) => {
         <v-spacer></v-spacer>
         <v-btn color="grey" variant="text" @click="emit('close')" :disabled="loading">Cancel</v-btn>
         <v-btn
-          v-if="step < 3"
+          v-if="step < 3 && !isFieldDisabled"
           color="primary"
           variant="flat"
           append-icon="mdi-arrow-right"

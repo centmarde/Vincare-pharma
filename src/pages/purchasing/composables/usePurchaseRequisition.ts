@@ -1,4 +1,5 @@
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
+import { useProductsDataStore } from '@/stores/productsData'
 import { useLogRequisition } from './useLogRequisition'
 import { useToast } from 'vue-toastification'
 import { ref, computed } from 'vue'
@@ -17,12 +18,14 @@ type PRFormItem = {
   expiry_date: Date | null
   product_id?: number | null // NEW
   reorder_request_id?: number | null // NEW — tracked so we can resolve it after save
+  reorder_reason?: 'reorder_outofstock' | 'reorder_lowstock' | 'reorder_expiring' | 'reorder_expired' | null // NEW — set only when no reorder row exists yet and one should be created on successful submit
 }
 
 type SubmitResult = { success: boolean; resolvedReorderIds: number[] }
 
 export type ReorderPrefillItem = {
-  reorder_request_id: number
+  reorder_request_id?: number | null   // CHANGED — optional now. Only set when the row already exists.
+  reorder_reason?: 'reorder_outofstock' | 'reorder_lowstock' | 'reorder_expiring' | 'reorder_expired' | null // NEW
   product_id: number
   item_description: string
   unit: string
@@ -131,6 +134,7 @@ export function usePurchaseRequisition() {
         expiry_date:        null, // still needs to be picked — batch-specific
         product_id:         entry.product_id,
         reorder_request_id: entry.reorder_request_id,
+        reorder_reason:     entry.reorder_reason ?? null,   // NEW
       })
     })
   }
@@ -196,6 +200,19 @@ export function usePurchaseRequisition() {
         'purchase_requisition',
         validItems.length,
       )
+      const productsStore = useProductsDataStore()
+      const itemsNeedingReorderRow = validItems.filter(
+          i => i.reorder_reason && i.product_id != null
+        )
+        // SERIALIZED — Promise.all would race generateRONumber() calls,
+        // all seeing the same max RO-YYYY-### and minting duplicate numbers,
+        // which violates the unique constraint on transactions.reference_no.
+        for (const i of itemsNeedingReorderRow) {
+          await productsStore.createReorderRequest({
+            product_id: i.product_id!,
+            reason:     i.reorder_reason!,
+          })
+        }
       draft.clear()
       reset()
       return { success: true, resolvedReorderIds }

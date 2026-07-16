@@ -9,6 +9,7 @@ const props = defineProps<{
   itemsPerPage: number
   totalProducts: number
   sortBy: any[]
+  isEditRestricted?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -76,8 +77,8 @@ function nextPage() {
 
           <template #append>
             <div class="d-flex ga-1">
+              <v-btn v-if="!isEditRestricted" icon="mdi-delete" size="small" variant="text" color="error" @click="emit('delete', product)"></v-btn>
               <v-btn icon="mdi-pencil" size="small" variant="text" color="info" @click="emit('edit', product)"></v-btn>
-              <v-btn icon="mdi-delete" size="small" variant="text" color="error" @click="emit('delete', product)"></v-btn>
               <v-btn
                 icon="mdi-history"
                 size="small"

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useDisplay } from 'vuetify'
-import { formatCurrency, parseMonthYear, formatMonthYear } from '@/utils/helpers'
+import { formatCurrency, formatMonthYear } from '@/utils/helpers'
 import { useProductsWidget } from '@/components/products/composables/useProductsWidget.ts'
 import { useTheme } from '@/stores/useTheme'
 import { useLogsDataStore, type LogType } from '@/stores/logsData'
@@ -10,13 +10,13 @@ import ProductFormDialog from './dialogs/ProductFormDialog.vue'
 import ProductDeleteDialog from './dialogs/ProductDeleteDialog.vue'
 import StockStatusCards from '../products/StockStatusCards.vue'
 import LogsViewDialog from '@/pages/logs/dialogs/LogsViewDialog.vue'
-import { useRouter } from 'vue-router'
 import { useProductsDataStore } from '@/stores/productsData'
 import { useAuthUserStore } from '@/stores/authUser'
 import { canViewSupplierName } from '@/utils/roleHelpers'
+import PurchaseRequisitionDialog from '@/pages/purchasing/components/dialogs/PurchaseRequisitionDialog.vue'
+
 
 const { mobile } = useDisplay()
-const router = useRouter()
 const logsStore = useLogsDataStore()
 const productsDataStore = useProductsDataStore()
 const authUser = useAuthUserStore()
@@ -36,10 +36,7 @@ const {
   headers,
   loading,
   totalProducts,
-  lowStockProducts,
   products,
-  allOutOfStockCount,
-  allLowStockCount,
   rules,
   showStockDialog,
   stockDialogType,
@@ -55,6 +52,19 @@ const {
   handleDelete,
   handleSearch,
   handleTableOptions,
+  //Stock order for Purchaser
+  isEditRestricted,
+  isPurchaser,
+  reorderRequestInfo,
+  canRequestReorder,   // NEW
+  selectedReorderProductIds,
+  toggleReorderSelection,
+  showPurchaseRequisitionDialog,
+  prefillItemsForDialog,
+  reorderReasonMap,
+  showReorderPRConfirm,          // NEW
+  confirmCreatePRFromSelection,  // NEW
+  proceedCreatePRFromSelection,  // NEW
 } = useProductsWidget()
 
 function handleStockCardClick(type: string) {
@@ -63,30 +73,13 @@ function handleStockCardClick(type: string) {
   productsDataStore.fetchReorderRequests(true) // Fetch all reorder requests, including resolved ones
 }
 
-const reorderReasonMap: Record<string, 'reorder_outofstock' | 'reorder_lowstock' | 'reorder_expiring' | 'reorder_expired'> = {
-  'out-of-stock':  'reorder_outofstock',
-  'low-stock':     'reorder_lowstock',
-  'expiring-soon': 'reorder_expiring',
-  'expired':       'reorder_expired',
-}
-
-// Track which products have been reorder-requested this session
-const reorderRequestedIds = computed(() => {
-  const map = new Map<number, string>()
-  for (const r of productsDataStore.reorderRequests) {
-    if (r.product?.id != null) map.set(r.product.id, r.status)
-  }
-  return map
-})
-
 async function requestReorder(product: any) {
   const reason = reorderReasonMap[stockDialogType.value]
   if (!reason) return
   const result = await productsDataStore.createReorderRequest({ product_id: product.id, reason })
-  if (result?.success) {
-    await productsDataStore.fetchReorderRequests() // NEW — refresh so the computed picks up the new pending row
-  }
+  if (result?.success) await productsDataStore.fetchReorderRequests(true)
 }
+function onPRSubmitted(){}
 
 // Logs dialog state
 const showLogsDialog = ref(false)
@@ -141,7 +134,8 @@ function stockColor(item: any) {
           class="search-field"
           @keyup.enter="handleSearch"
         ></v-text-field>
-        <v-btn color="primary" variant="elevated" @click="openCreateDialog">
+        <!-- I want to restrict this when the user is a warehouse user -->
+        <v-btn color="primary" variant="elevated" @click="openCreateDialog" v-if="!isEditRestricted">
           <v-icon icon="mdi-plus" class="mr-1"></v-icon>
           Add Product
         </v-btn>
@@ -262,18 +256,19 @@ function stockColor(item: any) {
         <template #[`item.actions`]="{ item }">
           <div class="d-flex ga-1">
             <v-btn
-              icon="mdi-pencil"
-              size="small"
-              variant="text"
-              color="info"
-              @click="openEditDialog(item)"
-            ></v-btn>
-            <v-btn
+              v-if="!isEditRestricted"
               icon="mdi-delete"
               size="small"
               variant="text"
               color="error"
               @click="openDeleteDialog(item)"
+            ></v-btn>
+            <v-btn
+              icon="mdi-pencil"
+              size="small"
+              variant="text"
+              color="info"
+              @click="openEditDialog(item)"
             ></v-btn>
             <v-btn
               icon="mdi-history"
@@ -304,6 +299,7 @@ function stockColor(item: any) {
         :items-per-page="itemsPerPage"
         :total-products="totalProducts"
         :sort-by="sortBy"
+        :is-edit-restricted="isEditRestricted"
         @edit="openEditDialog"
         @delete="openDeleteDialog"
         @logs="openLogsDialog"
@@ -321,6 +317,7 @@ function stockColor(item: any) {
     :loading="loading"
     :mobile="mobile"
     :rules="rules"
+    :is-edit-restricted="isEditRestricted"
     @submit="handleSubmit"
     @close="closeDialog"
   />
@@ -332,6 +329,12 @@ function stockColor(item: any) {
     :mobile="mobile"
     @confirm="handleDelete"
     @close="closeDeleteDialog"
+  />
+
+  <PurchaseRequisitionDialog
+    v-model="showPurchaseRequisitionDialog"
+    :prefill-items="prefillItemsForDialog"
+    @submitted="onPRSubmitted"
   />
 
   <!-- Logs View Dialog -->
@@ -363,6 +366,14 @@ function stockColor(item: any) {
             :key="p.id"
             @click="openEditDialog(p); showStockDialog = false"
           >
+            <template #prepend>
+              <v-checkbox-btn
+              v-if="isPurchaser && stockDialogType !== 'no-reorder-level' && canRequestReorder(p.id)"
+              :model-value="selectedReorderProductIds.includes(p.id)"
+              @click.stop
+              @update:model-value="(val) => toggleReorderSelection(p.id, !!val)"
+              />
+            </template>
             <v-list-item-title class="font-weight-medium">
               {{ p.product_name }}
             </v-list-item-title>
@@ -378,40 +389,59 @@ function stockColor(item: any) {
                 Expiry: {{ p.expiry_date || 'N/A' }}
               </template>
             </v-list-item-subtitle>
-
                <template #append>
                 <div class="d-flex align-center ga-2">
                   <v-chip size="small" variant="outlined">{{ p.sku || 'No SKU' }}</v-chip>
-                    <v-btn
-                      v-if="stockDialogType !== 'no-reorder-level' && !reorderRequestedIds.has(p.id)"
-                      size="small"
-                      variant="outlined"
-                      color="primary"
-                      prepend-icon="mdi-cart-plus"
-                      class="text-none"
-                      @click.stop="requestReorder(p)"
+                  <v-btn
+                    v-if="stockDialogType !== 'no-reorder-level' && canRequestReorder(p.id)"
+                    size="small"
+                    variant="outlined"
+                    color="primary"
+                    prepend-icon="mdi-cart-plus"
+                    class="text-none"
+                    @click.stop="requestReorder(p)"
                     >
-                    Reorder
+                      Reorder
                   </v-btn>
                   <v-chip
-                    v-else-if="reorderRequestedIds.get(p.id) === 'pending'"
+                    v-if="reorderRequestInfo.get(p.id)?.status === 'pending'"
                     size="small"
                     color="green"
                     variant="tonal"
                     class="font-weight-medium"
-                  >
-                    <v-icon start size="14">mdi-check-circle</v-icon>
-                    Pending
+                    >
+                      <v-icon start size="14">mdi-check-circle</v-icon>
+                      Pending
                   </v-chip>
-                      <v-chip
-                    v-else-if="reorderRequestedIds.get(p.id) === 'approved'"
+                  <v-chip
+                    v-else-if="reorderRequestInfo.get(p.id)?.status === 'approved'"
                     size="small"
                     color="blue"
                     variant="tonal"
                     class="font-weight-medium"
-                  >
+                    >
+                    <v-icon start size="14">mdi-clipboard-check-outline</v-icon>
+                    Approved
+                  </v-chip>
+                  <v-chip
+                    v-else-if="reorderRequestInfo.get(p.id)?.status === 'awaiting_stock'"
+                    size="small"
+                    color="indigo"
+                    variant="tonal"
+                    class="font-weight-medium"
+                    >
                     <v-icon start size="14">mdi-truck-delivery-outline</v-icon>
                     Awaiting Stock
+                  </v-chip>
+                  <v-chip
+                    v-else-if="reorderRequestInfo.get(p.id)?.status === 'rejected'"
+                    size="small"
+                    color="red"
+                    variant="tonal"
+                    class="font-weight-medium"
+                    >
+                    <v-icon start size="14">mdi-close-circle-outline</v-icon>
+                    Rejected
                   </v-chip>
                 </div>
               </template>
@@ -421,8 +451,59 @@ function stockColor(item: any) {
           <v-icon icon="mdi-check-circle-outline" size="40" color="success"></v-icon>
           <p class="text-grey mt-2">No products in this category</p>
         </div>
+        <v-divider v-if="isPurchaser && selectedReorderProductIds.length" />
+        <v-card-actions
+          v-if="isPurchaser && selectedReorderProductIds.length"
+          class="pa-4 d-flex justify-end"
+        >
+          <v-btn
+            color="primary"
+            class="text-none font-weight-bold"
+            prepend-icon="mdi-file-document-edit-outline"
+            @click="confirmCreatePRFromSelection"
+          >
+            Create Purchase Requisition ({{ selectedReorderProductIds.length }})
+          </v-btn>
+        </v-card-actions>
       </v-card-text>
     </v-card>
+    <v-dialog v-model="showReorderPRConfirm" max-width="440">
+      <v-card>
+        <v-card-title class="d-flex align-center pa-4">
+          <v-icon icon="mdi-help-circle-outline" color="primary" class="mr-2"></v-icon>
+          <span class="text-h6 font-weight-bold">Confirm Reorder Selection</span>
+        </v-card-title>
+        <v-divider></v-divider>
+        <v-card-text class="pa-4">
+          <p class="mb-3">
+            You're about to flag
+            <strong>{{ selectedReorderProductIds.length }}</strong>
+            product(s) for reorder and start a new Purchase Requisition:
+          </p>
+          <ul class="pl-4">
+            <li
+              v-for="p in stockDialogProducts.filter(prod => selectedReorderProductIds.includes(prod.id))"
+              :key="p.id"
+            >
+              {{ p.product_name }}
+            </li>
+          </ul>
+        </v-card-text>
+        <v-divider></v-divider>
+        <v-card-actions class="pa-4 d-flex justify-end">
+          <v-btn variant="outlined" class="text-none" @click="showReorderPRConfirm = false">
+            Cancel
+          </v-btn>
+          <v-btn
+            color="primary"
+            class="text-none font-weight-bold"
+            @click="proceedCreatePRFromSelection"
+          >
+            Continue
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </v-dialog>
 </template>
 

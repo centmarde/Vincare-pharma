@@ -1,5 +1,5 @@
 // composables/useProductsWidget.ts
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useToast } from 'vue-toastification'
 import {
   useProductsDataStore,
@@ -8,6 +8,10 @@ import {
   type UpdateProductData,
 } from '@/stores/productsData'
 import { useLogsDataStore } from '@/stores/logsData'
+import type { ReorderPrefillItem } from '@/pages/purchasing/composables/usePurchaseRequisition'
+import { useAuthUserStore } from '@/stores/authUser'
+import { isPurchasingRole, isProductEditRestricted } from '@/utils/roleHelpers'
+
 interface StockStatusCardDef {
   type: 'out-of-stock' | 'low-stock' | 'no-reorder-level' | 'expiring-soon' | 'expired'
   label: string
@@ -16,9 +20,17 @@ interface StockStatusCardDef {
   filter: (p: ProductType) => boolean
 }
 
+  export const reorderReasonMap: Record<string, 'reorder_outofstock' | 'reorder_lowstock' | 'reorder_expiring' | 'reorder_expired'> = {
+    'out-of-stock':  'reorder_outofstock',
+    'low-stock':     'reorder_lowstock',
+    'expiring-soon': 'reorder_expiring',
+    'expired':       'reorder_expired',
+  }
+
 export function useProductsWidget() {
   const toast = useToast()
   const productsStore = useProductsDataStore()
+  const authStore = useAuthUserStore()
   const logsStore = useLogsDataStore()
 
   // Dialog states
@@ -26,7 +38,8 @@ export function useProductsWidget() {
   const showDeleteDialog = ref(false)
   const dialogMode = ref<'create' | 'edit'>('create')
   const EXPIRY_WARNING_DAYS = 30
-
+  const isPurchaser = computed(() => isPurchasingRole(authStore.userRole))
+  const isEditRestricted = computed(() => isProductEditRestricted(authStore.userRole))
 
   // Form state
   const form = ref<any>(null)
@@ -66,7 +79,6 @@ export function useProductsWidget() {
 
   // Stock status dialog
   const showStockDialog = ref(false)
-  // const stockDialogType = ref<'out-of-stock' | 'low-stock' | 'no-reorder-level' | 'expiring-soon' | 'expired'>('out-of-stock')
 
   // Eligible product IDs (those in stock_in transactions)
   const eligibleProductIds = ref<Set<number>>(new Set())
@@ -95,30 +107,11 @@ export function useProductsWidget() {
   const loading = computed(() => productsStore.loading)
   const totalProducts = computed(() => productsStore.totalCount)
 
-  const lowStockProducts = computed(() =>
-    products.value.filter(p => {
-      const stock = p.current_stock ?? 0
-      const reorder = p.reorder_level ?? 0
-      return reorder > 0 && stock <= reorder
-    })
-  )
-
   // All-products stock status counts (not paginated, from the full store)
   const allEligibleProducts = computed(() =>
     productsStore.products.filter(
       p => p.sku != null && p.sku !== 'null' && eligibleProductIds.value.has(p.id)
     )
-  )
-
-  const allOutOfStockCount = computed(
-    () => allEligibleProducts.value.filter(p => (p.current_stock ?? 0) <= 0).length
-  )
-
-  const allLowStockCount = computed(
-    () => allEligibleProducts.value.filter(p => {
-      const stock = p.current_stock ?? 0
-      return stock > 0 && p.reorder_level && stock <= p.reorder_level
-    }).length
   )
 
   function daysUntilExpiry(expiryDate: string | null | undefined): number | null {
@@ -357,6 +350,69 @@ const stockDialogProducts = computed<ProductType[]>(() => {
     fetchProducts()
   }
 
+  const reorderRequestInfo = computed(() => {
+    const map = new Map<number, { id: number; status: string }>()
+    for (const r of productsStore.reorderRequests) {
+      // FIXED — reorderRequests is sorted created_at desc (newest first).
+      // The old `.set()` here unconditionally overwrote, so iterating
+      // forward left the OLDEST entry per product in the map. That's now a
+      // real bug: a rejected row followed by a fresh pending re-flag would
+      // show as "Rejected" forever. Guard with `!map.has` so only the first
+      // (i.e. most recent) entry per product sticks.
+      if (r.product?.id != null && !map.has(r.product.id)) {
+        map.set(r.product.id, { id: r.id, status: r.status })
+      }
+    }
+    return map
+  })
+
+  // NEW — a product can be reordered if it has no request yet, OR its most
+  // recent request was rejected (re-flagging is allowed after rejection).
+  function canRequestReorder(productId: number): boolean {
+    const info = reorderRequestInfo.value.get(productId)
+    return !info || info.status === 'rejected'
+  }
+
+  // Purchaser-only bulk reorder-to-PR flow
+  const selectedReorderProductIds = ref<number[]>([])
+  const showPurchaseRequisitionDialog = ref(false)
+  const prefillItemsForDialog = ref<ReorderPrefillItem[]>([])
+  const showReorderPRConfirm = ref(false)
+
+  function toggleReorderSelection(productId: number, checked: boolean) {
+    if (checked) selectedReorderProductIds.value.push(productId)
+    else selectedReorderProductIds.value = selectedReorderProductIds.value.filter(id => id !== productId)
+  }
+
+    function confirmCreatePRFromSelection() {
+      if (!selectedReorderProductIds.value.length) return
+      showReorderPRConfirm.value = true
+    }
+
+    function proceedCreatePRFromSelection() {
+      const reason = reorderReasonMap[stockDialogType.value]
+      if (!reason || !selectedReorderProductIds.value.length) return
+
+      prefillItemsForDialog.value = stockDialogProducts.value
+        .filter(p => selectedReorderProductIds.value.includes(p.id))
+        .map(p => ({
+          reorder_request_id: null,     // no row exists yet
+          reorder_reason:     reason,   // tells the PR composable to create one on submit
+          product_id:         p.id,
+          item_description:   p.product_name ?? '',
+          unit:               p.unit ?? 'Box',
+          supplier_id:        p.supplier_id ?? null,
+          cost_per_unit:      p.cost_price ?? 0,
+          offer_per_unit:     p.selling_price ?? 0,
+        }))
+
+      showReorderPRConfirm.value = false
+      showStockDialog.value = false
+      showPurchaseRequisitionDialog.value = true
+    }
+
+
+
   async function handleTableOptions(options: any) {
     page.value = options.page
     itemsPerPage.value = options.itemsPerPage
@@ -369,6 +425,14 @@ const stockDialogProducts = computed<ProductType[]>(() => {
     await fetchEligibleProductIds()
     await fetchProducts()
     productsStore.startRealtime()
+  })
+
+  // Clear stale selection state when dialogs close
+  watch(showStockDialog, (open) => {
+    if (!open) selectedReorderProductIds.value = []
+  })
+  watch(showPurchaseRequisitionDialog, (open) => {
+    if (!open) prefillItemsForDialog.value = []
   })
 
   return {
@@ -391,9 +455,6 @@ const stockDialogProducts = computed<ProductType[]>(() => {
     products,
     loading,
     totalProducts,
-    lowStockProducts,
-    allOutOfStockCount,
-    allLowStockCount,
     stockStatusCards,
     activeStockCard,
     stockDialogProducts,
@@ -409,5 +470,18 @@ const stockDialogProducts = computed<ProductType[]>(() => {
     handleDelete,
     handleSearch,
     handleTableOptions,
+    //Stock order for Purchaser
+    isEditRestricted,
+    isPurchaser,
+    reorderRequestInfo,
+    canRequestReorder,   // NEW
+    selectedReorderProductIds,
+    toggleReorderSelection,
+    showPurchaseRequisitionDialog,
+    prefillItemsForDialog,
+    reorderReasonMap,
+    confirmCreatePRFromSelection,
+    proceedCreatePRFromSelection,
+    showReorderPRConfirm,
   }
 }
