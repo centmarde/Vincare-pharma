@@ -11,12 +11,16 @@ defineProps<{
   requiresNote: boolean
   canSubmit: boolean
   loading: boolean
+  isShortfall: boolean
+  recommendReceivable: boolean
+  resolution: 'paid_on_spot' | 'employee_receivable' | null
 }>()
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
   (e: 'update:actualAmount', value: number | null): void
   (e: 'update:notes', value: string): void
+  (e: 'update:resolution', value: 'paid_on_spot' | 'employee_receivable' | null): void
   (e: 'submit'): void
 }>()
 
@@ -96,6 +100,24 @@ const noteRequiredRule = (v: string) => !!v?.trim() || 'A note is required for a
             hide-details="auto"
             @update:model-value="emit('update:notes', $event)"
           />
+
+          <template v-if="isShortfall">
+            <v-divider class="my-4" />
+            <label class="field-label">
+              How is the shortage being handled? <span class="text-error">*</span>
+            </label>
+            <v-alert v-if="recommendReceivable" type="warning" variant="tonal" density="compact" class="mb-2">
+              This is a large shortage (₱1,000+) — recording it as an employee receivable is recommended over an on-the-spot payment.
+            </v-alert>
+            <v-radio-group
+              :model-value="resolution"
+              hide-details
+              @update:model-value="emit('update:resolution', $event)"
+            >
+              <v-radio value="paid_on_spot" label="Cashier pays it now — till is balanced on the spot" />
+              <v-radio value="employee_receivable" label="Too big — record as a receivable owed by the employee" />
+            </v-radio-group>
+          </template>
         </template>
       </v-card-text>
 

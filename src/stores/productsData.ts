@@ -1,4 +1,4 @@
-import { generateRONumber } from '@/utils/generativeHelpers'
+import { generateRONumber, insertWithDocRetry } from '@/utils/generativeHelpers'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import type { SupplierType } from '@/stores/suppliersData'
 import { useAuthUserStore } from './authUser'
@@ -367,18 +367,20 @@ export const useProductsDataStore = defineStore('productsData', () => {
     const productName = productData?.product_name ?? `Product #${payload.product_id}`
     const reasonLabel = payload.reason.replace('reorder_', '').replace('_', ' ')  
 
-    const referenceNo = await generateRONumber()
-    const { data: txData, error: txError } = await supabase
-      .from('transactions')
-      .insert({
-        transaction_type: payload.reason,
-        status:           'pending',
-        created_by:       user.id,
-        reference_no:     referenceNo,
-        remarks:          `Reorder "${productName}" flagged from warehouse (${reasonLabel})`,
-      })
-      .select('id')
-      .single()
+    const { data: txData, error: txError } = await insertWithDocRetry<{ id: number }>(
+      () => generateRONumber(),
+      async (docNo) => supabase
+        .from('transactions')
+        .insert({
+          transaction_type: payload.reason,
+          status:           'pending',
+          created_by:       user.id,
+          reference_no:     docNo,
+          remarks:          `Reorder "${productName}" flagged from warehouse (${reasonLabel})`,
+        })
+        .select('id')
+        .single(),
+    )
 
     if (txError || !txData) {
       toast.error('Failed to submit reorder request.')

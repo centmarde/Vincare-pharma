@@ -104,6 +104,13 @@ export const navigationConfig: NavigationGroup[] = [
         permission: 'executive.dashboard.view',
         keywords: 'exec, overview, kpi, metrics, reports',
       },
+      {
+        title: 'Change Requests',
+        icon: 'mdi-clipboard-edit-outline',
+        route: '/finance/change-requests',
+        permission: 'executive.changeRequests.manage',
+        keywords: 'approve, edit, undo, void, amendment, change request',
+      },
     ],
   },
   {
@@ -367,6 +374,12 @@ export const navigationConfig: NavigationGroup[] = [
         icon: 'mdi-book-open-variant',
         route: '/finance/general-journal',
         permission: 'finance.generalJournal.manage',
+      },
+      {
+        title: 'Chart of Accounts',
+        icon: 'mdi-format-list-bulleted',
+        route: '/finance/chart-of-accounts',
+        permission: 'finance.chartOfAccounts.manage',
       },
     ],
   },

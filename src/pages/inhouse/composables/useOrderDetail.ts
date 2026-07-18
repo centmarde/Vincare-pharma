@@ -6,7 +6,11 @@ import { useDeliveryReceiptsDataStore, type DeliveryReceiptType } from '@/stores
 import { useProductsDataStore } from '@/stores/productsData'
 import { useProcurementDataStore } from '@/stores/procurementData'
 import { useAuthUserStore } from '@/stores/authUser'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
+import { formatCurrency } from '@/utils/helpers'
 import type { CollectionType } from '@/stores/ethicalData'
+
+const { confirmDialog } = useConfirmDialog()
 
 export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: () => void) {
   const store = useInhouseDataStore()
@@ -205,6 +209,18 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
 
   async function recordPayment() {
     const o = order(); if (!o || payAmount.value == null || payAmount.value <= 0) return
+
+    const willFullyPay = payAmount.value >= balance.value
+    const summary = [
+      `Amount: ${formatCurrency(payAmount.value)}`,
+      `Reference / OR #: ${payReference.value || '—'}`,
+      `Remarks: ${payRemarks.value || '—'}`,
+      `Remaining balance after this: ${formatCurrency(Math.max(0, balance.value - payAmount.value))}`,
+      willFullyPay ? 'This will mark the order as PAID IN FULL.' : '',
+    ].filter(Boolean).join('\n')
+    const ok = await confirmDialog(summary, { title: 'Confirm Payment', confirmText: 'Record Payment' })
+    if (!ok) return
+
     loading.value = true
     const result = await store.recordPayment({
       orderId:   o.id,

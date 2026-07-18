@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CASH_CLASSIFICATIONS } from '@/utils/cashAccountTypes'
+import { CASH_CLASSIFICATIONS, classificationMeta } from '@/utils/cashAccountTypes'
 import type { ClassifiedCashAccount, CreateCashAccountPayload } from '@/utils/cashAccountTypes'
 import { formatCurrency } from '@/utils/helpers'
 import { useCashAccountsManager } from '../composables/useCashAccountsManager'
@@ -14,7 +14,7 @@ const emit = defineEmits<{
 }>()
 
 const {
-  groupedAccounts, totalActiveBalance,
+  groupedAccounts, totalActiveBalance, selectedClassificationMeta,
   showAddDialog, name, classification, openingBalance, isActive, canSubmit,
   openAddDialog, cancelAdd, buildPayload,
 } = useCashAccountsManager(() => props.accounts)
@@ -117,15 +117,26 @@ const submitNewAccount = () => {
             class="mb-3"
           >
             <template #item="{ props: itemProps, item }">
-              <v-list-item v-bind="itemProps" :subtitle="item.raw.description">
+              <v-list-item v-bind="itemProps" :subtitle="classificationMeta(item.value).description">
                 <template #prepend>
-                  <v-icon :icon="item.raw.icon" :color="item.raw.color" size="20" class="mr-2" />
+                  <v-icon
+                    :icon="classificationMeta(item.value).icon"
+                    :color="classificationMeta(item.value).color"
+                    size="20"
+                    class="mr-2"
+                  />
                 </template>
               </v-list-item>
             </template>
-            <template #selection="{ item }">
-              <v-chip :color="item.raw.color" size="small" variant="tonal" :prepend-icon="item.raw.icon">
-                {{ item.raw.title }}
+            <template #selection>
+              <v-chip
+                v-if="selectedClassificationMeta"
+                :color="selectedClassificationMeta.color"
+                size="small"
+                variant="tonal"
+                :prepend-icon="selectedClassificationMeta.icon"
+              >
+                {{ selectedClassificationMeta.title }}
               </v-chip>
             </template>
           </v-select>

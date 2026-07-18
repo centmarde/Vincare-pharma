@@ -1,6 +1,10 @@
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import { useGeneralJournal } from '../composables/useGeneralJournal'
 import ManualEntryDialog from './dialogs/ManualEntryDialog.vue'
+import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
+import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
+import type { JournalEntry } from '@/stores/glData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
@@ -9,14 +13,32 @@ const {
   showManualEntryDialog, manualEntryDate, manualDescription, manualLines,
   manualTotalDebit, manualTotalCredit, manualIsBalanced,
   addManualLine, removeManualLine,
-  fetchJournal, submitManualEntry, approveEntry, reverseEntry, resyncLedger,
+  fetchJournal, submitManualEntry, approveEntry, resyncLedger,
 } = useGeneralJournal()
+
+// Reversing a posted entry now needs executive approval. An entry is corrected
+// by reversal, never edited — so the request is void-only.
+const { showDialog, config, isPending, loadPending, open, submit, submitting } =
+  useChangeRequestFiling('gl', 'journal_entry')
+
+function openChange(entry: JournalEntry) {
+  open({
+    id: entry.id,
+    ref: entry.entry_no,
+    fields: [],
+    voidSummary: `Reverse ${entry.entry_no ?? `entry #${entry.id}`} — posts a mirror entry so the original nets to zero (the original stays in the ledger as 'reversed').`,
+    allowEdit: false,
+    allowVoid: true,
+  })
+}
 
 function statusColor(status: string): string {
   if (status === 'posted') return 'success'
   if (status === 'draft') return 'warning'
   return 'grey'
 }
+
+onMounted(loadPending)
 </script>
 
 <template>
@@ -75,8 +97,9 @@ function statusColor(status: string): string {
                 <td>
                   <v-btn v-if="entry.status === 'draft'" size="x-small" variant="text" color="success"
                     @click="approveEntry(entry.id)">Approve</v-btn>
-                  <v-btn v-if="entry.status === 'posted'" size="x-small" variant="text" color="error"
-                    @click="reverseEntry(entry.id)">Reverse</v-btn>
+                  <v-chip v-else-if="entry.status === 'posted' && isPending(entry.id)" size="x-small" color="warning" variant="tonal" label>Reversal pending</v-chip>
+                  <v-btn v-else-if="entry.status === 'posted'" size="x-small" variant="text" color="error"
+                    @click="openChange(entry)">Reverse</v-btn>
                 </td>
               </tr>
               <tr v-for="line in entry.lines" :key="`${entry.id}-${line.id}`" class="text-caption">
@@ -111,5 +134,16 @@ function statusColor(status: string): string {
       @add-line="addManualLine"
       @remove-line="removeManualLine"
       @submit="submitManualEntry" />
+
+    <ChangeRequestDialog
+      v-if="config"
+      v-model="showDialog"
+      :target-ref="config.ref"
+      :fields="config.fields"
+      :allow-edit="config.allowEdit"
+      :allow-void="config.allowVoid"
+      :void-summary="config.voidSummary"
+      :loading="submitting"
+      @submit="submit" />
   </v-container>
 </template>

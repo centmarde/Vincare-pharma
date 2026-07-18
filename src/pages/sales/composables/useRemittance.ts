@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useRemittancesDataStore } from '@/stores/remittancesData'
+import { useRemittancesDataStore, largeDiscrepancyThreshold } from '@/stores/remittancesData'
 import { useOutletsDataStore } from '@/stores/outletsData'
 import type { ExpectedSummary } from '@/stores/remittancesData'
 
@@ -11,6 +11,9 @@ export const headers = [
   { title: 'EXPECTED',     key: 'expected_amount',  sortable: false, align: 'center' as const },
   { title: 'ACTUAL',       key: 'actual_amount',    sortable: false, align: 'center' as const },
   { title: 'DISCREPANCY',  key: 'discrepancy',      sortable: false, align: 'center' as const },
+  { title: 'RESOLUTION',   key: 'resolution',       sortable: false, align: 'center' as const },
+  { title: 'NOTES',        key: 'notes',            sortable: false, align: 'center' as const },
+  { title: '',             key: 'cr_actions',       sortable: false, align: 'center' as const },
 ] as const
 
 export function useRemittance() {
@@ -25,6 +28,7 @@ export function useRemittance() {
   const expected = ref<ExpectedSummary>({ expected: 0, saleCount: 0 })
   const actualAmount = ref<number | null>(null)
   const notes = ref('')
+  const resolution = ref<'paid_on_spot' | 'employee_receivable' | null>(null)
 
   // ─── Computed ─────────────────────────────────────────────────────
   const outletOptions = computed(() =>
@@ -37,10 +41,17 @@ export function useRemittance() {
   // before the cashier has typed anything (null defaults to 0 in the
   // discrepancy calc, which would otherwise read as a mismatch on open).
   const requiresNote = computed(() => actualAmount.value != null && discrepancy.value !== 0)
+  // A shortfall (till has less than expected) is money owed BY the till —
+  // it needs an explicit resolution choice. An overage isn't owed by anyone,
+  // so it's just banked as-is.
+  const isShortfall = computed(() => actualAmount.value != null && discrepancy.value < 0)
+  const recommendReceivable = computed(() => Math.abs(discrepancy.value) >= largeDiscrepancyThreshold)
+  const requiresResolution = computed(() => isShortfall.value)
   const canSubmit = computed(() =>
     expected.value.saleCount > 0 &&
     actualAmount.value != null &&
-    (!requiresNote.value || notes.value.trim().length > 0),
+    (!requiresNote.value || notes.value.trim().length > 0) &&
+    (!requiresResolution.value || resolution.value != null),
   )
 
   // ─── Actions ──────────────────────────────────────────────────────
@@ -65,6 +76,7 @@ export function useRemittance() {
     expected.value = await remitStore.computeExpected(selectedOutletId.value)
     actualAmount.value = null
     notes.value = ''
+    resolution.value = null
     showSubmitDialog.value = true
   }
 
@@ -74,6 +86,7 @@ export function useRemittance() {
       outletId:     selectedOutletId.value,
       actualAmount: actualAmount.value ?? 0,
       notes:        notes.value || undefined,
+      resolution:   resolution.value,
     })
     if (result.success) showSubmitDialog.value = false
   }
@@ -81,8 +94,8 @@ export function useRemittance() {
   return {
     remittances, loading,
     selectedOutletId, outletOptions, setOutlet,
-    showSubmitDialog, expected, actualAmount, notes,
-    discrepancy, requiresNote, canSubmit,
+    showSubmitDialog, expected, actualAmount, notes, resolution,
+    discrepancy, requiresNote, canSubmit, isShortfall, recommendReceivable,
     init, openSubmitDialog, handleSubmit,
   }
 }
