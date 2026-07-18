@@ -11,7 +11,7 @@ import type { OutletType } from '@/stores/outletsData'
 
 // A shortfall this large is flagged as too big to reasonably ask a cashier to
 // cover out of pocket on the spot — still an editable choice, not a hard gate.
-export const LARGE_DISCREPANCY_THRESHOLD = 1000
+export const largeDiscrepancyThreshold = 1000
 
 const toast = useToast()
 

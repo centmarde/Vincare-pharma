@@ -6,7 +6,7 @@ import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
 import type { InhouseOrderType } from '@/stores/inhouseData'
 import type { CollectionType } from '@/stores/ethicalData'
-import { EXPENSE_PAYMENT_METHODS } from '@/stores/financeData'
+import { expensePaymentMethods } from '@/stores/financeData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const props = defineProps<{
@@ -43,7 +43,7 @@ function requestUndoPayment(p: CollectionType) {
     ref: props.order?.order_no ?? null,
     fields: [
       { key: 'amount', label: 'Amount', value: p.amount ?? 0, type: 'number' },
-      { key: 'payment_method', label: 'Payment Method', value: p.payment_method, type: 'select', items: EXPENSE_PAYMENT_METHODS.map((m) => ({ title: m.title, value: m.value })) },
+      { key: 'payment_method', label: 'Payment Method', value: p.payment_method, type: 'select', items: expensePaymentMethods.map((m) => ({ title: m.title, value: m.value })) },
       { key: 'reference_no', label: 'Reference / OR #', value: p.reference_no, type: 'text' },
     ],
     voidSummary: `Void this ${formatCurrency(p.amount ?? 0)} payment on ${props.order?.order_no ?? 'the order'} — reverses it in the ledger (DR AR / CR cash) and rolls the order's paid amount + status back.`,

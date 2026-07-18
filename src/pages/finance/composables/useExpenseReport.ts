@@ -1,10 +1,10 @@
 import { ref, computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useFinanceDataStore, EXPENSE_CATEGORIES } from '@/stores/financeData'
+import { useFinanceDataStore, expenseCategories } from '@/stores/financeData'
 import type { ExpenseCategory, ExpenseType } from '@/stores/financeData'
 
 const categoryTitle = (value: ExpenseCategory) =>
-  EXPENSE_CATEGORIES.find((c) => c.value === value)?.title ?? value
+  expenseCategories.find((c) => c.value === value)?.title ?? value
 
 export function useExpenseReport() {
   const store = useFinanceDataStore()

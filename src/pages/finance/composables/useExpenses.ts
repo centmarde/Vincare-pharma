@@ -3,7 +3,7 @@ import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import {
   useFinanceDataStore,
-  EXPENSE_CATEGORIES, EXPENSE_DEPARTMENTS, EXPENSE_PAYMENT_METHODS,
+  expenseCategories, expenseDepartments, expensePaymentMethods,
 } from '@/stores/financeData'
 import type { ExpenseType } from '@/stores/financeData'
 import { useChangeRequestsDataStore } from '@/stores/changeRequestsData'
@@ -106,11 +106,11 @@ export function useExpenses() {
     if (!e) return []
     return [
       { key: 'amount', label: 'Amount', value: e.amount ?? 0, type: 'number' },
-      { key: 'category', label: 'Category', value: e.category, type: 'select', items: EXPENSE_CATEGORIES.map((c) => ({ title: c.title, value: c.value })) },
+      { key: 'category', label: 'Category', value: e.category, type: 'select', items: expenseCategories.map((c) => ({ title: c.title, value: c.value })) },
       { key: 'paid_at', label: 'Date', value: (e.paid_at ?? '').slice(0, 10), type: 'date' },
       { key: 'cash_account_id', label: 'Account', value: e.cash_account_id, type: 'select', items: cashAccounts.value.map((a) => ({ title: a.name, value: a.id })) },
-      { key: 'department', label: 'Department', value: e.department, type: 'select', items: EXPENSE_DEPARTMENTS.map((d) => ({ title: d.title, value: d.value })) },
-      { key: 'payment_method', label: 'Payment Method', value: e.payment_method, type: 'select', items: EXPENSE_PAYMENT_METHODS.map((m) => ({ title: m.title, value: m.value })) },
+      { key: 'department', label: 'Department', value: e.department, type: 'select', items: expenseDepartments.map((d) => ({ title: d.title, value: d.value })) },
+      { key: 'payment_method', label: 'Payment Method', value: e.payment_method, type: 'select', items: expensePaymentMethods.map((m) => ({ title: m.title, value: m.value })) },
       { key: 'paid_to', label: 'Paid To', value: e.paid_to, type: 'text' },
       { key: 'or_si_no', label: 'OR/SI No.', value: e.or_si_no, type: 'text' },
       { key: 'remarks', label: 'Description', value: e.remarks, type: 'text' },

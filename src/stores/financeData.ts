@@ -17,7 +17,7 @@ const toast = useToast()
 // exists in the hub (sale, ethical_order/collections, inhouse_order, stock_in,
 // remittance) via plain select + JS reduce, mirroring ethicalData.fetchCommissionSummary.
 
-export const EXPENSE_CATEGORIES = [
+export const expenseCategories = [
   { value: 'rent', title: 'Rent' },
   { value: 'utilities', title: 'Utilities' },
   { value: 'supplies', title: 'Supplies' },
@@ -32,16 +32,16 @@ export const EXPENSE_CATEGORIES = [
   { value: 'taxes_licenses', title: 'Taxes & Licenses' },
 ] as const
 
-export type ExpenseCategory = typeof EXPENSE_CATEGORIES[number]['value']
+export type ExpenseCategory = typeof expenseCategories[number]['value']
 
-export const EXPENSE_DEPARTMENTS = [
+export const expenseDepartments = [
   { value: 'VP-Admin', title: 'VP-Admin' },
   { value: 'VP-Selling', title: 'VP-Selling' },
 ] as const
 
-export type ExpenseDepartment = typeof EXPENSE_DEPARTMENTS[number]['value']
+export type ExpenseDepartment = typeof expenseDepartments[number]['value']
 
-export const EXPENSE_PAYMENT_METHODS = [
+export const expensePaymentMethods = [
   { value: 'cash', title: 'Cash' },
   { value: 'petty_cash', title: 'Petty Cash' },
   { value: 'cheque', title: 'Cheque' },
@@ -52,7 +52,7 @@ export const EXPENSE_PAYMENT_METHODS = [
   { value: 'other', title: 'Other' },
 ] as const
 
-export type ExpensePaymentMethod = typeof EXPENSE_PAYMENT_METHODS[number]['value']
+export type ExpensePaymentMethod = typeof expensePaymentMethods[number]['value']
 
 export type CashClassification = 'CASA' | 'TIME_INVESTMENT' | 'PETTY_CASH'
 
@@ -444,7 +444,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     if (payload.amount <= 0) {
       toast.error('Expense amount must be positive.'); loading.value = false; return { success: false }
     }
-    if (!EXPENSE_CATEGORIES.some(c => c.value === payload.category)) {
+    if (!expenseCategories.some(c => c.value === payload.category)) {
       toast.error(`Invalid expense category: ${payload.category}`); loading.value = false; return { success: false }
     }
     if (!payload.cashAccountId) {

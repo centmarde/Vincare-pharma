@@ -4,7 +4,7 @@ import { useSupplierPayments, apHeaders, paymentHistoryHeaders } from '../compos
 import SupplierPaymentDialog from './dialogs/SupplierPaymentDialog.vue'
 import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
-import { EXPENSE_PAYMENT_METHODS, type SupplierPaymentType } from '@/stores/financeData'
+import { expensePaymentMethods, type SupplierPaymentType } from '@/stores/financeData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
@@ -23,7 +23,7 @@ function openChange(p: SupplierPaymentType) {
     ref: p.reference_no,
     fields: [
       { key: 'amount', label: 'Amount', value: p.amount ?? 0, type: 'number' },
-      { key: 'payment_method', label: 'Payment Method', value: p.payment_method, type: 'select', items: EXPENSE_PAYMENT_METHODS.map((m) => ({ title: m.title, value: m.value })) },
+      { key: 'payment_method', label: 'Payment Method', value: p.payment_method, type: 'select', items: expensePaymentMethods.map((m) => ({ title: m.title, value: m.value })) },
       { key: 'remarks', label: 'Remarks', value: p.remarks, type: 'text' },
     ],
     voidSummary: `Void ${p.reference_no ?? `payment #${p.id}`} — reverses its ledger entry (DR Accounts Payable / CR cash) and restores ${formatCurrency(p.amount ?? 0)} to ${p.supplier_name ?? 'the supplier'}'s payable balance.`,

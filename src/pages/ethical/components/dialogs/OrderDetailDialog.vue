@@ -7,7 +7,7 @@ import EthicalInvoiceDialog from './EthicalInvoiceDialog.vue'
 import DeliveryReceiptDialog from '@/components/deliveryReceipts/DeliveryReceiptDialog.vue'
 import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
-import { EXPENSE_PAYMENT_METHODS } from '@/stores/financeData'
+import { expensePaymentMethods } from '@/stores/financeData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const props = defineProps<{ modelValue: boolean; orderId: number | null }>()
@@ -46,7 +46,7 @@ function requestUndoCollection(c: CollectionType) {
     ref: order.value?.order_no ?? null,
     fields: [
       { key: 'amount', label: 'Amount', value: c.amount ?? 0, type: 'number' },
-      { key: 'payment_method', label: 'Payment Method', value: c.payment_method, type: 'select', items: EXPENSE_PAYMENT_METHODS.map((m) => ({ title: m.title, value: m.value })) },
+      { key: 'payment_method', label: 'Payment Method', value: c.payment_method, type: 'select', items: expensePaymentMethods.map((m) => ({ title: m.title, value: m.value })) },
       { key: 'reference_no', label: 'Reference / OR #', value: c.reference_no, type: 'text' },
     ],
     voidSummary: `Void this ${formatCurrency(c.amount ?? 0)} collection on ${order.value?.order_no ?? 'the order'} — reverses it in the ledger (DR AR / CR cash) and rolls the order's paid amount + status back.`,

@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useRemittancesDataStore, LARGE_DISCREPANCY_THRESHOLD } from '@/stores/remittancesData'
+import { useRemittancesDataStore, largeDiscrepancyThreshold } from '@/stores/remittancesData'
 import { useOutletsDataStore } from '@/stores/outletsData'
 import type { ExpectedSummary } from '@/stores/remittancesData'
 
@@ -45,7 +45,7 @@ export function useRemittance() {
   // it needs an explicit resolution choice. An overage isn't owed by anyone,
   // so it's just banked as-is.
   const isShortfall = computed(() => actualAmount.value != null && discrepancy.value < 0)
-  const recommendReceivable = computed(() => Math.abs(discrepancy.value) >= LARGE_DISCREPANCY_THRESHOLD)
+  const recommendReceivable = computed(() => Math.abs(discrepancy.value) >= largeDiscrepancyThreshold)
   const requiresResolution = computed(() => isShortfall.value)
   const canSubmit = computed(() =>
     expected.value.saleCount > 0 &&

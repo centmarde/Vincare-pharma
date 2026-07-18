@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { watch } from 'vue'
-import { EXPENSE_CATEGORIES, EXPENSE_DEPARTMENTS } from '@/stores/financeData'
+import { expenseCategories, expenseDepartments } from '@/stores/financeData'
 import { DEFAULT_REPLENISH_THRESHOLD } from '@/utils/cashAccountTypes'
 import type { AddExpensePayload, ClassifiedCashAccount } from '@/utils/cashAccountTypes'
 import { formatCurrency } from '@/utils/helpers'
@@ -60,7 +60,7 @@ const close = () => {
         <label class="field-label">Category <span class="text-error">*</span></label>
         <v-select
           v-model="category"
-          :items="EXPENSE_CATEGORIES"
+          :items="expenseCategories"
           item-title="title"
           item-value="value"
           placeholder="Select category"
@@ -197,7 +197,7 @@ const close = () => {
         <label class="field-label">Department <span class="text-error">*</span></label>
         <v-select
           v-model="department"
-          :items="EXPENSE_DEPARTMENTS"
+          :items="expenseDepartments"
           item-title="title"
           item-value="value"
           placeholder="Select department"
