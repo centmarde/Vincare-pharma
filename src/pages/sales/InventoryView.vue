@@ -6,7 +6,7 @@ import OutletInventory from './components/OutletInventory.vue'
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container>
+      <v-container fluid>
         <OutletInventory />
       </v-container>
     </template>

@@ -6,7 +6,7 @@ import SalesHistory from './components/SalesHistory.vue'
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container>
+      <v-container fluid>
         <SalesHistory />
       </v-container>
     </template>

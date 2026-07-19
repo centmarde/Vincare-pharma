@@ -38,7 +38,7 @@ onMounted(async () => { await init(); await loadPending() })
 </script>
 
 <template>
-  <v-container fluid class="pa-2 fill-height align-start">
+
     <v-card class="mx-auto w-100" rounded="lg" elevation="1">
 
       <v-card-title class="d-flex justify-space-between align-center pa-5 flex-wrap ga-3">
@@ -169,7 +169,7 @@ onMounted(async () => { await init(); await loadPending() })
       @submit="handleSubmit"
     />
 
-  </v-container>
+
 </template>
 
 <style scoped>
