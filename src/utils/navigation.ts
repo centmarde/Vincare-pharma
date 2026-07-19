@@ -103,14 +103,7 @@ export const navigationConfig: NavigationGroup[] = [
         route: '/executive/dashboard',
         permission: 'executive.dashboard.view',
         keywords: 'exec, overview, kpi, metrics, reports',
-      },
-      {
-        title: 'Change Requests',
-        icon: 'mdi-clipboard-edit-outline',
-        route: '/finance/change-requests',
-        permission: 'executive.changeRequests.manage',
-        keywords: 'approve, edit, undo, void, amendment, change request',
-      },
+      }
     ],
   },
   {
