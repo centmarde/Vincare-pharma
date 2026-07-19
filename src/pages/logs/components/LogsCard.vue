@@ -26,7 +26,7 @@ const modules = [
   },
   { key: 'stock_in', label: 'Stock In', icon: 'mdi-arrow-collapse-down' },
   { key: 'stock_out', label: 'Stock Out', icon: 'mdi-arrow-collapse-up' },
-  { key: 'sale', label: 'Sale', icon: 'mdi-cart-outline' },
+  { key: 'pos', label: 'POS', icon: 'mdi-cart-check' },
   { key: 'inhouse', label: 'Inhouse Order', icon: 'mdi-swap-horizontal-bold' },
   {
     key: 'reorder',
@@ -34,11 +34,15 @@ const modules = [
     icon: 'mdi-cart-arrow-down',
   },
   {
-    key: 'purchase_return',
-    label: 'Return (Purchase)',
-    icon: 'mdi mdi-keyboard-return',
+    key: 'warehouse',
+    label: 'Warehouse',
+    icon: 'mdi-warehouse',
   },
-  { key: 'sales_return', label: 'Return (Sales)', icon: 'mdi-archive-arrow-up' },
+  {
+    key: 'ethical',
+    label: 'Ethical',
+    icon: 'mdi-stethoscope',
+  },
 ]
 
 const colorFor = (key: string) => getModuleColor(key)
