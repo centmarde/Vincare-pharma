@@ -6,7 +6,7 @@ import PosTerminal from './components/PosTerminal.vue'
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container>
+      <v-container fluid>
         <PosTerminal />
       </v-container>
     </template>

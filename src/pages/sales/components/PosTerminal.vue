@@ -27,7 +27,7 @@ onMounted(init)
 
 <template>
   <v-container fluid class="pa-2 fill-height align-start">
-    <v-row class="w-100" no-gutters>
+    <v-row >
       <!-- ── Product picker ─────────────────────────────────────── -->
       <v-col cols="12" md="7" class="pa-2">
         <v-card rounded="lg" elevation="1">
