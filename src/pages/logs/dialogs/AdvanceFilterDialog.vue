@@ -43,14 +43,16 @@ const dialog = computed({
   set: (val) => emit('update:modelValue', val),
 })
 
-// ─── Available options (computed from actual logs data) ────────────────
-const availableModules = computed<string[]>(() => {
-  const set = new Set<string>()
-  logs.value.forEach((log) => {
-    if (log.module) set.add(log.module)
-  })
-  return Array.from(set).sort()
-})
+// ─── Available module options (hardcoded list matching LogsCard) ───────
+const availableModules = [
+  'purchase_requisition',
+  'purchase_order',
+  'stock_in',
+  'inhouse',
+  'warehouse',
+  'ethical',
+  'pos',
+]
 
 const availableActions = computed<string[]>(() => {
   const set = new Set<string>()

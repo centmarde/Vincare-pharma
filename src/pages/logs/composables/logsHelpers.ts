@@ -44,12 +44,15 @@ export function getModuleColor(module: string | null): string {
   if (lower.includes('purchase_order') || lower.includes('po')) return 'red'
   if (lower.includes('stock_in') || lower.includes('stock in')) return 'teal'
   if (lower.includes('stock_out') || lower.includes('stock out')) return 'orange'
-  if (lower.includes('sale') && !lower.includes('sales_return') && !lower.includes('return')) return 'green'
+  if (lower.includes('sale') && !lower.includes('sales_return') && !lower.includes('return') && !lower.includes('pos')) return 'green'
   if (lower.includes('transfer')) return 'blue'
   if (lower.includes('reorder')) return 'yellow'
   if (lower.includes('expense')) return 'deep-orange'
   if (lower.includes('purchase_return')) return 'purple'
   if (lower.includes('sales_return') || lower.includes('return')) return 'pink'
+  if (lower.includes('warehouse')) return 'brown'
+  if (lower.includes('ethical')) return 'teal'
+  if (lower.includes('pos')) return 'cyan'
   return 'grey'
 }
 
