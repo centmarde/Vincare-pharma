@@ -3,7 +3,8 @@ import { usePRDetailModal } from '../../composables/usePRDetailModal'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import { useDisplay } from 'vuetify'
-import { de } from 'vuetify/locale'
+import { ref } from 'vue'
+import PREditDialog from './PREditDialog.vue'
 
 const { mobile } = useDisplay()
 
@@ -12,7 +13,10 @@ const model = defineModel<boolean>()
 const emit = defineEmits<{
   approve: [pr: PR]
   reject: [pr: PR]
+  update: [data: { pr: PR; items: any[]; remarks: string }]
 }>()
+
+const showEditDialog = ref<boolean>(false)
 
 const {
   statusConfig,
@@ -196,8 +200,8 @@ function onReject() {
 
       <!-- Footer -->
       <v-card-actions
-        :class="mobile ? 'px-3 pb-3 pt-2' : 'px-6 pb-5 pt-2'" class="d-flex justify-end">
-      <div v-if="pr.status === 'pending_approval'" class="d-flex mr-auto" style="gap: 16px">
+        :class="mobile ? 'px-3 pb-3 pt-2 d-flex justify-end' : 'px-6 pb-5 pt-2 d-flex justify-end'">
+      <div v-if="pr.status === 'pending_approval'" class="d-flex" style="gap: 16px">
           <v-btn
             variant="outlined"
             size="small"
@@ -220,11 +224,30 @@ function onReject() {
             >
             Approve
           </v-btn>
+
+          <v-btn
+            variant="outlined"
+            size="small"
+            color="amber-darken-2"
+            class="text-none"
+            prepend-icon="mdi-file-document-edit-outline"
+            @click="showEditDialog = true"
+          >
+            Undo/Edit
+          </v-btn>
         </div>
+
         <v-btn variant="outlined" size="small" class="text-none" @click="model = false">
           Close
         </v-btn>
       </v-card-actions>
+
+      <!-- Edit/Undo Dialog -->
+      <PREditDialog
+        v-model="showEditDialog"
+        :pr="pr"
+        @save="(data) => emit('update', { pr: props.pr, ...data })"
+      />
     </v-card>
   </v-dialog>
 </template>

@@ -3,7 +3,8 @@ import { usePurchaseRequisitionList, headers } from '../composables/usePurchaseR
 import type { ReorderPrefillItem } from '../composables/usePurchaseRequisition'
 import PurchaseRequisitionDialog from './dialogs/PurchaseRequisitionDialog.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
-import { useProductsDataStore } from '@/stores/productsData'
+import ConfirmDialog from './dialogs/ConfirmDialog.vue'
+import ReorderRequestsDialog from './dialogs/ReorderRequestsDialog.vue'
 import PRDetailModal from './dialogs/PRDetailModal.vue'
 import IssuePOModal from './dialogs/IssuePOModal.vue'
 import { ref, computed, onMounted, watch } from 'vue'
@@ -11,7 +12,6 @@ import { useDisplay } from 'vuetify'
 
 const selectedReorderIds = ref<number[]>([])
 const prefillItemsForDialog = ref<ReorderPrefillItem[]>([])
-const productsStore = useProductsDataStore()
 
 const {
   stats,
@@ -183,7 +183,7 @@ function onPRSubmitted() {
             </div>
           </v-card-text>
         </v-card>
-      </div>  
+      </div>
 
     <!-- V-Data-Table -->
     <v-card class="mx-auto w-100" rounded="lg" elevation="1">
@@ -546,109 +546,30 @@ function onPRSubmitted() {
     <IssuePOModal v-model="showPOModal" :pr="selectedPRForPO" />
 
     <!-- Detail Modal -->
-    <PRDetailModal v-if="selectedPR" v-model="showModal" :pr="selectedPR" 
+    <PRDetailModal v-if="selectedPR" v-model="showModal" :pr="selectedPR"
     @approve="openConfirm('APPROVE', $event)" @reject="openConfirm('REJECT', $event)"/>
 
     <!-- Confirm Dialog -->
-    <v-dialog v-model="confirmDialog.show" :max-width="mobile ? '100%' : '400'" persistent>
-      <v-card rounded="lg">
-        <v-card-title class="d-flex align-center ga-2 pt-5 px-5">
-          <v-icon
-            :color="confirmDialog.action === 'APPROVE' ? 'green-darken-2' : 'red-darken-2'"
-            size="22"
-          >
-            {{
-              confirmDialog.action === 'APPROVE'
-                ? 'mdi-check-circle-outline'
-                : 'mdi-close-circle-outline'
-            }}
-          </v-icon>
-          <span class="text-body-1 font-weight-bold">
-            {{ confirmDialog.action === 'APPROVE' ? 'Approve' : 'Reject' }} Purchase Requisition
-          </span>
-        </v-card-title>
+    <ConfirmDialog
+      v-model="confirmDialog.show"
+      :confirmData="{
+        show: confirmDialog.show,
+        action: confirmDialog.action,
+        prNumber: confirmDialog.prNumber
+      }"
+      :loading="confirmLoading"
+      @close="closeConfirm"
+      @confirm="handleConfirm"
+    />
 
-        <v-card-text class="px-5 pb-2 text-body-2 text-medium-emphasis">
-          Are you sure you want to
-          <strong>{{ confirmDialog.action }}</strong
-          >&nbsp;- <strong>({{ confirmDialog.prNumber }})</strong>? This action cannot be undone.
-        </v-card-text>
-
-        <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end ga-2">
-          <v-btn variant="outlined" class="text-none" :disabled="confirmLoading" @click="closeConfirm">
-            Cancel
-          </v-btn>
-          <v-btn
-            :color="confirmDialog.action === 'APPROVE' ? 'green-darken-2' : 'red-darken-2'"
-            :variant="confirmDialog.action === 'APPROVE' ? 'flat' : 'outlined'"
-            class="text-none"
-            :loading="confirmLoading"
-            :disabled="confirmLoading"
-            @click="handleConfirm"
-          >
-            Yes, {{ confirmDialog.action === 'APPROVE' ? 'Approve' : 'Reject' }}
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
-    <v-dialog v-model="showReorderDialog" max-width="600">
-      <v-card>
-        <v-card-title class="d-flex align-center pa-4">
-          <v-icon icon="mdi-cart-arrow-down" color="teal" class="mr-2"></v-icon>
-          <span class="text-h6 font-weight-bold">Reorder Requests</span>
-          <v-spacer></v-spacer>
-          <v-btn icon="mdi-close" variant="text" size="small" @click="showReorderDialog = false"></v-btn>
-        </v-card-title>
-        <v-divider></v-divider>
-        <v-card-text class="pa-0" style="max-height: 400px; overflow-y: auto;">
-          <v-list v-if="reorderRequests.length" density="comfortable">
-            <v-list-item v-for="r in reorderRequests" :key="r.id">
-              <template #prepend>
-                <v-checkbox-btn
-                  :model-value="selectedReorderIds.includes(r.id)"
-                  @update:model-value="(val) => {
-                    if (val) selectedReorderIds.push(r.id)
-                    else selectedReorderIds = selectedReorderIds.filter(id => id !== r.id)
-                  }"
-                />
-              </template>
-              <v-list-item-title class="font-weight-medium">
-                {{ r.product?.product_name }}
-              </v-list-item-title>
-              <v-list-item-subtitle>
-                Stock: {{ r.product?.current_stock ?? 0 }}
-                <span v-if="r.product?.reorder_level != null"> · reorder at {{ r.product.reorder_level }}</span>
-                · Flagged by {{ r.requester_name }}
-              </v-list-item-subtitle>
-              <template #append>
-                <v-chip
-                  size="small"
-                  :color="r.transaction_type === 'reorder_outofstock' ? 'error' : r.transaction_type === 'reorder_lowstock' ? 'warning' : 'orange'"
-                  variant="tonal"
-                >
-                  {{ r.transaction_type.replace('reorder_', '').replace('_', ' ') }}
-                </v-chip>
-              </template>
-            </v-list-item>
-          </v-list>
-          <div v-else class="text-center py-8 text-medium-emphasis">
-            No pending reorder requests
-          </div>
-        </v-card-text>
-        <v-divider />
-        <v-card-actions class="pa-4 d-flex justify-end">
-          <v-btn
-            color="primary"
-            class="text-none font-weight-bold"
-            :disabled="!selectedReorderIds.length"
-            @click="createPRFromReorder"
-          >
-            Create Purchase Requisition ({{ selectedReorderIds.length }})
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <!-- Reorder Requests Dialog -->
+    <ReorderRequestsDialog
+      v-model="showReorderDialog"
+      :reorderRequests="reorderRequests"
+      :selectedReorderIds="selectedReorderIds"
+      @update:selectedReorderIds="selectedReorderIds = $event"
+      @create-pr="createPRFromReorder"
+    />
   </v-container>
 </template>
 

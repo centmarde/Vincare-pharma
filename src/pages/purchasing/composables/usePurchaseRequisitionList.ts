@@ -66,6 +66,8 @@ export function usePurchaseRequisitionList() {
       offset:    (p - 1) * ipp,
     })
 
+    //console.log('[RPC] fetchPurchaseRequisitionsRPC raw rows:', JSON.parse(JSON.stringify(rows)))
+
     serverItems.value = rows.map(row => {
       const names = prStore.resolveUserNames(row.created_by, row.approved_by)
       return prStore.mapRPCRowToPR(row, names)
@@ -161,7 +163,7 @@ export function usePurchaseRequisitionList() {
   function commitSearch(){
     search.value = searchInput.value
   }
-  
+
   function clearSearch(){
     searchInput.value = ''
     search.value = ''
