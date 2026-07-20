@@ -31,13 +31,13 @@ export function useChangeRequestFiling(module: string, targetType: ChangeRequest
   // without changing.
   async function loadPending() {
     const [pending, edits] = await Promise.all([
-      store.fetchPendingTargetIds(targetType),
-      store.fetchAppliedEdits(targetType),
+      store.fetchPendingTargetIds(),
+      store.fetchAppliedEdits(),
     ])
     pendingIds.value = new Set(pending)
     // Ordered newest-first by the store, so the first entry per target wins.
     const map = new Map<number, AppliedEdit>()
-    for (const e of edits) if (!map.has(e.target_id)) map.set(e.target_id, e)
+    for (const e of edits) if (!map.has(e.transaction_id)) map.set(e.transaction_id, e)
     appliedEdits.value = map
   }
 
@@ -68,10 +68,8 @@ export function useChangeRequestFiling(module: string, targetType: ChangeRequest
     if (!config.value) return
     submitting.value = true
     const result = await store.proposeChange({
-      module,
-      targetType,
-      targetId: config.value.id,
-      targetRef: config.value.ref,
+      transactionId: config.value.id,
+      fromTransactionNo: config.value.ref,
       requestType: payload.requestType,
       proposedChanges: payload.proposedChanges,
       summary: payload.summary,
