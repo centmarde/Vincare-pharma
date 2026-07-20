@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useExecutiveStatic } from '../composables/executiveStatic'
+import { useExecutiveDashboard } from '../composables/useExecutiveDashboard'
 import { computed, ref } from 'vue'
 import HeaderBar from './HeaderBar.vue'
 import KpiCards from './KpiCards.vue'
@@ -7,18 +7,13 @@ import QuickStatsCards from './QuickStatsCards.vue'
 import MonthlyChart from './MonthlyChart.vue'
 import TopProducts from './TopProducts.vue'
 import ActionRequired from './ActionRequired.vue'
+import { useExecutiveStatic } from '../composables/executiveStatic'
 
-const dashboard = useExecutiveStatic()
+const dash = useExecutiveDashboard()
+const staticData = useExecutiveStatic()
 
-// Search query (shared via v-model to HeaderBar)
 const searchQuery = ref('')
-
-// Top products sorted by revenue descending
-const topProducts = computed(() => [...dashboard.topProducts].sort((a, b) => b.revenue - a.revenue))
-
-const revenueGrowth = dashboard.kpiCards[0].trendLabel.split(' ')[0]
-
-// Toggle between 'actionRequired' (default) and 'topProducts'
+const topProducts = computed(() => [...staticData.topProducts].sort((a, b) => b.revenue - a.revenue))
 const rightPanelView = ref<'actionRequired' | 'topProducts'>('actionRequired')
 </script>
 
@@ -26,46 +21,43 @@ const rightPanelView = ref<'actionRequired' | 'topProducts'>('actionRequired')
   <v-container fluid class="pa-0 executive-widget">
     <HeaderBar v-model:search="searchQuery" />
 
-    <KpiCards :cards="dashboard.kpiCards" />
+    <KpiCards
+      :cards="dash.kpiCards.value"
+      :loading="dash.loading.value"
+      :error="dash.error.value"
+      :date-from="dash.dateFrom.value"
+      :date-to="dash.dateTo.value"
+      @apply="(from, to) => dash.applyDateRange(from, to)"
+      @refresh="dash.resetToCurrentMonth()"
+    />
 
     <QuickStatsCards
-      :total-orders="dashboard.totalOrders"
-      :pending-orders="dashboard.pendingOrders"
-      :revenue-growth="revenueGrowth"
+      :total-orders="staticData.totalOrders"
+      :pending-orders="staticData.pendingOrders"
+      :revenue-growth="dash.kpiCards.value[0]?.trendLabel.split(' ')[0] ?? '0%'"
     />
 
     <v-row class="ma-0" align="stretch">
       <v-col cols="12" lg="8" class="pa-2 d-flex">
         <MonthlyChart
-          :monthly-data="dashboard.monthlyData"
-          :total-revenue="dashboard.totalRevenue"
-          :total-expenses="dashboard.totalExpenses"
+          :monthly-data="staticData.monthlyData"
+          :total-revenue="staticData.totalRevenue"
+          :total-expenses="staticData.totalExpenses"
           class="flex-grow-1"
         />
       </v-col>
 
       <v-col cols="12" lg="4" class="pa-2 d-flex flex-column">
-        <!-- Toggle Switch -->
-        <div
-          class="d-flex align-center mb-3 bg-surface-variant rounded-lg pa-1 toggle-switch flex-shrink-0"
-        >
-          <v-btn
-            variant="text"
-            size="small"
-            class="text-none flex-grow-1"
+        <div class="d-flex align-center mb-3 bg-surface-variant rounded-lg pa-1 toggle-switch flex-shrink-0">
+          <v-btn variant="text" size="small" class="text-none flex-grow-1"
             :class="{ 'toggle-active': rightPanelView === 'actionRequired' }"
-            @click="rightPanelView = 'actionRequired'"
-          >
+            @click="rightPanelView = 'actionRequired'">
             <v-icon start size="16">mdi-bell-ring-outline</v-icon>
             Action Required
           </v-btn>
-          <v-btn
-            variant="text"
-            size="small"
-            class="text-none flex-grow-1"
+          <v-btn variant="text" size="small" class="text-none flex-grow-1"
             :class="{ 'toggle-active': rightPanelView === 'topProducts' }"
-            @click="rightPanelView = 'topProducts'"
-          >
+            @click="rightPanelView = 'topProducts'">
             <v-icon start size="16">mdi-package-variant-closed</v-icon>
             Top Products
           </v-btn>

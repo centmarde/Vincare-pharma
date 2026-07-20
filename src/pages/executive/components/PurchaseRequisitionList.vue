@@ -320,7 +320,7 @@ function goToPage(p: number) {
                 <v-icon color="primary" start>mdi-eye</v-icon>
                 View
               </v-btn>
-              <template v-if="item.status === 'approved'">
+              <!-- <template v-if="item.status === 'approved'">
                 <v-btn
                   variant="outlined"
                   size="small"
@@ -330,7 +330,7 @@ function goToPage(p: number) {
                 >
                   Issue PO
                 </v-btn>
-              </template>
+              </template> -->
             </div>
           </template>
         </v-data-table-server>
