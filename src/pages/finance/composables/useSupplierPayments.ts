@@ -18,6 +18,7 @@ export const paymentHistoryHeaders = [
   { title: 'SUPPLIER',    key: 'supplier_name',    sortable: false, align: 'center' as const },
   { title: 'AMOUNT',      key: 'amount',           sortable: false, align: 'center' as const },
   { title: 'METHOD',      key: 'payment_method',   sortable: false, align: 'center' as const },
+  { title: '',            key: 'cr_actions',       sortable: false, align: 'center' as const },
 ] as const
 
 export function useSupplierPayments() {

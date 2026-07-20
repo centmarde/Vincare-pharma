@@ -6,7 +6,7 @@ import OutletCRUD from './components/OutletCRUD.vue'
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container>
+      <v-container fluid>
         <OutletCRUD />
       </v-container>
     </template>

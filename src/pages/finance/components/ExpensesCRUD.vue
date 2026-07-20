@@ -2,13 +2,14 @@
 import { onMounted } from 'vue'
 import { useExpenses, headers } from '../composables/useExpenses'
 import AddExpenseDialog from './dialogs/AddExpenseDialog.vue'
+import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
   expenses, cashAccounts, loading,
   showFormDialog,
-  showDeleteDialog,
-  init, openFormDialog, handleSubmit, openDeleteDialog, confirmDelete,
+  showChangeDialog, changeTarget, changeFields, voidSummary, isPending,
+  init, openFormDialog, handleSubmit, openChangeDialog, submitChangeRequest,
 } = useExpenses()
 
 onMounted(init)
@@ -80,12 +81,17 @@ onMounted(init)
         </template>
 
         <template #item.actions="{ item }">
+          <v-chip v-if="isPending(item.id)" size="x-small" color="warning" variant="tonal" label>
+            Change pending
+          </v-chip>
           <v-btn
-            icon="mdi-delete"
+            v-else
+            icon="mdi-pencil-box-outline"
             size="small"
             variant="text"
-            color="error"
-            @click="openDeleteDialog(item.id)"
+            color="primary"
+            title="Request edit or undo (needs executive approval)"
+            @click="openChangeDialog(item.id)"
           />
         </template>
       </v-data-table>
@@ -99,28 +105,16 @@ onMounted(init)
       @submit="handleSubmit"
     />
 
-    <v-dialog v-model="showDeleteDialog" max-width="400px" persistent>
-      <v-card rounded="lg">
-        <v-card-title class="text-h6 pa-6">
-          <v-icon icon="mdi-alert-circle" color="warning" class="mr-3" />
-          Confirm Delete
-        </v-card-title>
-        <v-card-text class="pa-6 pt-0">
-          <p class="mb-4">Are you sure you want to delete this expense?</p>
-          <v-alert type="warning" variant="tonal" class="mb-0">
-            <strong>This action cannot be undone.</strong>
-          </v-alert>
-        </v-card-text>
-        <v-card-actions class="pa-6 pt-0">
-          <v-spacer />
-          <v-btn variant="outlined" :disabled="loading" @click="showDeleteDialog = false">Cancel</v-btn>
-          <v-btn color="error" :loading="loading" @click="confirmDelete">
-            <v-icon start>mdi-delete</v-icon>
-            Delete
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <ChangeRequestDialog
+      v-model="showChangeDialog"
+      :target-ref="changeTarget?.reference_no ?? null"
+      :fields="changeFields"
+      :allow-edit="true"
+      :allow-void="true"
+      :void-summary="voidSummary"
+      :loading="loading"
+      @submit="submitChangeRequest"
+    />
 
   </v-container>
 </template>

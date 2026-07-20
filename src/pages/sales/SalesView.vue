@@ -6,7 +6,7 @@ import SalesDashboard from './components/SalesDashboard.vue'
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container>
+      <v-container fluid>
         <SalesDashboard />
       </v-container>
     </template>

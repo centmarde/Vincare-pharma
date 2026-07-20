@@ -24,7 +24,7 @@ onMounted(init)
           <v-text-field v-model="search" placeholder="Search order / PO / customer..." prepend-inner-icon="mdi-magnify"
             variant="outlined" density="compact" hide-details style="min-width:240px" />
           <v-select v-model="filterStatus" :items="statusOptions" variant="outlined" density="compact" hide-details style="min-width:170px" />
-          <v-btn color="primary" class="text-none font-weight-bold" elevation="0" prepend-icon="mdi-plus" @click="openRaise">Raise Order</v-btn>
+          <v-btn color="primary" class="text-none font-weight-bold" elevation="0" prepend-icon="mdi-plus" @click="openRaise"> Place Order</v-btn>
         </div>
       </v-card-title>
       <v-divider />

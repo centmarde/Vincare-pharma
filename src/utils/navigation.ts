@@ -103,7 +103,7 @@ export const navigationConfig: NavigationGroup[] = [
         route: '/executive/dashboard',
         permission: 'executive.dashboard.view',
         keywords: 'exec, overview, kpi, metrics, reports',
-      },
+      }
     ],
   },
   {
@@ -367,6 +367,12 @@ export const navigationConfig: NavigationGroup[] = [
         icon: 'mdi-book-open-variant',
         route: '/finance/general-journal',
         permission: 'finance.generalJournal.manage',
+      },
+      {
+        title: 'Chart of Accounts',
+        icon: 'mdi-format-list-bulleted',
+        route: '/finance/chart-of-accounts',
+        permission: 'finance.chartOfAccounts.manage',
       },
     ],
   },

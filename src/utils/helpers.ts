@@ -2,6 +2,8 @@
  * Utility functions for the application
  */
 
+import { formatDate } from './dateFormats'
+
 /**
  * Extracts a readable error message from various error formats
  * @param error - The error object to extract message from
@@ -126,22 +128,6 @@ export function getRoleText(
   roles: Array<{ id: number; title: string | null }>,
 ): string {
   return getRoleTitle(roleId, roles)
-}
-
-/**
- * Formats a date string into a human-readable format
- * @param dateString - The date string to format
- * @returns A formatted date string or 'N/A' if no date provided
- */
-export function formatDate(dateString: string | undefined): string {
-  if (!dateString) return 'N/A'
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 }
 
 /**
@@ -462,7 +448,7 @@ export const formatCurrency = (value: number): string =>
     maximumFractionDigits: 2,
   }).format(value).replace('PHP', '₱')
 
-// ── Generative / document-number / date-formatting helpers ─────────────────
+// ── Generative / document-number helpers ────────────────────────────────────
 // These were extracted to a dedicated module so stores don't duplicate logic.
 // Re-export everything for backward compatibility.
 export {
@@ -471,13 +457,22 @@ export {
   generateNextNumber,
   generateDocNumber,
   getLatestReferenceNo,
+  insertWithDocRetry,
   generatePRNumber,
   generatePONumber,
   generateSINumber,
   generateIHNumber,
+} from './generativeHelpers'
+
+// ── Date-formatting helpers ─────────────────────────────────────────────────
+// Moved to a dedicated module so stores and components share a single source
+// of truth instead of duplicating logic inline.
+export {
+  formatDate,
+  formatDateShort,
   parseMonthYear,
   formatMonthYear,
   maskMonthYearInput,
   formatDatePR_ISO,
   formatDatePO_Written,
-} from './generativeHelpers'
+} from './dateFormats'

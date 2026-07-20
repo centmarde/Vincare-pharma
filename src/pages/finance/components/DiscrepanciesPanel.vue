@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import {
   useDiscrepancies,
-  remittanceHeaders, arAgingHeaders, commissionHeaders, stockReconHeaders,
+  remittanceHeaders, arAgingHeaders, commissionHeaders, stockReconHeaders, employeeReceivableHeaders,
 } from '../composables/useDiscrepancies'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
   tab, onTabChange,
-  remittanceDiscrepancies, arAging, commissionLiability, stockReconciliation, loading,
+  remittanceDiscrepancies, showResolvedRemittances, arAging, commissionLiability, stockReconciliation, loading,
+  receivables, receivablesLoading, markReceivablePaid,
 } = useDiscrepancies()
 </script>
 
@@ -20,6 +21,7 @@ const {
       <v-tabs :model-value="tab" color="primary" class="px-4" @update:model-value="onTabChange">
         <v-tab value="remittance">Remittance Float</v-tab>
         <v-tab value="ar">AR Aging</v-tab>
+        <v-tab value="employeeReceivables">Employee Receivables</v-tab>
         <v-tab value="commission">Commission Liability</v-tab>
         <v-tab value="stock">Stock Reconciliation</v-tab>
       </v-tabs>
@@ -28,12 +30,22 @@ const {
 
       <v-window :model-value="tab">
         <v-window-item value="remittance">
+          <div class="d-flex justify-end px-4 pt-3">
+            <v-switch
+              v-model="showResolvedRemittances"
+              label="Show resolved"
+              color="primary"
+              density="compact"
+              hide-details
+              inset
+            />
+          </div>
           <v-data-table
             :headers="remittanceHeaders"
             :items="remittanceDiscrepancies"
             :loading="loading"
             loading-text="Loading remittance discrepancies..."
-            no-data-text="No remittance discrepancies — all balanced."
+            :no-data-text="showResolvedRemittances ? 'No remittance discrepancies.' : 'No open remittance discrepancies — all balanced.'"
             hover
           >
             <template #item.created_at="{ item }">
@@ -49,6 +61,58 @@ const {
               <v-chip color="error" size="small" variant="tonal" class="font-weight-bold">
                 {{ formatCurrency(item.discrepancy) }}
               </v-chip>
+            </template>
+            <template #item.resolution="{ item }">
+              <v-chip v-if="item.resolution === 'paid_on_spot'" size="small" variant="tonal" color="success">Paid on spot — Balanced</v-chip>
+              <v-chip
+                v-else-if="item.resolution === 'employee_receivable'"
+                size="small" variant="tonal"
+                :color="item.receivable_status === 'paid' ? 'success' : 'warning'"
+              >
+                {{ item.receivable_status === 'paid' ? 'Employee Receivable — Paid, Balanced' : 'Employee Receivable — Outstanding' }}
+              </v-chip>
+              <span v-else class="text-medium-emphasis">—</span>
+            </template>
+            <template #item.notes="{ item }">
+              <span class="text-caption">{{ item.notes ?? '—' }}</span>
+            </template>
+          </v-data-table>
+        </v-window-item>
+
+        <v-window-item value="employeeReceivables">
+          <v-data-table
+            :headers="employeeReceivableHeaders"
+            :items="receivables"
+            :loading="receivablesLoading"
+            loading-text="Loading employee receivables..."
+            no-data-text="No employee receivables recorded."
+            hover
+          >
+            <template #item.created_at="{ item }">
+              {{ formatDatePR_ISO(item.created_at) }}
+            </template>
+            <template #item.employee_email="{ item }">
+              {{ item.employee_email ?? '—' }}
+            </template>
+            <template #item.amount="{ item }">
+              {{ formatCurrency(item.amount) }}
+            </template>
+            <template #item.remarks="{ item }">
+              <span class="text-caption">{{ item.remarks ?? '—' }}</span>
+            </template>
+            <template #item.status="{ item }">
+              <v-chip :color="item.status === 'paid' ? 'success' : 'warning'" size="small" variant="tonal" class="font-weight-bold">
+                {{ item.status === 'paid' ? 'Paid' : 'Outstanding' }}
+              </v-chip>
+            </template>
+            <template #item.actions="{ item }">
+              <v-btn
+                v-if="item.status === 'outstanding'"
+                size="small" color="success" variant="tonal" class="text-none"
+                @click="markReceivablePaid(item.id)"
+              >
+                Mark Paid
+              </v-btn>
             </template>
           </v-data-table>
         </v-window-item>
@@ -74,13 +138,13 @@ const {
             <template #item.days_overdue="{ item }">
               {{ item.days_overdue ?? '—' }}
             </template>
-            <template #item.bucket="{ item }">
+            <template #item.term="{ item }">
               <v-chip
                 size="small"
                 variant="tonal"
-                :color="item.bucket === 'current' ? 'success' : item.bucket === 'no-term' ? 'grey' : 'warning'"
+                :color="item.term === 'current' ? 'success' : item.term === 'no-term' ? 'grey' : 'warning'"
               >
-                {{ item.bucket }}
+                {{ item.term }}
               </v-chip>
             </template>
           </v-data-table>

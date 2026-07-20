@@ -97,6 +97,36 @@ export async function generateNextNumber(
 }
 
 /**
+ * Retries an insert whose row includes a freshly-minted document number, when
+ * that insert fails on the number's unique-index collision (Postgres 23505).
+ *
+ * Client-side numbering is read-max-then-insert across two separate requests
+ * (see the note atop this file) — two concurrent creates can both read the
+ * same max and mint the same number. The partial-unique indexes on the
+ * document-number columns turn that into a safe-fail insert error rather than
+ * a silent duplicate; this wrapper turns that safe-fail into an invisible
+ * retry instead of surfacing a raw DB error to the user. `regenerate` is
+ * called again on each retry so it re-reads the now-updated max. Any error
+ * OTHER than 23505 (network, RLS, validation, ...) is returned immediately
+ * un-retried — existing handleError/toast call sites see it exactly as before.
+ */
+export async function insertWithDocRetry<T>(
+  regenerate: () => Promise<string>,
+  attemptInsert: (docNo: string) => Promise<{ data: T | null; error: { code?: string; message: string } | null }>,
+  maxAttempts = 3,
+): Promise<{ data: T | null; docNo: string | null; error: { code?: string; message: string } | null }> {
+  let lastError: { code?: string; message: string } | null = null
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const docNo = await regenerate()
+    const { data, error } = await attemptInsert(docNo)
+    if (!error) return { data, docNo, error: null }
+    if (error.code !== '23505') return { data: null, docNo: null, error }
+    lastError = error
+  }
+  return { data: null, docNo: null, error: lastError }
+}
+
+/**
  * Highest existing sequence number for a column+prefix (numeric max, or 0).
  * Kept for {@link generateDocNumber}'s callback signature; numeric-based now.
  */
@@ -141,74 +171,3 @@ export async function generateRONumber(): Promise<string> {
   return generateNextNumber('reference_no', `RO-${new Date().getFullYear()}-`)
 }
 
-// ─── Date formatters ─────────────────────────────────────────────────────────
-
-export const formatDatePR_ISO = (dateString: string | null | undefined) => {
-  if (!dateString) return ''
-  const date = new Date(dateString)
-
-  // This is for displaying in the PR list and PO list
-  const datePart = new Intl.DateTimeFormat('en-CA', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    timeZone: 'Asia/Manila',
-  }).format(date)
-
-  const timePart = new Intl.DateTimeFormat('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-    timeZone: 'Asia/Manila',
-  }).format(date)
-
-  return `${datePart} ${timePart}`
-}
-
-// This is for Exporting PDF PO
-export const formatDatePO_Written = (dateString: string | null | undefined) => {
-  if (!dateString) return ''
-  const date = new Date(dateString)
-
-  const datePart = new Intl.DateTimeFormat('en-GB', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }).format(date)
-
-  const timePart = new Intl.DateTimeFormat('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  }).format(date)
-
-  return `${datePart} at ${timePart}`
-}
-
-// ─── Batch-expiry helpers ────────────────────────────────────────────────────
-// Batch-expiry fields only need month/year (e.g. "04/2026") — no day.
-
-// "MM/YYYY" -> Date (first of that month), or null if not a complete valid value.
-export const parseMonthYear = (value: string): Date | null => {
-  const m = value.trim().match(/^(\d{1,2})\/(\d{4})$/)
-  if (!m) return null
-  const month = Number(m[1])
-  const year = Number(m[2])
-  if (month < 1 || month > 12) return null
-  return new Date(year, month - 1, 1)
-}
-
-// Date -> "MM/YYYY".
-export const formatMonthYear = (value: string | Date): string => {
-  const date = value instanceof Date ? value : new Date(value)
-
-  if (isNaN(date.getTime())) return '-'
-
-  return `${String(date.getMonth() + 1).padStart(2, '0')}-${date.getFullYear()}`
-}
-
-// Live input mask: keep digits only, auto-insert the slash -> "MM/YYYY" (capped).
-export const maskMonthYearInput = (raw: string): string => {
-  const digits = raw.replace(/\D/g, '').slice(0, 6)
-  return digits.length <= 2 ? digits : `${digits.slice(0, 2)}/${digits.slice(2)}`
-}

@@ -5,8 +5,11 @@ import type { EthicalOrderType, CollectionType, Shortfall } from '@/stores/ethic
 import { useDeliveryReceiptsDataStore, type DeliveryReceiptType } from '@/stores/deliveryReceiptsData'
 import { useProcurementDataStore } from '@/stores/procurementData'
 import { useAuthUserStore } from '@/stores/authUser'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
+import { formatCurrency } from '@/utils/helpers'
 
 const toast = useToast()
+const { confirmDialog } = useConfirmDialog()
 
 export function useOrderDetail(order: () => EthicalOrderType | undefined) {
   const ethical = useEthicalDataStore()
@@ -118,6 +121,18 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
     if (collectionAmount.value <= 0) { toast.warning('Amount must be positive'); return }
     if (collectionAmount.value > balance.value) { toast.warning('Amount exceeds balance'); return }
 
+    const willFullyPay = collectionAmount.value >= balance.value
+    const summary = [
+      `Amount: ${formatCurrency(collectionAmount.value)}`,
+      collectionMethod.value ? `Method: ${collectionMethod.value}` : '',
+      `Reference / OR #: ${collectionReference.value || '—'}`,
+      `Remarks: ${collectionRemarks.value || '—'}`,
+      `Remaining balance after this: ${formatCurrency(Math.max(0, balance.value - collectionAmount.value))}`,
+      willFullyPay ? 'This will mark the order as PAID IN FULL.' : '',
+    ].filter(Boolean).join('\n')
+    const ok = await confirmDialog(summary, { title: 'Confirm Collection', confirmText: 'Record Collection' })
+    if (!ok) return
+
     loading.value = true
     const result = await ethical.recordCollection({
       orderId: o.id,
@@ -138,7 +153,7 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
   async function cancelOrder() {
     const o = order()
     if (!o?.id) return
-    if (!confirm('Cancel this order and restore stock?')) return
+    if (!(await confirmDialog('Cancel this order and restore stock?', { title: 'Confirm Cancel Order', confirmText: 'Cancel Order' }))) return
 
     loading.value = true
     const result = await ethical.cancelOrder(o.id, 'Cancelled by user')

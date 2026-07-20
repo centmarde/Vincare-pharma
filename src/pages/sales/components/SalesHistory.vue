@@ -1,15 +1,36 @@
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import { useSalesHistory, headers } from '../composables/useSalesHistory'
 import PosReceiptDialog from '../dialogs/PosReceiptDialog.vue'
-import VoidSaleDialog from '../dialogs/VoidSaleDialog.vue'
+import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
+import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
+import type { SaleType } from '@/stores/salesData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
   loading, search, filterStatus, filterOutletId, outletOptions, dateFrom, dateTo, statusOptions,
   filteredSales, cashierName, canVoid,
-  showReceipt, receipt, showVoid, voidReason, selectedSale,
-  load, openReceipt, openVoid, confirmVoid,
+  showReceipt, receipt,
+  load, openReceipt,
 } = useSalesHistory()
+
+// Voiding a completed sale now needs executive approval. A sale isn't edited —
+// void + re-ring — so the request is void-only.
+const { showDialog, config, isPending, loadPending, open, submit, submitting } =
+  useChangeRequestFiling('sales', 'sale')
+
+function openChange(s: SaleType) {
+  open({
+    id: s.id,
+    ref: s.sale_no,
+    fields: [],
+    voidSummary: `Void ${s.sale_no ?? `sale #${s.id}`} — reverses the sale in the ledger (posts a sales return), returns the sold items to branch stock, and marks the sale voided.`,
+    allowEdit: false,
+    allowVoid: true,
+  })
+}
+
+onMounted(loadPending)
 </script>
 
 <template>
@@ -119,15 +140,16 @@ const {
           <v-btn variant="text" size="small" color="primary" class="text-none" @click="openReceipt(item)">
             Reprint
           </v-btn>
+          <v-chip v-if="isPending(item.id)" size="x-small" color="warning" variant="tonal" label class="ml-1">Void pending</v-chip>
           <v-btn
-            v-if="canVoid(item)"
+            v-else-if="canVoid(item)"
             variant="text"
             size="small"
             color="error"
             class="text-none"
-            @click="openVoid(item)"
+            @click="openChange(item)"
           >
-            Void
+            Request Void
           </v-btn>
         </template>
       </v-data-table>
@@ -136,13 +158,16 @@ const {
 
     <PosReceiptDialog v-model="showReceipt" :receipt="receipt" />
 
-    <VoidSaleDialog
-      v-model="showVoid"
-      :sale="selectedSale"
-      :reason="voidReason"
-      :loading="loading"
-      @update:reason="voidReason = $event"
-      @confirm="confirmVoid"
+    <ChangeRequestDialog
+      v-if="config"
+      v-model="showDialog"
+      :target-ref="config.ref"
+      :fields="config.fields"
+      :allow-edit="config.allowEdit"
+      :allow-void="config.allowVoid"
+      :void-summary="config.voidSummary"
+      :loading="submitting"
+      @submit="submit"
     />
 
   </v-container>

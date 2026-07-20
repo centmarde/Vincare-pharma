@@ -3,8 +3,10 @@ import { useToast } from 'vue-toastification'
 import { useGLDataStore } from '@/stores/glData'
 import type { ReferenceType, JournalLineInput } from '@/stores/glData'
 import { useFormDraft } from '@/composables/useFormDraft'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
 const toast = useToast()
+const { confirmDialog } = useConfirmDialog()
 
 const REFERENCE_TYPE_OPTIONS: { value: ReferenceType; title: string }[] = [
   { value: 'sales_invoice', title: 'Sales Invoice' },
@@ -101,7 +103,7 @@ export function useGeneralJournal() {
   }
 
   async function reverseEntry(entryId: number) {
-    if (!confirm('Reverse this entry? A mirror entry will be posted; the original cannot be edited.')) return
+    if (!(await confirmDialog('Reverse this entry? A mirror entry will be posted; the original cannot be edited.', { title: 'Confirm Reversal', confirmText: 'Reverse Entry' }))) return
     const result = await gl.reverseEntry(entryId)
     if (result.success) await fetchJournal()
   }

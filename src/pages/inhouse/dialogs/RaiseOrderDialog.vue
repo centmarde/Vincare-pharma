@@ -11,7 +11,7 @@ defineProps<{ modelValue: boolean }>()
 
 const {
   loading, customerId, govtPoNo, remarks, lines,
-  customerOptions, productOptions,
+  customerOptions, productOptions, isGovtCustomer,
   offerTotal, costTotal, profit, marginPct,
   addLine, removeLine, onProductChange, unitFor, submit, init,
 } = useRaiseOrder(() => emit('created'))
@@ -23,7 +23,7 @@ onMounted(init)
   <v-dialog :model-value="modelValue" max-width="960" persistent scrollable
     @update:model-value="emit('update:modelValue', $event)">
     <v-card rounded="lg">
-      <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold">Raise In-House Order (Government / LGU)</v-card-title>
+      <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold">Place Order (Government / LGU)</v-card-title>
       <v-divider />
       <v-card-text class="pa-4 pa-sm-5">
         <v-row dense class="mb-2">
@@ -32,7 +32,7 @@ onMounted(init)
             <v-select v-model="customerId" :items="customerOptions" placeholder="Select customer"
               variant="outlined" density="compact" hide-details />
           </v-col>
-          <v-col cols="12" md="6">
+          <v-col v-if="isGovtCustomer" cols="12" md="6">
             <label class="lbl">Government PO # (documentation)</label>
             <v-text-field v-model="govtPoNo" placeholder="Their PO number, for the record" variant="outlined" density="compact" hide-details />
           </v-col>
@@ -94,7 +94,7 @@ onMounted(init)
       <v-divider />
       <v-card-actions class="pa-4 justify-end" style="gap:8px">
         <v-btn variant="outlined" class="text-none" @click="emit('update:modelValue', false)">Cancel</v-btn>
-        <v-btn color="primary" class="text-none font-weight-bold" elevation="0" :loading="loading" @click="submit">Raise Order</v-btn>
+        <v-btn color="primary" class="text-none font-weight-bold" elevation="0" :loading="loading" @click="submit">Place Order</v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
