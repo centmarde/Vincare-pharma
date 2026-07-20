@@ -21,6 +21,8 @@ export type PRItem = {
   product_id?:      number
   sku?:             string | null
   supplier_name?:   string | null
+  supplier_id?:     string | null
+  expiry_date?:     string | null
   actual_count_stock_in?: number | null
 }
 
@@ -114,6 +116,8 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       product_id:       ti.product_id,
       sku:              ti.products?.sku             ?? null,
       supplier_name:    ti.products?.suppliers?.name ?? '—',
+      supplier_id:      ti.products?.supplier_id != null ? String(ti.products.supplier_id) : null,
+      expiry_date:      ti.products?.expiry_date     ?? null,
       actual_count_stock_in:  ti.actual_count_stock_in      ?? null,
     }))
   }
@@ -164,6 +168,8 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       product_id:            it.product_id,
       sku:                   it.sku           ?? null,
       supplier_name:         it.supplier_name ?? '—',
+      supplier_id:           it.supplier_id != null ? String(it.supplier_id) : null,
+
       actual_count_stock_in: it.actual_count_stock_in ?? null,
     }))
   }
@@ -346,7 +352,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         *,
         transaction_items (
           id, product_id, qty_stock_in, actual_count_stock_in,
-          products ( id, product_name, unit, cost_price, selling_price, sku, supplier_id, suppliers ( name ) )
+          products ( id, product_name, unit, cost_price, selling_price, sku, supplier_id, expiry_date, suppliers ( name ) )
         )
       `)
       .not('requisition_no', 'is', null)
@@ -358,6 +364,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       return
     }
 
+    console.log('[fetchPurchaseRequisition] raw RPC result:', JSON.parse(JSON.stringify(data)))
     prs.value = (data || []).map((tx: any) => {
       const names = resolveUserNames(tx.created_by, tx.approved_by)
       return mapToPR(tx, mapTransactionItems(tx.transaction_items || []), names)
@@ -375,7 +382,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         *,
         transaction_items (
           id, product_id, qty_stock_in, actual_count_stock_in,
-          products ( id, product_name, unit, cost_price, selling_price, sku, supplier_id, suppliers ( name ) )
+          products ( id, product_name, unit, cost_price, selling_price, sku, supplier_id, expiry_date, suppliers ( name ) )
         )
       `)
       .eq('id', requisitionId)
@@ -449,7 +456,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       loading.value = false
       return
     }
-    
+
     // NEW — mirrors approvePR: reject any reorder requests tied to this PR's
     // products. They stay visible as 'rejected' but remain re-flaggable,
     // since createReorderRequest's duplicate-guard only blocks on 'pending'.
@@ -519,7 +526,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       toast.error('This purchase requisition is no longer approved — refresh and try again.')
       return { success: false }
     }
-    
+
     // NEW — issuing a PO is what moves any reorder requests behind this PR
     // from approved -> awaiting_stock (they're now waiting on physical
     // delivery, not just PM sign-off).
@@ -530,7 +537,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     if (productIds.length) {
       const productsStore = useProductsDataStore()
       await productsStore.markReorderRequestsAwaitingStock(productIds)
-    }    
+    }
 
     toast.success('Purchase order issued successfully!')
     return { success: true }

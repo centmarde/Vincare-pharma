@@ -31,7 +31,7 @@ export function usePRDetailModal(props: { pr: PR }) {
 
   const marginPercent = computed(() => {
     if (customerOfferTotal.value === 0) return '0'
-    return Math.floor((profit.value / customerOfferTotal.value) * 100)
+    return String(Math.floor((profit.value / customerOfferTotal.value) * 100))
   })
 
   return {
