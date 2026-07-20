@@ -14,7 +14,7 @@ const {
 } = useSupplierPayments()
 
 // Edit/undo requests on a recorded supplier payment (executive-approved).
-const { showDialog, config, isPending, loadPending, open, submit, submitting } =
+const { showDialog, config, isPending, isEdited, editTooltip, loadPending, open, submit, submitting } =
   useChangeRequestFiling('finance', 'supplier_payment')
 
 function openChange(p: SupplierPaymentType) {
@@ -101,7 +101,31 @@ onMounted(async () => { await init(); await loadPending() })
           hover
         >
           <template #item.reference_no="{ item }">
-            <span class="font-weight-medium">{{ item.reference_no }}</span>
+            <span class="font-weight-medium" :class="{ 'text-decoration-line-through text-medium-emphasis': item.voided_at }">
+              {{ item.reference_no }}
+            </span>
+            <v-chip
+              v-if="item.voided_at"
+              size="x-small"
+              color="error"
+              variant="tonal"
+              label
+              class="ml-2"
+              :title="item.void_reason ?? 'Reversed via an approved change request'"
+            >
+              VOIDED
+            </v-chip>
+            <v-chip
+              v-else-if="isEdited(item.id)"
+              size="x-small"
+              color="info"
+              variant="tonal"
+              label
+              class="ml-2"
+              :title="editTooltip(item.id)"
+            >
+              EDITED
+            </v-chip>
           </template>
 
           <template #item.paid_at="{ item }">
@@ -123,7 +147,8 @@ onMounted(async () => { await init(); await loadPending() })
           </template>
 
           <template #item.cr_actions="{ item }">
-            <v-chip v-if="isPending(item.id)" size="x-small" color="warning" variant="tonal" label>Change pending</v-chip>
+            <span v-if="item.voided_at" class="text-caption text-medium-emphasis">—</span>
+            <v-chip v-else-if="isPending(item.id)" size="x-small" color="warning" variant="tonal" label>Change pending</v-chip>
             <v-btn
               v-else icon="mdi-pencil-box-outline" size="small" variant="text" color="primary"
               title="Request edit or undo (needs executive approval)"

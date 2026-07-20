@@ -668,9 +668,10 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     return { success: true, paymentId: payment.id }
   }
 
+  // Voided payments excluded — see the same note on ethicalData.fetchCollections.
   const fetchPayments = async (orderId: number): Promise<CollectionType[]> => {
     const { data, error: e } = await supabase
-      .from('collections').select('*')
+      .from('collections').select('*').is('voided_at', null)
       .eq('transaction_id', orderId).order('created_at', { ascending: true })
     if (e) { handleError(e, 'Failed to load payments'); return [] }
     return (data || []) as CollectionType[]
