@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { usePurchaseRequisitionList, headers } from '../composables/usePurchaseRequisitionList'
+import PRMobileList from '../mobile/MobilePurchaseRequisitionList.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import PRDetailModal from '../dialogs/PRDetailModal.vue'
-import { ref, computed, onMounted, watch } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useDisplay } from 'vuetify'
-
-const selectedReorderIds = ref<number[]>([])
 
 const {
   stats,
@@ -25,8 +24,6 @@ const {
   statusOptions,
   showModal,
   itemNames,
-  showPOModal,
-  selectedPRForPO,
   confirmDialog,
   confirmLoading,
   searchInput,
@@ -37,10 +34,6 @@ const {
   closeConfirm,
   handleConfirm,
   openPurchaseOrder,
-  openReorderDialog,
-  reorderRequests,
-  showReorderDialog,
-  reorderCount,
 } = usePurchaseRequisitionList()
 const { mobile } = useDisplay()
 onMounted(() => {
@@ -50,12 +43,6 @@ onMounted(() => {
     }
 })
 
-// Clear reorder selection when the reorder dialog is closed
-watch(() => showReorderDialog.value, (isOpen) => {
-  if (!isOpen) {
-    selectedReorderIds.value = []
-  }
-})
 
 const totalPages = computed(() => Math.max(1, Math.ceil(totalItems.value / itemsPerPage.value)))
 function goToPage(p: number) {
@@ -351,131 +338,16 @@ function goToPage(p: number) {
 
       <!-- ── MOBILE: card list ───────────────────────────────── -->
       <template v-else>
-        <v-progress-linear v-if="loading" indeterminate color="primary" />
-        <div v-if="!loading && serverItems.length === 0" class="text-center pa-8 text-medium-emphasis">
-          No purchase requisitions found.
-        </div>
-
-        <div class="pa-3" style="display: flex; flex-direction: column; gap: 10px">
-          <v-card
-            v-for="item in serverItems"
-            :key="item.requisition_no"
-            rounded="lg"
-            border
-            elevation="0"
-            class="pr-mobile-card"
-          >
-            <!-- Card header: PR number + status -->
-            <div class="d-flex justify-space-between align-center px-4 pt-3 pb-1">
-              <span class="text-body-2 font-weight-bold text-primary">
-                {{ item.requisition_no }}
-              </span>
-              <span
-                class="status-chip text-caption font-weight-bold"
-                :class="`status-chip--${item.status}`"
-              >
-                <span class="status-dot" />
-                {{ statusConfig(item.status).label }}
-              </span>
-            </div>
-
-            <v-divider class="mx-4 mb-2" />
-
-            <!-- Card body: key details -->
-            <div class="px-4 pb-2" style="display: flex; flex-direction: column; gap: 6px">
-              <!-- Items summary -->
-              <div class="d-flex align-start" style="gap: 8px">
-                <v-icon size="16" class="mt-1 text-medium-emphasis flex-shrink-0">mdi-pill</v-icon>
-                <div>
-                  <div class="text-body-2">{{ itemSummary(item.items) }}</div>
-                  <div class="text-caption text-medium-emphasis">
-                    {{ item.items.length }} line
-                    {{ item.items.length === 1 ? 'item' : 'items' }} &bull; Qty:
-                    {{ totalQty(item.items).toLocaleString() }}
-                  </div>
-                </div>
-              </div>
-
-              <!-- Amount -->
-              <div class="d-flex align-center" style="gap: 8px">
-                <v-icon size="16" class="text-medium-emphasis flex-shrink-0"
-                  >mdi-currency-php</v-icon
-                >
-                <span class="text-body-2 font-weight-medium">{{
-                  formatCurrency(totalCost(item.items))
-                }}</span>
-              </div>
-
-              <!-- Requester + Date -->
-              <div class="d-flex align-center justify-space-between">
-                <div class="d-flex align-center" style="gap: 6px">
-                  <v-icon size="16" class="text-medium-emphasis">mdi-account-outline</v-icon>
-                  <span class="text-caption text-medium-emphasis">{{ item.requester_name }}</span>
-                </div>
-                <span class="text-caption text-medium-emphasis">
-                  {{ formatDatePR_ISO(item.created_at) }}
-                </span>
-              </div>
-
-              <!-- Reviewed by (only if present) -->
-              <div v-if="item.reviewer_name" class="d-flex align-center" style="gap: 6px">
-                <v-icon size="16" class="text-medium-emphasis">mdi-account-check-outline</v-icon>
-                <span class="text-caption text-medium-emphasis"
-                  >Reviewed by {{ item.reviewer_name }}</span
-                >
-              </div>
-            </div>
-
-            <!-- Card actions -->
-            <div class="px-4 pb-3 pt-1 d-flex flex-column" style="gap: 6px">
-              <v-btn
-                variant="outlined"
-                size="small"
-                class="text-none"
-                block
-                @click="openDetail(item)"
-              >
-                View Details
-              </v-btn>
-              <template v-if="item.status === 'approved'">
-                <v-btn
-                  variant="outlined"
-                  size="small"
-                  class="text-none"
-                  prepend-icon="mdi-printer-outline"
-                  block
-                  @click="openPurchaseOrder(item)"
-                >
-                  Issue PO
-                </v-btn>
-              </template>
-            </div>
-          </v-card>
-        </div>
-
-        <!-- Mobile pagination -->
-        <div class="d-flex align-center justify-center ga-2 py-4">
-          <v-btn
-            icon="mdi-chevron-left"
-            variant="text"
-            size="small"
-            :disabled="page <= 1 || loading"
-            @click="goToPage(page - 1)"
-          />
-          <span
-            class="text-body-2 text-medium-emphasis mx-2"
-            style="min-width: 80px; text-align: center"
-          >
-            Page {{ page }} of {{ totalPages }}
-          </span>
-          <v-btn
-            icon="mdi-chevron-right"
-            variant="text"
-            size="small"
-            :disabled="page >= totalPages || loading"
-            @click="goToPage(page + 1)"
-          />
-        </div>
+        <!-- Replaces the entire card-list + pagination markup that was here before -->
+        <PRMobileList
+          :items="serverItems"
+          :loading="loading"
+          :page="page"
+          :total-pages="totalPages"
+          @view-detail="openDetail"
+          @issue-po="openPurchaseOrder"
+          @change-page="goToPage"
+        />
       </template>
     </v-card>
 
@@ -523,54 +395,6 @@ function goToPage(p: number) {
             Yes, {{ confirmDialog.action === 'APPROVE' ? 'Approve' : 'Reject' }}
           </v-btn>
         </v-card-actions>
-      </v-card>
-    </v-dialog>
-
-    <v-dialog v-model="showReorderDialog" max-width="600">
-      <v-card>
-        <v-card-title class="d-flex align-center pa-4">
-          <v-icon icon="mdi-cart-arrow-down" color="teal" class="mr-2"></v-icon>
-          <span class="text-h6 font-weight-bold">Reorder Requests</span>
-          <v-spacer></v-spacer>
-          <v-btn icon="mdi-close" variant="text" size="small" @click="showReorderDialog = false"></v-btn>
-        </v-card-title>
-        <v-divider></v-divider>
-        <v-card-text class="pa-0" style="max-height: 400px; overflow-y: auto;">
-          <v-list v-if="reorderRequests.length" density="comfortable">
-            <v-list-item v-for="r in reorderRequests" :key="r.id">
-              <template #prepend>
-                <v-checkbox-btn
-                  :model-value="selectedReorderIds.includes(r.id)"
-                  @update:model-value="(val) => {
-                    if (val) selectedReorderIds.push(r.id)
-                    else selectedReorderIds = selectedReorderIds.filter(id => id !== r.id)
-                  }"
-                />
-              </template>
-              <v-list-item-title class="font-weight-medium">
-                {{ r.product?.product_name }}
-              </v-list-item-title>
-              <v-list-item-subtitle>
-                Stock: {{ r.product?.current_stock ?? 0 }}
-                <span v-if="r.product?.reorder_level != null"> · reorder at {{ r.product.reorder_level }}</span>
-                · Flagged by {{ r.requester_name }}
-              </v-list-item-subtitle>
-              <template #append>
-                <v-chip
-                  size="small"
-                  :color="r.transaction_type === 'reorder_outofstock' ? 'error' : r.transaction_type === 'reorder_lowstock' ? 'warning' : 'orange'"
-                  variant="tonal"
-                >
-                  {{ r.transaction_type.replace('reorder_', '').replace('_', ' ') }}
-                </v-chip>
-              </template>
-            </v-list-item>
-          </v-list>
-          <div v-else class="text-center py-8 text-medium-emphasis">
-            No pending reorder requests
-          </div>
-        </v-card-text>
-        <v-divider />
       </v-card>
     </v-dialog>
   </v-container>
@@ -623,10 +447,6 @@ function goToPage(p: number) {
   gap: 6px;
 }
 
-.pr-row:hover td {
-  background: rgba(0, 0, 0, 0.03);
-}
-
 :deep(.v-table thead tr th) {
   background: rgba(0, 0, 0, 0.03) !important;
   padding: 12px 16px !important;
@@ -639,13 +459,6 @@ function goToPage(p: number) {
 }
 :deep(.v-table tbody tr:not(:last-child) td) {
   border-bottom: 1px solid rgba(0, 0, 0, 0.05) !important;
-}
-
-.pr-mobile-card {
-  transition: box-shadow 0.15s ease;
-}
-.pr-mobile-card:active {
-  box-shadow: 0 0 0 2px rgba(var(v-theme-primary), 0.3) !important;
 }
 .stat-card {
   min-height: 96px;
