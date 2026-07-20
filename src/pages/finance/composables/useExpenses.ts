@@ -7,7 +7,7 @@ import {
 } from '@/stores/financeData'
 import type { ExpenseType } from '@/stores/financeData'
 import { useChangeRequestsDataStore } from '@/stores/changeRequestsData'
-import type { ChangeRequestField, ProposedChange } from '@/stores/changeRequestsData'
+import type { ChangeRequestField, ProposedChange, AppliedEdit } from '@/stores/changeRequestsData'
 import { formatCurrency } from '@/utils/helpers'
 import type { AddExpensePayload } from '@/utils/cashAccountTypes'
 
@@ -37,6 +37,7 @@ export function useExpenses() {
   const showChangeDialog = ref(false)
   const changeTarget = ref<ExpenseType | null>(null)
   const pendingIds = ref<Set<number>>(new Set())
+  const appliedEdits = ref<Map<number, AppliedEdit>>(new Map())
 
   // ─── Actions ──────────────────────────────────────────────────────
   async function init() {
@@ -45,11 +46,33 @@ export function useExpenses() {
   }
 
   async function loadPending() {
-    pendingIds.value = new Set(await changeStore.fetchPendingTargetIds('expense'))
+    const [pending, edits] = await Promise.all([
+      changeStore.fetchPendingTargetIds('expense'),
+      changeStore.fetchAppliedEdits('expense'),
+    ])
+    pendingIds.value = new Set(pending)
+    // Newest-first from the store, so the first entry per target wins.
+    const map = new Map<number, AppliedEdit>()
+    for (const e of edits) if (!map.has(e.target_id)) map.set(e.target_id, e)
+    appliedEdits.value = map
   }
 
   function isPending(id: number) {
     return pendingIds.value.has(id)
+  }
+
+  // An approved edit landed on this exact expense (a memo edit — a ledger edit
+  // voids the original instead, which the row's own voided_at already shows).
+  function isEdited(id: number) {
+    return appliedEdits.value.has(id)
+  }
+
+  function editTooltip(id: number) {
+    const e = appliedEdits.value.get(id)
+    if (!e) return ''
+    const when = e.resolved_at ? new Date(e.resolved_at).toLocaleDateString() : ''
+    return [e.summary ?? 'Edited via approved change request', e.reason, when && `Applied ${when}`]
+      .filter(Boolean).join(' — ')
   }
 
   function openFormDialog() {
@@ -145,7 +168,7 @@ export function useExpenses() {
   return {
     expenses, cashAccounts, loading,
     showFormDialog,
-    showChangeDialog, changeTarget, changeFields, voidSummary, isPending,
+    showChangeDialog, changeTarget, changeFields, voidSummary, isPending, isEdited, editTooltip,
     init, openFormDialog, handleSubmit, openChangeDialog, submitChangeRequest,
   }
 }

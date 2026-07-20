@@ -26,6 +26,10 @@ export function getReferenceLabel(log: LogType): string | null {
 export function getActionColor(action: string | null): string {
   if (!action) return 'grey'
   const lower = action.toLowerCase()
+  // Change requests + voids read before the generic rules below, which would
+  // otherwise miss them ('change_requested' has no keyword match at all).
+  if (lower === 'change_requested') return 'orange'
+  if (lower.includes('void')) return 'error'
   if (lower.includes('submit') || lower.includes('create')) return 'success'
   if (lower.includes('update') || lower.includes('edit')) return 'info'
   if (lower.includes('delete') || lower.includes('remove')) return 'error'
@@ -62,6 +66,8 @@ export function getModuleColor(module: string | null): string {
 export function getTimelineIcon(action: string | null): string {
   if (!action) return 'mdi-circle-small'
   const lower = action.toLowerCase()
+  if (lower === 'change_requested') return 'mdi-file-document-edit-outline'
+  if (lower.includes('void')) return 'mdi-cancel'
   if (lower.includes('submit') || lower.includes('create')) return 'mdi-plus-circle-outline'
   if (lower.includes('update') || lower.includes('edit')) return 'mdi-pencil-circle-outline'
   if (lower.includes('delete') || lower.includes('remove')) return 'mdi-delete-circle-outline'

@@ -18,12 +18,21 @@ const toast = useToast()
 // applied. On approval, applyChange dispatches to a per-type handler that
 // reuses the module's existing undo/reversal functions.
 //
-// NO dedicated table — the whole lifecycle lives in the existing `logs` table
-// (the project's "connector = logs" convention, same shape as the Procurement
-// request hand-off): a request is one `change_requested` log carrying the
-// proposed diff as JSON in `description`; approve/reject are follow-up
-// `change_approved` / `change_rejected` logs that reference the request log's
-// id. Status is DERIVED — pending = a request log with no resolution log yet.
+// Storage: the `change_requests` table (20260720000000). This used to live
+// encoded as JSON inside `logs` with a derived status; `logs` now keeps only
+// its real job — one readable narrative row per event (change_requested /
+// change_approved / change_rejected), carrying transaction_id so the request
+// still appears on the document's cross-module timeline.
+//
+// Voids are SOFT: every handler below marks the document voided and leaves it
+// in place (the accountant's requirement — a reversed document stays visible,
+// flagged, for tracking). A ledger EDIT is reverse + reissue: the original is
+// voided and a replacement is recorded at the CORRECTION date, with both ends
+// linked by this table's target_id -> result_id.
+//
+// Best-effort, not atomic (JS-over-RPC convention): approve applies the change
+// first and only then flips status, so a failure leaves the request pending and
+// retryable rather than marking a change done that never landed.
 
 const ACTION_REQUEST = 'change_requested'
 const ACTION_APPROVE = 'change_approved'
@@ -46,7 +55,7 @@ export type ChangeRequestField = {
 export type ProposedChange = Record<string, { from: unknown; to: unknown }>
 
 export type ChangeRequestType = {
-  id: number               // the request log's id
+  id: number               // change_requests.id
   created_at: string
   module: string
   target_type: ChangeRequestTargetType
@@ -62,6 +71,8 @@ export type ChangeRequestType = {
   resolved_by: string | null
   resolved_at: string | null
   resolution_note: string | null
+  // The reissued replacement document, for an approved ledger edit.
+  result_id: number | null
   result_ref: string | null
 }
 
@@ -76,27 +87,40 @@ export type ProposeChangePayload = {
   reason?: string
 }
 
-// The JSON payload stored in a `change_requested` log's description.
-type RequestPayload = {
-  target_type: ChangeRequestTargetType
+type ApplyResult = { success: boolean; resultId?: number; resultRef?: string; error?: string }
+
+// One approved edit against a document, for the "Edited" chip.
+export type AppliedEdit = {
   target_id: number
-  target_ref: string | null
-  request_type: 'edit' | 'void'
-  proposed_changes: ProposedChange
   summary: string | null
   reason: string | null
-}
-// The JSON payload stored in a resolution log's description.
-type ResolutionPayload = {
-  request_log_id: number
-  note: string | null
+  resolved_at: string | null
   result_ref: string | null
 }
 
-function safeParse<T>(text: string | null): T | null {
-  if (!text) return null
-  try { return JSON.parse(text) as T } catch { return null }
+function mapRequestRow(row: any): ChangeRequestType {
+  return {
+    id: row.id,
+    created_at: row.created_at,
+    module: row.module,
+    target_type: row.target_type,
+    target_id: row.target_id,
+    target_ref: row.target_ref ?? null,
+    request_type: row.request_type,
+    proposed_changes: (row.proposed_changes ?? {}) as ProposedChange,
+    summary: row.summary ?? null,
+    reason: row.reason ?? null,
+    status: row.status,
+    created_by: row.created_by ?? null,
+    resolved_by: row.resolved_by ?? null,
+    resolved_at: row.resolved_at ?? null,
+    resolution_note: row.resolution_note ?? null,
+    result_id: row.result_id ?? null,
+    result_ref: row.result_ref ?? null,
+  }
 }
+
+const targetLabel = (r: { target_ref: string | null; target_id: number }) => r.target_ref ?? `#${r.target_id}`
 
 export const useChangeRequestsDataStore = defineStore('changeRequestsData', () => {
   const authStore = useAuthUserStore()
@@ -112,68 +136,21 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
   }
   const clearError = () => { error.value = '' }
 
-  // Fetch every change_* log and fold it into the derived request view-model.
-  // At this app's volume (change requests are rare) a single unfiltered read
-  // of the change_* logs is trivial; bound by created_at later if it ever grows.
-  async function loadAllRequests(): Promise<ChangeRequestType[]> {
-    const { data, error: fetchError } = await supabase
-      .from('logs')
-      .select('id, created_at, action, description, module, created_by')
-      .in('action', [ACTION_REQUEST, ACTION_APPROVE, ACTION_REJECT])
-      .order('created_at', { ascending: false })
-    if (fetchError) { handleError(fetchError, 'Failed to fetch change requests'); return [] }
-    const rows = data || []
-
-    // Index resolutions by the request log id they point at.
-    const resolutions = new Map<number, { action: string; note: string | null; result_ref: string | null; by: string | null; at: string }>()
-    for (const r of rows) {
-      if (r.action !== ACTION_APPROVE && r.action !== ACTION_REJECT) continue
-      const p = safeParse<ResolutionPayload>(r.description)
-      if (p?.request_log_id != null && !resolutions.has(p.request_log_id)) {
-        resolutions.set(p.request_log_id, { action: r.action, note: p.note ?? null, result_ref: p.result_ref ?? null, by: r.created_by, at: r.created_at })
-      }
-    }
-
-    const out: ChangeRequestType[] = []
-    for (const r of rows) {
-      if (r.action !== ACTION_REQUEST) continue
-      const p = safeParse<RequestPayload>(r.description)
-      if (!p) continue
-      const res = resolutions.get(r.id)
-      out.push({
-        id: r.id,
-        created_at: r.created_at,
-        module: r.module,
-        target_type: p.target_type,
-        target_id: p.target_id,
-        target_ref: p.target_ref ?? null,
-        request_type: p.request_type,
-        proposed_changes: p.proposed_changes ?? {},
-        summary: p.summary ?? null,
-        reason: p.reason ?? null,
-        status: res ? (res.action === ACTION_APPROVE ? 'approved' : 'rejected') : 'pending',
-        created_by: r.created_by,
-        resolved_by: res?.by ?? null,
-        resolved_at: res?.at ?? null,
-        resolution_note: res?.note ?? null,
-        result_ref: res?.result_ref ?? null,
-      })
-    }
-    return out
-  }
-
   const fetchRequests = async (options: { status?: 'pending' | 'approved' | 'rejected'; module?: string } = {}) => {
     loading.value = true
     clearError()
     try {
-      let all = await loadAllRequests()
-      if (options.status) all = all.filter((r) => r.status === options.status)
-      if (options.module) all = all.filter((r) => r.module === options.module)
+      let q = supabase.from('change_requests').select('*').order('created_at', { ascending: false })
+      if (options.status) q = q.eq('status', options.status)
+      if (options.module) q = q.eq('module', options.module)
+
+      const { data, error: fetchError } = await q
+      if (fetchError) throw fetchError
 
       if (!authStore.users.length) await authStore.getAllUsers()
-      requests.value = all.map((r) => ({
-        ...r,
-        created_by_email: authStore.users.find((u: any) => u.id === r.created_by)?.email ?? null,
+      requests.value = (data || []).map((row) => ({
+        ...mapRequestRow(row),
+        created_by_email: authStore.users.find((u: any) => u.id === row.created_by)?.email ?? null,
       }))
       return requests.value
     } catch (err) {
@@ -184,16 +161,68 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     }
   }
 
+  const fetchRequestById = async (id: number): Promise<ChangeRequestType | null> => {
+    const { data, error: e } = await supabase.from('change_requests').select('*').eq('id', id).maybeSingle()
+    if (e || !data) return null
+    return mapRequestRow(data)
+  }
+
   const hasPendingRequest = async (targetType: ChangeRequestTargetType, targetId: number): Promise<boolean> => {
-    const all = await loadAllRequests()
-    return all.some((r) => r.status === 'pending' && r.target_type === targetType && r.target_id === targetId)
+    const { data } = await supabase.from('change_requests')
+      .select('id')
+      .eq('target_type', targetType).eq('target_id', targetId).eq('status', 'pending')
+      .maybeSingle()
+    return !!data
   }
 
   // Which documents of this type currently have a pending request (drives the
   // "Change pending" chip on a list view).
   const fetchPendingTargetIds = async (targetType: ChangeRequestTargetType): Promise<number[]> => {
-    const all = await loadAllRequests()
-    return all.filter((r) => r.status === 'pending' && r.target_type === targetType).map((r) => r.target_id)
+    const { data, error: e } = await supabase.from('change_requests')
+      .select('target_id').eq('target_type', targetType).eq('status', 'pending')
+    if (e) { handleError(e, 'Failed to fetch pending change requests'); return [] }
+    return (data || []).map((r: any) => r.target_id as number)
+  }
+
+  // Documents of this type carrying an APPLIED edit — drives the "Edited" chip.
+  // Only edits: a void marks the document itself (voided_at), so it needs no
+  // lookup. For a LEDGER edit the target ends up voided and the chip is
+  // redundant, so callers show this only when the row isn't voided; the
+  // replacement document is instead linked by a backlink in its remarks.
+  const fetchAppliedEdits = async (targetType: ChangeRequestTargetType): Promise<AppliedEdit[]> => {
+    const { data, error: e } = await supabase.from('change_requests')
+      .select('target_id, summary, reason, resolved_at, result_ref')
+      .eq('target_type', targetType).eq('request_type', 'edit').eq('status', 'approved')
+      .order('resolved_at', { ascending: false })
+    if (e) { handleError(e, 'Failed to fetch applied edits'); return [] }
+    return (data || []) as AppliedEdit[]
+  }
+
+  // The activity-log side. Same action names as the old encoding so log
+  // filters, colors and the timeline keep working — but the description is a
+  // readable sentence now, not the JSON blob the log feed used to render.
+  async function logChangeEvent(
+    action: typeof ACTION_REQUEST | typeof ACTION_APPROVE | typeof ACTION_REJECT,
+    req: ChangeRequestType,
+    userId: string,
+    note?: string,
+  ) {
+    const verb = req.request_type === 'void' ? 'Undo/void' : 'Edit'
+    const head = action === ACTION_REQUEST
+      ? `Change request #${req.id} — ${verb} ${targetLabel(req)}`
+      : `${action === ACTION_APPROVE ? 'Approved' : 'Rejected'} change request #${req.id} — ${verb} ${targetLabel(req)}`
+    const tail = note ?? req.summary ?? req.reason ?? null
+
+    // Only the four transaction-targeted types carry a hub id; collections and
+    // journal entries get null (their own id is not a transactions.id).
+    const { error: e } = await supabase.from('logs').insert({
+      created_by: userId,
+      action,
+      module: req.module,
+      description: tail ? `${head}: ${tail}` : head,
+      transaction_id: isTransactionTarget(req.target_type) ? req.target_id : null,
+    })
+    if (e) console.warn(`logChangeEvent(${action}): activity log insert failed:`, e.message)
   }
 
   const proposeChange = async (payload: ProposeChangePayload) => {
@@ -202,34 +231,40 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
 
+    // Friendly pre-check; the partial unique index below is what actually
+    // guarantees it (two people filing at once used to both get through).
     if (await hasPendingRequest(payload.targetType, payload.targetId)) {
       toast.warning('There is already a pending change request for this document.')
       loading.value = false
       return { success: false }
     }
 
-    const requestPayload: RequestPayload = {
+    const { data, error: insertError } = await supabase.from('change_requests').insert({
+      module: payload.module,
       target_type: payload.targetType,
       target_id: payload.targetId,
       target_ref: payload.targetRef ?? null,
+      transaction_id: isTransactionTarget(payload.targetType) ? payload.targetId : null,
       request_type: payload.requestType,
       proposed_changes: payload.proposedChanges ?? {},
       summary: payload.summary ?? null,
       reason: payload.reason ?? null,
-    }
-
-    const { data, error: insertError } = await supabase.from('logs').insert({
-      created_by: user.id, action: ACTION_REQUEST, module: payload.module,
-      description: JSON.stringify(requestPayload),
-      transaction_id: isTransactionTarget(payload.targetType) ? payload.targetId : null,
-    }).select('id').single()
+      status: 'pending',
+      created_by: user.id,
+    }).select('*').single()
 
     if (insertError || !data) {
+      // 23505 = the one-pending-per-target index; show the same message as the
+      // pre-check rather than a raw constraint error.
+      const duplicate = (insertError as any)?.code === '23505'
       handleError(insertError, 'Failed to submit change request.')
-      toast.error(insertError?.message || 'Failed to submit change request.')
+      if (duplicate) toast.warning('There is already a pending change request for this document.')
+      else toast.error(insertError?.message || 'Failed to submit change request.')
       loading.value = false
       return { success: false }
     }
+
+    await logChangeEvent(ACTION_REQUEST, mapRequestRow(data), user.id)
 
     toast.success('Change request submitted for approval.')
     loading.value = false
@@ -242,14 +277,16 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
 
-    const request = (await loadAllRequests()).find((r) => r.id === requestLogId)
+    const request = await fetchRequestById(requestLogId)
     if (!request || request.status !== 'pending') {
       toast.error('Pending change request not found.'); loading.value = false; return { success: false }
     }
 
-    const ok = await writeResolution(requestLogId, request, user.id, ACTION_REJECT, { note: reason || 'Rejected by approver.', result_ref: null })
+    const note = reason || 'Rejected by approver.'
+    const ok = await resolveRequest(requestLogId, user.id, ACTION_REJECT, { note, resultId: null, resultRef: null })
     loading.value = false
     if (!ok) return { success: false }
+    await logChangeEvent(ACTION_REJECT, request, user.id, note)
     toast.success('Change request rejected.')
     await fetchRequests({ status: 'pending' })
     return { success: true }
@@ -264,7 +301,7 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
 
-    const request = (await loadAllRequests()).find((r) => r.id === requestLogId)
+    const request = await fetchRequestById(requestLogId)
     if (!request || request.status !== 'pending') {
       toast.error('Pending change request not found.'); loading.value = false; return { success: false }
     }
@@ -276,47 +313,55 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
       return { success: false }
     }
 
-    // The change is applied at this point; the resolution log is what flips the
-    // request out of 'pending'. If it fails to write, the change stuck but the
+    // The change is applied at this point; flipping status is what takes the
+    // request out of 'pending'. If that write fails, the change stuck but the
     // request would still show pending — surface that rather than reporting a
     // clean success.
-    const wrote = await writeResolution(requestLogId, request, user.id, ACTION_APPROVE, { note: 'Applied.', result_ref: applied.resultRef ?? null })
+    const wrote = await resolveRequest(requestLogId, user.id, ACTION_APPROVE, {
+      note: 'Applied.', resultId: applied.resultId ?? null, resultRef: applied.resultRef ?? null,
+    })
     if (!wrote) {
       toast.warning('Change applied, but recording the approval failed — the request may still show as pending.')
     } else {
       toast.success('Change request approved and applied.')
     }
+    await logChangeEvent(ACTION_APPROVE, request, user.id, applied.resultRef ?? 'Applied.')
     await fetchRequests({ status: 'pending' })
     loading.value = false
     return { success: true }
   }
 
-  async function writeResolution(
-    requestLogId: number,
-    request: ChangeRequestType,
+  // Guarded on status='pending' so a stale double-click can't re-resolve a
+  // request (and, via approveRequest, re-apply the change).
+  async function resolveRequest(
+    requestId: number,
     userId: string,
     action: typeof ACTION_APPROVE | typeof ACTION_REJECT,
-    extra: { note: string | null; result_ref: string | null },
+    extra: { note: string | null; resultId: number | null; resultRef: string | null },
   ): Promise<boolean> {
-    const payload: ResolutionPayload = { request_log_id: requestLogId, note: extra.note, result_ref: extra.result_ref }
-    // transaction_id is intentionally null: a resolution links to its request
-    // via request_log_id (in the description), and a void may have just DELETED
-    // the target transaction — FK-ing to it here would fail the insert and
-    // leave the request stuck showing 'pending' even though it was applied.
-    const { error: e } = await supabase.from('logs').insert({
-      created_by: userId, action, module: request.module,
-      description: JSON.stringify(payload),
-      transaction_id: null,
-    })
+    const { data, error: e } = await supabase.from('change_requests')
+      .update({
+        status: action === ACTION_APPROVE ? 'approved' : 'rejected',
+        resolved_by: userId,
+        resolved_at: new Date().toISOString(),
+        resolution_note: extra.note,
+        result_id: extra.resultId,
+        result_ref: extra.resultRef,
+      })
+      .eq('id', requestId).eq('status', 'pending')
+      .select('id')
     if (e) { handleError(e, 'Failed to record the approval decision.'); toast.error(e.message || 'Failed to record the approval decision.'); return false }
+    if (!data?.length) { handleError(null, 'This change request was already resolved.'); return false }
     return true
   }
 
   // ─── Apply dispatch ─────────────────────────────────────────────────────────
+  // resultId/resultRef identify the REPLACEMENT document when a ledger edit was
+  // applied as reverse + reissue; absent for a plain void or a memo-only edit.
   // Reuses each module's existing undo/reversal where possible. Phase 1 wires
   // 'expense'; other target types return a not-yet-supported error so approving
   // one fails gracefully (only expense requests can be created in Phase 1).
-  async function applyChange(request: ChangeRequestType, userId: string): Promise<{ success: boolean; resultRef?: string; error?: string }> {
+  async function applyChange(request: ChangeRequestType, userId: string): Promise<ApplyResult> {
     switch (request.target_type) {
       case 'expense':            return applyExpenseChange(request, userId)
       case 'supplier_payment':   return applySupplierPaymentChange(request, userId)
@@ -369,32 +414,48 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     return null
   }
   const staleError = (k: string) => ({ success: false as const, error: `"${k}" changed since this request was filed — please re-file the edit.` })
+  // Reverse + reissue dates the replacement at the correction date (accountant's
+  // call), so a fix never lands back in an already-reported period.
+  const correctionDate = () => new Date().toISOString().slice(0, 10)
+  const reissueReason = (r: ChangeRequestType) =>
+    `Corrected via change request #${r.id}${r.reason ? `: ${r.reason}` : ''}`
+  // Backlink stamped onto the REPLACEMENT document's remarks, so a corrected
+  // document points at what it superseded without needing a self-FK on
+  // transactions (that shape was reverted once already, for delivery receipts).
+  // The forward link lives on change_requests.result_id.
+  const reissueRemarks = (r: ChangeRequestType, remarks: unknown) => {
+    const backlink = `Replaces ${targetLabel(r)} (change request #${r.id})`
+    const existing = (remarks ?? '') as string
+    return existing ? `${backlink} | ${existing}` : backlink
+  }
 
   const EXPENSE_LEDGER_KEYS = new Set(['amount', 'category', 'cash_account_id', 'paid_at'])
   const EXPENSE_MEMO_TX_KEYS = new Set(['payment_method', 'remarks'])
   const EXPENSE_MEMO_DETAIL_KEYS = new Set(['paid_to', 'department', 'or_si_no'])
 
-  // Reverse the expense's projected GL entry (if booked) + delete + restore cash.
-  async function voidExpense(targetId: number, userId: string): Promise<{ success: boolean; error?: string }> {
+  // Reverse the expense's projected GL entry (if booked), then soft-void the
+  // document and restore the cash account. The row stays, flagged.
+  async function voidExpense(targetId: number, userId: string, reason: string | null): Promise<{ success: boolean; error?: string }> {
     const financeStore = useFinanceDataStore()
     const rev = await reverseProjectedEntry('disbursement', targetId, userId)
     if (!rev.ok) return { success: false, error: rev.error || 'Failed to reverse the expense journal entry.' }
-    const result = await financeStore.deleteExpense(targetId)
-    return result.success ? { success: true } : { success: false, error: 'Failed to delete the expense (GL already reversed — please retry).' }
+    const result = await financeStore.voidExpense(targetId, reason)
+    return result.success ? { success: true } : { success: false, error: 'Failed to void the expense (GL already reversed — please retry).' }
   }
 
-  async function applyExpenseChange(request: ChangeRequestType, userId: string): Promise<{ success: boolean; resultRef?: string; error?: string }> {
+  async function applyExpenseChange(request: ChangeRequestType, userId: string): Promise<ApplyResult> {
     if (request.request_type === 'void') {
-      const v = await voidExpense(request.target_id, userId)
+      const v = await voidExpense(request.target_id, userId, request.reason)
       return v.success ? { success: true, resultRef: request.target_ref ?? undefined } : v
     }
 
     // EDIT — read live state (for the stale-guard + the reissue base).
     const changes = request.proposed_changes ?? {}
     const { data: cur } = await supabase.from('transactions')
-      .select('total_amount, cash_account_id, paid_at, payment_method, remarks, finance_details(category, paid_to, department, or_si_no)')
+      .select('total_amount, cash_account_id, paid_at, payment_method, remarks, voided_at, finance_details(category, paid_to, department, or_si_no)')
       .eq('id', request.target_id).eq('transaction_type', 'expense').maybeSingle()
     if (!cur) return { success: false, error: 'Expense not found.' }
+    if (cur.voided_at) return { success: false, error: 'This expense has already been voided.' }
     const fd = ((Array.isArray(cur.finance_details) ? cur.finance_details[0] : cur.finance_details) ?? {}) as Record<string, unknown>
     const current: Record<string, unknown> = {
       amount: cur.total_amount, cash_account_id: cur.cash_account_id, paid_at: (cur.paid_at ?? '').slice(0, 10),
@@ -417,36 +478,50 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     }
 
     // Ledger edit → reverse the old expense + reissue a corrected one.
+    // The replacement is dated at the CORRECTION date, not the original value
+    // date, so a correction never posts back into an already-reported period
+    // (unless the edit is explicitly changing paid_at itself).
     const financeStore = useFinanceDataStore()
     const merged = {
       category: (toVal(changes, 'category') ?? fd.category) as ExpenseCategory,
       amount: Number(toVal(changes, 'amount') ?? cur.total_amount ?? 0),
       paidTo: (toVal(changes, 'paid_to') ?? fd.paid_to) as string | undefined || undefined,
       paymentMethod: (toVal(changes, 'payment_method') ?? cur.payment_method) as string | undefined || undefined,
-      valueDate: (toVal(changes, 'paid_at') ?? (cur.paid_at ?? '').slice(0, 10)) as string | undefined || undefined,
-      remarks: (toVal(changes, 'remarks') ?? cur.remarks) as string | undefined || undefined,
+      valueDate: (toVal(changes, 'paid_at') ?? correctionDate()) as string | undefined || undefined,
+      remarks: reissueRemarks(request, toVal(changes, 'remarks') ?? cur.remarks),
       department: (toVal(changes, 'department') ?? fd.department) as ExpenseDepartment | undefined || undefined,
       orSiNo: (toVal(changes, 'or_si_no') ?? fd.or_si_no) as string | undefined || undefined,
       cashAccountId: Number(toVal(changes, 'cash_account_id') ?? cur.cash_account_id),
     }
-    const v = await voidExpense(request.target_id, userId)
+    const v = await voidExpense(request.target_id, userId, reissueReason(request))
     if (!v.success) return v
     const res = await financeStore.recordExpense(merged)
-    if (!res.success) return { success: false, error: 'Old expense reversed, but reissuing the corrected expense failed — please re-record it manually.' }
-    return { success: true, resultRef: `${request.target_ref ?? '#' + request.target_id} → reissued` }
+    if (!res.success) return { success: false, error: 'Old expense voided, but reissuing the corrected expense failed — please re-record it manually.' }
+    return { success: true, resultId: res.expenseId, resultRef: res.expenseNo ?? undefined }
   }
 
   // ── Supplier payment ──────────────────────────────────────────────────────
   // Projects as 'disbursement' (DR AP / CR cash). Void reverses that + restores
   // suppliers.balance (which recordSupplierPayment decremented) + deletes the
   // row. Edit is memo-only; amount/supplier changes go through void + re-record.
-  // Reverse the payment's disbursement entry + restore suppliers.balance + delete.
-  async function voidSupplierPayment(targetId: number, userId: string): Promise<{ success: boolean; error?: string }> {
+  // Reverse the payment's disbursement entry + restore suppliers.balance, then
+  // soft-void the document (it stays on the books, flagged).
+  async function voidSupplierPayment(targetId: number, userId: string, reason: string | null): Promise<{ success: boolean; error?: string }> {
     const { data: pay } = await supabase.from('transactions')
-      .select('supplier_id, total_amount').eq('id', targetId).eq('transaction_type', 'supplier_payment').maybeSingle()
+      .select('supplier_id, total_amount, voided_at').eq('id', targetId).eq('transaction_type', 'supplier_payment').maybeSingle()
     if (!pay) return { success: false, error: 'Supplier payment not found.' }
+    if (pay.voided_at) return { success: false, error: 'This payment has already been voided.' }
     const rev = await reverseProjectedEntry('disbursement', targetId, userId)
     if (!rev.ok) return { success: false, error: rev.error || 'Failed to reverse the payment journal entry.' }
+
+    // Void marker first: it is what excludes the payment from every AP read, so
+    // it must land before the compensating balance restore (otherwise a failure
+    // between the two would credit the supplier back for a payment still live).
+    const { error: voidErr } = await supabase.from('transactions')
+      .update({ status: 'voided', voided_at: new Date().toISOString(), voided_by: userId, void_reason: reason })
+      .eq('id', targetId).eq('transaction_type', 'supplier_payment').is('voided_at', null)
+    if (voidErr) return { success: false, error: voidErr.message }
+
     if (pay.supplier_id) {
       const { data: s } = await supabase.from('suppliers').select('balance').eq('id', pay.supplier_id).maybeSingle()
       if (s) {
@@ -454,21 +529,20 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
         if (e) console.warn('voidSupplierPayment: suppliers.balance restore failed:', e.message)
       }
     }
-    const { error: delErr } = await supabase.from('transactions').delete().eq('id', targetId).eq('transaction_type', 'supplier_payment')
-    if (delErr) return { success: false, error: delErr.message }
     return { success: true }
   }
 
-  async function applySupplierPaymentChange(request: ChangeRequestType, userId: string): Promise<{ success: boolean; resultRef?: string; error?: string }> {
+  async function applySupplierPaymentChange(request: ChangeRequestType, userId: string): Promise<ApplyResult> {
     if (request.request_type === 'void') {
-      const v = await voidSupplierPayment(request.target_id, userId)
+      const v = await voidSupplierPayment(request.target_id, userId, request.reason)
       return v.success ? { success: true, resultRef: request.target_ref ?? undefined } : v
     }
 
     const changes = request.proposed_changes ?? {}
     const { data: cur } = await supabase.from('transactions')
-      .select('supplier_id, total_amount, payment_method, paid_at, remarks').eq('id', request.target_id).eq('transaction_type', 'supplier_payment').maybeSingle()
+      .select('supplier_id, total_amount, payment_method, paid_at, remarks, voided_at').eq('id', request.target_id).eq('transaction_type', 'supplier_payment').maybeSingle()
     if (!cur) return { success: false, error: 'Supplier payment not found.' }
+    if (cur.voided_at) return { success: false, error: 'This payment has already been voided.' }
     const current: Record<string, unknown> = { amount: cur.total_amount, payment_method: cur.payment_method, remarks: cur.remarks }
     const stale = firstStaleField(changes, current); if (stale) return staleError(stale)
 
@@ -482,26 +556,26 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
       return { success: true, resultRef: request.target_ref ?? undefined }
     }
 
-    // Amount edit → reverse + reissue.
+    // Amount edit → reverse + reissue, dated at the correction date.
     const financeStore = useFinanceDataStore()
     const merged = {
       supplierId: Number(cur.supplier_id),
       amount: Number(toVal(changes, 'amount') ?? cur.total_amount ?? 0),
       paymentMethod: (toVal(changes, 'payment_method') ?? cur.payment_method) as string | undefined || undefined,
-      valueDate: (cur.paid_at ?? '').slice(0, 10) || undefined,
-      remarks: (toVal(changes, 'remarks') ?? cur.remarks) as string | undefined || undefined,
+      valueDate: correctionDate(),
+      remarks: reissueRemarks(request, toVal(changes, 'remarks') ?? cur.remarks),
     }
-    const v = await voidSupplierPayment(request.target_id, userId)
+    const v = await voidSupplierPayment(request.target_id, userId, reissueReason(request))
     if (!v.success) return v
     const res = await financeStore.recordSupplierPayment(merged)
-    if (!res.success) return { success: false, error: 'Old payment reversed, but reissuing the corrected payment failed — please re-record it manually.' }
-    return { success: true, resultRef: `${request.target_ref ?? '#' + request.target_id} → reissued` }
+    if (!res.success) return { success: false, error: 'Old payment voided, but reissuing the corrected payment failed — please re-record it manually.' }
+    return { success: true, resultId: res.paymentId, resultRef: res.paymentNo ?? undefined }
   }
 
   // ── POS sale ──────────────────────────────────────────────────────────────
   // Reuse voidSale (restores stock, marks voided; the projection then books a
   // sales_return so the GL reverses). Sales aren't edited — void + re-ring.
-  async function applySaleChange(request: ChangeRequestType): Promise<{ success: boolean; resultRef?: string; error?: string }> {
+  async function applySaleChange(request: ChangeRequestType): Promise<ApplyResult> {
     if (request.request_type === 'edit') return { success: false, error: 'A sale cannot be edited — void it and re-ring instead.' }
     const salesStore = useSalesDataStore()
     const result = await salesStore.voidSale(request.target_id, request.reason ?? 'Voided via change request')
@@ -513,7 +587,7 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
   // ── Remittance ────────────────────────────────────────────────────────────
   // Remittances are GL-silent (a cash-reconciliation artifact), so correcting
   // the counted amount / notes in place is safe. Edit only — no void.
-  async function applyRemittanceChange(request: ChangeRequestType): Promise<{ success: boolean; resultRef?: string; error?: string }> {
+  async function applyRemittanceChange(request: ChangeRequestType): Promise<ApplyResult> {
     if (request.request_type === 'void') return { success: false, error: 'A remittance is corrected by editing the counted amount, not voided.' }
     const changes = request.proposed_changes ?? {}
     const { data: cur } = await supabase.from('transactions')
@@ -544,17 +618,23 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
   // target_id is the collection id. Both project as 'collection' (DR Cash / CR
   // AR). Void reverses that, deletes the collection, and rolls the order's
   // amount_paid + status back. Payments aren't edited — void + re-record.
-  // Reverse the collection's GL entry + delete it + roll the order back.
-  async function voidCollection(collectionId: number, userId: string, kind: 'inhouse' | 'ethical'): Promise<{ success: boolean; error?: string }> {
+  // Reverse the collection's GL entry, soft-void it, then roll the order back.
+  async function voidCollection(collectionId: number, userId: string, kind: 'inhouse' | 'ethical', reason: string | null): Promise<{ success: boolean; error?: string }> {
     const { data: col } = await supabase.from('collections')
-      .select('transaction_id, amount').eq('id', collectionId).maybeSingle()
+      .select('transaction_id, amount, voided_at').eq('id', collectionId).maybeSingle()
     if (!col) return { success: false, error: 'Payment not found.' }
+    if (col.voided_at) return { success: false, error: 'This payment has already been voided.' }
 
     const rev = await reverseProjectedEntry('collection', collectionId, userId)
     if (!rev.ok) return { success: false, error: rev.error || 'Failed to reverse the collection journal entry.' }
 
-    const { error: delErr } = await supabase.from('collections').delete().eq('id', collectionId)
-    if (delErr) return { success: false, error: delErr.message }
+    // Guarded on voided_at so a retry can't double-roll-back the order below.
+    const { data: voided, error: voidErr } = await supabase.from('collections')
+      .update({ voided_at: new Date().toISOString(), voided_by: userId, void_reason: reason })
+      .eq('id', collectionId).is('voided_at', null)
+      .select('id')
+    if (voidErr) return { success: false, error: voidErr.message }
+    if (!voided?.length) return { success: false, error: 'This payment has already been voided.' }
 
     // Roll the order back: subtract the voided amount, re-derive status.
     const detailsTable = kind === 'inhouse' ? 'inhouse_details' : 'ethical_details'
@@ -573,16 +653,17 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     return { success: true }
   }
 
-  async function applyCollectionChange(request: ChangeRequestType, userId: string, kind: 'inhouse' | 'ethical'): Promise<{ success: boolean; resultRef?: string; error?: string }> {
+  async function applyCollectionChange(request: ChangeRequestType, userId: string, kind: 'inhouse' | 'ethical'): Promise<ApplyResult> {
     if (request.request_type === 'void') {
-      const v = await voidCollection(request.target_id, userId, kind)
+      const v = await voidCollection(request.target_id, userId, kind, request.reason)
       return v.success ? { success: true, resultRef: request.target_ref ?? undefined } : v
     }
 
     const changes = request.proposed_changes ?? {}
     const { data: cur } = await supabase.from('collections')
-      .select('transaction_id, amount, payment_method, reference_no, remarks').eq('id', request.target_id).maybeSingle()
+      .select('transaction_id, amount, payment_method, reference_no, remarks, voided_at').eq('id', request.target_id).maybeSingle()
     if (!cur) return { success: false, error: 'Payment not found.' }
+    if (cur.voided_at) return { success: false, error: 'This payment has already been voided.' }
     const current: Record<string, unknown> = { amount: cur.amount, payment_method: cur.payment_method, reference_no: cur.reference_no, remarks: cur.remarks }
     const stale = firstStaleField(changes, current); if (stale) return staleError(stale)
 
@@ -602,21 +683,21 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
       amount: Number(toVal(changes, 'amount') ?? cur.amount ?? 0),
       method: (toVal(changes, 'payment_method') ?? cur.payment_method) as string | undefined || undefined,
       reference: (toVal(changes, 'reference_no') ?? cur.reference_no) as string | undefined || undefined,
-      remarks: (toVal(changes, 'remarks') ?? cur.remarks) as string | undefined || undefined,
+      remarks: reissueRemarks(request, toVal(changes, 'remarks') ?? cur.remarks),
     }
-    const v = await voidCollection(request.target_id, userId, kind)
+    const v = await voidCollection(request.target_id, userId, kind, reissueReason(request))
     if (!v.success) return v
     const res = kind === 'inhouse'
       ? await useInhouseDataStore().recordPayment(payload)
       : await useEthicalDataStore().recordCollection(payload)
-    if (!res.success) return { success: false, error: 'Old payment reversed, but reissuing the corrected payment failed — please re-record it manually.' }
-    return { success: true, resultRef: `${request.target_ref ?? '#' + request.target_id} → reissued` }
+    if (!res.success) return { success: false, error: 'Old payment voided, but reissuing the corrected payment failed — please re-record it manually.' }
+    return { success: true, resultId: (res as any).paymentId ?? (res as any).collectionId ?? undefined }
   }
 
   // ── GL journal entry ────────────────────────────────────────────────────────
   // A posted entry is corrected by reversal, never edited. Reuse the GL
   // reversal (posts a mirror + flips the original to 'reversed').
-  async function applyJournalEntryChange(request: ChangeRequestType, userId: string): Promise<{ success: boolean; resultRef?: string; error?: string }> {
+  async function applyJournalEntryChange(request: ChangeRequestType, userId: string): Promise<ApplyResult> {
     if (request.request_type === 'edit') return { success: false, error: 'A posted journal entry is corrected by reversal, not edited.' }
     const gl = useGLDataStore()
     const rev = await gl.reverseJournalEntry(request.target_id, userId)
@@ -640,7 +721,8 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
 
   return {
     requests, loading, error, pendingCount,
-    fetchRequests, hasPendingRequest, fetchPendingTargetIds, proposeChange, approveRequest, rejectRequest,
+    fetchRequests, fetchRequestById, hasPendingRequest, fetchPendingTargetIds, fetchAppliedEdits,
+    proposeChange, approveRequest, rejectRequest,
     clearError, resetStore,
   }
 })

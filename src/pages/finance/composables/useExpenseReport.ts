@@ -20,9 +20,14 @@ export function useExpenseReport() {
   function applyFilter() { load() }
   function clearFilter() { dateFrom.value = null; dateTo.value = null; load() }
 
+  // The store's expenses list deliberately INCLUDES voided documents so they
+  // stay visible in the Expenses table, flagged. This is a report of what was
+  // actually spent, so it works off the un-voided subset only.
+  const liveExpenses = computed(() => expenses.value.filter((e) => !e.voided_at))
+
   const usedCategories = computed(() => {
     const set = new Set<ExpenseCategory>()
-    for (const e of expenses.value) if (e.category) set.add(e.category)
+    for (const e of liveExpenses.value) if (e.category) set.add(e.category)
     return Array.from(set).sort((a, b) => categoryTitle(a).localeCompare(categoryTitle(b)))
   })
 
@@ -35,7 +40,7 @@ export function useExpenseReport() {
 
   const departmentGroups = computed<DepartmentGroup[]>(() => {
     const groups = new Map<string, ExpenseType[]>()
-    for (const e of expenses.value) {
+    for (const e of liveExpenses.value) {
       const dept = e.department ?? 'Unassigned'
       if (!groups.has(dept)) groups.set(dept, [])
       groups.get(dept)!.push(e)

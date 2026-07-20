@@ -42,6 +42,11 @@ export type CollectionType = {
   commission_status: string | null
   commission_paid_at: string | null
   remarks: string | null
+  // Soft void (20260720000000). Every fetch here filters voided rows out, so
+  // this is null in practice — present so a future "voided payments" view can
+  // read it without a type change.
+  voided_at?: string | null
+  void_reason?: string | null
 }
 
 export type EthicalOrderType = {
@@ -583,8 +588,9 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     if (fulfillmentStatus !== 'fulfilled') {
       toast.error('Cannot cancel an order that is still awaiting stock.'); loading.value = false; return { success: false }
     }
+    // Voided collections don't block cancellation — they no longer represent money received.
     const { count: collectionCount } = await supabase
-      .from('collections').select('id', { count: 'exact', head: true }).eq('transaction_id', orderId)
+      .from('collections').select('id', { count: 'exact', head: true }).eq('transaction_id', orderId).is('voided_at', null)
     if ((collectionCount ?? 0) > 0) {
       toast.error('Cannot cancel: order has collections.'); loading.value = false; return { success: false }
     }
@@ -753,9 +759,12 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     return { success: true, prs }
   }
 
+  // Voided collections are excluded: every consumer of this (order balances,
+  // the Commissions view) is a money view, and a voided payment is no longer
+  // money received. Its record lives on the change request + the activity log.
   const fetchCollections = async (orderId?: number): Promise<CollectionType[]> => {
     try {
-      let q = supabase.from('collections').select('*').order('created_at', { ascending: true })
+      let q = supabase.from('collections').select('*').is('voided_at', null).order('created_at', { ascending: true })
       if (orderId !== undefined) q = q.eq('transaction_id', orderId)
       const { data, error: e } = await q
       if (e) throw e
@@ -798,6 +807,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
       const { data, error: e } = await supabase
         .from('collections')
         .select('agent_id, agent:agent_id(name), commission_amount, commission_status')
+        .is('voided_at', null)   // a voided collection earns no commission
       if (e) throw e
 
       // Group by agent_id and sum commissions

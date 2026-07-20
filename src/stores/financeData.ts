@@ -111,6 +111,10 @@ export type ExpenseType = {
   created_by: string | null
   cash_account_id: number | null
   cash_account_name: string | null
+  // Soft void: non-null = reversed. The row stays in document lists, flagged,
+  // but is excluded from every financial aggregate.
+  voided_at: string | null
+  void_reason: string | null
 }
 
 export type SupplierPaymentType = {
@@ -124,6 +128,8 @@ export type SupplierPaymentType = {
   paid_at: string | null
   remarks: string | null
   created_by: string | null
+  voided_at: string | null
+  void_reason: string | null
 }
 
 export type SupplierAPRow = {
@@ -390,6 +396,8 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       created_by: row.created_by,
       cash_account_id: row.cash_account_id ?? details.cash_account_id ?? null,
       cash_account_name: row.cash_account?.name ?? null,
+      voided_at: row.voided_at ?? null,
+      void_reason: row.void_reason ?? null,
     }
   }
 
@@ -400,6 +408,9 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       // Category filter lives on the extension table, so filtering needs the
       // inner-join embed variant to drop non-matching parents. cash_account_id
       // is on the hub now (20260702000009), so its name join is top-level.
+      // Voided expenses are deliberately INCLUDED here — this is the document
+      // list, and the accountant wants reversed documents visible and flagged.
+      // Every aggregate below (opex, liquidation, cash) excludes them instead.
       let q = supabase.from('transactions')
         .select(options.category
           ? '*, cash_account:cash_account_id(name), finance_details!inner(*)'
@@ -506,7 +517,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     toast.success('Expense recorded.')
     await Promise.all([fetchExpenses(), fetchCashAccounts()])
     loading.value = false
-    return { success: true, expenseId: created.id }
+    return { success: true, expenseId: created.id, expenseNo }
   }
 
   // ─── Cash accounts (Petty Cash + Bank) ───────────────────────────────────────
@@ -654,6 +665,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         .select('expense_no, total_amount, paid_at, finance_details(category, paid_to, or_si_no)')
         .eq('transaction_type', 'expense')
         .eq('cash_account_id', cashAccountId)
+        .is('voided_at', null)   // a voided expense had its cash restored
       if (lastApproved?.approved_at) q = q.gt('created_at', lastApproved.approved_at)
       q = q.order('paid_at', { ascending: true })
 
@@ -854,7 +866,12 @@ export const useFinanceDataStore = defineStore('financeData', () => {
   // Was delete_expense. Reverses the cash deduction record_expense made
   // (expenses recorded before cash accounts existed have no cash_account_id —
   // nothing to restore for those). finance_details row cascades on delete.
-  const deleteExpense = async (id: number) => {
+  // Soft void — was deleteExpense, which hard-DELETEd the transactions row. Per
+  // the accountant a reversed document must stay on the books, flagged, so the
+  // number is never lost from the series and the reversing journal entry still
+  // has a source document to point at. The GL reversal is done by the caller
+  // (changeRequestsData.voidExpense); this handles the document + the cash.
+  const voidExpense = async (id: number, reason: string | null = null) => {
     loading.value = true
     clearError()
     const { user, error: authError } = await authStore.getCurrentUser()
@@ -862,23 +879,32 @@ export const useFinanceDataStore = defineStore('financeData', () => {
 
     const { data: expense, error: fetchError } = await supabase
       .from('transactions')
-      .select('expense_no, total_amount, cash_account_id')
+      .select('expense_no, total_amount, cash_account_id, paid_at, voided_at')
       .eq('id', id).eq('transaction_type', 'expense')
       .maybeSingle()
     if (fetchError || !expense) {
       toast.error(`Expense ${id} not found.`); loading.value = false; return { success: false }
     }
+    if (expense.voided_at) {
+      toast.warning('This expense is already voided.'); loading.value = false; return { success: false }
+    }
 
-    // Delete first, guarded — the cash-balance restore is a compensating side
-    // effect and must only happen once the expense is actually gone. Doing it
-    // beforehand (as this used to) meant a failed delete left the balance
-    // credited back for an expense that was still sitting on the books.
-    const { error: deleteError } = await supabase.from('transactions').delete().eq('id', id).eq('transaction_type', 'expense')
-    if (deleteError) {
-      handleError(deleteError, 'Failed to delete expense.')
-      toast.error(deleteError.message || 'Failed to delete expense.')
+    // Stamp the void first, guarded on voided_at — it is what removes the
+    // expense from every financial aggregate, so it must land before the
+    // compensating cash restore. Doing the restore first (as the old delete
+    // path once did) credited money back for an expense still on the books.
+    const { data: voided, error: voidError } = await supabase.from('transactions')
+      .update({ status: 'voided', voided_at: new Date().toISOString(), voided_by: user.id, void_reason: reason })
+      .eq('id', id).eq('transaction_type', 'expense').is('voided_at', null)
+      .select('id')
+    if (voidError) {
+      handleError(voidError, 'Failed to void expense.')
+      toast.error(voidError.message || 'Failed to void expense.')
       loading.value = false
       return { success: false }
+    }
+    if (!voided?.length) {
+      toast.warning('This expense is already voided.'); loading.value = false; return { success: false }
     }
 
     if (expense.cash_account_id && (expense.total_amount ?? 0) > 0) {
@@ -887,18 +913,26 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       if (account) {
         const { error: balanceError } = await supabase
           .from('cash_accounts').update({ balance: account.balance + (expense.total_amount ?? 0) }).eq('id', expense.cash_account_id)
-        if (balanceError) console.warn('deleteExpense: cash account balance restore failed:', balanceError.message)
+        if (balanceError) console.warn('voidExpense: cash account balance restore failed:', balanceError.message)
       }
     }
 
     const { error: logError } = await supabase.from('logs').insert({
-      created_by: user.id, action: 'expense_delete', description: expense.expense_no ?? String(id),
+      created_by: user.id, action: 'expense_void',
+      description: `${expense.expense_no ?? id} voided${reason ? `: ${reason}` : ''}`,
       module: 'finance', transaction_id: id,
     })
-    if (logError) console.warn('deleteExpense: activity log insert failed:', logError.message)
+    if (logError) console.warn('voidExpense: activity log insert failed:', logError.message)
 
-    toast.success('Expense deleted.')
-    await fetchExpenses()
+    // A void changes a PAST day's opex, and past days are served from the
+    // finance_daily_summary cache — refresh that day or the P&L stays stale.
+    const day = (expense.paid_at ?? '').slice(0, 10)
+    if (day && day < todayStr()) {
+      try { await refreshDailySummary(day) } catch (e) { console.warn('voidExpense: P&L cache refresh failed:', e) }
+    }
+
+    toast.success('Expense voided.')
+    await Promise.all([fetchExpenses(), fetchCashAccounts()])
     loading.value = false
     return { success: true }
   }
@@ -917,9 +951,12 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       paid_at: row.paid_at,
       remarks: row.remarks,
       created_by: row.created_by,
+      voided_at: row.voided_at ?? null,
+      void_reason: row.void_reason ?? null,
     }
   }
 
+  // Document list — voided payments stay visible and flagged (see fetchExpenses).
   const fetchSupplierPayments = async (options: DateRange & { supplierId?: number } = {}) => {
     loading.value = true
     clearError()
@@ -969,8 +1006,8 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     }
 
     const [receivedRes, paidRes] = await Promise.all([
-      supabase.from('transactions').select('total_amount').eq('transaction_type', 'stock_in').eq('supplier_id', payload.supplierId),
-      supabase.from('transactions').select('total_amount').eq('transaction_type', 'supplier_payment').eq('supplier_id', payload.supplierId),
+      supabase.from('transactions').select('total_amount').eq('transaction_type', 'stock_in').eq('supplier_id', payload.supplierId).is('voided_at', null),
+      supabase.from('transactions').select('total_amount').eq('transaction_type', 'supplier_payment').eq('supplier_id', payload.supplierId).is('voided_at', null),
     ])
     const received = (receivedRes.data ?? []).reduce((sum, r) => sum + (r.total_amount ?? 0), 0)
     const paid = (paidRes.data ?? []).reduce((sum, r) => sum + (r.total_amount ?? 0), 0)
@@ -1024,7 +1061,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     toast.success('Supplier payment recorded.')
     await Promise.all([fetchSupplierPayments(), fetchSupplierAP()])
     loading.value = false
-    return { success: true, paymentId: created.id }
+    return { success: true, paymentId: created.id, paymentNo }
   }
 
   const fetchSupplierAP = async () => {
@@ -1032,8 +1069,8 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     clearError()
     try {
       const [receivedRes, paidRes, suppliersRes] = await Promise.all([
-        supabase.from('transactions').select('supplier_id, total_amount').eq('transaction_type', 'stock_in'),
-        supabase.from('transactions').select('supplier_id, total_amount').eq('transaction_type', 'supplier_payment'),
+        supabase.from('transactions').select('supplier_id, total_amount').eq('transaction_type', 'stock_in').is('voided_at', null),
+        supabase.from('transactions').select('supplier_id, total_amount').eq('transaction_type', 'supplier_payment').is('voided_at', null),
         supabase.from('suppliers').select('id, name, balance'),
       ])
       if (receivedRes.error) throw receivedRes.error
@@ -1107,12 +1144,15 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       // All that day's collections — we'll split by transaction_type in JS
       supabase.from('collections')
         .select('amount, transaction:transaction_id!inner(transaction_type)')
+        .is('voided_at', null)
         .gte('created_at', dayStart).lte('created_at', dayEnd),
       supabase.from('transactions').select('total_amount')
         .eq('transaction_type', 'stock_in')
+        .is('voided_at', null)
         .gte('updated_at', dayStart).lte('updated_at', dayEnd),
       supabase.from('transactions').select('total_amount')
         .eq('transaction_type', 'expense')
+        .is('voided_at', null)
         .gte('paid_at', dayStart).lte('paid_at', dayEnd),
     ])
     if (saleRes.error) throw saleRes.error
@@ -1178,15 +1218,18 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         .gte('created_at', fromTs).lte('created_at', toTs),
       supabase.from('collections').select('created_at, transaction:transaction_id!inner(transaction_type)')
         .eq('transaction.transaction_type', 'ethical_order')
+        .is('voided_at', null)
         .gte('created_at', fromTs).lte('created_at', toTs),
       supabase.from('collections').select('created_at, transaction:transaction_id!inner(transaction_type)')
         .eq('transaction.transaction_type', 'inhouse_order')
+        .is('voided_at', null)
         .gte('created_at', fromTs).lte('created_at', toTs),
       supabase.from('transactions').select('updated_at')
         .eq('transaction_type', 'stock_in')
         .gte('updated_at', fromTs).lte('updated_at', toTs),
       supabase.from('transactions').select('paid_at')
         .eq('transaction_type', 'expense')
+        .is('voided_at', null)
         .gte('paid_at', fromTs).lte('paid_at', toTs),
       supabase.from('finance_daily_summary').select('summary_date'),
     ])
@@ -1422,6 +1465,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         supabase.from('collections')
           .select('id, created_at, amount, payment_method, reference_no')
           .eq('transaction_id', transactionId)
+          .is('voided_at', null)   // statement figure — voided payments don't count
           .order('created_at', { ascending: true }),
       ])
       if (txnRes.error) throw txnRes.error
@@ -1509,6 +1553,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         ? await supabase.from('collections')
             .select('id, transaction_id, created_at, amount, payment_method, reference_no')
             .in('transaction_id', orderIds)
+            .is('voided_at', null)   // statement of account — voided payments don't count
             .order('created_at', { ascending: true })
         : { data: [] as any[], error: null }
       if (paymentsError) throw paymentsError
@@ -1568,6 +1613,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     try {
       const { data, error: fetchError } = await supabase.from('collections')
         .select('agent_id, agent:agent_id(name), created_at, commission_amount, commission_status, commission_paid_at')
+        .is('voided_at', null)   // a voided collection earns no commission
       if (fetchError) throw fetchError
 
       const now = Date.now()
@@ -1801,7 +1847,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     incomeStatement, balanceSheet, trialBalance,
     remittanceDiscrepancies, arAging, commissionLiability, stockReconciliation,
     loading, error, isLoading, hasError,
-    fetchExpenses, recordExpense, deleteExpense,
+    fetchExpenses, recordExpense, voidExpense,
     fetchCashAccounts, createCashAccount, fetchReplenishmentRequests, previewPettyCashLiquidation,
     requestReplenishment, approveReplenishment, rejectReplenishment,
     fetchSupplierPayments, recordSupplierPayment, fetchSupplierAP,

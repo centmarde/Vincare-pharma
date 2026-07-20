@@ -8,7 +8,7 @@ import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 const {
   expenses, cashAccounts, loading,
   showFormDialog,
-  showChangeDialog, changeTarget, changeFields, voidSummary, isPending,
+  showChangeDialog, changeTarget, changeFields, voidSummary, isPending, isEdited, editTooltip,
   init, openFormDialog, handleSubmit, openChangeDialog, submitChangeRequest,
 } = useExpenses()
 
@@ -43,7 +43,31 @@ onMounted(init)
         hover
       >
         <template #item.reference_no="{ item }">
-          <span class="font-weight-medium">{{ item.reference_no }}</span>
+          <span class="font-weight-medium" :class="{ 'text-decoration-line-through text-medium-emphasis': item.voided_at }">
+            {{ item.reference_no }}
+          </span>
+          <v-chip
+            v-if="item.voided_at"
+            size="x-small"
+            color="error"
+            variant="tonal"
+            label
+            class="ml-2"
+            :title="item.void_reason ?? 'Reversed via an approved change request'"
+          >
+            VOIDED
+          </v-chip>
+          <v-chip
+            v-else-if="isEdited(item.id)"
+            size="x-small"
+            color="info"
+            variant="tonal"
+            label
+            class="ml-2"
+            :title="editTooltip(item.id)"
+          >
+            EDITED
+          </v-chip>
         </template>
 
         <template #item.paid_at="{ item }">
@@ -81,7 +105,8 @@ onMounted(init)
         </template>
 
         <template #item.actions="{ item }">
-          <v-chip v-if="isPending(item.id)" size="x-small" color="warning" variant="tonal" label>
+          <span v-if="item.voided_at" class="text-caption text-medium-emphasis">—</span>
+          <v-chip v-else-if="isPending(item.id)" size="x-small" color="warning" variant="tonal" label>
             Change pending
           </v-chip>
           <v-btn
