@@ -92,18 +92,25 @@ export const navigationConfig: NavigationGroup[] = [
       },
     ],
   },
-  {
+    {
     title: 'Executive Controls',
-    icon: 'mdi-briefcase',
+    icon: 'mdi-account-tie',
     permission: 'executive.access',
     children: [
       {
         title: 'Executive Dashboard',
-        icon: 'mdi-view-dashboard',
+        icon: 'mdi-monitor-dashboard',
         route: '/executive/dashboard',
         permission: 'executive.dashboard.view',
         keywords: 'exec, overview, kpi, metrics, reports',
-      }
+      },
+      {
+        title: 'Purchase Requisition Dashboard',
+        icon: 'mdi-file-document-multiple',
+        route: '/executive/purchase-requisition-dashboard',
+        permission: 'requisition.dashboard.view',
+        keywords: 'purchase requisition, pr, procurement, metrics, reports',
+      },
     ],
   },
   {

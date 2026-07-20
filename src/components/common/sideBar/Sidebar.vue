@@ -6,7 +6,7 @@ import { useAuthUserStore } from '@/stores/authUser'
 import { useUserPermissions } from '@/composables/useUserPermissions'
 import { isNavigationItem, flattenNavigationItems } from '@/utils/navigation'
 import type { NavigationChild, NavigationItem } from '@/utils/navigation'
-
+import { useExecutiveStore } from '@/stores/executiveData'
 const props = defineProps<{
   version?: string
 }>()
@@ -20,6 +20,7 @@ const route = useRoute()
 
 // Auth store
 const authStore = useAuthUserStore()
+const executiveStore = useExecutiveStore()
 
 // User permissions composable
 const { getFilteredNavigationGroups, userRoleId, isLoading } = useUserPermissions()
@@ -156,6 +157,15 @@ const handleLogout = async () => {
                 <v-list-item-title class="font-weight-medium">
                   {{ child.title }}
                 </v-list-item-title>
+                <template #append>
+                  <v-badge
+                    v-if="
+                      child.route === '/executive/purchase-requisition-dashboard' && executiveStore.pendingPrApprovalCount > 0"
+                    :content="executiveStore.pendingPrApprovalCount"
+                    color="warning"
+                    inline
+                  />
+                </template>
               </v-list-item>
 
               <!-- Sub-group: a labeled section with its own collapsible items -->
