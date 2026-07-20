@@ -9,6 +9,8 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     BottomBar: typeof import('./components/common/BottomBar.vue')['default']
+    ChangeRequestDialog: typeof import('./components/changeRequests/ChangeRequestDialog.vue')['default']
+    ConfirmDialog: typeof import('./components/common/ConfirmDialog.vue')['default']
     DeliveryReceiptDialog: typeof import('./components/deliveryReceipts/DeliveryReceiptDialog.vue')['default']
     InnerNavBar: typeof import('./components/common/InnerNavBar.vue')['default']
     InsideNavbar1: typeof import('./components/common/insideNavbar/InsideNavbar1.vue')['default']

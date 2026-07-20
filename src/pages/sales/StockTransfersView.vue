@@ -6,7 +6,7 @@ import StockTransferCRUD from './components/StockTransferCRUD.vue'
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container>
+      <v-container fluid>
         <v-card>
           <StockTransferCRUD mode="outlet" />
         </v-card>

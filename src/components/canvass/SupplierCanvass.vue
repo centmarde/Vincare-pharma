@@ -12,8 +12,8 @@ const props = defineProps<{
 const emit = defineEmits<{ (e: 'created'): void }>()
 
 const {
-  loading, rows, supplierOptions,
-  addQuote, removeQuote, onQuoteChange, isRecommended,
+  loading, rows,
+  addQuote, removeQuote, onQuoteChange, isRecommended, availableSupplierOptions,
   validateQty, onExpiryInput, onExpiryBlur, bufferQty, lineTotal,
   canCommit, prPreview, commit, init,
   MIN_MONTHS_TO_EXPIRY,
@@ -57,10 +57,10 @@ onMounted(init)
               </td>
               <td>
                 <div class="d-flex align-center" style="gap:4px">
-                  <v-select
-                    v-model="q.supplier_id" :items="supplierOptions"
+                  <v-autocomplete
+                    v-model="q.supplier_id" :items="availableSupplierOptions(rowIdx, qIdx)"
                     density="compact" variant="outlined" hide-details
-                    placeholder="Select supplier"
+                    placeholder="Search or select supplier"
                     @update:model-value="onQuoteChange(rowIdx, qIdx)" />
                   <v-icon v-if="isRecommended(row, q)" color="success" size="small" title="Cheapest valid">mdi-star</v-icon>
                 </div>

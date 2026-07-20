@@ -375,6 +375,12 @@ export const navigationConfig: NavigationGroup[] = [
         route: '/finance/general-journal',
         permission: 'finance.generalJournal.manage',
       },
+      {
+        title: 'Chart of Accounts',
+        icon: 'mdi-format-list-bulleted',
+        route: '/finance/chart-of-accounts',
+        permission: 'finance.chartOfAccounts.manage',
+      },
     ],
   },
   {

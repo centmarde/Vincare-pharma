@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { usePurchaseOrderList, headers, headersWarehouse } from '@/pages/purchasing/composables/usePurchaseOrderList'
-import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import { formatCurrency, formatDateShort } from '@/utils/helpers'
 import PODetailSkuModal from '../dialogs/PODetailViewModal.vue'
 import PODetailViewModal from '../dialogs/PODetailModal.vue'
 import { ref, computed, onMounted } from 'vue'
@@ -161,7 +161,7 @@ function goToPage(p: number) {
 
         <template #item.created_at="{ item }">
           <span class="text-body-2">{{
-            item.created_at ? formatDatePR_ISO(item.created_at) : '—'
+            item.created_at ? formatDateShort(item.created_at) : '—'
           }}</span>
         </template>
 
@@ -255,7 +255,7 @@ function goToPage(p: number) {
                 </div>
                 <div>
                   <span class="text-medium-emphasis">Issued: </span>
-                  <span>{{ item.created_at ? formatDatePR_ISO(item.created_at) : '—' }}</span>
+                  <span>{{ item.created_at ? formatDateShort(item.created_at) : '—' }}</span>
                 </div>
               </div>
             </v-card-text>

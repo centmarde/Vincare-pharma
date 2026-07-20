@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import InnerLayoutWrapper from '@/layouts/InnerLayoutWrapper.vue'
-import OutletInventory from './components/OutletInventory.vue'
+import ChartOfAccounts from './components/ChartOfAccounts.vue'
 </script>
 
 <template>
   <InnerLayoutWrapper>
     <template #content>
-      <v-container fluid>
-        <OutletInventory />
-      </v-container>
+      <ChartOfAccounts />
     </template>
   </InnerLayoutWrapper>
 </template>

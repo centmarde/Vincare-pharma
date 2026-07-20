@@ -2,6 +2,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -19,7 +20,7 @@ export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
 
 export async function doLogout() {
   // Confirm logout
-  const confirmed = window.confirm('Are you sure you want to logout?')
+  const confirmed = await useConfirmDialog().confirmDialog('Are you sure you want to logout?', { title: 'Confirm Logout', confirmText: 'Logout' })
 
   // If not confirmed, exit the function early
   if (!confirmed) {

@@ -1,7 +1,14 @@
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
-import { useFinanceDataStore } from '@/stores/financeData'
+import {
+  useFinanceDataStore,
+  expenseCategories, expenseDepartments, expensePaymentMethods,
+} from '@/stores/financeData'
+import type { ExpenseType } from '@/stores/financeData'
+import { useChangeRequestsDataStore } from '@/stores/changeRequestsData'
+import type { ChangeRequestField, ProposedChange } from '@/stores/changeRequestsData'
+import { formatCurrency } from '@/utils/helpers'
 import type { AddExpensePayload } from '@/utils/cashAccountTypes'
 
 export const headers = [
@@ -19,18 +26,30 @@ export const headers = [
 
 export function useExpenses() {
   const financeStore = useFinanceDataStore()
+  const changeStore = useChangeRequestsDataStore()
   const toast = useToast()
   const { expenses, cashAccounts, loading } = storeToRefs(financeStore)
 
   // ─── State (expense form fields live inside AddExpenseDialog) ──────
   const showFormDialog = ref(false)
 
-  const showDeleteDialog = ref(false)
-  const deleteTargetId = ref<number | null>(null)
+  // ─── Change-request (edit/undo) state ─────────────────────────────
+  const showChangeDialog = ref(false)
+  const changeTarget = ref<ExpenseType | null>(null)
+  const pendingIds = ref<Set<number>>(new Set())
 
   // ─── Actions ──────────────────────────────────────────────────────
   async function init() {
     await Promise.all([financeStore.fetchExpenses(), financeStore.fetchCashAccounts()])
+    await loadPending()
+  }
+
+  async function loadPending() {
+    pendingIds.value = new Set(await changeStore.fetchPendingTargetIds('expense'))
+  }
+
+  function isPending(id: number) {
+    return pendingIds.value.has(id)
   }
 
   function openFormDialog() {
@@ -73,21 +92,60 @@ export function useExpenses() {
     }
   }
 
-  function openDeleteDialog(id: number) {
-    deleteTargetId.value = id
-    showDeleteDialog.value = true
+  // ─── Editing/voiding an expense now goes through executive approval ───
+  function openChangeDialog(id: number) {
+    changeTarget.value = expenses.value.find((e) => e.id === id) ?? null
+    if (changeTarget.value) showChangeDialog.value = true
   }
 
-  async function confirmDelete() {
-    if (deleteTargetId.value == null) return
-    const result = await financeStore.deleteExpense(deleteTargetId.value)
-    if (result.success) showDeleteDialog.value = false
+  // Memo fields edit in place; amount / category / account / date are ledger
+  // fields — an approved edit to those reverses the old expense and reissues a
+  // corrected one (new number). See applyExpenseChange.
+  const changeFields = computed<ChangeRequestField[]>(() => {
+    const e = changeTarget.value
+    if (!e) return []
+    return [
+      { key: 'amount', label: 'Amount', value: e.amount ?? 0, type: 'number' },
+      { key: 'category', label: 'Category', value: e.category, type: 'select', items: expenseCategories.map((c) => ({ title: c.title, value: c.value })) },
+      { key: 'paid_at', label: 'Date', value: (e.paid_at ?? '').slice(0, 10), type: 'date' },
+      { key: 'cash_account_id', label: 'Account', value: e.cash_account_id, type: 'select', items: cashAccounts.value.map((a) => ({ title: a.name, value: a.id })) },
+      { key: 'department', label: 'Department', value: e.department, type: 'select', items: expenseDepartments.map((d) => ({ title: d.title, value: d.value })) },
+      { key: 'payment_method', label: 'Payment Method', value: e.payment_method, type: 'select', items: expensePaymentMethods.map((m) => ({ title: m.title, value: m.value })) },
+      { key: 'paid_to', label: 'Paid To', value: e.paid_to, type: 'text' },
+      { key: 'or_si_no', label: 'OR/SI No.', value: e.or_si_no, type: 'text' },
+      { key: 'remarks', label: 'Description', value: e.remarks, type: 'text' },
+    ]
+  })
+
+  const voidSummary = computed(() => {
+    const e = changeTarget.value
+    if (!e) return ''
+    return `Void ${e.reference_no ?? `expense #${e.id}`} — reverses its ledger entry (if posted) and restores ${formatCurrency(e.amount ?? 0)} to ${e.cash_account_name ?? 'its cash account'}.`
+  })
+
+  async function submitChangeRequest(payload: { requestType: 'edit' | 'void'; proposedChanges: ProposedChange; summary: string; reason: string }) {
+    const e = changeTarget.value
+    if (!e) return
+    const result = await changeStore.proposeChange({
+      module: 'finance',
+      targetType: 'expense',
+      targetId: e.id,
+      targetRef: e.reference_no,
+      requestType: payload.requestType,
+      proposedChanges: payload.proposedChanges,
+      summary: payload.summary,
+      reason: payload.reason,
+    })
+    if (result.success) {
+      showChangeDialog.value = false
+      await loadPending()
+    }
   }
 
   return {
     expenses, cashAccounts, loading,
     showFormDialog,
-    showDeleteDialog,
-    init, openFormDialog, handleSubmit, openDeleteDialog, confirmDelete,
+    showChangeDialog, changeTarget, changeFields, voidSummary, isPending,
+    init, openFormDialog, handleSubmit, openChangeDialog, submitChangeRequest,
   }
 }

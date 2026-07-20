@@ -2,21 +2,43 @@
 import { onMounted } from 'vue'
 import { useRemittance, headers } from '../composables/useRemittance'
 import RemittanceSubmitDialog from './RemittanceSubmitDialog.vue'
+import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
+import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
+import type { RemittanceType } from '@/stores/remittancesData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
   remittances, loading,
   selectedOutletId, outletOptions, setOutlet,
-  showSubmitDialog, expected, actualAmount, notes,
-  discrepancy, requiresNote, canSubmit,
+  showSubmitDialog, expected, actualAmount, notes, resolution,
+  discrepancy, requiresNote, canSubmit, isShortfall, recommendReceivable,
   init, openSubmitDialog, handleSubmit,
 } = useRemittance()
 
-onMounted(init)
+// A remittance is a cash-reconciliation artifact (GL-silent), so a correction
+// to the counted cash / notes is an edit — there's no undo (allowVoid=false).
+const { showDialog, config, isPending, loadPending, open, submit, submitting } =
+  useChangeRequestFiling('sales', 'remittance')
+
+function openChange(r: RemittanceType) {
+  open({
+    id: r.id,
+    ref: r.remittance_no,
+    fields: [
+      { key: 'actual_amount', label: 'Actual Cash Counted', value: r.actual_amount, type: 'number' },
+      { key: 'notes', label: 'Notes', value: r.notes, type: 'text' },
+    ],
+    voidSummary: '',
+    allowEdit: true,
+    allowVoid: false,
+  })
+}
+
+onMounted(async () => { await init(); await loadPending() })
 </script>
 
 <template>
-  <v-container fluid class="pa-2 fill-height align-start">
+
     <v-card class="mx-auto w-100" rounded="lg" elevation="1">
 
       <v-card-title class="d-flex justify-space-between align-center pa-5 flex-wrap ga-3">
@@ -66,7 +88,7 @@ onMounted(init)
 
         <template #item.remittance_date="{ item }">
           <span class="text-body-2 text-medium-emphasis">
-            {{ item.remittance_date ?? formatDatePR_ISO(item.created_at) }}
+            {{ formatDatePR_ISO(item.remittance_date ?? item.created_at) }}
           </span>
         </template>
 
@@ -88,9 +110,46 @@ onMounted(init)
             {{ formatCurrency(item.discrepancy ?? 0) }}
           </v-chip>
         </template>
+
+        <template #item.resolution="{ item }">
+          <v-chip v-if="item.resolution === 'paid_on_spot'" size="small" variant="tonal" color="success">Paid on spot — Balanced</v-chip>
+          <v-chip
+            v-else-if="item.resolution === 'employee_receivable'"
+            size="small" variant="tonal"
+            :color="item.receivable_status === 'paid' ? 'success' : 'warning'"
+          >
+            {{ item.receivable_status === 'paid' ? 'Employee Receivable — Paid, Balanced' : 'Employee Receivable — Outstanding' }}
+          </v-chip>
+          <span v-else class="text-medium-emphasis">—</span>
+        </template>
+
+        <template #item.notes="{ item }">
+          <span class="text-caption">{{ item.notes ?? '—' }}</span>
+        </template>
+
+        <template #item.cr_actions="{ item }">
+          <v-chip v-if="isPending(item.id)" size="x-small" color="warning" variant="tonal" label>Change pending</v-chip>
+          <v-btn
+            v-else icon="mdi-pencil-box-outline" size="small" variant="text" color="primary"
+            title="Request a correction (needs executive approval)"
+            @click="openChange(item)"
+          />
+        </template>
       </v-data-table>
 
     </v-card>
+
+    <ChangeRequestDialog
+      v-if="config"
+      v-model="showDialog"
+      :target-ref="config.ref"
+      :fields="config.fields"
+      :allow-edit="config.allowEdit"
+      :allow-void="config.allowVoid"
+      :void-summary="config.voidSummary"
+      :loading="submitting"
+      @submit="submit"
+    />
 
     <RemittanceSubmitDialog
       v-model="showSubmitDialog"
@@ -101,12 +160,16 @@ onMounted(init)
       :requires-note="requiresNote"
       :can-submit="canSubmit"
       :loading="loading"
+      :is-shortfall="isShortfall"
+      :recommend-receivable="recommendReceivable"
+      :resolution="resolution"
       @update:actual-amount="actualAmount = $event"
       @update:notes="notes = $event"
+      @update:resolution="resolution = $event"
       @submit="handleSubmit"
     />
 
-  </v-container>
+
 </template>
 
 <style scoped>

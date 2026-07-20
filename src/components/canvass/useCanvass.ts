@@ -2,10 +2,12 @@ import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { parseMonthYear, formatMonthYear, maskMonthYearInput } from '@/utils/helpers'
 import type { CanvassableOrder, Shortfall, CanvassQuote, CanvassSelection, CanvassCommitFn } from '@/utils/canvassTypes'
 
 const toast = useToast()
+const { confirmDialog } = useConfirmDialog()
 
 // Hard business rule: a quoted batch must have at least this many months left
 // before expiry to be eligible (measured from today / the canvass date).
@@ -136,6 +138,20 @@ export function useCanvass(
     return q.supplier_id != null && q.supplier_id === recommendedSupplierId(row)
   }
 
+  // Suppliers already picked by OTHER quotes in the same product row are hidden
+  // from this quote's dropdown — a supplier can't be canvassed twice for one item.
+  function availableSupplierOptions(rowIdx: number, qIdx: number) {
+    const row = rows.value[rowIdx]
+    if (!row) return supplierOptions.value
+    const takenElsewhere = new Set(
+      row.quotes
+        .filter((_, i) => i !== qIdx)
+        .map((q) => q.supplier_id)
+        .filter((id): id is number => id != null),
+    )
+    return supplierOptions.value.filter((o) => !takenElsewhere.has(o.value))
+  }
+
   function selectSupplier(rowIdx: number, supplierId: number | null) {
     const row = rows.value[rowIdx]
     if (row) row.selected_supplier_id = supplierId
@@ -145,14 +161,18 @@ export function useCanvass(
   // keystroke, so clearing the field to type a new number briefly produces a
   // value below shortfall_qty mid-edit, which used to toast-spam and clamp the
   // field back before the user could finish typing.
-  function validateQty(rowIdx: number) {
+  async function validateQty(rowIdx: number) {
     const row = rows.value[rowIdx]
     if (!row) return
     if (row.order_qty < row.shortfall_qty) {
       toast.warning(`Quantity can't be below the shortfall (${row.shortfall_qty}).`)
       row.order_qty = row.shortfall_qty
     } else if (row.order_qty > row.shortfall_qty * MAX_QTY_MULTIPLE) {
-      if (!confirm(`Order ${row.order_qty} (over ${MAX_QTY_MULTIPLE}x the shortfall of ${row.shortfall_qty})?`)) {
+      const ok = await confirmDialog(
+        `Order ${row.order_qty} (over ${MAX_QTY_MULTIPLE}x the shortfall of ${row.shortfall_qty})?`,
+        { title: 'Confirm large order quantity', confirmText: 'Order it', cancelText: 'Cancel' },
+      )
+      if (!ok) {
         row.order_qty = row.shortfall_qty
       }
     }
@@ -223,7 +243,7 @@ export function useCanvass(
 
   return {
     loading, rows, supplierOptions,
-    addQuote, removeQuote, onQuoteChange, isRecommended, selectSupplier,
+    addQuote, removeQuote, onQuoteChange, isRecommended, selectSupplier, availableSupplierOptions,
     validateQty, onExpiryInput, onExpiryBlur, bufferQty, lineTotal, recommendedSupplierId,
     readyRows, canCommit, prPreview, commit, init,
     MIN_MONTHS_TO_EXPIRY,

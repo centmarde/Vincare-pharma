@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
-import { generateNextNumber } from '@/utils/helpers'
+import { generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
 import type { ProductType } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
 import type { OutletType } from '@/stores/outletsData'
@@ -299,21 +299,27 @@ export const useSalesDataStore = defineStore('salesData', () => {
     }
 
     const year = new Date().getFullYear().toString()
-    const saleNo = await generateNextNumber('sale_no', `SO-${year}-`, ['reference_no'])
-
-    const { data: created, error: insertError } = await supabase
-      .from('transactions')
-      .insert({
-        sale_no: saleNo,
-        transaction_type: 'sale',
-        status: 'completed',
-        outlet_id: outletId,
-        total_amount: total,
-        customer_id: customerId,
-        created_by: user.id,
-      })
-      .select('id')
-      .single()
+    const { data: created, docNo: saleNo, error: insertError } = await insertWithDocRetry<{ id: number }>(
+      () => generateNextNumber('sale_no', `SO-${year}-`, ['reference_no']),
+      async (docNo) => supabase
+        .from('transactions')
+        .insert({
+          // Mirror the sale number into reference_no too (parity with purchasing /
+          // in-house / ethical), so the transactions row shows its live document
+          // number in the same column the other modules use. sale_no stays the
+          // canonical per-type column; the reference_no unique index reserves SO-.
+          reference_no: docNo,
+          sale_no: docNo,
+          transaction_type: 'sale',
+          status: 'completed',
+          outlet_id: outletId,
+          total_amount: total,
+          customer_id: customerId,
+          created_by: user.id,
+        })
+        .select('id')
+        .single(),
+    )
 
     if (insertError || !created) {
       handleError(insertError, 'Failed to record sale.')

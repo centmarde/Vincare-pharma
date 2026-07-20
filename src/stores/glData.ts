@@ -4,7 +4,7 @@ import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
-import { nextDocNumber } from '@/utils/helpers'
+import { nextDocNumber, insertWithDocRetry } from '@/utils/helpers'
 
 const toast = useToast()
 
@@ -21,6 +21,51 @@ export type GLAccount = {
   normal_balance: 'debit' | 'credit'
   is_contra: boolean
   is_active: boolean
+}
+
+// The account-code scheme (see CLAUDE.md's "ACCOUNT-CODE SCHEME") — one
+// numeric range per category. New accounts get the next free code within
+// their chosen category's range (existing max + 10), so the accountant only
+// ever picks WHERE a new line belongs; the code itself is derived, never typed.
+export type AccountCategoryKey =
+  | 'assets_current' | 'assets_noncurrent'
+  | 'liabilities_current' | 'liabilities_noncurrent'
+  | 'equity' | 'revenue' | 'cost_of_sales'
+  | 'selling_expenses' | 'admin_expenses' | 'finance_costs'
+
+export type AccountCategory = {
+  key: AccountCategoryKey
+  label: string
+  floor: number
+  ceiling: number
+  class: GLAccount['class']
+  section: GLAccount['section']
+  subsection: string
+  normalBalance: GLAccount['normal_balance']
+}
+
+export const ACCOUNT_CATEGORIES: AccountCategory[] = [
+  { key: 'assets_current', label: 'Assets — Current (1000–1499)', floor: 1000, ceiling: 1499, class: 'asset', section: 'balance_sheet', subsection: 'Current Assets', normalBalance: 'debit' },
+  { key: 'assets_noncurrent', label: 'Assets — Non-Current / PPE (1500–1999)', floor: 1500, ceiling: 1999, class: 'asset', section: 'balance_sheet', subsection: 'Non-Current Assets', normalBalance: 'debit' },
+  { key: 'liabilities_current', label: 'Liabilities — Current (2000–2499)', floor: 2000, ceiling: 2499, class: 'liability', section: 'balance_sheet', subsection: 'Current Liabilities', normalBalance: 'credit' },
+  { key: 'liabilities_noncurrent', label: 'Liabilities — Non-Current (2500–2999)', floor: 2500, ceiling: 2999, class: 'liability', section: 'balance_sheet', subsection: 'Non-Current Liabilities', normalBalance: 'credit' },
+  { key: 'equity', label: 'Equity (3000–3999)', floor: 3000, ceiling: 3999, class: 'equity', section: 'balance_sheet', subsection: 'Equity', normalBalance: 'credit' },
+  { key: 'revenue', label: 'Revenue (4000–4999)', floor: 4000, ceiling: 4999, class: 'revenue', section: 'income_statement', subsection: 'Revenue', normalBalance: 'credit' },
+  { key: 'cost_of_sales', label: 'Cost of Sales (5000–5999)', floor: 5000, ceiling: 5999, class: 'cost', section: 'income_statement', subsection: 'Cost of Sales', normalBalance: 'debit' },
+  { key: 'selling_expenses', label: 'Selling Expenses (6000–6999)', floor: 6000, ceiling: 6999, class: 'expense', section: 'income_statement', subsection: 'Selling Expenses', normalBalance: 'debit' },
+  { key: 'admin_expenses', label: 'Administrative & Operating Expenses (7000–7999)', floor: 7000, ceiling: 7999, class: 'expense', section: 'income_statement', subsection: 'Administrative & Operating Expenses', normalBalance: 'debit' },
+  { key: 'finance_costs', label: 'Finance Costs (8000–8999)', floor: 8000, ceiling: 8999, class: 'expense', section: 'income_statement', subsection: 'Finance Costs', normalBalance: 'debit' },
+]
+
+// Numeric max within the category's range, +10 — never lexical (same bug class
+// documented elsewhere in this file's doc-number helpers: codes are zero-width
+// strings, so string sort would break once a range needs a 5th digit).
+export function nextAccountCode(category: AccountCategory, existing: GLAccount[]): number {
+  const codesInRange = existing
+    .map((a) => parseInt(a.code, 10))
+    .filter((n) => !isNaN(n) && n >= category.floor && n <= category.ceiling)
+  const max = codesInRange.length ? Math.max(...codesInRange) : category.floor
+  return codesInRange.length ? max + 10 : category.floor + 10
 }
 
 export type JournalLineInput = {
@@ -152,6 +197,51 @@ export const useGLDataStore = defineStore('glData', () => {
     }
   }
 
+  // The accountant only picks WHERE (category) + a name; the code is derived
+  // (next free slot in that category's range) and never typed. `code` is the
+  // primary key, so a same-instant collision is a safe-fail 23505 — retried
+  // via a fresh re-scan of the whole (tiny) chart, same convention as every
+  // other doc-number generator in this app.
+  const createAccount = async (payload: { category: AccountCategory; name: string; isContra: boolean }) => {
+    loading.value = true
+    clearError()
+
+    const normalBalance: GLAccount['normal_balance'] = payload.isContra
+      ? (payload.category.normalBalance === 'debit' ? 'credit' : 'debit')
+      : payload.category.normalBalance
+
+    const { data, docNo, error: insertError } = await insertWithDocRetry<{ code: string }>(
+      async () => {
+        const { data: existing } = await supabase.from('accounts').select('*')
+        return String(nextAccountCode(payload.category, (existing ?? []) as GLAccount[]))
+      },
+      async (code) => supabase
+        .from('accounts')
+        .insert({
+          code,
+          name: payload.name,
+          class: payload.category.class,
+          section: payload.category.section,
+          subsection: payload.category.subsection,
+          normal_balance: normalBalance,
+          is_contra: payload.isContra,
+          is_active: true,
+        })
+        .select('code')
+        .single(),
+    )
+
+    loading.value = false
+    if (insertError || !data || !docNo) {
+      handleError(insertError, 'Failed to create account.')
+      toast.error(insertError?.message || 'Failed to create account.')
+      return { success: false }
+    }
+    toast.success(`Account ${docNo} — ${payload.name} created.`)
+    await fetchAccounts()
+    return { success: true, code: docNo }
+  }
+
   // Post a balanced journal entry: >=2 lines, each one-sided, sum(debit) =
   // sum(credit), every account_code active — was gl_post_entry. Shared by this
   // store's own projectEvents (was gl_project_events) and financeData.ts's
@@ -190,21 +280,24 @@ export const useGLDataStore = defineStore('glData', () => {
     }
 
     const year = new Date().getFullYear().toString()
-    const { data: existingEntries } = await supabase
-      .from('journal_entries')
-      .select('entry_no')
-      .like('entry_no', `JE-${year}-%`)
-    const entryNo = nextDocNumber((existingEntries ?? []).map(r => r.entry_no), `JE-${year}-`, 5)
-
     const nowIso = new Date().toISOString()
-    const { data: entry, error: entryError } = await supabase
-      .from('journal_entries')
-      .insert({
-        entry_no: entryNo, entry_date: entryDate, reference_type: referenceType, reference_id: referenceId,
-        description, status: 'posted', posted_at: nowIso, posted_by: userId, created_by: userId,
-      })
-      .select('id')
-      .single()
+    const { data: entry, error: entryError } = await insertWithDocRetry<{ id: number }>(
+      async () => {
+        const { data: existingEntries } = await supabase
+          .from('journal_entries')
+          .select('entry_no')
+          .like('entry_no', `JE-${year}-%`)
+        return nextDocNumber((existingEntries ?? []).map(r => r.entry_no), `JE-${year}-`, 5)
+      },
+      async (docNo) => supabase
+        .from('journal_entries')
+        .insert({
+          entry_no: docNo, entry_date: entryDate, reference_type: referenceType, reference_id: referenceId,
+          description, status: 'posted', posted_at: nowIso, posted_by: userId, created_by: userId,
+        })
+        .select('id')
+        .single(),
+    )
     if (entryError || !entry) return { success: false, error: entryError?.message || 'Failed to post journal entry' }
 
     const { error: linesError } = await supabase.from('journal_entry_lines').insert(
@@ -283,20 +376,23 @@ export const useGLDataStore = defineStore('glData', () => {
     }
 
     const year = new Date().getFullYear().toString()
-    const { data: existingEntries } = await supabase
-      .from('journal_entries')
-      .select('entry_no')
-      .like('entry_no', `JE-${year}-%`)
-    const entryNo = nextDocNumber((existingEntries ?? []).map(r => r.entry_no), `JE-${year}-`, 5)
-
-    const { data: entry, error: entryError } = await supabase
-      .from('journal_entries')
-      .insert({
-        entry_no: entryNo, entry_date: payload.entryDate, reference_type: 'manual', reference_id: null,
-        description: payload.description || null, status: 'draft', created_by: user.id,
-      })
-      .select('id')
-      .single()
+    const { data: entry, error: entryError } = await insertWithDocRetry<{ id: number }>(
+      async () => {
+        const { data: existingEntries } = await supabase
+          .from('journal_entries')
+          .select('entry_no')
+          .like('entry_no', `JE-${year}-%`)
+        return nextDocNumber((existingEntries ?? []).map(r => r.entry_no), `JE-${year}-`, 5)
+      },
+      async (docNo) => supabase
+        .from('journal_entries')
+        .insert({
+          entry_no: docNo, entry_date: payload.entryDate, reference_type: 'manual', reference_id: null,
+          description: payload.description || null, status: 'draft', created_by: user.id,
+        })
+        .select('id')
+        .single(),
+    )
     if (entryError || !entry) {
       handleError(entryError, 'Failed to post manual entry.')
       toast.error(entryError?.message || 'Failed to post manual entry.')
@@ -395,22 +491,25 @@ export const useGLDataStore = defineStore('glData', () => {
       .from('journal_entry_lines').select('account_code, debit, credit, line_memo').eq('journal_entry_id', entryId)
 
     const year = new Date().getFullYear().toString()
-    const { data: existingEntries } = await supabase
-      .from('journal_entries').select('entry_no').like('entry_no', `JE-${year}-%`)
-    const entryNo = nextDocNumber((existingEntries ?? []).map(r => r.entry_no), `JE-${year}-`, 5)
-
     const nowIso = new Date().toISOString()
-    const { data: reversal, error: reversalError } = await supabase
-      .from('journal_entries')
-      .insert({
-        entry_no: entryNo, entry_date: new Date().toISOString().slice(0, 10),
-        reference_type: overrideReferenceType ?? original.reference_type,
-        reference_id: overrideReferenceId ?? original.reference_id,
-        description: `Reversal of ${original.entry_no}${original.description ? ' — ' + original.description : ''}`,
-        status: 'posted', reverses_entry: entryId, posted_at: nowIso, posted_by: userId, created_by: userId,
-      })
-      .select('id')
-      .single()
+    const { data: reversal, error: reversalError } = await insertWithDocRetry<{ id: number }>(
+      async () => {
+        const { data: existingEntries } = await supabase
+          .from('journal_entries').select('entry_no').like('entry_no', `JE-${year}-%`)
+        return nextDocNumber((existingEntries ?? []).map(r => r.entry_no), `JE-${year}-`, 5)
+      },
+      async (docNo) => supabase
+        .from('journal_entries')
+        .insert({
+          entry_no: docNo, entry_date: new Date().toISOString().slice(0, 10),
+          reference_type: overrideReferenceType ?? original.reference_type,
+          reference_id: overrideReferenceId ?? original.reference_id,
+          description: `Reversal of ${original.entry_no}${original.description ? ' — ' + original.description : ''}`,
+          status: 'posted', reverses_entry: entryId, posted_at: nowIso, posted_by: userId, created_by: userId,
+        })
+        .select('id')
+        .single(),
+    )
     if (reversalError || !reversal) return { success: false, error: reversalError?.message || 'Failed to create reversal entry' }
 
     const { error: linesError } = await supabase.from('journal_entry_lines').insert(
@@ -525,7 +624,7 @@ export const useGLDataStore = defineStore('glData', () => {
 
   return {
     accounts, journal, trialBalance, incomeStatement, balanceSheet, loading, error,
-    fetchAccounts, fetchJournal, postJournalEntry, postManualEntry, approveManualEntry, reverseEntry,
+    fetchAccounts, createAccount, fetchJournal, postJournalEntry, postManualEntry, approveManualEntry, reverseEntry, reverseJournalEntry,
     projectEvents, fetchTrialBalance, fetchIncomeStatement, fetchBalanceSheet,
     clearError, resetStore,
   }

@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useGLDataStore } from '@/stores/glData'
-import { nextDocNumber, generateNextNumber } from '@/utils/helpers'
+import { nextDocNumber, generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
 
 const toast = useToast()
 
@@ -17,7 +17,7 @@ const toast = useToast()
 // exists in the hub (sale, ethical_order/collections, inhouse_order, stock_in,
 // remittance) via plain select + JS reduce, mirroring ethicalData.fetchCommissionSummary.
 
-export const EXPENSE_CATEGORIES = [
+export const expenseCategories = [
   { value: 'rent', title: 'Rent' },
   { value: 'utilities', title: 'Utilities' },
   { value: 'supplies', title: 'Supplies' },
@@ -32,16 +32,16 @@ export const EXPENSE_CATEGORIES = [
   { value: 'taxes_licenses', title: 'Taxes & Licenses' },
 ] as const
 
-export type ExpenseCategory = typeof EXPENSE_CATEGORIES[number]['value']
+export type ExpenseCategory = typeof expenseCategories[number]['value']
 
-export const EXPENSE_DEPARTMENTS = [
+export const expenseDepartments = [
   { value: 'VP-Admin', title: 'VP-Admin' },
   { value: 'VP-Selling', title: 'VP-Selling' },
 ] as const
 
-export type ExpenseDepartment = typeof EXPENSE_DEPARTMENTS[number]['value']
+export type ExpenseDepartment = typeof expenseDepartments[number]['value']
 
-export const EXPENSE_PAYMENT_METHODS = [
+export const expensePaymentMethods = [
   { value: 'cash', title: 'Cash' },
   { value: 'petty_cash', title: 'Petty Cash' },
   { value: 'cheque', title: 'Cheque' },
@@ -52,7 +52,7 @@ export const EXPENSE_PAYMENT_METHODS = [
   { value: 'other', title: 'Other' },
 ] as const
 
-export type ExpensePaymentMethod = typeof EXPENSE_PAYMENT_METHODS[number]['value']
+export type ExpensePaymentMethod = typeof expensePaymentMethods[number]['value']
 
 export type CashClassification = 'CASA' | 'TIME_INVESTMENT' | 'PETTY_CASH'
 
@@ -160,9 +160,12 @@ export type RemittanceDiscrepancyRow = {
   expected_amount: number
   actual_amount: number
   discrepancy: number
+  notes: string | null
+  resolution: 'paid_on_spot' | 'employee_receivable' | null
+  receivable_status: 'outstanding' | 'paid' | null
 }
 
-export type ARAgingBucket = 'current' | '1-30' | '31-60' | '61-90' | '90+' | 'no-term'
+export type ARAgingTerm = 'current' | '1-30' | '31-60' | '61-90' | '90+' | 'no-term'
 
 export type ARAgingRow = {
   id: number
@@ -175,7 +178,7 @@ export type ARAgingRow = {
   balance: number
   due_date: string | null
   days_overdue: number | null
-  bucket: ARAgingBucket
+  term: ARAgingTerm
 }
 
 // A single receivable, drilled down for the AR jacket detail dialog. Read-only:
@@ -216,6 +219,35 @@ export type ARReceivableDetail = {
   balance: number
   lines: ARReceivableLine[]
   payments: ARReceivablePayment[]
+}
+
+// Statement of Account — per CUSTOMER, not per order (that's what ARReceivableDetail
+// above is). Every order (charge) and every payment (from the shared `collections`
+// ledger) across the customer's whole history, chronological, with a running
+// balance — the actual document an accountant would send a customer, as opposed
+// to the per-order drill-down.
+export type SOAEntry = {
+  date: string
+  type: 'charge' | 'payment'
+  reference_no: string | null
+  description: string
+  charge: number
+  payment: number
+  running_balance: number
+}
+
+export type StatementOfAccount = {
+  customer_id: number
+  customer_name: string | null
+  customer_address: string | null
+  customer_contact: string | null
+  customer_tin: string | null
+  source: 'ethical_order' | 'inhouse_order'
+  entries: SOAEntry[]
+  totalCharges: number
+  totalPayments: number
+  endingBalance: number
+  generated_at: string
 }
 
 export type CommissionLiabilityRow = {
@@ -412,7 +444,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     if (payload.amount <= 0) {
       toast.error('Expense amount must be positive.'); loading.value = false; return { success: false }
     }
-    if (!EXPENSE_CATEGORIES.some(c => c.value === payload.category)) {
+    if (!expenseCategories.some(c => c.value === payload.category)) {
       toast.error(`Invalid expense category: ${payload.category}`); loading.value = false; return { success: false }
     }
     if (!payload.cashAccountId) {
@@ -430,18 +462,19 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     }
 
     const year = new Date().getFullYear().toString()
-    const expenseNo = await generateNextNumber('expense_no', `EXP-${year}-`, ['reference_no'])
-
-    const { data: created, error: insertError } = await supabase
-      .from('transactions')
-      .insert({
-        expense_no: expenseNo, transaction_type: 'expense', status: 'recorded',
-        payment_method: payload.paymentMethod || null, subtotal: payload.amount, total_amount: payload.amount,
-        paid_at: payload.valueDate || new Date().toISOString().slice(0, 10),
-        remarks: payload.remarks || null, created_by: user.id, cash_account_id: payload.cashAccountId,
-      })
-      .select('id')
-      .single()
+    const { data: created, docNo: expenseNo, error: insertError } = await insertWithDocRetry<{ id: number }>(
+      () => generateNextNumber('expense_no', `EXP-${year}-`, ['reference_no']),
+      async (docNo) => supabase
+        .from('transactions')
+        .insert({
+          expense_no: docNo, transaction_type: 'expense', status: 'recorded',
+          payment_method: payload.paymentMethod || null, subtotal: payload.amount, total_amount: payload.amount,
+          paid_at: payload.valueDate || new Date().toISOString().slice(0, 10),
+          remarks: payload.remarks || null, created_by: user.id, cash_account_id: payload.cashAccountId,
+        })
+        .select('id')
+        .single(),
+    )
     if (insertError || !created) {
       handleError(insertError, 'Failed to record expense.')
       toast.error(insertError?.message || 'Failed to record expense.')
@@ -675,21 +708,24 @@ export const useFinanceDataStore = defineStore('financeData', () => {
 
     const prefix = pettyAccount.account_type === 'revolving_fund' ? 'RVF' : 'PCR'
     const year = new Date().getFullYear().toString()
-    const { data: existingRequests } = await supabase
-      .from('transactions')
-      .select('reference_no')
-      .like('reference_no', `${prefix}-${year}-%`)
-    const requestNo = nextDocNumber((existingRequests ?? []).map(r => r.reference_no), `${prefix}-${year}-`)
-
-    const { data: created, error: insertError } = await supabase
-      .from('transactions')
-      .insert({
-        reference_no: requestNo, transaction_type: 'petty_cash_replenishment', status: 'pending_approval',
-        total_amount: shortfall, subtotal: shortfall, remarks: payload.remarks || null, created_by: user.id,
-        cash_account_id: payload.pettyCashAccountId, funding_account_id: payload.fundingAccountId,
-      })
-      .select('id')
-      .single()
+    const { data: created, docNo: requestNo, error: insertError } = await insertWithDocRetry<{ id: number }>(
+      async () => {
+        const { data: existingRequests } = await supabase
+          .from('transactions')
+          .select('reference_no')
+          .like('reference_no', `${prefix}-${year}-%`)
+        return nextDocNumber((existingRequests ?? []).map(r => r.reference_no), `${prefix}-${year}-`)
+      },
+      async (docNo) => supabase
+        .from('transactions')
+        .insert({
+          reference_no: docNo, transaction_type: 'petty_cash_replenishment', status: 'pending_approval',
+          total_amount: shortfall, subtotal: shortfall, remarks: payload.remarks || null, created_by: user.id,
+          cash_account_id: payload.pettyCashAccountId, funding_account_id: payload.fundingAccountId,
+        })
+        .select('id')
+        .single(),
+    )
     if (insertError || !created) {
       handleError(insertError, 'Failed to request replenishment.')
       toast.error(insertError?.message || 'Failed to request replenishment.')
@@ -945,26 +981,29 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     }
 
     const year = new Date().getFullYear().toString()
-    const { data: existingPayments } = await supabase
-      .from('transactions')
-      .select('reference_no')
-      .like('reference_no', `SP-${year}-%`)
-    const paymentNo = nextDocNumber((existingPayments ?? []).map(r => r.reference_no), `SP-${year}-`)
-
     let remarks = payload.remarks || ''
     if (payload.referenceNo) remarks = `${remarks} | Ref: ${payload.referenceNo}`.replace(/^\s*\|\s*/, '')
 
-    const { data: created, error: insertError } = await supabase
-      .from('transactions')
-      .insert({
-        reference_no: paymentNo, transaction_type: 'supplier_payment', status: 'recorded',
-        supplier_id: payload.supplierId, payment_method: payload.paymentMethod || null,
-        subtotal: payload.amount, total_amount: payload.amount,
-        paid_at: payload.valueDate || new Date().toISOString().slice(0, 10),
-        remarks: remarks || null, created_by: user.id,
-      })
-      .select('id')
-      .single()
+    const { data: created, docNo: paymentNo, error: insertError } = await insertWithDocRetry<{ id: number }>(
+      async () => {
+        const { data: existingPayments } = await supabase
+          .from('transactions')
+          .select('reference_no')
+          .like('reference_no', `SP-${year}-%`)
+        return nextDocNumber((existingPayments ?? []).map(r => r.reference_no), `SP-${year}-`)
+      },
+      async (docNo) => supabase
+        .from('transactions')
+        .insert({
+          reference_no: docNo, transaction_type: 'supplier_payment', status: 'recorded',
+          supplier_id: payload.supplierId, payment_method: payload.paymentMethod || null,
+          subtotal: payload.amount, total_amount: payload.amount,
+          paid_at: payload.valueDate || new Date().toISOString().slice(0, 10),
+          remarks: remarks || null, created_by: user.id,
+        })
+        .select('id')
+        .single(),
+    )
     if (insertError || !created) {
       handleError(insertError, 'Failed to record supplier payment.')
       toast.error(insertError?.message || 'Failed to record supplier payment.')
@@ -1247,7 +1286,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       // actual_amount moved to remittance_details in hub redesign; old rows
       // still have it on transactions — coalesce handles both.
       const { data, error: fetchError } = await supabase.from('transactions')
-        .select('id, remittance_no, outlet, outlet_id, created_at, total_amount, actual_amount, remittance_details(actual_amount)')
+        .select('id, remittance_no, outlet, outlet_id, created_at, total_amount, actual_amount, remarks, remittance_details(actual_amount, resolution, receivable_status)')
         .eq('transaction_type', 'remittance')
         .order('created_at', { ascending: false })
       if (fetchError) throw fetchError
@@ -1263,6 +1302,9 @@ export const useFinanceDataStore = defineStore('financeData', () => {
             expected_amount: r.total_amount ?? 0,
             actual_amount: actualAmount,
             discrepancy: actualAmount - (r.total_amount ?? 0),
+            notes: r.remarks ?? null,
+            resolution: r.remittance_details?.resolution ?? null,
+            receivable_status: r.remittance_details?.receivable_status ?? null,
           }
         })
         .filter((r) => Math.abs(r.discrepancy) > threshold)
@@ -1278,7 +1320,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
 
   // ─── Discrepancy: AR aging (ethical_order + inhouse_order) ──────────────────
 
-  function bucketFor(daysOverdue: number | null): ARAgingBucket {
+  function termFor(daysOverdue: number | null): ARAgingTerm {
     if (daysOverdue == null) return 'no-term'
     if (daysOverdue <= 0) return 'current'
     if (daysOverdue <= 30) return '1-30'
@@ -1322,7 +1364,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
           id: r.id, source: 'ethical_order', reference_no: r.ethical_no,
           customer_id: r.customer_id ?? null, customer_name: r.customer?.name ?? null, total_amount: r.total_amount ?? 0,
           amount_paid: amountPaid, balance, due_date: dueDate,
-          days_overdue: daysOverdue, bucket: bucketFor(daysOverdue),
+          days_overdue: daysOverdue, term: termFor(daysOverdue),
         })
       }
 
@@ -1335,7 +1377,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
           id: r.id, source: 'inhouse_order', reference_no: r.inhouse_no,
           customer_id: r.customer_id ?? null, customer_name: r.customer?.name ?? null, total_amount: r.total_amount ?? 0,
           amount_paid: amountPaid, balance, due_date: null,
-          days_overdue: null, bucket: 'no-term',
+          days_overdue: null, term: 'no-term',
         })
       }
 
@@ -1426,6 +1468,91 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       }
     } catch (err) {
       handleError(err, 'Failed to fetch receivable detail')
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
+  // ─── Statement of Account (per customer, full order + payment history) ──────
+
+  const fetchStatementOfAccount = async (customerId: number): Promise<StatementOfAccount | null> => {
+    loading.value = true
+    clearError()
+    try {
+      const { data: customer, error: custError } = await supabase
+        .from('customers')
+        .select('id, name, address, contact_no, tin_number, department')
+        .eq('id', customerId)
+        .maybeSingle()
+      if (custError) throw custError
+      if (!customer) { handleError(null, 'Customer not found'); return null }
+
+      // A customer belongs to exactly one department — that's which order
+      // type + which per-type reference column ("refCol") this statement reads.
+      const source: 'ethical_order' | 'inhouse_order' = customer.department === 'ethical' ? 'ethical_order' : 'inhouse_order'
+      const refCol = source === 'ethical_order' ? 'ethical_no' : 'inhouse_no'
+
+      const { data: orders, error: ordersError } = await supabase
+        .from('transactions')
+        .select(`id, created_at, total_amount, ${refCol}`)
+        .eq('transaction_type', source)
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: true })
+      if (ordersError) throw ordersError
+
+      const orderRows = (orders ?? []) as any[]
+      const orderIds = orderRows.map((o) => o.id)
+      const orderRefById = new Map(orderRows.map((o) => [o.id, o[refCol] as string | null]))
+
+      const { data: payments, error: paymentsError } = orderIds.length
+        ? await supabase.from('collections')
+            .select('id, transaction_id, created_at, amount, payment_method, reference_no')
+            .in('transaction_id', orderIds)
+            .order('created_at', { ascending: true })
+        : { data: [] as any[], error: null }
+      if (paymentsError) throw paymentsError
+
+      const unsorted = [
+        ...orderRows.map((o) => ({
+          date: o.created_at as string,
+          type: 'charge' as const,
+          reference_no: (o[refCol] as string | null) ?? null,
+          description: `Order ${o[refCol] ?? `#${o.id}`}`,
+          charge: o.total_amount ?? 0,
+          payment: 0,
+        })),
+        ...(payments ?? []).map((p: any) => ({
+          date: p.created_at as string,
+          type: 'payment' as const,
+          reference_no: p.reference_no ?? orderRefById.get(p.transaction_id) ?? null,
+          description: `Payment${p.payment_method ? ` (${p.payment_method})` : ''}`,
+          charge: 0,
+          payment: p.amount ?? 0,
+        })),
+      ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
+      let runningBalance = 0
+      const entries: SOAEntry[] = unsorted.map((e) => {
+        runningBalance += e.charge - e.payment
+        return { ...e, running_balance: runningBalance }
+      })
+
+      return {
+        customer_id: customerId,
+        customer_name: customer.name ?? null,
+        customer_address: customer.address ?? null,
+        customer_contact: customer.contact_no ?? null,
+        customer_tin: customer.tin_number ?? null,
+        source,
+        entries,
+        totalCharges: entries.reduce((s, e) => s + e.charge, 0),
+        totalPayments: entries.reduce((s, e) => s + e.payment, 0),
+        endingBalance: runningBalance,
+        generated_at: new Date().toISOString(),
+      }
+    } catch (err) {
+      handleError(err, 'Failed to generate statement of account')
       return null
     } finally {
       loading.value = false
@@ -1679,7 +1806,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     requestReplenishment, approveReplenishment, rejectReplenishment,
     fetchSupplierPayments, recordSupplierPayment, fetchSupplierAP,
     fetchPnL,
-    fetchRemittanceDiscrepancies, fetchARAging, fetchReceivableDetail, fetchCommissionLiability, fetchStockReconciliation,
+    fetchRemittanceDiscrepancies, fetchARAging, fetchReceivableDetail, fetchStatementOfAccount, fetchCommissionLiability, fetchStockReconciliation,
     fetchIncomeStatement, fetchBalanceSheet, fetchTrialBalance,
     clearError, resetStore,
   }

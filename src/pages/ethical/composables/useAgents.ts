@@ -2,9 +2,11 @@ import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useAgentsDataStore } from '@/stores/agentsData'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import type { CreateAgentData } from '@/stores/agentsData'
 
 const toast = useToast()
+const { confirmDialog } = useConfirmDialog()
 
 export function useAgents() {
   const store = useAgentsDataStore()
@@ -62,7 +64,7 @@ export function useAgents() {
   }
 
   async function deleteAgent(id: number) {
-    if (!confirm('Delete this agent?')) return
+    if (!(await confirmDialog('Delete this agent?', { title: 'Confirm Delete', confirmText: 'Delete' }))) return
     await store.deleteAgent(id)
   }
 
