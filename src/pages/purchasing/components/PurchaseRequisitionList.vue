@@ -101,12 +101,12 @@ function createPRFromReorder() {
   showNewPRDialog.value = true
 }
 
-function onPRSubmitted(resolvedReorderIds: number[]) {
+function onPRSubmitted() {
   page.value = 1
   loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
-  if (resolvedReorderIds.length) {
-    productsStore.resolveReorderRequests(resolvedReorderIds)
-  }
+  // CHANGED — resolving reorder requests no longer happens at PR-submission
+  // time; it now happens when the PR is approved/rejected (see
+  // purchaseRequisitionData.approvePR/rejectPR).
   selectedReorderIds.value = []
   prefillItemsForDialog.value = []
 }

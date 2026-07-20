@@ -50,3 +50,51 @@ export function canViewSupplierName(
   const id = typeof role === 'number' ? role : role.id
   return SUPPLIER_NAME_ACCESS_ROLE_IDS.includes(id)
 }
+
+/** Role ID for the Purchasing role. */
+export const PURCHASING_ROLE_ID = 4
+
+/**
+ * Check whether the given role is the Purchasing role.
+ * @param role - A role object with an `id` property, or a raw numeric role ID.
+ */
+export function isPurchasingRole(
+  role: { id: number } | null | undefined | number,
+): boolean {
+  if (role === undefined || role === null) return false
+  const id = typeof role === 'number' ? role : role.id
+  return id === PURCHASING_ROLE_ID
+}
+
+/** Role ID for the Warehouse role. */
+export const WAREHOUSE_ROLE_ID = 3
+
+/**
+ * Role IDs that are restricted from editing/deleting products — can only edit reorder_level.
+ * These are the Warehouse (3) and Purchaser (4) roles.
+ */
+export const PRODUCT_EDIT_RESTRICTED_ROLE_IDS = [3, 4]
+
+/**
+ * Check whether the given role is restricted from editing/deleting products.
+ * Restricted roles (Warehouse / Purchaser) cannot see edit/delete buttons and can only
+ * modify the reorder_level field on ProductFormDialog.
+ *
+ * @param role - A role object with an `id` property, or a raw numeric role ID.
+ * @returns `true` if the role is restricted.
+ *
+ * @example
+ * ```ts
+ * isProductEditRestricted(user.role)  // → boolean
+ * isProductEditRestricted({ id: 3 })  // → true (Warehouse)
+ * isProductEditRestricted(4)          // → true (Purchaser)
+ * isProductEditRestricted(1)          // → false (Super Admin)
+ * ```
+ */
+export function isProductEditRestricted(
+  role: { id: number } | null | undefined | number,
+): boolean {
+  if (role === undefined || role === null) return false
+  const id = typeof role === 'number' ? role : role.id
+  return PRODUCT_EDIT_RESTRICTED_ROLE_IDS.includes(id)
+}

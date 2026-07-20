@@ -421,7 +421,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     loading.value = true
     if (!authStore.users.length) await authStore.getAllUsers()
 
-    const statuses = includeResolved ? ['pending', 'approved'] : ['pending']
+    const statuses = includeResolved ? ['pending', 'approved', 'awaiting_stock', 'rejected'] : ['pending']
 
     const { data, error } = await supabase
       .from('transactions')
@@ -455,7 +455,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
         created_at:     tx.created_at,
       }
     })
-    reorderCount.value = reorderRequests.value.length
+    reorderCount.value = reorderRequests.value.filter(r => r.status === 'pending').length
   }
 
   async function fetchReorderCount() {
@@ -467,59 +467,90 @@ export const useProductsDataStore = defineStore('productsData', () => {
     reorderCount.value = count ?? 0
   }
 
-  async function resolveReorderRequests(ids: number[]) {
-    if (!ids.length) return
+  async function transitionReorderRequestsByProduct(
+    productIds: number[],
+    fromStatus: string,
+    toStatus: string,
+    logAction: string,
+    describe: (productName: string) => string,
+  ) {
+    if (!productIds.length) return
 
-    loading.value = true
-
-    // Need the current user for created_by on the log entries —
-    // same pattern as createReorderRequest above.
     const { user, error: authError } = await authStore.getCurrentUser()
-    if (authError || !user) {
-      toast.error('User not authenticated.')
-      loading.value = false
-      return
-    }
+    if (authError || !user) return
 
-    const { error } = await supabase
+    const { data: matches, error: fetchError } = await supabase
       .from('transactions')
-      .update({ status: 'approved' })
+      .select(`id, transaction_items!inner ( product_id, products ( product_name ) )`)
+      .in('transaction_type', REORDER_TYPES)
+      .eq('status', fromStatus)
+      .in('transaction_items.product_id', productIds)
+
+    if (fetchError || !matches?.length) return
+
+    const ids = matches.map((m: any) => m.id)
+
+    const { error: updateError } = await supabase
+      .from('transactions')
+      .update({ status: toStatus })
       .in('id', ids)
 
-    // Check the update result BEFORE logging anything — a failed status
-    // update shouldn't produce a "resolved" log entry.
-    if (error) {
-      toast.error('Failed to update reorder request status.')
-      loading.value = false
+    if (updateError) {
+      console.error(`Failed to transition reorder requests to ${toStatus}:`, updateError)
       return
     }
 
-    // Snapshot the matching requests before reorderRequests.value gets filtered
-    // below, so we still have product info to describe in the log.
-    const resolvedRequests = ids
-      .map(id => reorderRequests.value.find(r => r.id === id))
-      .filter((r): r is NonNullable<typeof r> => r != null)
-
-    // Log each resolution — don't let a logging hiccup block the UI update,
-    // but surface it if it happens so it isn't silently lost.
     const logsStore = useLogsDataStore()
-    await Promise.all(resolvedRequests.map(request =>
-      logsStore.createLog({
-        action:         'reorder_approved',
-        description:    `Reorder approved for "${request.product?.product_name ?? `Product #${request.product_id}`}"`,
-        module:         'reorder',
-        transaction_id: request.id,
-        created_by:     user.id,
+    await Promise.all(matches.map((m: any) => {
+      const productName = m.transaction_items?.[0]?.products?.product_name
+        ?? `Product #${m.transaction_items?.[0]?.product_id}`
+      return logsStore.createLog({
+        action: logAction,
+        description: describe(productName),
+        module: 'reorder',
+        transaction_id: m.id,
+        created_by: user.id,
       })
-    )).catch(err => {
-      console.error('Failed to log reorder resolution:', err)
-    })
+    })).catch(err => console.error('Failed to log reorder transition:', err))
 
-    // Optimistically drop them locally
-    reorderRequests.value = reorderRequests.value.filter(r => !ids.includes(r.id))
-    reorderCount.value = reorderRequests.value.length
+    // Keep any already-loaded cache in sync (e.g. Products stock dialog open
+    // elsewhere) rather than dropping rows, so a rejected-but-visible row
+    // doesn't disappear from view.
+    reorderRequests.value = reorderRequests.value.map(r =>
+      ids.includes(r.id) ? { ...r, status: toStatus } : r
+    )
+    // CHANGED (see reorderCount fix in fetchReorderRequests below) — always
+    // recompute from pending only, since that's what the badge represents.
+    reorderCount.value = reorderRequests.value.filter(r => r.status === 'pending').length
+  }
 
-    loading.value = false
+  // NEW — pending -> approved, triggered when a PM approves the PR that
+  // carries this product (see purchaseRequisitionData.approvePR).
+  async function approveReorderRequestsByProduct(productIds: number[]) {
+    await transitionReorderRequestsByProduct(
+      productIds, 'pending', 'approved', 'reorder_approved',
+      productName => `Reorder approved for "${productName}" (Purchase Requisition approved)`,
+    )
+  }
+
+  // NEW — pending -> rejected, triggered when a PM rejects the PR (see
+  // purchaseRequisitionData.rejectPR). Stays visible/logged rather than being
+  // deleted — createReorderRequest's duplicate-guard only blocks on
+  // status='pending', so the product can immediately be re-flagged.
+  async function rejectReorderRequestsByProduct(productIds: number[]) {
+    await transitionReorderRequestsByProduct(
+      productIds, 'pending', 'rejected', 'reorder_rejected',
+      productName => `Reorder rejected for "${productName}" (Purchase Requisition rejected)`,
+    )
+  }
+
+  // NEW — approved -> awaiting_stock, triggered when a PO is issued for the
+  // approved PR (see purchaseRequisitionData.issuePurchaseOrder).
+  async function markReorderRequestsAwaitingStock(productIds: number[]) {
+    await transitionReorderRequestsByProduct(
+      productIds, 'approved', 'awaiting_stock', 'reorder_awaiting_stock',
+      productName => `Reorder awaiting stock for "${productName}" (Purchase Order issued)`,
+    )
   }
 
   async function completeReorderRequests(productIds: number[]) {
@@ -542,7 +573,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
       transaction_items!inner ( product_id, products ( product_name ) )
     `)
     .in('transaction_type', REORDER_TYPES)
-    .eq('status', 'approved')
+    .eq('status', 'awaiting_stock')
     .in('transaction_items.product_id', productIds)
 
   if (fetchError) {
@@ -765,11 +796,12 @@ export const useProductsDataStore = defineStore('productsData', () => {
     fetchReorderRequests,
     fetchReorderCount,
     createReorderRequest,
-    resolveReorderRequests,
+    approveReorderRequestsByProduct,   // NEW
+    rejectReorderRequestsByProduct,    // NEW
+    markReorderRequestsAwaitingStock,  // NEW
     completeReorderRequests,
     reorderRequests,
     reorderCount,
-
     // Realtime
     startRealtime,
     stopRealtime,
