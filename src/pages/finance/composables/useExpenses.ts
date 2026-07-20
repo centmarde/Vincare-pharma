@@ -47,13 +47,13 @@ export function useExpenses() {
 
   async function loadPending() {
     const [pending, edits] = await Promise.all([
-      changeStore.fetchPendingTargetIds('expense'),
-      changeStore.fetchAppliedEdits('expense'),
+      changeStore.fetchPendingTargetIds(),
+      changeStore.fetchAppliedEdits(),
     ])
     pendingIds.value = new Set(pending)
     // Newest-first from the store, so the first entry per target wins.
     const map = new Map<number, AppliedEdit>()
-    for (const e of edits) if (!map.has(e.target_id)) map.set(e.target_id, e)
+    for (const e of edits) if (!map.has(e.transaction_id)) map.set(e.transaction_id, e)
     appliedEdits.value = map
   }
 
@@ -150,10 +150,8 @@ export function useExpenses() {
     const e = changeTarget.value
     if (!e) return
     const result = await changeStore.proposeChange({
-      module: 'finance',
-      targetType: 'expense',
-      targetId: e.id,
-      targetRef: e.reference_no,
+      transactionId: e.id,
+      fromTransactionNo: e.reference_no,
       requestType: payload.requestType,
       proposedChanges: payload.proposedChanges,
       summary: payload.summary,
