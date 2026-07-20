@@ -320,17 +320,6 @@ function goToPage(p: number) {
                 <v-icon color="primary" start>mdi-eye</v-icon>
                 View
               </v-btn>
-              <!-- <template v-if="item.status === 'approved'">
-                <v-btn
-                  variant="outlined"
-                  size="small"
-                  class="text-none"
-                  prepend-icon="mdi-printer-outline"
-                  @click="openPurchaseOrder(item)"
-                >
-                  Issue PO
-                </v-btn>
-              </template> -->
             </div>
           </template>
         </v-data-table-server>
