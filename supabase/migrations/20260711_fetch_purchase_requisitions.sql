@@ -1,8 +1,9 @@
 -- RPC to fetch Purchase Requisitions for the PR list.
--- Filters by requisition_no not null, optional text search (requisition_no,
--- po_no, remarks, status) and status array. Sortable via whitelisted p_order_by.
--- Aggregates line items into `items` jsonb via lateral join. Returns
--- total_count (window function) for pagination.
+-- A PR-originated row carries its number in reference_no while it's still a
+-- live requisition (transaction_type='purchase_requisition'), then that
+-- number migrates into requisition_no once issued into a PO — see
+-- issuePurchaseOrder(). Filtering/searching must check both columns to catch
+-- the full lifecycle; coalesce() covers display.
 create or replace function fetch_purchase_requisitions(
   p_search    text    default null,
   p_status    text[]  default null,
@@ -15,6 +16,7 @@ returns table (
   id                     bigint,
   requisition_no         text,
   po_no                  text,
+  reference_no           text,
   status                 text,
   remarks                text,
   total_amount           numeric,
@@ -44,7 +46,17 @@ begin
   return query execute format(
     $f$
     select
-      t.id, t.requisition_no, t.po_no, t.status, t.remarks, t.total_amount,
+      t.id,
+      -- Fresh, unissued PRs have their number in reference_no, not
+      -- requisition_no (that only gets populated on issue). Coalesce so the
+      -- caller always gets the right display value regardless of stage.
+      coalesce(t.requisition_no, t.reference_no) as requisition_no,
+      -- Once issued the PO number lives in reference_no until receipt (when
+      -- it archives into po_no). Surface it here too so the PR list can show
+      -- "PO-2026-004 (issued)" before receipt, not just after.
+      coalesce(t.po_no, case when t.transaction_type = 'purchase_order' then t.reference_no end) as po_no,
+      t.reference_no,
+      t.status, t.remarks, t.total_amount,
       t.supplier_id, t.created_at, t.created_by, t.approved_by, t.updated_at,
       coalesce(items.items, '[]'::jsonb) as items,
       count(*) over() as total_count
@@ -61,6 +73,7 @@ begin
         'selling_price',          p.selling_price,
         'sku',                    p.sku,
         'supplier_id',            p.supplier_id,
+        'expiry_date',            p.expiry_date,
         'supplier_name',          s.name
       ) order by ti.id) as items
       from transaction_items ti
@@ -68,10 +81,16 @@ begin
       left join suppliers s on s.id = p.supplier_id
       where ti.transaction_id = t.id
     ) items on true
-    where t.requisition_no is not null
+    -- A row belongs in the PR list if a PR number is sitting in EITHER
+    -- column — reference_no (still a live requisition) or requisition_no
+    -- (already issued/received, archived here). Replaces the old
+    -- `requisition_no is not null`, which silently excluded every
+    -- not-yet-issued PR.
+    where (t.reference_no ilike 'PR%%' or t.requisition_no ilike 'PR%%')
       and ($1 is null or (
         t.requisition_no ilike '%%' || $1 || '%%' or
         t.po_no           ilike '%%' || $1 || '%%' or
+        t.reference_no    ilike '%%' || $1 || '%%' or
         t.remarks         ilike '%%' || $1 || '%%' or
         t.status          ilike '%%' || $1 || '%%'
       ))

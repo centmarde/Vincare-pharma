@@ -3,7 +3,7 @@
 -- not yet received (status='issued'), then that number migrates into po_no
 -- once received — see markPOAsReceived(). Filtering/searching must check
 -- both columns, or a freshly issued PO (pre-receipt) disappears from the list.
-create or replace function new_fetch_purchase_orders(
+create or replace function fetch_purchase_orders(
   p_search    text    default null,
   p_status    text[]  default null,
   p_order_by  text    default 'created_at',
@@ -72,6 +72,7 @@ begin
         'selling_price',          p.selling_price,
         'sku',                    p.sku,
         'supplier_id',            p.supplier_id,
+        'expiry_date',            p.expiry_date,
         'supplier_name',          s.name
       ) order by ti.id) as items
       from transaction_items ti
