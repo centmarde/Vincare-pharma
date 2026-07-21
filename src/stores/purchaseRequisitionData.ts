@@ -1,6 +1,6 @@
 import { generateDocNumber, getLatestReferenceNo, insertWithDocRetry } from '@/utils/helpers'
 import type { TransactionRPCRow } from './transactionsData'
-import { useProductsDataStore } from './productsData'   // NEW
+import { useProductsDataStore } from './productsData' // NEW
 import { useAuthUserStore } from './authUser'
 import { useToast } from 'vue-toastification'
 import { supabase } from '@/lib/supabase'
@@ -11,87 +11,87 @@ import type { Ref } from 'vue'
 const toast = useToast()
 
 export type PRItem = {
-  id:               number
-  no:               number
-  unit:             string
+  id: number
+  no: number
+  unit: string
   item_description: string
-  qty:              number
-  offer_per_unit:   number
-  cost_per_unit:    number
-  product_id?:      number
-  sku?:             string | null
-  supplier_name?:   string | null
-  supplier_id?:     string | null
-  expiry_date?:     string | null
+  qty: number
+  offer_per_unit: number
+  cost_per_unit: number
+  product_id?: number
+  sku?: string | null
+  supplier_name?: string | null
+  supplier_id?: string | null
+  expiry_date?: string | null
   actual_count_stock_in?: number | null
-  expiry_date?:     string | null   // NEW
 }
 
 export type RequisitionItemType = {
-  no:               number
-  unit:             string
+  no: number
+  unit: string
   item_description: string
-  qty:              number
-  offer_per_unit:   number
-  cost_per_unit:    number
-  supplier_id:      string | null
-  actual_count_stock_in?:    number | null
-  expiry_date?:     string | null
-  product_id?:      number | null
+  qty: number
+  offer_per_unit: number
+  cost_per_unit: number
+  supplier_id: string | null
+  actual_count_stock_in?: number | null
+  expiry_date?: string | null
+  product_id?: number | null
   reorder_request_id?: number | null
 }
 
 export type PR = {
-  id:              number
-  reference_no:    string | null   // NEW — the "live" doc number for this stage
-  requisition_no:  string
-  po_no:           string | null
-  status:          string
-  remarks:         string | null
-  total_amount:    number
-  supplier_id:     string | null
-  supplier_name?:  string | null
-  created_at:      string
-  created_by:      string
-  approved_by:     string | null
-  updated_at:      string | null
+  id: number
+  reference_no: string | null // NEW — the "live" doc number for this stage
+  recent_transaction_no: string | null
+  requisition_no: string
+  po_no: string | null
+  status: string
+  remarks: string | null
+  total_amount: number
+  supplier_id: string | null
+  supplier_name?: string | null
+  created_at: string
+  created_by: string
+  approved_by: string | null
+  updated_at: string | null
   requester_name?: string
-  reviewer_name?:  string
-  actual_count_stock_in?:   number | null
-  items:           PRItem[]
+  reviewer_name?: string
+  actual_count_stock_in?: number | null
+  items: PRItem[]
 }
 
 export type PurchaseRequisitionType = {
-  remarks:      string | null
-  status:       string
+  remarks: string | null
+  status: string
   requested_by: string | null
-  supplier_id:  string | null
+  supplier_id: string | null
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData', () => {
-  const authStore         = useAuthUserStore()
+  const authStore = useAuthUserStore()
 
   // ─── State ──────────────────────────────────────────────────────
-  const loading:             Ref<boolean>                = ref(false)
-  const error:               Ref<string>                 = ref('')
-  const prs:                 Ref<PR[]>                   = ref([])
-  const selectedPR:          Ref<PR | null>              = ref(null)
-  const filterStatus:        Ref<string | null>          = ref(null)
-  const items:               Ref<RequisitionItemType[]>  = ref([])
-  const subscriptionChannel: Ref<any>                    = ref(null)
+  const loading: Ref<boolean> = ref(false)
+  const error: Ref<string> = ref('')
+  const prs: Ref<PR[]> = ref([])
+  const selectedPR: Ref<PR | null> = ref(null)
+  const filterStatus: Ref<string | null> = ref(null)
+  const items: Ref<RequisitionItemType[]> = ref([])
+  const subscriptionChannel: Ref<any> = ref(null)
 
   const currentPR: Ref<PurchaseRequisitionType> = ref({
-    remarks:      null,
-    status:       'pending_approval',
+    remarks: null,
+    status: 'pending_approval',
     requested_by: null,
-    supplier_id:  null,
+    supplier_id: null,
   })
 
   // ─── Computed ───────────────────────────────────────────────────
   const isLoading = computed(() => loading.value)
-  const hasError  = computed(() => error.value !== '')
+  const hasError = computed(() => error.value !== '')
 
   // ─── Helpers ────────────────────────────────────────────────────
   const handleError = (err: unknown, message: string) => {
@@ -99,105 +99,301 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
   }
 
   function resetStore() {
-    currentPR.value = { remarks: null, status: 'pending_approval', requested_by: null, supplier_id: null }
-    items.value     = []
-    error.value     = ''
+    currentPR.value = {
+      remarks: null,
+      status: 'pending_approval',
+      requested_by: null,
+      supplier_id: null,
+    }
+    items.value = []
+    error.value = ''
   }
 
   // ─── Mappers ────────────────────────────────────────────────────
   function mapTransactionItems(transactionItems: any[]): PRItem[] {
     return transactionItems.map((ti: any, index: number) => ({
-      id:               ti.id,
-      no:               index + 1,
-      unit:             ti.products?.unit           ?? '—',
-      item_description: ti.products?.product_name   ?? '—',
-      qty:              ti.qty_stock_in   ?? 0,
-      offer_per_unit:   ti.products?.selling_price   ?? 0,
-      cost_per_unit:    ti.products?.cost_price      ?? 0,
-      product_id:       ti.product_id,
-      sku:              ti.products?.sku             ?? null,
-      supplier_name:    ti.products?.suppliers?.name ?? '—',
-      supplier_id:      ti.products?.supplier_id != null ? String(ti.products.supplier_id) : null,
-      expiry_date:      ti.products?.expiry_date     ?? null,
-      actual_count_stock_in:  ti.actual_count_stock_in      ?? null,
-      expiry_date:            ti.products?.expiry_date      ?? null,
+      id: ti.id,
+      no: index + 1,
+      unit: ti.products?.unit ?? '—',
+      item_description: ti.products?.product_name ?? '—',
+      qty: ti.qty_stock_in ?? 0,
+      offer_per_unit: ti.products?.selling_price ?? 0,
+      cost_per_unit: ti.products?.cost_price ?? 0,
+      product_id: ti.product_id,
+      sku: ti.products?.sku ?? null,
+      supplier_name: ti.products?.suppliers?.name ?? '—',
+      supplier_id: ti.products?.supplier_id != null ? String(ti.products.supplier_id) : null,
+      expiry_date: ti.products?.expiry_date ?? null,
+      actual_count_stock_in: ti.actual_count_stock_in ?? null,
     }))
   }
 
   function resolveUserNames(createdBy: string | null, approvedBy: string | null) {
     const findName = (id: string | null) =>
-      authStore.users.find(u => u.id === id)?.full_name?.toUpperCase() ?? '—'
+      authStore.users.find((u) => u.id === id)?.full_name?.toUpperCase() ?? '—'
     return {
       requester_name: findName(createdBy),
-      reviewer_name:  findName(approvedBy),
+      reviewer_name: findName(approvedBy),
     }
   }
 
   function mapToPR(
     tx: any,
     prItems: PRItem[],
-    names: { requester_name: string; reviewer_name: string }
+    names: { requester_name: string; reviewer_name: string },
   ): PR {
     return {
-      id:             tx.id,
+      id: tx.id,
       requisition_no: tx.requisition_no,
-      po_no:          tx.po_no,
-      status:         tx.status,
-      remarks:        tx.remarks,
-      total_amount:   tx.total_amount,
-      supplier_id:    tx.supplier_id,
-      created_at:     tx.created_at,
-      created_by:     tx.created_by,
-      approved_by:    tx.approved_by,
-      updated_at:     tx.updated_at,
+      po_no: tx.po_no,
+      status: tx.status,
+      remarks: tx.remarks,
+      total_amount: tx.total_amount,
+      supplier_id: tx.supplier_id,
+      created_at: tx.created_at,
+      created_by: tx.created_by,
+      approved_by: tx.approved_by,
+      updated_at: tx.updated_at,
       requester_name: names.requester_name,
-      reviewer_name:  names.reviewer_name,
-      reference_no:   tx.reference_no,
-      actual_count_stock_in:   tx.actual_count_stock_in,
-      items:          prItems,
+      reviewer_name: names.reviewer_name,
+      reference_no: tx.reference_no,
+      recent_transaction_no: tx.recent_transaction_no ?? null,
+      actual_count_stock_in: tx.actual_count_stock_in,
+      items: prItems,
     }
   }
 
   function mapRPCItemsToPR(items: TransactionRPCRow['items']): PRItem[] {
     return (items || []).map((it, index) => ({
-      id:                    it.id,
-      no:                    index + 1,
-      unit:                  it.unit          ?? '—',
-      item_description:      it.product_name  ?? '—',
-      qty:                   it.qty_stock_in  ?? 0,
-      offer_per_unit:        it.selling_price ?? 0,
-      cost_per_unit:         it.cost_price    ?? 0,
-      product_id:            it.product_id,
-      sku:                   it.sku           ?? null,
-      supplier_name:         it.supplier_name ?? '—',
-      supplier_id:           it.supplier_id != null ? String(it.supplier_id) : null,
-
+      id: it.id,
+      no: index + 1,
+      unit: it.unit ?? '—',
+      item_description: it.product_name ?? '—',
+      qty: it.qty_stock_in ?? 0,
+      offer_per_unit: it.selling_price ?? 0,
+      cost_per_unit: it.cost_price ?? 0,
+      product_id: it.product_id,
+      sku: it.sku ?? null,
+      supplier_name: it.supplier_name ?? '—',
+      supplier_id: it.supplier_id != null ? String(it.supplier_id) : null,
+      expiry_date: it.expiry_date ?? null,
       actual_count_stock_in: it.actual_count_stock_in ?? null,
     }))
   }
 
   function mapRPCRowToPR(
     row: TransactionRPCRow,
-    names: { requester_name: string; reviewer_name: string }
+    names: { requester_name: string; reviewer_name: string },
   ): PR {
     return {
-      id:                    row.id,
-      requisition_no:        row.requisition_no ?? '',
-      po_no:                 row.po_no,
-      status:                row.status ?? '',
-      remarks:               row.remarks,
-      total_amount:          row.total_amount ?? 0,
-      supplier_id:           row.supplier_id ? String(row.supplier_id) : null,
-      created_at:            row.created_at,
-      created_by:            row.created_by ?? '',
-      approved_by:           row.approved_by,
-      updated_at:            row.updated_at,
-      requester_name:        names.requester_name,
-      reviewer_name:         names.reviewer_name,
-      reference_no:          row.reference_no,
+      id: row.id,
+      requisition_no: row.requisition_no ?? '',
+      po_no: row.po_no,
+      status: row.status ?? '',
+      remarks: row.remarks,
+      total_amount: row.total_amount ?? 0,
+      supplier_id: row.supplier_id ? String(row.supplier_id) : null,
+      created_at: row.created_at,
+      created_by: row.created_by ?? '',
+      approved_by: row.approved_by,
+      updated_at: row.updated_at,
+      requester_name: names.requester_name,
+      reviewer_name: names.reviewer_name,
+      reference_no: row.reference_no,
+      recent_transaction_no: row.recent_transaction_no,
       actual_count_stock_in: null,
-      items:                 mapRPCItemsToPR(row.items),
+      items: mapRPCItemsToPR(row.items),
     }
+  }
+
+  // ─── Update PR (from PREditDialog) ──────────────────────────────
+  async function updatePR(payload: {
+    prId: number
+    items: PRItem[]
+    remarks: string
+  }): Promise<boolean> {
+    loading.value = true
+    error.value = ''
+
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) {
+      toast.error('User not authenticated.')
+      loading.value = false
+      return false
+    }
+
+    // 1. Update transaction remarks
+    const { error: updateError } = await supabase
+      .from('transactions')
+      .update({ remarks: payload.remarks, updated_at: new Date().toISOString() })
+      .eq('id', payload.prId)
+
+    if (updateError) {
+      handleError(updateError, 'Failed to update purchase requisition.')
+      toast.error('Failed to update purchase requisition.')
+      loading.value = false
+      return false
+    }
+
+    // 2. Fetch existing transaction_items for this PR
+    const { data: existingItems, error: fetchItemsError } = await supabase
+      .from('transaction_items')
+      .select('id, product_id')
+      .eq('transaction_id', payload.prId)
+
+    if (fetchItemsError) {
+      handleError(fetchItemsError, 'Failed to fetch existing items.')
+      toast.error('Failed to fetch existing items.')
+      loading.value = false
+      return false
+    }
+
+    const existingItemIds = (existingItems || []).map((i) => i.id)
+    const incomingItemIds = payload.items
+      .filter((i) => typeof i.id === 'number' && i.id > 0 && existingItemIds.includes(i.id))
+      .map((i) => i.id)
+
+    // 3. Delete items that were removed
+    const idsToDelete = existingItemIds.filter((id) => !incomingItemIds.includes(id))
+    if (idsToDelete.length) {
+      const { error: deleteError } = await supabase
+        .from('transaction_items')
+        .delete()
+        .in('id', idsToDelete)
+
+      if (deleteError) {
+        handleError(deleteError, 'Failed to remove items.')
+        toast.error('Failed to remove items.')
+        loading.value = false
+        return false
+      }
+    }
+
+    // 4. Handle new items (those with temp IDs like Date.now())
+    const newItems = payload.items.filter(
+      (i) => !(typeof i.id === 'number' && i.id > 0 && existingItemIds.includes(i.id)),
+    )
+
+    if (newItems.length) {
+      // 4a. Check for existing products
+      const names = [...new Set(newItems.map((i) => i.item_description).filter(Boolean))]
+      const { data: existingProducts } = await supabase
+        .from('products')
+        .select('id, product_name, supplier_id, unit, expiry_date')
+        .in('product_name', names)
+
+      const findExisting = (
+        name: string,
+        supplierId: number | null,
+        unit: string,
+        expiryDate: string | null,
+      ) =>
+        (existingProducts || []).find(
+          (p) =>
+            p.product_name === name &&
+            (p.supplier_id ?? null) === (supplierId ?? null) &&
+            p.unit === unit &&
+            (p.expiry_date ?? null) === (expiryDate ?? null),
+        )
+
+      const productIdByIndex: (number | null)[] = newItems.map((item) => {
+        const supplierId = item.supplier_id ? Number(item.supplier_id) : null
+
+        if (item.product_id != null && item.product_id > 0) {
+          const pickedProduct = (existingProducts || []).find((p) => p.id === item.product_id)
+          if (
+            pickedProduct &&
+            pickedProduct.unit === item.unit &&
+            pickedProduct.product_name === item.item_description &&
+            (pickedProduct.expiry_date ?? null) === (item.expiry_date ?? null)
+          ) {
+            return item.product_id
+          }
+        }
+
+        const match = findExisting(
+          item.item_description,
+          supplierId,
+          item.unit,
+          item.expiry_date ?? null,
+        )
+        return match ? match.id : null
+      })
+
+      // 4b. Create products that don't exist
+      const newItemIndexes = productIdByIndex
+        .map((id, idx) => (id === null ? idx : -1))
+        .filter((idx) => idx !== -1)
+
+      if (newItemIndexes.length) {
+        const productInserts = newItemIndexes.map((idx) => {
+          const item = newItems[idx]
+          return {
+            product_name: item.item_description,
+            unit: item.unit,
+            cost_price: item.cost_per_unit,
+            selling_price: item.offer_per_unit,
+            supplier_id: item.supplier_id ? Number(item.supplier_id) : null,
+            status: 'active',
+            expiry_date: item.expiry_date ?? null,
+            current_stock: 0,
+          }
+        })
+
+        const { data: productData, error: productError } = await supabase
+          .from('products')
+          .insert(productInserts)
+          .select('id')
+
+        if (productError || !productData) {
+          handleError(productError, 'Failed to create products.')
+          toast.error('Failed to create products for new items.')
+          loading.value = false
+          return false
+        }
+
+        newItemIndexes.forEach((idx, i) => {
+          productIdByIndex[idx] = productData[i].id
+        })
+      }
+
+      // 4c. Insert new transaction_items
+      const { error: insertError } = await supabase.from('transaction_items').insert(
+        newItems.map((item, index) => ({
+          transaction_id: payload.prId,
+          product_id: productIdByIndex[index]!,
+          qty_stock_in: item.qty,
+        })),
+      )
+
+      if (insertError) {
+        handleError(insertError, 'Failed to add new items.')
+        toast.error('Failed to add new items.')
+        loading.value = false
+        return false
+      }
+    }
+
+    // 5. Update existing items (qty)
+    const existingToUpdate = payload.items.filter((i) => existingItemIds.includes(i.id))
+
+    for (const item of existingToUpdate) {
+      const { error: updateItemError } = await supabase
+        .from('transaction_items')
+        .update({ qty_stock_in: item.qty })
+        .eq('id', item.id)
+
+      if (updateItemError) {
+        handleError(updateItemError, `Failed to update item ${item.id}.`)
+        toast.error(`Failed to update item ${item.id}.`)
+        loading.value = false
+        return false
+      }
+    }
+
+    toast.success('Purchase requisition updated successfully.')
+    loading.value = false
+    return true
   }
 
   // ─── PR Actions ─────────────────────────────────────────────────
@@ -206,13 +402,22 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
   // approvable-looking but nothing to actually approve. Roll it back instead.
   async function rollbackPR(id: number) {
     await supabase.from('transaction_items').delete().eq('transaction_id', id)
-    const { error } = await supabase.from('transactions').delete().eq('id', id).eq('transaction_type', 'purchase_requisition')
-    if (error) console.warn('savePurchaseRequisition: rollback of partial PR failed — orphan header left behind, id:', id, error.message)
+    const { error } = await supabase
+      .from('transactions')
+      .delete()
+      .eq('id', id)
+      .eq('transaction_type', 'purchase_requisition')
+    if (error)
+      console.warn(
+        'savePurchaseRequisition: rollback of partial PR failed — orphan header left behind, id:',
+        id,
+        error.message,
+      )
   }
 
   async function savePurchaseRequisition() {
     loading.value = true
-    error.value   = ''
+    error.value = ''
 
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) {
@@ -223,23 +428,31 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
 
     const companyCostTotal = items.value.reduce((sum, i) => sum + i.qty * i.cost_per_unit, 0)
 
-    const { data: txData, docNo: prNumber, error: txError } = await insertWithDocRetry<{ id: number; reference_no: string | null }>(
+    const {
+      data: txData,
+      docNo: prNumber,
+      error: txError,
+    } = await insertWithDocRetry<{ id: number; reference_no: string | null }>(
       () => generateDocNumber('PR', getLatestReferenceNo),
-      async (docNo) => supabase
-        .from('transactions')
-        .insert({
-          reference_no:   docNo,
-          po_no:            null,
-          transaction_type: 'purchase_requisition',
-          status:           'pending_approval',
-          remarks:          currentPR.value.remarks ?? '',
-          total_amount:     companyCostTotal,
-          supplier_id:      null,
-          created_by:       user.id,
-        })
-        .select('id, reference_no')
-        .single(),
+      async (docNo) =>
+        supabase
+          .from('transactions')
+          .insert({
+            reference_no: docNo,
+            recent_transaction_no: docNo,
+            po_no: null,
+            transaction_type: 'purchase_requisition',
+            status: 'pending_approval',
+            remarks: currentPR.value.remarks ?? '',
+            total_amount: companyCostTotal,
+            supplier_id: null,
+            created_by: user.id,
+          })
+          .select('id, reference_no')
+          .single(),
     )
+
+    //console.log('[savePurchaseRequisition] prNumber:', prNumber, 'txData:', txData)
 
     if (txError || !txData) {
       handleError(txError, 'Failed to save purchase requisition.')
@@ -249,7 +462,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     }
 
     // ─── Check for existing products (matched by product_name + supplier_id) ──
-    const names = [...new Set(items.value.map(i => i.item_description))]
+    const names = [...new Set(items.value.map((i) => i.item_description))]
     const { data: existingProducts, error: existingError } = await supabase
       .from('products')
       .select('id, product_name, supplier_id, unit, expiry_date') // + expiry_date
@@ -263,18 +476,26 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       return { success: false }
     }
 
-    const findExisting = (name: string, supplierId: number | null, unit: string, expiryDate: string | null) =>
+    const findExisting = (
+      name: string,
+      supplierId: number | null,
+      unit: string,
+      expiryDate: string | null,
+    ) =>
       (existingProducts || []).find(
-        p => p.product_name === name && (p.supplier_id ?? null) === (supplierId ?? null) && p.unit === unit &&
-        (p.expiry_date ?? null) === (expiryDate ?? null)
+        (p) =>
+          p.product_name === name &&
+          (p.supplier_id ?? null) === (supplierId ?? null) &&
+          p.unit === unit &&
+          (p.expiry_date ?? null) === (expiryDate ?? null),
       )
 
     // One slot per PR item: existing product id, or null if it needs to be created
-    const productIdByIndex: (number | null)[] = items.value.map(item => {
+    const productIdByIndex: (number | null)[] = items.value.map((item) => {
       const supplierId = item.supplier_id ? Number(item.supplier_id) : null
 
       if (item.product_id != null) {
-        const pickedProduct = (existingProducts || []).find(p => p.id === item.product_id)
+        const pickedProduct = (existingProducts || []).find((p) => p.id === item.product_id)
 
         if (
           pickedProduct &&
@@ -286,32 +507,39 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         }
       }
 
-      const match = findExisting(item.item_description, supplierId, item.unit, item.expiry_date ?? null)
+      const match = findExisting(
+        item.item_description,
+        supplierId,
+        item.unit,
+        item.expiry_date ?? null,
+      )
       return match ? match.id : null
     })
 
     // ─── Only insert products that don't already exist ──
     const newItemIndexes = productIdByIndex
       .map((id, idx) => (id === null ? idx : -1))
-      .filter(idx => idx !== -1)
+      .filter((idx) => idx !== -1)
 
     if (newItemIndexes.length) {
-      const productInserts = newItemIndexes.map(idx => {
+      const productInserts = newItemIndexes.map((idx) => {
         const item = items.value[idx]
         return {
-          product_name:  item.item_description,
-          unit:          item.unit,
-          cost_price:    item.cost_per_unit,
+          product_name: item.item_description,
+          unit: item.unit,
+          cost_price: item.cost_per_unit,
           selling_price: item.offer_per_unit,
-          supplier_id:   item.supplier_id ? Number(item.supplier_id) : null,
-          status:        'active',
-          expiry_date:   item.expiry_date ?? null,
+          supplier_id: item.supplier_id ? Number(item.supplier_id) : null,
+          status: 'active',
+          expiry_date: item.expiry_date ?? null,
           current_stock: 0,
         }
       })
 
       const { data: productData, error: productError } = await supabase
-        .from('products').insert(productInserts).select('id')
+        .from('products')
+        .insert(productInserts)
+        .select('id')
 
       if (productError || !productData) {
         handleError(productError, 'Failed to save products.')
@@ -326,13 +554,13 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       })
     }
 
-    const { error: itemsError } = await supabase
-      .from('transaction_items')
-      .insert(items.value.map((item, index) => ({
+    const { error: itemsError } = await supabase.from('transaction_items').insert(
+      items.value.map((item, index) => ({
         transaction_id: txData.id,
-        product_id:     productIdByIndex[index]!,
-        qty_stock_in:    item.qty,
-      })))
+        product_id: productIdByIndex[index]!,
+        qty_stock_in: item.qty,
+      })),
+    )
 
     if (itemsError) {
       handleError(itemsError, 'Failed to save transaction items.')
@@ -350,19 +578,21 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
 
   async function fetchPurchaseRequisition() {
     loading.value = true
-    error.value   = ''
+    error.value = ''
 
     if (!authStore.users.length) await authStore.getAllUsers()
 
     const { data, error: fetchError } = await supabase
       .from('transactions')
-      .select(`
+      .select(
+        `
         *,
         transaction_items (
           id, product_id, qty_stock_in, actual_count_stock_in,
           products ( id, product_name, unit, cost_price, selling_price, sku, supplier_id, expiry_date, suppliers ( name ) )
         )
-      `)
+      `,
+      )
       .not('requisition_no', 'is', null)
       .order('created_at', { ascending: false })
 
@@ -372,7 +602,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       return
     }
 
-    console.log('[fetchPurchaseRequisition] raw RPC result:', JSON.parse(JSON.stringify(data)))
+    //console.log('[fetchPurchaseRequisition] raw RPC result:', JSON.parse(JSON.stringify(data)))
     prs.value = (data || []).map((tx: any) => {
       const names = resolveUserNames(tx.created_by, tx.approved_by)
       return mapToPR(tx, mapTransactionItems(tx.transaction_items || []), names)
@@ -386,13 +616,15 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
 
     const { data } = await supabase
       .from('transactions')
-      .select(`
+      .select(
+        `
         *,
         transaction_items (
           id, product_id, qty_stock_in, actual_count_stock_in,
           products ( id, product_name, unit, cost_price, selling_price, sku, supplier_id, expiry_date, suppliers ( name ) )
         )
-      `)
+      `,
+      )
       .eq('id', requisitionId)
       .single()
 
@@ -431,7 +663,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       .eq('transaction_id', prId)
 
     const productIds = (prItems || [])
-      .map(i => i.product_id)
+      .map((i) => i.product_id)
       .filter((id): id is number => id != null)
 
     if (productIds.length) {
@@ -474,7 +706,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       .eq('transaction_id', prId)
 
     const productIds = (prItems || [])
-      .map(i => i.product_id)
+      .map((i) => i.product_id)
       .filter((id): id is number => id != null)
 
     if (productIds.length) {
@@ -488,11 +720,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
   }
 
   // ─── PO Actions ─────────────────────────────────────────────────
-  async function issuePurchaseOrder(payload: {
-    pr:          PR
-    ship_via:    string
-    ship_method: string
-  }) {
+  async function issuePurchaseOrder(payload: { pr: PR; ship_via: string; ship_method: string }) {
     loading.value = true
 
     // Guarded on status='approved' + .select() so a stale/duplicate click
@@ -502,26 +730,31 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     // PO number lands in reference_no (unique-indexed) here — unlike In-House's
     // agreeOrder, which stamps its company PO into po_no (no unique index) —
     // so a same-instant collision is possible and worth retrying on.
-    const { data, docNo: poNumber, error: updateError } = await insertWithDocRetry<{ id: number }[]>(
+    const {
+      data,
+      docNo: poNumber,
+      error: updateError,
+    } = await insertWithDocRetry<{ id: number }[]>(
       () => generateDocNumber('PO', getLatestReferenceNo),
-      async (docNo) => supabase
-        .from('transactions')
-        .update({
-          transaction_type: 'purchase_order',
-          status:           'issued',
-          reference_no:     docNo,
-          requisition_no:   payload.pr.reference_no,
-          ship_via:         payload.ship_via,
-          ship_method:      payload.ship_method,
-          updated_at:       new Date().toISOString(),
-        })
-        .eq('id', payload.pr.id)
-        .eq('status', 'approved')
-        .eq('reference_no', payload.pr.reference_no)
-        .select('id'),
+      async (docNo) =>
+        supabase
+          .from('transactions')
+          .update({
+            transaction_type: 'purchase_order',
+            status: 'issued',
+            reference_no: docNo,
+            requisition_no: payload.pr.reference_no,
+            ship_via: payload.ship_via,
+            ship_method: payload.ship_method,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', payload.pr.id)
+          .eq('status', 'approved')
+          .eq('reference_no', payload.pr.reference_no)
+          .select('id'),
     )
 
-    console.log('[issuePurchaseOrder] Supabase response:', { data, error: updateError, poNumber })
+    //console.log('[issuePurchaseOrder] Supabase response:', { data, error: updateError, poNumber })
 
     loading.value = false
 
@@ -539,7 +772,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     // from approved -> awaiting_stock (they're now waiting on physical
     // delivery, not just PM sign-off).
     const productIds = payload.pr.items
-      .map(i => i.product_id)
+      .map((i) => i.product_id)
       .filter((id): id is number => id != null)
 
     if (productIds.length) {
@@ -551,25 +784,29 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     return { success: true }
   }
 
-  async function markPOAsReceived(po: { id: number; reference_no: string | null }): Promise<boolean> {
+  async function markPOAsReceived(po: {
+    id: number
+    reference_no: string | null
+  }): Promise<boolean> {
     loading.value = true
 
     // Guarded on status='issued' so a retry after a failed/partial receive
     // can't re-mint a second SI number for a PO already marked complete.
     const { data, error: updateError } = await insertWithDocRetry<{ id: number }[]>(
       () => generateDocNumber('SI', getLatestReferenceNo),
-      async (docNo) => supabase
-        .from('transactions')
-        .update({
-          reference_no:     docNo,
-          po_no:            po.reference_no,
-          transaction_type: 'stock_in',
-          status:           'complete',
-          updated_at:       new Date().toISOString(),
-        })
-        .eq('id', po.id)
-        .eq('status', 'issued')
-        .select('id'),
+      async (docNo) =>
+        supabase
+          .from('transactions')
+          .update({
+            reference_no: docNo,
+            po_no: po.reference_no,
+            transaction_type: 'stock_in',
+            status: 'complete',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', po.id)
+          .eq('status', 'issued')
+          .select('id'),
     )
 
     loading.value = false
@@ -592,10 +829,18 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
   function subscribeToPurchaseRequisitions() {
     subscriptionChannel.value = supabase
       .channel('transactions_pr_changes')
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'transactions',
-        filter: 'transaction_type=eq.purchase_requisition',
-      }, async () => { await fetchPurchaseRequisition() })
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'transactions',
+          filter: 'transaction_type=eq.purchase_requisition',
+        },
+        async () => {
+          await fetchPurchaseRequisition()
+        },
+      )
       .subscribe()
   }
 
@@ -608,27 +853,43 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
 
   // ─── Expose ─────────────────────────────────────────────────────
   return {
-
     // Generate reference numbers
 
     getLatestReferenceNo,
     // State
-    prs, selectedPR, filterStatus, items, currentPR, loading, error,
+    prs,
+    selectedPR,
+    filterStatus,
+    items,
+    currentPR,
+    loading,
+    error,
 
     // Computed
-    isLoading, hasError,
+    isLoading,
+    hasError,
 
-    resolveUserNames, mapToPR, mapTransactionItems, mapRPCRowToPR, mapRPCItemsToPR,
+    resolveUserNames,
+    mapToPR,
+    mapTransactionItems,
+    mapRPCRowToPR,
+    mapRPCItemsToPR,
 
     // PR actions
-    savePurchaseRequisition, resetStore,
-    fetchPurchaseRequisition, fetchPRByRequisitionId,
-    approvePR, rejectPR,
+    updatePR,
+    savePurchaseRequisition,
+    resetStore,
+    fetchPurchaseRequisition,
+    fetchPRByRequisitionId,
+    approvePR,
+    rejectPR,
 
     // PO actions
-    issuePurchaseOrder, markPOAsReceived,
+    issuePurchaseOrder,
+    markPOAsReceived,
 
     // Realtime
-    subscribeToPurchaseRequisitions, unsubscribeFromPurchaseRequisitions,
+    subscribeToPurchaseRequisitions,
+    unsubscribeFromPurchaseRequisitions,
   }
 })

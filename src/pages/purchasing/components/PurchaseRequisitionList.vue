@@ -9,6 +9,9 @@ import PRDetailModal from './dialogs/PRDetailModal.vue'
 import IssuePOModal from './dialogs/IssuePOModal.vue'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useDisplay } from 'vuetify'
+import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
+
+const prStore = usePurchaseRequisitionStore()
 
 const selectedReorderIds = ref<number[]>([])
 const prefillItemsForDialog = ref<ReorderPrefillItem[]>([])
@@ -109,6 +112,19 @@ function onPRSubmitted() {
   // purchaseRequisitionData.approvePR/rejectPR).
   selectedReorderIds.value = []
   prefillItemsForDialog.value = []
+}
+
+async function onPRUpdated(data: { items: any[]; remarks: string }) {
+  if (!selectedPR.value) return
+  const success = await prStore.updatePR({
+    prId: selectedPR.value.id,
+    items: data.items,
+    remarks: data.remarks,
+  })
+  if (success) {
+    showModal.value = false
+    loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
+  }
 }
 </script>
 
@@ -547,7 +563,8 @@ function onPRSubmitted() {
 
     <!-- Detail Modal -->
     <PRDetailModal v-if="selectedPR" v-model="showModal" :pr="selectedPR"
-    @approve="openConfirm('APPROVE', $event)" @reject="openConfirm('REJECT', $event)"/>
+    @approve="openConfirm('APPROVE', $event)" @reject="openConfirm('REJECT', $event)"
+    @update="onPRUpdated"/>
 
     <!-- Confirm Dialog -->
     <ConfirmDialog
