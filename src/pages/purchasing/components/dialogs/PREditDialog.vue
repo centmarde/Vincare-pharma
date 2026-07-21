@@ -14,7 +14,7 @@ const { activeSuppliers } = storeToRefs(supplierStore)
 
 // Map supplier IDs to strings so v-model (string | null) can match v-select (number)
 const supplierOptions = computed(() =>
-  activeSuppliers.value.map(s => ({ ...s, id: String(s.id) }))
+  activeSuppliers.value.map((s) => ({ ...s, id: String(s.id) })),
 )
 
 const props = defineProps<{
@@ -24,7 +24,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
-  'save': [data: { items: any[]; remarks: string }]
+  save: [data: { items: any[]; remarks: string }]
 }>()
 
 const localRemarks = ref('')
@@ -38,9 +38,6 @@ watch(
   () => props.pr,
   (newPr) => {
     if (newPr) {
-    /*   console.log('[PREditDialog] pr received:', newPr.requisition_no)
-      console.log('[PREditDialog] items:', JSON.parse(JSON.stringify(newPr.items.map(i => ({ id: i.id, supplier_id: i.supplier_id, expiry_date: i.expiry_date, item_description: i.item_description })))))
-      console.log('[PREditDialog] supplierOptions:', JSON.parse(JSON.stringify(supplierOptions.value.map(s => ({ id: s.id, name: s.name }))))) */
       localRemarks.value = newPr.remarks ?? ''
       expiryMenuOpen.value = {}
     }
@@ -154,7 +151,9 @@ const marginPercent = computed(() => {
       <v-card-title class="d-flex justify-space-between align-center pa-4 pa-sm-5">
         <div class="d-flex align-center">
           <v-icon icon="mdi-file-document-edit-outline" size="30" class="mr-2 text-primary" />
-          <span class="text-subtitle-1 text-sm-h6 font-weight-bold">Edit PR - {{ pr?.requisition_no }}</span>
+          <span class="text-subtitle-1 text-sm-h6 font-weight-bold"
+            >Edit PR - {{ pr?.requisition_no }}</span
+          >
         </div>
         <div class="d-flex align-center" style="gap: 12px">
           <span v-if="!mobile" class="text-caption text-medium-emphasis">
@@ -198,7 +197,17 @@ const marginPercent = computed(() => {
             <v-col cols="1" class="pl-2">
               <v-select
                 v-model="item.unit"
-                :items="['Box', 'Pack', 'Piece', 'Bottle', 'Tube', 'Vial', 'Ampoule', 'Blister', 'Strip']"
+                :items="[
+                  'Box',
+                  'Pack',
+                  'Piece',
+                  'Bottle',
+                  'Tube',
+                  'Vial',
+                  'Ampoule',
+                  'Blister',
+                  'Strip',
+                ]"
                 variant="outlined"
                 density="compact"
                 hide-details
@@ -371,7 +380,17 @@ const marginPercent = computed(() => {
                 <div class="field-label">Unit</div>
                 <v-select
                   v-model="item.unit"
-                  :items="['Box', 'Pack', 'Piece', 'Bottle', 'Tube', 'Vial', 'Ampoule', 'Blister', 'Strip']"
+                  :items="[
+                    'Box',
+                    'Pack',
+                    'Piece',
+                    'Bottle',
+                    'Tube',
+                    'Vial',
+                    'Ampoule',
+                    'Blister',
+                    'Strip',
+                  ]"
                   variant="outlined"
                   density="compact"
                   hide-details
@@ -511,7 +530,9 @@ const marginPercent = computed(() => {
             <v-card variant="flat" rounded="lg" class="pa-4 border mb-4 mb-md-0">
               <div class="d-flex justify-space-between align-center mb-2">
                 <span class="text-body-2">Customer Offer Total</span>
-                <span class="text-h6 font-weight-bold">{{ formatCurrency(customerOfferTotal) }}</span>
+                <span class="text-h6 font-weight-bold">{{
+                  formatCurrency(customerOfferTotal)
+                }}</span>
               </div>
 
               <div class="d-flex justify-space-between align-center mb-4">
