@@ -24,6 +24,7 @@ export type TransactionType = {
   id: number
   created_at: string
   reference_no: string | null
+  recent_transaction_no: string | null
   reorder_no: string | null
   transaction_type: TransactionClass | null
   status: string | null

@@ -43,6 +43,7 @@ export type RequisitionItemType = {
 export type PR = {
   id: number
   reference_no: string | null // NEW — the "live" doc number for this stage
+  recent_transaction_no: string | null
   requisition_no: string
   po_no: string | null
   status: string
@@ -156,6 +157,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       requester_name: names.requester_name,
       reviewer_name: names.reviewer_name,
       reference_no: tx.reference_no,
+      recent_transaction_no: tx.recent_transaction_no ?? null,
       actual_count_stock_in: tx.actual_count_stock_in,
       items: prItems,
     }
@@ -198,6 +200,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       requester_name: names.requester_name,
       reviewer_name: names.reviewer_name,
       reference_no: row.reference_no,
+      recent_transaction_no: row.recent_transaction_no,
       actual_count_stock_in: null,
       items: mapRPCItemsToPR(row.items),
     }
@@ -372,9 +375,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     }
 
     // 5. Update existing items (qty)
-    const existingToUpdate = payload.items.filter((i) =>
-      existingItemIds.includes(i.id),
-    )
+    const existingToUpdate = payload.items.filter((i) => existingItemIds.includes(i.id))
 
     for (const item of existingToUpdate) {
       const { error: updateItemError } = await supabase
@@ -438,6 +439,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
           .from('transactions')
           .insert({
             reference_no: docNo,
+            recent_transaction_no: docNo,
             po_no: null,
             transaction_type: 'purchase_requisition',
             status: 'pending_approval',
@@ -449,6 +451,8 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
           .select('id, reference_no')
           .single(),
     )
+
+    //console.log('[savePurchaseRequisition] prNumber:', prNumber, 'txData:', txData)
 
     if (txError || !txData) {
       handleError(txError, 'Failed to save purchase requisition.')
