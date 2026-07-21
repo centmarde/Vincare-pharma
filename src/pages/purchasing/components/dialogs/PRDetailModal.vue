@@ -42,21 +42,18 @@ function onReject() {
 <template>
   <v-dialog v-model="model" :max-width="mobile ? '95%' : '900'" scrollable>
     <v-card rounded="lg">
-
       <v-card-text :class="mobile ? 'pa-3 pb-2' : 'pa-6 pb-2'">
         <!-- Close button -->
         <div class="d-flex justify-end mb-2">
-          <v-btn
-            icon="mdi-close"
-            variant="text"
-            size="small"
-            color="grey"
-            @click="model = false"
-          />
+          <v-btn icon="mdi-close" variant="text" size="small" color="grey" @click="model = false" />
         </div>
 
         <!-- Header -->
-        <h2 :class="mobile ? 'text-subtitle-1 font-weight-bold mb-2' : 'text-h6 font-weight-bold mb-2'">
+        <h2
+          :class="
+            mobile ? 'text-subtitle-1 font-weight-bold mb-2' : 'text-h6 font-weight-bold mb-2'
+          "
+        >
           Purchase Requisition: {{ pr.requisition_no }}
           <span>&nbsp; - &nbsp;Status: </span>
           <span
@@ -70,11 +67,22 @@ function onReject() {
 
         <!-- Meta row -->
         <div :class="mobile ? 'text-caption' : 'text-body-2'" class="mb-4">
-          <div>Requested by <strong>{{ pr.requester_name ?? '—' }}</strong> &middot; {{ formatDatePR_ISO(pr.created_at) }}</div>
-          <template v-if="pr.status === 'approved' || pr.status === 'rejected' || pr.status === 'issued' || pr.status === 'complete'">
+          <div>
+            Requested by <strong>{{ pr.requester_name ?? '—' }}</strong> &middot;
+            {{ formatDatePR_ISO(pr.created_at) }}
+          </div>
+          <template
+            v-if="
+              pr.status === 'approved' ||
+              pr.status === 'rejected' ||
+              pr.status === 'issued' ||
+              pr.status === 'complete'
+            "
+          >
             <div>
               {{ pr.status === 'rejected' ? 'Rejected' : 'Approved' }} by
-              <strong>{{ pr.reviewer_name ?? '—' }}</strong> &middot; {{ formatDatePR_ISO(pr.updated_at) }}
+              <strong>{{ pr.reviewer_name ?? '—' }}</strong> &middot;
+              {{ formatDatePR_ISO(pr.updated_at) }}
             </div>
           </template>
         </div>
@@ -102,9 +110,13 @@ function onReject() {
               <td class="text-body-2">{{ item.qty.toLocaleString() }}</td>
               <td class="text-body-2">{{ item.supplier_name ?? '—' }}</td>
               <td class="text-body-2">{{ formatCurrency(item.offer_per_unit ?? 0) }}</td>
-              <td class="text-body-2">{{ formatCurrency(item.qty * (item.offer_per_unit ?? 0)) }}</td>
+              <td class="text-body-2">
+                {{ formatCurrency(item.qty * (item.offer_per_unit ?? 0)) }}
+              </td>
               <td class="text-body-2">{{ formatCurrency(item.cost_per_unit ?? 0) }}</td>
-              <td class="text-body-2">{{ formatCurrency(item.qty * (item.cost_per_unit ?? 0)) }}</td>
+              <td class="text-body-2">
+                {{ formatCurrency(item.qty * (item.cost_per_unit ?? 0)) }}
+              </td>
             </tr>
           </tbody>
         </v-table>
@@ -122,19 +134,40 @@ function onReject() {
             <v-card-text class="pa-3">
               <div class="d-flex justify-space-between align-start mb-1">
                 <div class="d-flex ga-2 align-center">
-                  <span class="text-caption font-weight-bold text-primary">#{{ item.no ?? 0 }}</span>
+                  <span class="text-caption font-weight-bold text-primary"
+                    >#{{ item.no ?? 0 }}</span
+                  >
                   <span class="text-caption font-weight-medium">{{ item.item_description }}</span>
                 </div>
               </div>
               <v-divider class="my-1" />
               <div class="d-flex flex-wrap ga-3 text-caption">
                 <div><span class="text-medium-emphasis">Unit: </span>{{ item.unit }}</div>
-                <div><span class="text-medium-emphasis">Qty: </span>{{ item.qty.toLocaleString() }}</div>
-                <div><span class="text-medium-emphasis">Supplier: </span>{{ item.supplier_name ?? '—' }}</div>
-                <div><span class="text-medium-emphasis">Offer/Unit: </span>{{ formatCurrency(item.offer_per_unit ?? 0) }}</div>
-                <div><span class="text-medium-emphasis">Offer Total: </span>{{ formatCurrency(item.qty * (item.offer_per_unit ?? 0)) }}</div>
-                <div><span class="text-medium-emphasis">Cost/Unit: </span>{{ formatCurrency(item.cost_per_unit ?? 0) }}</div>
-                <div><span class="text-medium-emphasis">Cost Total: </span><span class="font-weight-medium">{{ formatCurrency(item.qty * (item.cost_per_unit ?? 0)) }}</span></div>
+                <div>
+                  <span class="text-medium-emphasis">Qty: </span>{{ item.qty.toLocaleString() }}
+                </div>
+                <div>
+                  <span class="text-medium-emphasis">Supplier: </span
+                  >{{ item.supplier_name ?? '—' }}
+                </div>
+                <div>
+                  <span class="text-medium-emphasis">Offer/Unit: </span
+                  >{{ formatCurrency(item.offer_per_unit ?? 0) }}
+                </div>
+                <div>
+                  <span class="text-medium-emphasis">Offer Total: </span
+                  >{{ formatCurrency(item.qty * (item.offer_per_unit ?? 0)) }}
+                </div>
+                <div>
+                  <span class="text-medium-emphasis">Cost/Unit: </span
+                  >{{ formatCurrency(item.cost_per_unit ?? 0) }}
+                </div>
+                <div>
+                  <span class="text-medium-emphasis">Cost Total: </span
+                  ><span class="font-weight-medium">{{
+                    formatCurrency(item.qty * (item.cost_per_unit ?? 0))
+                  }}</span>
+                </div>
               </div>
             </v-card-text>
           </v-card>
@@ -149,19 +182,40 @@ function onReject() {
             :min-width="mobile ? '100%' : '340'"
           >
             <div class="d-flex justify-space-between align-center mb-2">
-              <span :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">Customer Offer Total</span>
-              <span :class="mobile ? 'text-body-2 font-weight-bold' : 'text-body-1 font-weight-bold'">{{ formatCurrency(customerOfferTotal) }}</span>
+              <span
+                :class="
+                  mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'
+                "
+                >Customer Offer Total</span
+              >
+              <span
+                :class="mobile ? 'text-body-2 font-weight-bold' : 'text-body-1 font-weight-bold'"
+                >{{ formatCurrency(customerOfferTotal) }}</span
+              >
             </div>
 
             <div class="d-flex justify-space-between align-center mb-3">
-              <span :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">Company Cost Total</span>
-              <span :class="mobile ? 'text-body-2 font-weight-bold' : 'text-body-1 font-weight-bold'">{{ formatCurrency(companyCostTotal) }}</span>
+              <span
+                :class="
+                  mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'
+                "
+                >Company Cost Total</span
+              >
+              <span
+                :class="mobile ? 'text-body-2 font-weight-bold' : 'text-body-1 font-weight-bold'"
+                >{{ formatCurrency(companyCostTotal) }}</span
+              >
             </div>
 
             <v-divider class="mb-3" />
 
             <div class="d-flex justify-space-between align-center mb-2">
-              <span :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">Profit / (Loss)</span>
+              <span
+                :class="
+                  mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'
+                "
+                >Profit / (Loss)</span
+              >
               <div class="d-flex align-center ga-2">
                 <span
                   :class="[
@@ -183,8 +237,15 @@ function onReject() {
             </div>
 
             <div class="d-flex justify-space-between align-center">
-              <span :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">Offer : Cost Ratio</span>
-              <span :class="mobile ? 'text-caption font-weight-bold' : 'text-body-2 font-weight-bold'">
+              <span
+                :class="
+                  mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'
+                "
+                >Offer : Cost Ratio</span
+              >
+              <span
+                :class="mobile ? 'text-caption font-weight-bold' : 'text-body-2 font-weight-bold'"
+              >
                 {{ offerCostRatio }}x · {{ marginPercent }}% margin
               </span>
             </div>
@@ -192,16 +253,19 @@ function onReject() {
         </div>
 
         <!-- Justification -->
-        <div v-if="pr.remarks" :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">
+        <div
+          v-if="pr.remarks"
+          :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'"
+        >
           <strong>Justification:</strong> {{ pr.remarks }}
         </div>
-
       </v-card-text>
 
       <!-- Footer -->
       <v-card-actions
-        :class="mobile ? 'px-3 pb-3 pt-2 d-flex justify-end' : 'px-6 pb-5 pt-2 d-flex justify-end'">
-      <div v-if="pr.status === 'pending_approval'" class="d-flex" style="gap: 16px">
+        :class="mobile ? 'px-3 pb-3 pt-2 d-flex justify-end' : 'px-6 pb-5 pt-2 d-flex justify-end'"
+      >
+        <div v-if="pr.status === 'pending_approval'" class="d-flex" style="gap: 16px">
           <v-btn
             variant="outlined"
             size="small"
@@ -210,7 +274,7 @@ function onReject() {
             elevation="1"
             @click="onReject"
           >
-          <v-icon>mdi-close</v-icon>
+            <v-icon>mdi-close</v-icon>
             Reject
           </v-btn>
           <v-btn
@@ -221,7 +285,7 @@ function onReject() {
             class="text-none"
             elevation="3"
             @click="onApprove"
-            >
+          >
             Approve
           </v-btn>
 
@@ -271,12 +335,30 @@ function onReject() {
   background: currentColor;
 }
 
-.status-chip--pending_approval { color: #c2922e; background: rgba(194, 146, 46, 0.12); }
-.status-chip--pending          { color: #c2922e; background: rgba(194, 146, 46, 0.12); }
-.status-chip--approved         { color: #2e7d32; background: rgba(46, 125, 50,  0.12); }
-.status-chip--complete         { color: #2e7d32; background: rgba(46, 125, 50,  0.12); }
-.status-chip--rejected         { color: #c62828; background: rgba(198, 40, 40,  0.12); }
-.status-chip--issued           { color: #1565c0; background: rgba(21, 101, 192, 0.12); }
+.status-chip--pending_approval {
+  color: #c2922e;
+  background: rgba(194, 146, 46, 0.12);
+}
+.status-chip--pending {
+  color: #c2922e;
+  background: rgba(194, 146, 46, 0.12);
+}
+.status-chip--approved {
+  color: #2e7d32;
+  background: rgba(46, 125, 50, 0.12);
+}
+.status-chip--complete {
+  color: #2e7d32;
+  background: rgba(46, 125, 50, 0.12);
+}
+.status-chip--rejected {
+  color: #c62828;
+  background: rgba(198, 40, 40, 0.12);
+}
+.status-chip--issued {
+  color: #1565c0;
+  background: rgba(21, 101, 192, 0.12);
+}
 
 /* Table header — uses primary color with readable white text in both modes */
 :deep(.items-table thead tr th.table-header) {

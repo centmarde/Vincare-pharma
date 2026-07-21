@@ -272,7 +272,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
       return { rows: [] as TransactionRPCRow[], totalCount: 0 }
     }
 
-    console.log('[transactionsData] fetchPurchaseRequisitionsRPC data:', data)
+    //console.log('[transactionsData] fetchPurchaseRequisitionsRPC data:', data)
     const rows = (data || []) as TransactionRPCRow[]
     return { rows, totalCount: rows[0]?.total_count ?? 0 }
   }

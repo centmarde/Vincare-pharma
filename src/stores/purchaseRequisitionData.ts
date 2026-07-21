@@ -203,6 +203,198 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     }
   }
 
+  // ─── Update PR (from PREditDialog) ──────────────────────────────
+  async function updatePR(payload: {
+    prId: number
+    items: PRItem[]
+    remarks: string
+  }): Promise<boolean> {
+    loading.value = true
+    error.value = ''
+
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) {
+      toast.error('User not authenticated.')
+      loading.value = false
+      return false
+    }
+
+    // 1. Update transaction remarks
+    const { error: updateError } = await supabase
+      .from('transactions')
+      .update({ remarks: payload.remarks, updated_at: new Date().toISOString() })
+      .eq('id', payload.prId)
+
+    if (updateError) {
+      handleError(updateError, 'Failed to update purchase requisition.')
+      toast.error('Failed to update purchase requisition.')
+      loading.value = false
+      return false
+    }
+
+    // 2. Fetch existing transaction_items for this PR
+    const { data: existingItems, error: fetchItemsError } = await supabase
+      .from('transaction_items')
+      .select('id, product_id')
+      .eq('transaction_id', payload.prId)
+
+    if (fetchItemsError) {
+      handleError(fetchItemsError, 'Failed to fetch existing items.')
+      toast.error('Failed to fetch existing items.')
+      loading.value = false
+      return false
+    }
+
+    const existingItemIds = (existingItems || []).map((i) => i.id)
+    const incomingItemIds = payload.items
+      .filter((i) => typeof i.id === 'number' && i.id > 0 && existingItemIds.includes(i.id))
+      .map((i) => i.id)
+
+    // 3. Delete items that were removed
+    const idsToDelete = existingItemIds.filter((id) => !incomingItemIds.includes(id))
+    if (idsToDelete.length) {
+      const { error: deleteError } = await supabase
+        .from('transaction_items')
+        .delete()
+        .in('id', idsToDelete)
+
+      if (deleteError) {
+        handleError(deleteError, 'Failed to remove items.')
+        toast.error('Failed to remove items.')
+        loading.value = false
+        return false
+      }
+    }
+
+    // 4. Handle new items (those with temp IDs like Date.now())
+    const newItems = payload.items.filter(
+      (i) => !(typeof i.id === 'number' && i.id > 0 && existingItemIds.includes(i.id)),
+    )
+
+    if (newItems.length) {
+      // 4a. Check for existing products
+      const names = [...new Set(newItems.map((i) => i.item_description).filter(Boolean))]
+      const { data: existingProducts } = await supabase
+        .from('products')
+        .select('id, product_name, supplier_id, unit, expiry_date')
+        .in('product_name', names)
+
+      const findExisting = (
+        name: string,
+        supplierId: number | null,
+        unit: string,
+        expiryDate: string | null,
+      ) =>
+        (existingProducts || []).find(
+          (p) =>
+            p.product_name === name &&
+            (p.supplier_id ?? null) === (supplierId ?? null) &&
+            p.unit === unit &&
+            (p.expiry_date ?? null) === (expiryDate ?? null),
+        )
+
+      const productIdByIndex: (number | null)[] = newItems.map((item) => {
+        const supplierId = item.supplier_id ? Number(item.supplier_id) : null
+
+        if (item.product_id != null && item.product_id > 0) {
+          const pickedProduct = (existingProducts || []).find((p) => p.id === item.product_id)
+          if (
+            pickedProduct &&
+            pickedProduct.unit === item.unit &&
+            pickedProduct.product_name === item.item_description &&
+            (pickedProduct.expiry_date ?? null) === (item.expiry_date ?? null)
+          ) {
+            return item.product_id
+          }
+        }
+
+        const match = findExisting(
+          item.item_description,
+          supplierId,
+          item.unit,
+          item.expiry_date ?? null,
+        )
+        return match ? match.id : null
+      })
+
+      // 4b. Create products that don't exist
+      const newItemIndexes = productIdByIndex
+        .map((id, idx) => (id === null ? idx : -1))
+        .filter((idx) => idx !== -1)
+
+      if (newItemIndexes.length) {
+        const productInserts = newItemIndexes.map((idx) => {
+          const item = newItems[idx]
+          return {
+            product_name: item.item_description,
+            unit: item.unit,
+            cost_price: item.cost_per_unit,
+            selling_price: item.offer_per_unit,
+            supplier_id: item.supplier_id ? Number(item.supplier_id) : null,
+            status: 'active',
+            expiry_date: item.expiry_date ?? null,
+            current_stock: 0,
+          }
+        })
+
+        const { data: productData, error: productError } = await supabase
+          .from('products')
+          .insert(productInserts)
+          .select('id')
+
+        if (productError || !productData) {
+          handleError(productError, 'Failed to create products.')
+          toast.error('Failed to create products for new items.')
+          loading.value = false
+          return false
+        }
+
+        newItemIndexes.forEach((idx, i) => {
+          productIdByIndex[idx] = productData[i].id
+        })
+      }
+
+      // 4c. Insert new transaction_items
+      const { error: insertError } = await supabase.from('transaction_items').insert(
+        newItems.map((item, index) => ({
+          transaction_id: payload.prId,
+          product_id: productIdByIndex[index]!,
+          qty_stock_in: item.qty,
+        })),
+      )
+
+      if (insertError) {
+        handleError(insertError, 'Failed to add new items.')
+        toast.error('Failed to add new items.')
+        loading.value = false
+        return false
+      }
+    }
+
+    // 5. Update existing items (qty)
+    const existingToUpdate = payload.items.filter((i) =>
+      existingItemIds.includes(i.id),
+    )
+
+    for (const item of existingToUpdate) {
+      const { error: updateItemError } = await supabase
+        .from('transaction_items')
+        .update({ qty_stock_in: item.qty })
+        .eq('id', item.id)
+
+      if (updateItemError) {
+        handleError(updateItemError, `Failed to update item ${item.id}.`)
+        toast.error(`Failed to update item ${item.id}.`)
+        loading.value = false
+        return false
+      }
+    }
+
+    toast.success('Purchase requisition updated successfully.')
+    loading.value = false
+    return true
+  }
+
   // ─── PR Actions ─────────────────────────────────────────────────
   // A failure after the header insert used to leave a real, numbered PR
   // (status='pending_approval') sitting in the DB with zero line items —
@@ -680,6 +872,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     mapRPCItemsToPR,
 
     // PR actions
+    updatePR,
     savePurchaseRequisition,
     resetStore,
     fetchPurchaseRequisition,
