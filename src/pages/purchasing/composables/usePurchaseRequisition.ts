@@ -236,9 +236,19 @@ export function usePurchaseRequisition() {
     addItem()
   }
 
+  // ─── Clear form (single blank row, no draft) ──────────────────────
+  function clearForm() {
+    currentPR.value = { remarks: '' }
+    items.value     = []
+    addItem()
+    draft.clear()
+  }
+
   // ─── Init ─────────────────────────────────────────────────────────
   // Restore a saved draft first; only seed an empty row if there's nothing to restore.
-  if (!draft.restore() && items.value.length === 0) addItem()
+const draftWasRestored = draft.restore()
+if (!draftWasRestored && items.value.length === 0) addItem()
+
 
   return {
     currentPR,
@@ -255,5 +265,7 @@ export function usePurchaseRequisition() {
     removeItem,
     handleSubmit,
     reset,
+    clearForm,
+    draftWasRestored,
   }
 }

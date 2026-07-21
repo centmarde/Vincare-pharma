@@ -36,6 +36,7 @@ const {
   removeItem,
   handleSubmit,
   reset,
+  clearForm,
   addReorderItems,
 } = usePurchaseRequisition()
 
@@ -86,7 +87,7 @@ function formatMonthYear(value: Date | null): string {
 }
 
 function close() {
-  reset()
+  // reset()
   emit('update:modelValue', false)
 }
 
@@ -109,8 +110,9 @@ watch(
   (isOpen) => {
     if (isOpen) {
       supplierStore.fetchSuppliers({ activeOnly: true })
-      reset()
+      
       if (props.prefillItems?.length) {
+        reset()
         addReorderItems(props.prefillItems)
       }
       expiryMenuOpen.value = {}
@@ -446,17 +448,30 @@ watch(
           </div>
         </template>
 
-        <!-- Add Item -->
-        <v-btn
-          prepend-icon="mdi-plus"
-          variant="outlined"
-          density="compact"
-          :block="mobile"
-          class="mt-3 text-none"
-          @click="addItem"
-        >
-          Add Item
-        </v-btn>
+        <!-- Add Item / Clear Form -->
+        <div class="d-flex ga-2" :class="{ 'flex-column': mobile }">
+          <v-btn
+            prepend-icon="mdi-plus"
+            variant="outlined"
+            density="compact"
+            :block="mobile"
+            class="mt-3 text-none"
+            @click="addItem"
+          >
+            Add Item
+          </v-btn>
+          <v-btn
+            prepend-icon="mdi-refresh"
+            variant="tonal"
+            color="primary"
+            density="compact"
+            :block="mobile"
+            class="mt-3 text-none"
+            @click="clearForm"
+          >
+            Clear Form
+          </v-btn>
+        </div>
 
         <div class="text-caption mt-3 font-italic text-medium-emphasis">
           "Offer" = what the customer offered · "Cost" = the item's actual cost in inventory
