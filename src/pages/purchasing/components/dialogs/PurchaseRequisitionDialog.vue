@@ -36,6 +36,7 @@ const {
   removeItem,
   handleSubmit,
   reset,
+  clearForm,
   addReorderItems,
 } = usePurchaseRequisition()
 
@@ -70,15 +71,14 @@ const expiryMenuOpen = ref<Record<number, boolean>>({})
 const expiryViewMode = ref<Record<number, 'month' | 'months' | 'year'>>({})
 
 function onExpiryMonthSelect(item: { expiry_date: Date | null }, index: number, month: number) {
-  // VDatePicker's update:month gives a 0-based month index
   const year = item.expiry_date ? item.expiry_date.getFullYear() : new Date().getFullYear()
-  item.expiry_date = new Date(year, month, 1)
-  expiryMenuOpen.value[index] = false // close immediately, never reaching the day-grid
+  item.expiry_date = new Date(year, month + 1, 0)   // last day of the selected month
+  expiryMenuOpen.value[index] = false
 }
 
 function onExpiryYearSelect(item: { expiry_date: Date | null }, index: number, year: number) {
   const month = item.expiry_date ? item.expiry_date.getMonth() : 0
-  item.expiry_date = new Date(year, month, 1)
+  item.expiry_date = new Date(year, month + 1, 0)   // keep same "last day of month" semantics
 }
 
 function formatMonthYear(value: Date | null): string {
@@ -87,7 +87,7 @@ function formatMonthYear(value: Date | null): string {
 }
 
 function close() {
-  reset()
+  // reset()
   emit('update:modelValue', false)
 }
 
@@ -110,8 +110,9 @@ watch(
   (isOpen) => {
     if (isOpen) {
       supplierStore.fetchSuppliers({ activeOnly: true })
-      reset()
+      
       if (props.prefillItems?.length) {
+        reset()
         addReorderItems(props.prefillItems)
       }
       expiryMenuOpen.value = {}
@@ -447,17 +448,30 @@ watch(
           </div>
         </template>
 
-        <!-- Add Item -->
-        <v-btn
-          prepend-icon="mdi-plus"
-          variant="outlined"
-          density="compact"
-          :block="mobile"
-          class="mt-3 text-none"
-          @click="addItem"
-        >
-          Add Item
-        </v-btn>
+        <!-- Add Item / Clear Form -->
+        <div class="d-flex ga-2" :class="{ 'flex-column': mobile }">
+          <v-btn
+            prepend-icon="mdi-plus"
+            variant="outlined"
+            density="compact"
+            :block="mobile"
+            class="mt-3 text-none"
+            @click="addItem"
+          >
+            Add Item
+          </v-btn>
+          <v-btn
+            prepend-icon="mdi-refresh"
+            variant="tonal"
+            color="primary"
+            density="compact"
+            :block="mobile"
+            class="mt-3 text-none"
+            @click="clearForm"
+          >
+            Clear Form
+          </v-btn>
+        </div>
 
         <div class="text-caption mt-3 font-italic text-medium-emphasis">
           "Offer" = what the customer offered · "Cost" = the item's actual cost in inventory

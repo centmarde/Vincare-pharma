@@ -241,7 +241,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
     loading.value = true
     clearError()
 
-    const { data, error: rpcError } = await supabase.rpc('new_fetch_purchase_requisitions', {
+    const { data, error: rpcError } = await supabase.rpc('fetch_purchase_requisitions', {
       p_search:    options.search?.trim() || null,
       p_status:    normalizeStatus(options.status),
       p_order_by:  options.orderBy ?? 'created_at',
@@ -265,7 +265,7 @@ export const useTransactionsDataStore = defineStore('transactionsData', () => {
     loading.value = true
     clearError()
 
-    const { data, error: rpcError } = await supabase.rpc('new_fetch_purchase_orders', {
+    const { data, error: rpcError } = await supabase.rpc('fetch_purchase_orders', {
       p_search:    options.search?.trim() || null,
       p_status:    normalizeStatus(options.status),
       p_order_by:  options.orderBy ?? 'created_at',

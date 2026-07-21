@@ -48,6 +48,7 @@ declare module 'vue-router/auto-routes' {
     '/ethical/EthicalOrdersView': RouteRecordInfo<'/ethical/EthicalOrdersView', '/ethical/EthicalOrdersView', Record<never, never>, Record<never, never>>,
     '/executive/components/ActionRequired': RouteRecordInfo<'/executive/components/ActionRequired', '/executive/components/ActionRequired', Record<never, never>, Record<never, never>>,
     '/executive/components/ExecutiveWidget': RouteRecordInfo<'/executive/components/ExecutiveWidget', '/executive/components/ExecutiveWidget', Record<never, never>, Record<never, never>>,
+    '/executive/components/FinanceDashboard': RouteRecordInfo<'/executive/components/FinanceDashboard', '/executive/components/FinanceDashboard', Record<never, never>, Record<never, never>>,
     '/executive/components/HeaderBar': RouteRecordInfo<'/executive/components/HeaderBar', '/executive/components/HeaderBar', Record<never, never>, Record<never, never>>,
     '/executive/components/KpiCards': RouteRecordInfo<'/executive/components/KpiCards', '/executive/components/KpiCards', Record<never, never>, Record<never, never>>,
     '/executive/components/MonthlyChart': RouteRecordInfo<'/executive/components/MonthlyChart', '/executive/components/MonthlyChart', Record<never, never>, Record<never, never>>,

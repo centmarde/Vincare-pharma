@@ -34,6 +34,14 @@ export type ReorderPrefillItem = {
   offer_per_unit: number
 }
 
+// Add near the top of usePurchaseRequisition.ts
+function toLocalISODate(d: Date): string {
+  const y   = d.getFullYear()
+  const m   = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 export function usePurchaseRequisition() {
   const toast = useToast()
   const prStore = usePurchaseRequisitionStore()
@@ -179,7 +187,7 @@ export function usePurchaseRequisition() {
       offer_per_unit:   i.offer_per_unit,
       cost_per_unit:    i.cost_per_unit,
       supplier_id:      i.supplier_id != null ? String(i.supplier_id) : null,
-      expiry_date:      i.expiry_date ? i.expiry_date.toISOString().slice(0, 10) : null,
+      expiry_date:      i.expiry_date ? toLocalISODate(i.expiry_date) : null,
       product_id:       i.product_id ?? undefined,
       reorder_request_id: i.reorder_request_id ?? null,
     }))
@@ -228,9 +236,19 @@ export function usePurchaseRequisition() {
     addItem()
   }
 
+  // ─── Clear form (single blank row, no draft) ──────────────────────
+  function clearForm() {
+    currentPR.value = { remarks: '' }
+    items.value     = []
+    addItem()
+    draft.clear()
+  }
+
   // ─── Init ─────────────────────────────────────────────────────────
   // Restore a saved draft first; only seed an empty row if there's nothing to restore.
-  if (!draft.restore() && items.value.length === 0) addItem()
+const draftWasRestored = draft.restore()
+if (!draftWasRestored && items.value.length === 0) addItem()
+
 
   return {
     currentPR,
@@ -247,5 +265,7 @@ export function usePurchaseRequisition() {
     removeItem,
     handleSubmit,
     reset,
+    clearForm,
+    draftWasRestored,
   }
 }

@@ -24,6 +24,7 @@ export type PRItem = {
   supplier_id?:     string | null
   expiry_date?:     string | null
   actual_count_stock_in?: number | null
+  expiry_date?:     string | null   // NEW
 }
 
 export type RequisitionItemType = {
@@ -119,6 +120,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       supplier_id:      ti.products?.supplier_id != null ? String(ti.products.supplier_id) : null,
       expiry_date:      ti.products?.expiry_date     ?? null,
       actual_count_stock_in:  ti.actual_count_stock_in      ?? null,
+      expiry_date:            ti.products?.expiry_date      ?? null,
     }))
   }
 
@@ -250,7 +252,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     const names = [...new Set(items.value.map(i => i.item_description))]
     const { data: existingProducts, error: existingError } = await supabase
       .from('products')
-      .select('id, product_name, supplier_id, unit')
+      .select('id, product_name, supplier_id, unit, expiry_date') // + expiry_date
       .in('product_name', names)
 
     if (existingError) {
@@ -261,9 +263,10 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       return { success: false }
     }
 
-    const findExisting = (name: string, supplierId: number | null, unit: string) =>
+    const findExisting = (name: string, supplierId: number | null, unit: string, expiryDate: string | null) =>
       (existingProducts || []).find(
-        p => p.product_name === name && (p.supplier_id ?? null) === (supplierId ?? null) && p.unit === unit
+        p => p.product_name === name && (p.supplier_id ?? null) === (supplierId ?? null) && p.unit === unit &&
+        (p.expiry_date ?? null) === (expiryDate ?? null)
       )
 
     // One slot per PR item: existing product id, or null if it needs to be created
@@ -273,12 +276,17 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       if (item.product_id != null) {
         const pickedProduct = (existingProducts || []).find(p => p.id === item.product_id)
 
-        if (pickedProduct && pickedProduct.unit === item.unit && pickedProduct.product_name === item.item_description) {
-          return item.product_id   // NEW: trust reorder-sourced items directly
+        if (
+          pickedProduct &&
+          pickedProduct.unit === item.unit &&
+          pickedProduct.product_name === item.item_description &&
+          (pickedProduct.expiry_date ?? null) === (item.expiry_date ?? null)
+        ) {
+          return item.product_id
         }
       }
 
-      const match = findExisting(item.item_description, supplierId, item.unit)
+      const match = findExisting(item.item_description, supplierId, item.unit, item.expiry_date ?? null)
       return match ? match.id : null
     })
 
