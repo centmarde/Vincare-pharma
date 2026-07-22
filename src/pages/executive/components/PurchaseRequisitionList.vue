@@ -430,6 +430,10 @@ function goToPage(p: number) {
   color: #15803D;
   background: rgba(47, 133, 90, 0.12);
 }
+.status-chip--change_request {
+  color: #fb8c00;
+  background: rgba(255, 152, 0, 0.12);
+}
 
 /* ─── Table ───────────────────────────────────────────────────── */
 .actions-gap {

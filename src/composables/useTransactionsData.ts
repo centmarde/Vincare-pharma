@@ -45,6 +45,7 @@ export function useTransactionsData() {
     { title: 'Approved',         value: 'approved' },
     { title: 'Rejected',         value: 'rejected' },
     { title: 'Complete',         value: 'complete' },
+    { title: 'Change Request',   value: 'change_request' },
   ]
 
   const poStatusOptions = [
@@ -75,11 +76,12 @@ export function useTransactionsData() {
   const statusConfig = (status: string) => {
     const map: Record<string, { label: string; color: string; bg: string; dot: string }> = {
       pending_approval: { label: 'Pending Approval', color: '#c2922e', bg: '#fff8ee', dot: '#c2922e' },
-      approved:         { label: 'Approved',         color: '#2e7d32', bg: '#f0f9f0', dot: '#4caf50' },
+      approved:         { label: 'Approved',         color: '#2563eb', bg: '#f0f9f0', dot: '#2563eb' },
       rejected:         { label: 'Rejected',         color: '#c62828', bg: '#fff0f0', dot: '#ef5350' },
-      issued:           { label: 'Issued',           color: '#1565c0', bg: '#e3f2fd', dot: '#1565c0' },
+      issued:           { label: 'Issued',           color: '#7c3aed', bg: '#e3f2fd', dot: '#7c3aed' },
       received:         { label: 'Received',         color: '#2e7d32', bg: '#f0f9f0', dot: '#4caf50' },
-      complete:        { label: 'Complete',        color: '#6a1b9a', bg: '#f3e5f5', dot: '#9c27b0' },
+      complete:        { label: 'Complete',        color: '#15803d', bg: '#f3e5f5', dot: '#15803d' },
+      change_request:   { label: 'Change Request',  color: '#fb8c00', bg: '#fff3e0', dot: '#fb8c00' },
     }
     return map[status] ?? { label: status, color: '#757575', bg: '#f5f5f5', dot: '#9e9e9e' }
   }
