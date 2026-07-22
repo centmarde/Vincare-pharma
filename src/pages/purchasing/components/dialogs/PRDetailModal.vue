@@ -44,7 +44,7 @@ function onReject() {
 
 async function onUnapprove() {
   const confirmed = await showUnapproveDialog(
-    `This undo PR request for (${props.pr.requisition_no}) will revert the PR back to "Pending Approval" status. A change request record will be created for audit trail.\n\nPlease provide a reason for undoing this PR.`,
+    `This undo_PR request for (${props.pr.requisition_no}) will revert the PR back to "Pending Approval" status. A change request record will be created for audit trail.\n\nPlease provide a reason for undoing this PR.`,
     {
       title: 'Submit Unapprove Request',
       confirmText: 'Submit Request',
@@ -321,7 +321,11 @@ async function onUnapprove() {
           </v-btn>
         </div>
 
-        <div v-if="pr.status !== 'pending_approval' && pr.status !== 'draft'" class="d-flex" style="gap: 16px">
+        <div
+          v-if="pr.status !== 'pending_approval' && pr.status !== 'draft'"
+          class="d-flex"
+          style="gap: 16px"
+        >
           <v-btn
             variant="outlined"
             size="small"
