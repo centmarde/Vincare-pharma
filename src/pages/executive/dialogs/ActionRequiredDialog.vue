@@ -29,13 +29,13 @@ const request = computed(() => props.request)
               <v-avatar
                 size="36"
                 rounded="lg"
-                :color="request.request_type === 'void' ? 'error' : 'primary'"
+                :color="request.request_type === 'void' || request.request_type === 'undo pr' ? 'error' : 'primary'"
                 variant="tonal"
                 class="flex-shrink-0"
               >
                 <v-icon
-                  :color="request.request_type === 'void' ? 'error' : 'primary'"
-                  :icon="request.request_type === 'void' ? 'mdi-cancel' : 'mdi-pencil-circle-outline'"
+                  :color="request.request_type === 'void' || request.request_type === 'undo pr' ? 'error' : 'primary'"
+                  :icon="request.request_type === 'void' || request.request_type === 'undo pr' ? 'mdi-cancel' : 'mdi-pencil-circle-outline'"
                   size="18"
                 />
               </v-avatar>
@@ -46,16 +46,16 @@ const request = computed(() => props.request)
                   </span>
                   <v-chip
                     size="x-small"
-                    :color="request.request_type === 'void' ? 'error' : 'primary'"
+                    :color="request.request_type === 'void' || request.request_type === 'undo pr' ? 'error' : 'primary'"
                     variant="tonal"
                     label
                     class="flex-shrink-0"
                   >
-                    {{ request.request_type === 'void' ? 'Undo' : 'Edit' }}
+                    {{ request.request_type === 'void' || request.request_type === 'undo pr' ? 'Undo' : 'Edit' }}
                   </v-chip>
                 </div>
                 <div class="text-caption text-medium-emphasis mt-1">
-                  {{ request.summary ?? (request.request_type === 'void' ? 'Undo this document.' : 'Edit this document.') }}
+                  {{ request.summary ?? (request.request_type === 'void' || request.request_type === 'undo pr' ? 'Undo this document.' : 'Edit this document.') }}
                 </div>
               </div>
               <div class="text-right flex-shrink-0">

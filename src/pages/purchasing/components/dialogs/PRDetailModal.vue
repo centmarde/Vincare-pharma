@@ -14,7 +14,7 @@ const model = defineModel<boolean>()
 const emit = defineEmits<{
   approve: [pr: PR]
   reject: [pr: PR]
-  unapprove: [pr: PR]
+  unapprove: [pr: PR, reason: string]
   update: [data: { pr: PR; items: any[]; remarks: string }]
 }>()
 
@@ -30,7 +30,7 @@ const {
   marginPercent,
 } = usePRDetailModal(props)
 
-const { confirmDialog: showUnapproveDialog } = useConfirmDialog()
+const { confirmDialog: showUnapproveDialog, inputValue } = useConfirmDialog()
 
 function onApprove() {
   model.value = false
@@ -44,16 +44,17 @@ function onReject() {
 
 async function onUnapprove() {
   const confirmed = await showUnapproveDialog(
-    `This undo/void request for PR (${props.pr.requisition_no}) must be reviewed by the executive before it can be processed.\n\nOnce approved, the PR will be reverted to "Pending Approval" status, and a change request record will be created for audit trail.\n\nDo you want to proceed with submitting an unapprove request?`,
+    `This undo PR request for (${props.pr.requisition_no}) will revert the PR back to "Pending Approval" status. A change request record will be created for audit trail.\n\nPlease provide a reason for undoing this PR.`,
     {
       title: 'Submit Unapprove Request',
       confirmText: 'Submit Request',
       cancelText: 'Cancel',
+      inputLabel: 'Reason for undoing this PR',
     },
   )
   if (confirmed) {
     model.value = false
-    emit('unapprove', props.pr)
+    emit('unapprove', props.pr, inputValue.value)
   }
 }
 </script>

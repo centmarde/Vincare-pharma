@@ -58,7 +58,7 @@ export type ChangeRequestType = {
   id: number               // change_requests.id
   created_at: string
   transaction_id: number   // FK to transactions.id
-  request_type: 'edit' | 'void'
+  request_type: 'edit' | 'void' | 'undo pr'
   proposed_changes: ProposedChange
   summary: string | null
   reason: string | null
@@ -75,7 +75,8 @@ export type ChangeRequestType = {
 export type ProposeChangePayload = {
   transactionId: number
   fromTransactionNo?: string | null
-  requestType: 'edit' | 'void'
+  toTransactionNo?: string | null
+  requestType: 'edit' | 'void' | 'undo pr'
   proposedChanges?: ProposedChange
   summary?: string
   reason?: string
@@ -194,7 +195,7 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     userId: string,
     note?: string,
   ) {
-    const verb = req.request_type === 'void' ? 'Undo/void' : 'Edit'
+    const verb = req.request_type === 'undo pr' ? 'Undo PR' : (req.request_type === 'void' ? 'Undo/void' : 'Edit')
     const head = action === ACTION_REQUEST
       ? `Change request #${req.id} — ${verb} ${txnLabel(req.from_transaction_no, req.transaction_id)}`
       : `${action === ACTION_APPROVE ? 'Approved' : 'Rejected'} change request #${req.id} — ${verb} ${txnLabel(req.from_transaction_no, req.transaction_id)}`
@@ -245,8 +246,8 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     const { data, error: insertError } = await supabase.from('change_requests').insert({
       transaction_id: payload.transactionId,
       from_transaction_no: payload.fromTransactionNo ?? null,
+      to_transaction_no: payload.toTransactionNo ?? null,
       request_type: payload.requestType,
-      proposed_changes: payload.proposedChanges ?? {},
       summary: payload.summary ?? null,
       reason: payload.reason ?? null,
       status: 'pending',
@@ -715,9 +716,9 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
   // and reference_no. This effectively "undoes" the status progression while keeping
   // an audit trail via the change_request record.
   async function applyPRChange(request: ChangeRequestType, userId: string): Promise<ApplyResult> {
-    // Only void type is supported for PR unapprove
-    if (request.request_type === 'edit') {
-      return { success: false, error: 'Purchase requisitions can only be unapproved (voided), not edited via change request.' }
+    // Only 'undo pr' type is supported for PR unapprove
+    if (request.request_type !== 'undo pr') {
+      return { success: false, error: 'Purchase requisitions can only be unapproved (undo pr) via change request.' }
     }
 
     const { data: tx, error: txErr } = await supabase

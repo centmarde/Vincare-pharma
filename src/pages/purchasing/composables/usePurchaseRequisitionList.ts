@@ -158,7 +158,7 @@ export function usePurchaseRequisitionList() {
       confirmLoading.value = false
     }
 
-  async function handleUnapprove(pr: PR) {
+  async function handleUnapprove(pr: PR, reason?: string) {
     const changeRequestsStore = useChangeRequestsDataStore()
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) return
@@ -175,9 +175,10 @@ export function usePurchaseRequisitionList() {
     const result = await changeRequestsStore.proposeChange({
       transactionId: pr.id,
       fromTransactionNo: pr.recent_transaction_no ?? pr.reference_no,
-      requestType: 'void',
+      toTransactionNo: pr.reference_no,
+      requestType: 'undo pr',
       summary: `Unapprove purchase requisition ${pr.requisition_no}`,
-      reason: `Unapprove request for PR ${pr.requisition_no}`,
+      reason: reason ?? `Unapprove request for PR ${pr.requisition_no}`,
     })
 
     if (result.success) {

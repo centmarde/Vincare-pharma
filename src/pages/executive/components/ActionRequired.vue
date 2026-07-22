@@ -36,20 +36,20 @@ const selectedReq = ref<any | null>(null)
               <v-avatar
                 size="28"
                 rounded="lg"
-                :color="req.request_type === 'void' ? 'error' : 'primary'"
+                :color="req.request_type === 'void' || req.request_type === 'undo pr' ? 'error' : 'primary'"
                 variant="tonal"
               >
                 <v-icon
-                  :color="req.request_type === 'void' ? 'error' : 'primary'"
-                  :icon="req.request_type === 'void' ? 'mdi-cancel' : 'mdi-pencil-circle-outline'"
+                  :color="req.request_type === 'void' || req.request_type === 'undo pr' ? 'error' : 'primary'"
+                  :icon="req.request_type === 'void' || req.request_type === 'undo pr' ? 'mdi-cancel' : 'mdi-pencil-circle-outline'"
                   size="16"
                 />
               </v-avatar>
             </v-col>
             <v-col class="d-flex align-center ga-2">
               <span class="text-body-2 font-weight-medium">{{ req.target_ref ?? `#${req.target_id}` }}</span>
-              <v-chip size="x-small" :color="req.request_type === 'void' ? 'error' : 'primary'" variant="tonal" label>
-                {{ req.request_type === 'void' ? 'Undo' : 'Edit' }}
+              <v-chip size="x-small" :color="req.request_type === 'void' || req.request_type === 'undo pr' ? 'error' : 'primary'" variant="tonal" label>
+                {{ req.request_type === 'void' || req.request_type === 'undo pr' ? 'Undo' : 'Edit' }}
               </v-chip>
               <v-chip size="x-small" color="grey" variant="tonal" label>{{ req.module }}</v-chip>
             </v-col>
