@@ -21,37 +21,55 @@ const selectedReq = ref<any | null>(null)
         </v-col>
       </v-row>
 
-      <div v-if="loading" class="pa-4 text-center text-caption text-medium-emphasis">Loading requests…</div>
+      <div v-if="loading" class="pa-4 text-center text-caption text-medium-emphasis">
+        Loading requests…
+      </div>
 
       <template v-else-if="requests.length">
-        <div
-          v-for="req in requests"
-          :key="req.id"
-          class="py-2"
-          style="cursor: pointer"
-          @click="selectedReq = req; selected = true"
-        >
+        <div v-for="req in requests" :key="req.id" class="py-2" style="cursor: pointer">
           <v-row align="center" dense>
             <v-col cols="auto">
               <v-avatar
                 size="28"
                 rounded="lg"
-                :color="req.request_type === 'void' ? 'error' : 'primary'"
+                :color="
+                  req.request_type === 'void' || req.request_type === 'undo_pr'
+                    ? 'error'
+                    : 'primary'
+                "
                 variant="tonal"
               >
                 <v-icon
-                  :color="req.request_type === 'void' ? 'error' : 'primary'"
-                  :icon="req.request_type === 'void' ? 'mdi-cancel' : 'mdi-pencil-circle-outline'"
+                  :color="
+                    req.request_type === 'void' || req.request_type === 'undo_pr'
+                      ? 'error'
+                      : 'primary'
+                  "
+                  :icon="
+                    req.request_type === 'void' || req.request_type === 'undo_pr'
+                      ? 'mdi-cancel'
+                      : 'mdi-pencil-circle-outline'
+                  "
                   size="16"
                 />
               </v-avatar>
             </v-col>
             <v-col class="d-flex align-center ga-2">
-              <span class="text-body-2 font-weight-medium">{{ req.target_ref ?? `#${req.target_id}` }}</span>
-              <v-chip size="x-small" :color="req.request_type === 'void' ? 'error' : 'primary'" variant="tonal" label>
-                {{ req.request_type === 'void' ? 'Undo' : 'Edit' }}
+              <v-chip
+                size="x-small"
+                :color="
+                  req.request_type === 'void' || req.request_type === 'undo_pr'
+                    ? 'error'
+                    : 'primary'
+                "
+                variant="tonal"
+                label
+              >
+                {{
+                  req.request_type === 'void' || req.request_type === 'undo_pr' ? 'Undo' : 'Edit'
+                }}
               </v-chip>
-              <v-chip size="x-small" color="grey" variant="tonal" label>{{ req.module }}</v-chip>
+              <!--  <v-chip size="x-small" color="grey" variant="tonal" label>{{ req.module }}</v-chip> -->
             </v-col>
             <v-col cols="auto" class="text-right">
               <div class="text-caption text-medium-emphasis">

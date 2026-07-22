@@ -18,8 +18,14 @@ export function useChangeRequests() {
     if (!req) return
     const label = req.from_transaction_no ?? `#${req.transaction_id}`
     const summary = req.summary ?? `${req.request_type} ${label}`
+    const typeLabel =
+      req.request_type === 'undo_pr'
+        ? 'Undo_PR'
+        : req.request_type === 'void'
+          ? 'Undo / Void'
+          : 'Edit'
     const ok = await confirmDialog(
-      `${req.request_type === 'void' ? 'Undo / Void' : 'Edit'} — ${label}\n\n${summary}\n\nReason: ${req.reason ?? '—'}`,
+      `${typeLabel} — ${label}\n\n${summary}\n\nReason: ${req.reason ?? '—'}`,
       { title: 'Approve & Apply Change', confirmText: 'Approve & Apply' },
     )
     if (!ok) return

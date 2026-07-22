@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
-const { isOpen, title, message, confirmText, cancelText, resolve } = useConfirmDialog()
+const { isOpen, title, message, confirmText, cancelText, inputValue, inputLabel, resolve } = useConfirmDialog()
 </script>
 
 <template>
@@ -12,7 +12,18 @@ const { isOpen, title, message, confirmText, cancelText, resolve } = useConfirmD
         <span class="text-h6 font-weight-bold">{{ title }}</span>
       </v-card-title>
       <v-divider />
-      <v-card-text class="pa-4" style="white-space: pre-line">{{ message }}</v-card-text>
+      <v-card-text class="pa-4" style="white-space: pre-line">
+        {{ message }}
+        <v-text-field
+          v-if="inputLabel"
+          v-model="inputValue"
+          :label="inputLabel"
+          variant="outlined"
+          density="compact"
+          class="mt-3"
+          hide-details
+        />
+      </v-card-text>
       <v-divider />
       <v-card-actions class="px-4 py-3">
         <v-spacer />

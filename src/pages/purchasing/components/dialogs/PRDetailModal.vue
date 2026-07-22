@@ -5,6 +5,7 @@ import type { PR } from '@/stores/purchaseRequisitionData'
 import { useDisplay } from 'vuetify'
 import { ref } from 'vue'
 import PREditDialog from './PREditDialog.vue'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
 const { mobile } = useDisplay()
 
@@ -13,6 +14,7 @@ const model = defineModel<boolean>()
 const emit = defineEmits<{
   approve: [pr: PR]
   reject: [pr: PR]
+  unapprove: [pr: PR, reason: string]
   update: [data: { pr: PR; items: any[]; remarks: string }]
 }>()
 
@@ -28,6 +30,8 @@ const {
   marginPercent,
 } = usePRDetailModal(props)
 
+const { confirmDialog: showUnapproveDialog, inputValue } = useConfirmDialog()
+
 function onApprove() {
   model.value = false
   emit('approve', props.pr)
@@ -36,6 +40,22 @@ function onApprove() {
 function onReject() {
   model.value = false
   emit('reject', props.pr)
+}
+
+async function onUnapprove() {
+  const confirmed = await showUnapproveDialog(
+    `This undo_PR request for (${props.pr.requisition_no}) will revert the PR back to "Pending Approval" status. A change request record will be created for audit trail.\n\nPlease provide a reason for undoing this PR.`,
+    {
+      title: 'Submit Unapprove Request',
+      confirmText: 'Submit Request',
+      cancelText: 'Cancel',
+      inputLabel: 'Reason for undoing this PR',
+    },
+  )
+  if (confirmed) {
+    model.value = false
+    emit('unapprove', props.pr, inputValue.value)
+  }
 }
 </script>
 
@@ -298,6 +318,24 @@ function onReject() {
             @click="showEditDialog = true"
           >
             Undo/Edit
+          </v-btn>
+        </div>
+
+        <div
+          v-if="pr.status !== 'pending_approval' && pr.status !== 'draft'"
+          class="d-flex"
+          style="gap: 16px"
+        >
+          <v-btn
+            variant="outlined"
+            size="small"
+            color="orange-darken-2"
+            class="text-none"
+            prepend-icon="mdi-undo-variant"
+            elevation="1"
+            @click="onUnapprove"
+          >
+            Unapprove
           </v-btn>
         </div>
 
