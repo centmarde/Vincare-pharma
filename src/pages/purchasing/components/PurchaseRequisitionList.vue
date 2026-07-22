@@ -45,6 +45,7 @@ const {
   openConfirm,
   closeConfirm,
   handleConfirm,
+  handleUnapprove,
   openPurchaseOrder,
   openReorderDialog,
   reorderRequests,
@@ -564,7 +565,7 @@ async function onPRUpdated(data: { items: any[]; remarks: string }) {
     <!-- Detail Modal -->
     <PRDetailModal v-if="selectedPR" v-model="showModal" :pr="selectedPR"
     @approve="openConfirm('APPROVE', $event)" @reject="openConfirm('REJECT', $event)"
-    @update="onPRUpdated"/>
+    @unapprove="handleUnapprove" @update="onPRUpdated"/>
 
     <!-- Confirm Dialog -->
     <ConfirmDialog

@@ -6,6 +6,8 @@ import type { PR } from '@/stores/purchaseRequisitionData'
 import { useLogsDataStore } from '@/stores/logsData'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useProductsDataStore } from '@/stores/productsData'
+import { useChangeRequestsDataStore } from '@/stores/changeRequestsData'
+import { supabase } from '@/lib/supabase'
 import { storeToRefs } from 'pinia'
 import { ref, watch } from 'vue'
 export const headers = [
@@ -155,6 +157,41 @@ export function usePurchaseRequisitionList() {
       ])
       confirmLoading.value = false
     }
+
+  async function handleUnapprove(pr: PR) {
+    const changeRequestsStore = useChangeRequestsDataStore()
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) return
+
+    // Explicitly update the transaction status to 'change_request' BEFORE
+    // adding a new row in the change_request table. This gates the document
+    // so it cannot be further modified/approved until the request is resolved.
+    await supabase
+      .from('transactions')
+      .update({ status: 'change_request', updated_at: new Date().toISOString() })
+      .eq('id', pr.id)
+      .neq('status', 'change_request')
+
+    const result = await changeRequestsStore.proposeChange({
+      transactionId: pr.id,
+      fromTransactionNo: pr.recent_transaction_no ?? pr.reference_no,
+      requestType: 'void',
+      summary: `Unapprove purchase requisition ${pr.requisition_no}`,
+      reason: `Unapprove request for PR ${pr.requisition_no}`,
+    })
+
+    if (result.success) {
+      await logsStore.createLog({
+        created_by: user.id,
+        action: 'unapprove_pr',
+        description: `Unapprove request submitted for purchase requisition ${pr.requisition_no}`,
+        transaction_id: pr.id,
+        module: 'purchase_requisition',
+      })
+      // Refresh the list to reflect any status changes
+      await loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
+    }
+  }
   async function openPurchaseOrder(pr: PR) {
     selectedPRForPO.value = pr
     showPOModal.value     = true
@@ -177,7 +214,7 @@ export function usePurchaseRequisitionList() {
     openReorderDialog, reorderRequests, showReorderDialog, reorderCount,
     totalQty, totalCost, itemSummary, itemNames, statusConfig, statusOptions,
     openDetail, openConfirm, closeConfirm,
-    handleConfirm, openPurchaseOrder,
+    handleConfirm, handleUnapprove, openPurchaseOrder,
     loadItems, init,
     stats,
 
