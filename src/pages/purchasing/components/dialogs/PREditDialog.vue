@@ -94,14 +94,14 @@ function removeItem(index: number) {
 function onExpiryMonthSelect(item: any, index: number, month: number) {
   const current = item.expiry_date ? new Date(item.expiry_date) : new Date()
   const year = current.getFullYear()
-  item.expiry_date = new Date(year, month, 1).toISOString()
+  item.expiry_date = new Date(year, month + 1, 0).toISOString()
   expiryMenuOpen.value[index] = false
 }
 
 function onExpiryYearSelect(item: any, index: number, year: number) {
   const current = item.expiry_date ? new Date(item.expiry_date) : new Date()
   const month = current.getMonth()
-  item.expiry_date = new Date(year, month, 1).toISOString()
+  item.expiry_date = new Date(year, month + 1, 0).toISOString()
 }
 
 function formatMonthYear(value: string | Date | null | undefined): string {

@@ -51,6 +51,7 @@ const {
   reorderRequests,
   showReorderDialog,
   reorderCount,
+  // proposeEditPR,
 } = usePurchaseRequisitionList()
 const { mobile } = useDisplay()
 onMounted(() => {
@@ -115,7 +116,8 @@ function onPRSubmitted() {
   prefillItemsForDialog.value = []
 }
 
-async function onPRUpdated(data: { items: any[]; remarks: string }) {
+// PurchaseRequisitionList.vue — restore the direct-save version
+async function onPRUpdate(data: { items: any[]; remarks: string }) {
   if (!selectedPR.value) return
   const success = await prStore.updatePR({
     prId: selectedPR.value.id,
@@ -568,7 +570,7 @@ async function onPRUpdated(data: { items: any[]; remarks: string }) {
     <!-- Detail Modal -->
     <PRDetailModal v-if="selectedPR" v-model="showModal" :pr="selectedPR"
     @approve="openConfirm('APPROVE', $event)" @reject="openConfirm('REJECT', $event)"
-    @unapprove="handleUnapprove" @update="onPRUpdated"/>
+    @unapprove="handleUnapprove" @update="onPRUpdate"/>
 
     <!-- Confirm Dialog -->
     <ConfirmDialog

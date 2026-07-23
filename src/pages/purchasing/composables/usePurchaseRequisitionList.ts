@@ -1,3 +1,4 @@
+import { useChangeRequestPRStore, type PRProposedChange } from '../stores/oldChangeRequestPR'
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import { useTransactionsData } from '@/composables/useTransactionsData'
 import { useTransactionsDataStore } from '@/stores/transactionsData'
@@ -173,6 +174,47 @@ export function usePurchaseRequisitionList() {
     confirmLoading.value = false
   }
 
+  // Builds the edit change-request from the PR's live state vs. the dialog's
+  // output, and proposes it. Replaces the old direct prStore.updatePR call.
+  // async function proposeEditPR(pr: PR, newItems: any[], newRemarks: string) {
+  //   const changeRequestPRStore = useChangeRequestPRStore()
+  //   const { user, error: authError } = await authStore.getCurrentUser()
+  //   if (authError || !user) return { success: false }
+
+  //   const itemsChanged = JSON.stringify(newItems) !== JSON.stringify(pr.items)
+  //   const remarksChanged = newRemarks !== (pr.remarks ?? '')
+  //   if (!itemsChanged && !remarksChanged) {
+  //     return { success: false, noChanges: true }
+  //   }
+
+  //   const proposedChanges: PRProposedChange = {
+  //     items: { from: pr.items, to: newItems },
+  //     remarks: { from: pr.remarks ?? '', to: newRemarks },
+  //   }
+
+  //   const result = await changeRequestPRStore.proposeChange({
+  //     transactionId: pr.id,
+  //     fromTransactionNo: pr.recent_transaction_no ?? pr.reference_no,
+  //     toTransactionNo: pr.reference_no,
+  //     requestType: 'edit',
+  //     proposedChanges,
+  //     summary: `Edit request for purchase requisition ${pr.requisition_no}`,
+  //     reason: `Line item / remarks edit for PR ${pr.requisition_no}`,
+  //   })
+
+  //   if (result.success) {
+  //     await logsStore.createLog({
+  //       created_by: user.id,
+  //       action: 'edit_pr_request',
+  //       description: `Edit request submitted for purchase requisition ${pr.requisition_no}`,
+  //       transaction_id: pr.id,
+  //       module: 'purchase_requisition',
+  //     })
+  //     await loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
+  //   }
+  //   return result
+  // }
+
   async function handleUnapprove(pr: PR, reason?: string) {
     const changeRequestsStore = useChangeRequestsDataStore()
     const { user, error: authError } = await authStore.getCurrentUser()
@@ -258,5 +300,6 @@ export function usePurchaseRequisitionList() {
     loadItems,
     init,
     stats,
+    // proposeEditPR,
   }
 }

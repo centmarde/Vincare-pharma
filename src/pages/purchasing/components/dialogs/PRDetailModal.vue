@@ -283,65 +283,48 @@ async function onUnapprove() {
 
       <!-- Footer -->
       <v-card-actions
-        :class="mobile ? 'px-3 pb-3 pt-2 d-flex justify-end' : 'px-6 pb-5 pt-2 d-flex justify-end'"
+        :class="mobile ? 'px-3 pb-3 pt-2 d-flex justify-end align-center' : 'px-6 pb-5 pt-2 d-flex justify-end align-center'"
       >
-        <div v-if="pr.status === 'pending_approval'" class="d-flex" style="gap: 16px">
-          <v-btn
-            variant="outlined"
-            size="small"
-            color="red-darken-2"
-            class="text-none"
-            elevation="1"
-            @click="onReject"
+        <div class="d-flex" style="gap: 16px">
+          <template
+            v-if="
+              pr.status !== 'approved' &&
+              pr.status !== 'rejected' &&
+              pr.status !== 'issued' &&
+              pr.status !== 'complete' &&
+              pr.status !== 'change_request'
+            "
           >
-            <v-icon>mdi-close</v-icon>
-            Reject
-          </v-btn>
-          <v-btn
-            variant="tonal"
-            prepend-icon="mdi-check-circle-outline"
-            color="green-lighten-1"
-            size="small"
-            class="text-none"
-            elevation="3"
-            @click="onApprove"
-          >
-            Approve
-          </v-btn>
+            <v-btn
+              variant="outlined"
+              size="small"
+              color="amber-darken-2"
+              class="text-none"
+              prepend-icon="mdi-file-document-edit-outline"
+              @click="showEditDialog = true"
+            >
+              Edit
+            </v-btn>
+          </template>
 
-          <v-btn
-            variant="outlined"
-            size="small"
-            color="amber-darken-2"
-            class="text-none"
-            prepend-icon="mdi-file-document-edit-outline"
-            @click="showEditDialog = true"
-          >
-            Undo/Edit
+          <template v-else-if="pr.status === 'approved'">
+            <v-btn
+              variant="outlined"
+              size="small"
+              color="orange-darken-2"
+              class="text-none"
+              prepend-icon="mdi-undo-variant"
+              elevation="1"
+              @click="onUnapprove"
+            >
+              Unapprove
+            </v-btn>
+          </template>
+
+          <v-btn variant="outlined" size="small" class="text-none" @click="model = false">
+            Close
           </v-btn>
         </div>
-
-        <div
-          v-if="pr.status !== 'pending_approval' && pr.status !== 'draft'"
-          class="d-flex"
-          style="gap: 16px"
-        >
-          <v-btn
-            variant="outlined"
-            size="small"
-            color="orange-darken-2"
-            class="text-none"
-            prepend-icon="mdi-undo-variant"
-            elevation="1"
-            @click="onUnapprove"
-          >
-            Unapprove
-          </v-btn>
-        </div>
-
-        <v-btn variant="outlined" size="small" class="text-none" @click="model = false">
-          Close
-        </v-btn>
       </v-card-actions>
 
       <!-- Edit/Undo Dialog -->

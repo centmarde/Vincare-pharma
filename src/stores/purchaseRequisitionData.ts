@@ -207,6 +207,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
   }
 
   // ─── Update PR (from PREditDialog) ──────────────────────────────
+  // ─── Update PR (from PREditDialog) ──────────────────────────────
   async function updatePR(payload: {
     prId: number
     items: PRItem[]
@@ -235,10 +236,14 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       return false
     }
 
-    // 2. Fetch existing transaction_items for this PR
+    // 2. Fetch existing transaction_items — pulling product fields too, so
+    // we can tell whether an "existing" line item's product identity
+    // actually changed (renamed/re-supplied/etc.) vs. just its qty.
     const { data: existingItems, error: fetchItemsError } = await supabase
       .from('transaction_items')
-      .select('id, product_id')
+      .select(
+        'id, product_id, products ( product_name, unit, supplier_id, expiry_date, sku )',
+      )
       .eq('transaction_id', payload.prId)
 
     if (fetchItemsError) {
@@ -269,26 +274,84 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       }
     }
 
-    // 4. Handle new items (those with temp IDs like Date.now())
+    // 4. Brand-new items (temp IDs like Date.now(), not in existingItemIds)
     const newItems = payload.items.filter(
       (i) => !(typeof i.id === 'number' && i.id > 0 && existingItemIds.includes(i.id)),
     )
 
-    if (newItems.length) {
-      // 4a. Check for existing products
-      const names = [...new Set(newItems.map((i) => i.item_description).filter(Boolean))]
-      const { data: existingProducts } = await supabase
+    // 5. Existing items whose product identity changed vs. what's on file.
+    const existingToUpdate = payload.items.filter((i) => existingItemIds.includes(i.id))
+
+    const changedExistingItems = existingToUpdate.filter((item) => {
+      const onFile = existingItems!.find((e) => e.id === item.id)
+      const product = Array.isArray(onFile?.products) ? onFile?.products[0] : onFile?.products
+      if (!product) return true // no linked product on file — treat as changed
+      const supplierId = item.supplier_id ? Number(item.supplier_id) : null
+      return (
+        product.product_name !== item.item_description ||
+        product.unit !== item.unit ||
+        (product.supplier_id ?? null) !== supplierId ||
+        (product.expiry_date ?? null) !== (item.expiry_date ?? null)
+      )
+    })
+
+    // Unchanged existing items — qty-only update.
+    const unchangedExistingItems = existingToUpdate.filter(
+      (item) => !changedExistingItems.includes(item),
+    )
+
+    // ── Resolve products for BOTH brand-new items and changed-existing
+    // items in one combined pass.
+    const itemsNeedingProduct = [...newItems, ...changedExistingItems]
+
+    if (itemsNeedingProduct.length) {
+      // Pull a candidate pool by name (for the fallback tier) — sku is
+      // fetched here too so the SKU tier below doesn't need a second query.
+      const names = [
+        ...new Set(itemsNeedingProduct.map((i) => i.item_description).filter(Boolean)),
+      ]
+      const { data: candidatesByName, error: productsFetchError } = await supabase
         .from('products')
-        .select('id, product_name, supplier_id, unit, expiry_date')
+        .select('id, product_name, supplier_id, unit, expiry_date, sku')
         .in('product_name', names)
 
-      const findExisting = (
+      if (productsFetchError) {
+        handleError(productsFetchError, 'Failed to check existing products.')
+        toast.error('Failed to check existing products.')
+        loading.value = false
+        return false
+      }
+
+      // Any item's CURRENT product_id (from what's on file, for changed-
+      // existing items) may carry a SKU that doesn't share the item's NEW
+      // typed name — e.g. renaming an item whose old product had a SKU.
+      // We need that row's SKU too, so fetch by id for anything with a
+      // product_id not already covered by the name-based pool above.
+      const idsAlreadyCovered = new Set((candidatesByName || []).map((p) => p.id))
+      const idsToFetch = [
+        ...new Set(
+          itemsNeedingProduct
+            .map((i) => i.product_id)
+            .filter((id): id is number => id != null && id > 0 && !idsAlreadyCovered.has(id)),
+        ),
+      ]
+      let candidatesById: typeof candidatesByName = []
+      if (idsToFetch.length) {
+        const { data } = await supabase
+          .from('products')
+          .select('id, product_name, supplier_id, unit, expiry_date, sku')
+          .in('id', idsToFetch)
+        candidatesById = data || []
+      }
+      const allCandidates = [...(candidatesByName || []), ...candidatesById]
+
+      const findByNameUnitSupplierExpiry = (
         name: string,
         supplierId: number | null,
         unit: string,
         expiryDate: string | null,
       ) =>
-        (existingProducts || []).find(
+        allCandidates.find(
           (p) =>
             p.product_name === name &&
             (p.supplier_id ?? null) === (supplierId ?? null) &&
@@ -296,22 +359,86 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
             (p.expiry_date ?? null) === (expiryDate ?? null),
         )
 
-      const productIdByIndex: (number | null)[] = newItems.map((item) => {
+      // ── TIERED MATCHING ──────────────────────────────────────────────
+      // Tier 1: item.product_id is already set (picked via ProductPicker,
+      //         or carried over from the existing line) — trust it outright,
+      //         no re-derivation from typed text fields.
+      // Tier 2: the CURRENT product on file for this item has a non-null
+      //         SKU — meaning it's already been received/tracked in the
+      //         warehouse and is potentially referenced by Sales. Reuse
+      //         that row's id even if the typed name/unit/expiry differ,
+      //         rather than spinning off a duplicate for a real, in-use
+      //         product. (Field differences here are a "correction on an
+      //         already-live product" situation, not a "new batch" one —
+      //         flagged in the return value below so the caller can warn.)
+      // Tier 3: fallback — match by name + unit + supplier_id + expiry_date,
+      //         for products that have never been received (SKU still null,
+      //         still "just an idea" from a PR that hasn't become stock).
+      // Tier 4: no match on any tier — insert a new product row.
+      const skuMismatchWarnings: { itemDescription: string; sku: string }[] = []
+
+      const productIdByIndex: (number | null)[] = itemsNeedingProduct.map((item) => {
         const supplierId = item.supplier_id ? Number(item.supplier_id) : null
 
+        // Tier 1 — trust an already-set product_id if it's still a valid,
+        // exact match on file (guards against a stale id after data drift).
         if (item.product_id != null && item.product_id > 0) {
-          const pickedProduct = (existingProducts || []).find((p) => p.id === item.product_id)
-          if (
-            pickedProduct &&
-            pickedProduct.unit === item.unit &&
-            pickedProduct.product_name === item.item_description &&
-            (pickedProduct.expiry_date ?? null) === (item.expiry_date ?? null)
-          ) {
-            return item.product_id
+          const picked = allCandidates.find((p) => p.id === item.product_id)
+          if (picked) {
+            // Tier 2 nested inside Tier 1: if this exact picked product has
+            // a SKU (already received/live), keep it regardless of minor
+            // text-field mismatches — just flag it for a caller-side warning.
+            if (picked.sku) {
+              const differs =
+                picked.unit !== item.unit ||
+                picked.product_name !== item.item_description ||
+                (picked.supplier_id ?? null) !== supplierId ||
+                (picked.expiry_date ?? null) !== (item.expiry_date ?? null)
+              if (differs) {
+                skuMismatchWarnings.push({
+                  itemDescription: item.item_description,
+                  sku: picked.sku,
+                })
+              }
+              return item.product_id
+            }
+            // No SKU yet — still require an exact field match to reuse it,
+            // same as before (a genuinely different product shouldn't
+            // silently inherit a stale product_id).
+            if (
+              picked.unit === item.unit &&
+              picked.product_name === item.item_description &&
+              (picked.supplier_id ?? null) === supplierId &&
+              (picked.expiry_date ?? null) === (item.expiry_date ?? null)
+            ) {
+              return item.product_id
+            }
           }
         }
 
-        const match = findExisting(
+        // Tier 2 (no usable product_id) — look for ANY product matching the
+        // typed name that already has a SKU. A SKU'd product is real,
+        // received stock — reuse it rather than duplicate it, even though
+        // we got here via typed text rather than a picker selection.
+        const skuMatch = allCandidates.find(
+          (p) => p.product_name === item.item_description && !!p.sku,
+        )
+        if (skuMatch) {
+          const differs =
+            skuMatch.unit !== item.unit ||
+            (skuMatch.supplier_id ?? null) !== supplierId ||
+            (skuMatch.expiry_date ?? null) !== (item.expiry_date ?? null)
+          if (differs) {
+            skuMismatchWarnings.push({
+              itemDescription: item.item_description,
+              sku: skuMatch.sku!,
+            })
+          }
+          return skuMatch.id
+        }
+
+        // Tier 3 — fallback match for not-yet-received products.
+        const match = findByNameUnitSupplierExpiry(
           item.item_description,
           supplierId,
           item.unit,
@@ -320,14 +447,27 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         return match ? match.id : null
       })
 
-      // 4b. Create products that don't exist
-      const newItemIndexes = productIdByIndex
+      if (skuMismatchWarnings.length) {
+        // Non-blocking — the update still proceeds (per Tier 2 reusing the
+        // row), this just surfaces that an already-live/received product
+        // was targeted with different field values than what's on file.
+        console.warn(
+          'updatePR: reused SKU-tracked product(s) despite field differences:',
+          skuMismatchWarnings,
+        )
+        toast.warning(
+          `Note: "${skuMismatchWarnings[0].itemDescription}" is already tracked (SKU ${skuMismatchWarnings[0].sku}) — reused that product instead of creating a duplicate.`,
+        )
+      }
+
+      // Tier 4 — create products that matched nothing above.
+      const toCreateIndexes = productIdByIndex
         .map((id, idx) => (id === null ? idx : -1))
         .filter((idx) => idx !== -1)
 
-      if (newItemIndexes.length) {
-        const productInserts = newItemIndexes.map((idx) => {
-          const item = newItems[idx]
+      if (toCreateIndexes.length) {
+        const productInserts = toCreateIndexes.map((idx) => {
+          const item = itemsNeedingProduct[idx]
           return {
             product_name: item.item_description,
             unit: item.unit,
@@ -347,37 +487,58 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
 
         if (productError || !productData) {
           handleError(productError, 'Failed to create products.')
-          toast.error('Failed to create products for new items.')
+          toast.error('Failed to create products for new/edited items.')
           loading.value = false
           return false
         }
 
-        newItemIndexes.forEach((idx, i) => {
+        toCreateIndexes.forEach((idx, i) => {
           productIdByIndex[idx] = productData[i].id
         })
       }
 
-      // 4c. Insert new transaction_items
-      const { error: insertError } = await supabase.from('transaction_items').insert(
-        newItems.map((item, index) => ({
-          transaction_id: payload.prId,
-          product_id: productIdByIndex[index]!,
-          qty_stock_in: item.qty,
-        })),
-      )
+      // Split resolved product ids back out by which item they belong to.
+      const newItemsProductIds = productIdByIndex.slice(0, newItems.length)
+      const changedItemsProductIds = productIdByIndex.slice(newItems.length)
 
-      if (insertError) {
-        handleError(insertError, 'Failed to add new items.')
-        toast.error('Failed to add new items.')
-        loading.value = false
-        return false
+      // Insert brand-new transaction_items
+      if (newItems.length) {
+        const { error: insertError } = await supabase
+        .from('transaction_items')
+        .insert(
+          newItems.map((item, index) => ({
+            transaction_id: payload.prId,
+            product_id: newItemsProductIds[index]!,
+            qty_stock_in: item.qty,
+          })),
+        )
+        if (insertError) {
+          handleError(insertError, 'Failed to add new items.')
+          toast.error('Failed to add new items.')
+          loading.value = false
+          return false
+        }
+      }
+
+      // Update changed-existing transaction_items: repoint product_id + qty
+      for (let index = 0; index < changedExistingItems.length; index++) {
+        const item = changedExistingItems[index]
+        const { error: updateItemError } = await supabase
+          .from('transaction_items')
+          .update({ product_id: changedItemsProductIds[index]!, qty_stock_in: item.qty })
+          .eq('id', item.id)
+
+        if (updateItemError) {
+          handleError(updateItemError, `Failed to update item ${item.id}.`)
+          toast.error(`Failed to update item ${item.id}.`)
+          loading.value = false
+          return false
+        }
       }
     }
 
-    // 5. Update existing items (qty)
-    const existingToUpdate = payload.items.filter((i) => existingItemIds.includes(i.id))
-
-    for (const item of existingToUpdate) {
+    // 6. Unchanged existing items — qty-only.
+    for (const item of unchangedExistingItems) {
       const { error: updateItemError } = await supabase
         .from('transaction_items')
         .update({ qty_stock_in: item.qty })
