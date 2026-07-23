@@ -3,7 +3,8 @@ import { usePRDetailModal } from '../composables/usePRDetailModal'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import { useDisplay } from 'vuetify'
-import { de } from 'vuetify/locale'
+import PREditDialog from '@/pages/purchasing/components/dialogs/PREditDialog.vue'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
 const { mobile } = useDisplay()
 
@@ -12,8 +13,11 @@ const model = defineModel<boolean>()
 const emit = defineEmits<{
   approve: [pr: PR]
   reject: [pr: PR]
+  unapprove: [pr: PR, reason: string]
+  update: [data: { pr: PR; items: any[]; remarks: string }]
 }>()
-
+const showEditDialog = ref<boolean>(false)
+const { confirmDialog: showUnapproveDialog, inputValue } = useConfirmDialog()
 const {
   statusConfig,
   customerOfferTotal,
@@ -32,6 +36,21 @@ function onApprove() {
 function onReject() {
   model.value = false
   emit('reject', props.pr)
+}
+async function onUnapprove() {
+  const confirmed = await showUnapproveDialog(
+    `This undo_PR request for (${props.pr.requisition_no}) will revert the PR back to "Pending Approval" status. A change request record will be created for audit trail.\n\nPlease provide a reason for undoing this PR.`,
+    {
+      title: 'Submit Unapprove Request',
+      confirmText: 'Submit Request',
+      cancelText: 'Cancel',
+      inputLabel: 'Reason for undoing this PR',
+    },
+  )
+  if (confirmed) {
+    model.value = false
+    emit('unapprove', props.pr, inputValue.value)
+  }
 }
 </script>
 
@@ -221,10 +240,50 @@ function onReject() {
             Approve
           </v-btn>
         </div>
-        <v-btn variant="outlined" size="small" class="text-none" @click="model = false">
-          Close
-        </v-btn>
+          <template
+            v-if="
+              pr.status !== 'approved' &&
+              pr.status !== 'rejected' &&
+              pr.status !== 'issued' &&
+              pr.status !== 'complete' &&
+              pr.status !== 'change_request'
+            "
+          >
+            <v-btn
+              variant="outlined"
+              size="small"
+              color="amber-darken-2"
+              class="text-none"
+              prepend-icon="mdi-file-document-edit-outline"
+              @click="showEditDialog = true"
+            >
+              Edit
+            </v-btn>
+          </template>
+
+          <template v-else-if="pr.status === 'approved'">
+            <v-btn
+              variant="outlined"
+              size="small"
+              color="orange-darken-2"
+              class="text-none"
+              prepend-icon="mdi-undo-variant"
+              elevation="1"
+              @click="onUnapprove"
+            >
+              Unapprove
+            </v-btn>
+          </template>
+
+          <v-btn variant="outlined" size="small" class="text-none" @click="model = false">
+            Close
+          </v-btn>
       </v-card-actions>
+      <PREditDialog
+        v-model="showEditDialog"
+        :pr="pr"
+        @save="(data) => emit('update', { pr: props.pr, ...data })"
+      />
     </v-card>
   </v-dialog>
 </template>

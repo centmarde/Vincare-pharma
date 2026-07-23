@@ -665,7 +665,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         .select('expense_no, total_amount, paid_at, finance_details(category, paid_to, or_si_no)')
         .eq('transaction_type', 'expense')
         .eq('cash_account_id', cashAccountId)
-        .is('voided_at', null)   // a voided expense had its cash restored
+        // .is('voided_at', null)   // a voided expense had its cash restored
       if (lastApproved?.approved_at) q = q.gt('created_at', lastApproved.approved_at)
       q = q.order('paid_at', { ascending: true })
 
@@ -895,7 +895,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     // path once did) credited money back for an expense still on the books.
     const { data: voided, error: voidError } = await supabase.from('transactions')
       .update({ status: 'voided', voided_at: new Date().toISOString(), voided_by: user.id, void_reason: reason })
-      .eq('id', id).eq('transaction_type', 'expense').is('voided_at', null)
+      .eq('id', id).eq('transaction_type', 'expense')
       .select('id')
     if (voidError) {
       handleError(voidError, 'Failed to void expense.')
@@ -1006,8 +1006,8 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     }
 
     const [receivedRes, paidRes] = await Promise.all([
-      supabase.from('transactions').select('total_amount').eq('transaction_type', 'stock_in').eq('supplier_id', payload.supplierId).is('voided_at', null),
-      supabase.from('transactions').select('total_amount').eq('transaction_type', 'supplier_payment').eq('supplier_id', payload.supplierId).is('voided_at', null),
+      supabase.from('transactions').select('total_amount').eq('transaction_type', 'stock_in').eq('supplier_id', payload.supplierId),
+      supabase.from('transactions').select('total_amount').eq('transaction_type', 'supplier_payment').eq('supplier_id', payload.supplierId),
     ])
     const received = (receivedRes.data ?? []).reduce((sum, r) => sum + (r.total_amount ?? 0), 0)
     const paid = (paidRes.data ?? []).reduce((sum, r) => sum + (r.total_amount ?? 0), 0)
@@ -1069,8 +1069,8 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     clearError()
     try {
       const [receivedRes, paidRes, suppliersRes] = await Promise.all([
-        supabase.from('transactions').select('supplier_id, total_amount').eq('transaction_type', 'stock_in').is('voided_at', null),
-        supabase.from('transactions').select('supplier_id, total_amount').eq('transaction_type', 'supplier_payment').is('voided_at', null),
+        supabase.from('transactions').select('supplier_id, total_amount').eq('transaction_type', 'stock_in'),
+        supabase.from('transactions').select('supplier_id, total_amount').eq('transaction_type', 'supplier_payment'),
         supabase.from('suppliers').select('id, name, balance'),
       ])
       if (receivedRes.error) throw receivedRes.error
@@ -1148,11 +1148,9 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         .gte('created_at', dayStart).lte('created_at', dayEnd),
       supabase.from('transactions').select('total_amount')
         .eq('transaction_type', 'stock_in')
-        .is('voided_at', null)
         .gte('updated_at', dayStart).lte('updated_at', dayEnd),
       supabase.from('transactions').select('total_amount')
         .eq('transaction_type', 'expense')
-        .is('voided_at', null)
         .gte('paid_at', dayStart).lte('paid_at', dayEnd),
     ])
     if (saleRes.error) throw saleRes.error
@@ -1229,7 +1227,6 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         .gte('updated_at', fromTs).lte('updated_at', toTs),
       supabase.from('transactions').select('paid_at')
         .eq('transaction_type', 'expense')
-        .is('voided_at', null)
         .gte('paid_at', fromTs).lte('paid_at', toTs),
       supabase.from('finance_daily_summary').select('summary_date'),
     ])

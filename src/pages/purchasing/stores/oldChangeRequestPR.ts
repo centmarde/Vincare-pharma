@@ -399,6 +399,52 @@ export const useChangeRequestPRStore = defineStore('changeRequestPR', () => {
     return { success: true, resultRef: currentRefNo ?? undefined }
   }
 
+  // ── Unapprove PR (called from composable) ─────────────────────────────
+  const handleUnapprove = async (pr: { id: number; requisition_no: string; recent_transaction_no?: string | null; reference_no?: string | null }, reason?: string) => {
+    loading.value = true
+    clearError()
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) {
+      toast.error('User not authenticated.')
+      loading.value = false
+      return { success: false }
+    }
+    const { error: updateErr } = await supabase
+      .from('transactions')
+      .update({ status: 'change_request', updated_at: new Date().toISOString() })
+      .eq('id', pr.id)
+      .neq('status', 'change_request')
+
+    if (updateErr) {
+      handleError(updateErr, 'Failed to update transaction status.')
+      loading.value = false
+      return { success: false }
+    }
+
+    const result = await proposeChange({
+      transactionId: pr.id,
+      fromTransactionNo: pr.recent_transaction_no ?? pr.reference_no,
+      toTransactionNo: pr.reference_no,
+      requestType: 'undo_pr',
+      summary: `Unapprove purchase requisition ${pr.requisition_no}`,
+      reason: reason ?? `Unapprove request for PR ${pr.requisition_no}`,
+    })
+
+    if (result.success) {
+      await logChangeEvent(ACTION_REQUEST, {
+        id: result.requestId!,
+        transaction_id: pr.id,
+        from_transaction_no: pr.recent_transaction_no ?? pr.reference_no ?? null,
+        to_transaction_no: pr.reference_no ?? null,
+        summary: `Unapprove purchase requisition ${pr.requisition_no}`,
+        reason: reason ?? `Unapprove request for PR ${pr.requisition_no}`,
+      } as PRChangeRequestType, user.id)
+    }
+
+    loading.value = false
+    return result
+  }
+
   const resetStore = () => {
     requests.value = []
     loading.value = false
@@ -417,6 +463,7 @@ export const useChangeRequestPRStore = defineStore('changeRequestPR', () => {
     proposeChange,
     approveRequest,
     rejectRequest,
+    handleUnapprove,
     clearError,
     resetStore,
   }

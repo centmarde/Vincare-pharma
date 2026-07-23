@@ -5,7 +5,9 @@ import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import PRDetailModal from '../dialogs/PRDetailModal.vue'
 import { computed, onMounted } from 'vue'
 import { useDisplay } from 'vuetify'
+import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 
+const prStore = usePurchaseRequisitionStore()
 const {
   stats,
   init,
@@ -34,6 +36,7 @@ const {
   closeConfirm,
   handleConfirm,
   openPurchaseOrder,
+  handleUnapprove,
 } = usePurchaseRequisitionList()
 const { mobile } = useDisplay()
 onMounted(() => {
@@ -50,6 +53,19 @@ function goToPage(p: number) {
   if (p < 1 || p > totalPages.value || p === page.value) return
   page.value = p
   loadItems({ page: p, itemsPerPage: itemsPerPage.value, sortBy: [] })
+}
+
+async function onPRUpdate(data: { items: any[]; remarks: string }) {
+  if (!selectedPR.value) return
+  const success = await prStore.updatePR({
+    prId: selectedPR.value.id,
+    items: data.items,
+    remarks: data.remarks,
+  })
+  if (success) {
+    showModal.value = false
+    loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
+  }
 }
 </script>
 
@@ -342,7 +358,8 @@ function goToPage(p: number) {
 
     <!-- Detail Modal -->
     <PRDetailModal v-if="selectedPR" v-model="showModal" :pr="selectedPR" 
-    @approve="openConfirm('APPROVE', $event)" @reject="openConfirm('REJECT', $event)"/>
+    @approve="openConfirm('APPROVE', $event)" @reject="openConfirm('REJECT', $event)"
+    @unapprove="handleUnapprove" @update="onPRUpdate"/>
 
     <!-- Confirm Dialog -->
     <v-dialog v-model="confirmDialog.show" :max-width="mobile ? '100%' : '400'" persistent>
