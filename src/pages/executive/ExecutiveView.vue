@@ -56,6 +56,4 @@ const activeTab = ref<'executive' | 'finance' | 'pr'>('executive')
   </InnerLayoutWrapper>
 </template>
 
-<style scoped>
-
-</style>
+<style scoped></style>
