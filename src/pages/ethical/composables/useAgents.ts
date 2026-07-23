@@ -64,8 +64,26 @@ export function useAgents() {
   }
 
   async function deleteAgent(id: number) {
-    if (!(await confirmDialog('Delete this agent?', { title: 'Confirm Delete', confirmText: 'Delete' }))) return
+    if (!(await confirmDialog('Delete this Medical Sales Representative?', { title: 'Confirm Delete', confirmText: 'Delete' }))) return
     await store.deleteAgent(id)
+  }
+
+  function openCreateDialog() {
+    showCreateDialog.value = true
+  }
+
+  function cancelCreate() {
+    showCreateDialog.value = false
+  }
+
+  function openEdit(id: number) {
+    editingId.value = id
+    showEditDialog.value = true
+  }
+
+  function cancelEdit() {
+    showEditDialog.value = false
+    editingId.value = null
   }
 
   return {
@@ -79,10 +97,10 @@ export function useAgents() {
     createAgent,
     updateAgent,
     deleteAgent,
-    openEdit: (id: number) => {
-      editingId.value = id
-      showEditDialog.value = true
-    },
+    openCreateDialog,
+    cancelCreate,
+    openEdit,
+    cancelEdit,
     init,
   }
 }

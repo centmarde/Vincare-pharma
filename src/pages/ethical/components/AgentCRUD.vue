@@ -5,7 +5,7 @@ import AgentForm from './AgentForm.vue'
 
 const {
   agents, loading, searchText, showCreateDialog, showEditDialog, editingAgent, headers,
-  createAgent, updateAgent, deleteAgent, openEdit, init,
+  createAgent, updateAgent, deleteAgent, openCreateDialog, cancelCreate, openEdit, cancelEdit, init,
 } = useAgents()
 
 onMounted(() => init())
@@ -15,10 +15,10 @@ onMounted(() => init())
   <v-container fluid pa-0>
     <v-card class="elevation-0">
       <v-card-title class="d-flex align-center gap-2 pb-2">
-        <span>Sales Agents</span>
+        <span>Medical Sales Representatives</span>
         <v-spacer />
-        <v-btn size="small" prepend-icon="mdi-plus" @click="showCreateDialog = true" color="primary">
-          New Agent
+        <v-btn size="small" prepend-icon="mdi-plus" @click="openCreateDialog" color="primary">
+          New Medical Sales Representative
         </v-btn>
       </v-card-title>
 
@@ -41,18 +41,18 @@ onMounted(() => init())
 
     <v-dialog v-model="showCreateDialog" persistent max-width="600px">
       <v-card>
-        <v-card-title>New Agent</v-card-title>
+        <v-card-title>New Medical Sales Representative</v-card-title>
         <v-card-text>
-          <AgentForm @submit="createAgent" />
+          <AgentForm @submit="createAgent" @cancel="cancelCreate" />
         </v-card-text>
       </v-card>
     </v-dialog>
 
     <v-dialog v-model="showEditDialog" persistent max-width="600px">
       <v-card v-if="editingAgent">
-        <v-card-title>Edit Agent</v-card-title>
+        <v-card-title>Edit Medical Sales Representative</v-card-title>
         <v-card-text>
-          <AgentForm :agent="editingAgent" @submit="updateAgent" />
+          <AgentForm :agent="editingAgent" @submit="updateAgent" @cancel="cancelEdit" />
         </v-card-text>
       </v-card>
     </v-dialog>
