@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import ActionRequiredDialog from '../dialogs/ActionRequiredDialog.vue'
 import { useChangeRequestsPR } from '@/pages/purchasing/stores/composables/useChangeRequestsPR'
 import { formatDatePR_ISO } from '@/utils/helpers'
@@ -14,7 +14,20 @@ const { requests, loading } = useChangeRequestsPR()
 const selected = ref(false)
 const selectedReq = ref<any | null>(null)
 
+const page = ref(1)
+const perPage = 5
+
 const count = computed(() => requests.value?.length ?? 0)
+
+const totalPages = computed(() => Math.max(1, Math.ceil((requests.value || []).length / perPage)))
+const paginatedRequests = computed(() => {
+  const start = (page.value - 1) * perPage
+  return (requests.value || []).slice(start, start + perPage)
+})
+
+watch(() => requests.value?.length, () => {
+  page.value = 1
+})
 
 function openRequest(req: any) {
   selectedReq.value = req
@@ -43,7 +56,7 @@ function openRequest(req: any) {
       </div>
 
       <v-list v-else-if="requests.length" class="pa-0" lines="two">
-        <template v-for="(req, i) in requests" :key="req.id">
+        <template v-for="(req, i) in paginatedRequests" :key="req.id">
           <v-list-item
             class="px-2 py-3 rounded-lg action-item"
             @click="openRequest(req)"
@@ -79,8 +92,16 @@ function openRequest(req: any) {
             </template>
           </v-list-item>
 
-          <v-divider v-if="i < requests.length - 1" class="my-1" />
+          <v-divider v-if="i < paginatedRequests.length - 1" class="my-1" />
         </template>
+
+        <v-pagination
+          v-if="totalPages > 1"
+          v-model="page"
+          :length="totalPages"
+          density="compact"
+          class="mt-4"
+        />
       </v-list>
 
       <div v-else class="pa-6 text-center">
