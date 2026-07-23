@@ -283,65 +283,48 @@ async function onUnapprove() {
 
       <!-- Footer -->
       <v-card-actions
-        :class="mobile ? 'px-3 pb-3 pt-2 d-flex justify-end' : 'px-6 pb-5 pt-2 d-flex justify-end'"
+        :class="mobile ? 'px-3 pb-3 pt-2 d-flex justify-end align-center' : 'px-6 pb-5 pt-2 d-flex justify-end align-center'"
       >
-        <div v-if="pr.status === 'pending_approval'" class="d-flex" style="gap: 16px">
-          <v-btn
-            variant="outlined"
-            size="small"
-            color="red-darken-2"
-            class="text-none"
-            elevation="1"
-            @click="onReject"
+        <div class="d-flex" style="gap: 16px">
+          <template
+            v-if="
+              pr.status !== 'approved' &&
+              pr.status !== 'rejected' &&
+              pr.status !== 'issued' &&
+              pr.status !== 'complete' &&
+              pr.status !== 'change_request'
+            "
           >
-            <v-icon>mdi-close</v-icon>
-            Reject
-          </v-btn>
-          <v-btn
-            variant="tonal"
-            prepend-icon="mdi-check-circle-outline"
-            color="green-lighten-1"
-            size="small"
-            class="text-none"
-            elevation="3"
-            @click="onApprove"
-          >
-            Approve
-          </v-btn>
+            <v-btn
+              variant="outlined"
+              size="small"
+              color="amber-darken-2"
+              class="text-none"
+              prepend-icon="mdi-file-document-edit-outline"
+              @click="showEditDialog = true"
+            >
+              Edit
+            </v-btn>
+          </template>
 
-          <v-btn
-            variant="outlined"
-            size="small"
-            color="amber-darken-2"
-            class="text-none"
-            prepend-icon="mdi-file-document-edit-outline"
-            @click="showEditDialog = true"
-          >
-            Undo/Edit
+          <template v-else-if="pr.status === 'approved'">
+            <v-btn
+              variant="outlined"
+              size="small"
+              color="orange-darken-2"
+              class="text-none"
+              prepend-icon="mdi-undo-variant"
+              elevation="1"
+              @click="onUnapprove"
+            >
+              Unapprove
+            </v-btn>
+          </template>
+
+          <v-btn variant="outlined" size="small" class="text-none" @click="model = false">
+            Close
           </v-btn>
         </div>
-
-        <div
-          v-if="pr.status !== 'pending_approval' && pr.status !== 'draft'"
-          class="d-flex"
-          style="gap: 16px"
-        >
-          <v-btn
-            variant="outlined"
-            size="small"
-            color="orange-darken-2"
-            class="text-none"
-            prepend-icon="mdi-undo-variant"
-            elevation="1"
-            @click="onUnapprove"
-          >
-            Unapprove
-          </v-btn>
-        </div>
-
-        <v-btn variant="outlined" size="small" class="text-none" @click="model = false">
-          Close
-        </v-btn>
       </v-card-actions>
 
       <!-- Edit/Undo Dialog -->
@@ -373,30 +356,12 @@ async function onUnapprove() {
   background: currentColor;
 }
 
-.status-chip--pending_approval {
-  color: #c2922e;
-  background: rgba(194, 146, 46, 0.12);
-}
-.status-chip--pending {
-  color: #c2922e;
-  background: rgba(194, 146, 46, 0.12);
-}
-.status-chip--approved {
-  color: #2e7d32;
-  background: rgba(46, 125, 50, 0.12);
-}
-.status-chip--complete {
-  color: #2e7d32;
-  background: rgba(46, 125, 50, 0.12);
-}
-.status-chip--rejected {
-  color: #c62828;
-  background: rgba(198, 40, 40, 0.12);
-}
-.status-chip--issued {
-  color: #1565c0;
-  background: rgba(21, 101, 192, 0.12);
-}
+.status-chip--pending_approval { color: #A16207; background: rgba(183, 121, 31, 0.12); }
+.status-chip--approved { color: #2563EB; background: rgba(51, 102, 204, 0.12); }
+.status-chip--rejected { color: #DC2626; background: rgba(197, 48, 48, 0.12); }
+.status-chip--issued { color: #7C3AED; background: rgba(79, 70, 229, 0.12); }
+.status-chip--complete { color: #15803D; background: rgba(47, 133, 90, 0.12); }
+.status-chip--change_request    { color: #fb8c00; background: rgba(255, 152, 0,  0.12); }
 
 /* Table header — uses primary color with readable white text in both modes */
 :deep(.items-table thead tr th.table-header) {

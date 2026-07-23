@@ -8,6 +8,7 @@ export function usePRDetailModal(props: { pr: PR }) {
       pending_approval: { label: 'Pending Approval' },
       approved: { label: 'Approved' },
       rejected: { label: 'Rejected' },
+      change_request: { label: 'Change Request' },
     }
     return labels[s] ?? { label: s }
   }

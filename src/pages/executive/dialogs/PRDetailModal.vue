@@ -254,6 +254,7 @@ function onReject() {
 .status-chip--complete         { color: #2e7d32; background: rgba(46, 125, 50,  0.12); }
 .status-chip--rejected         { color: #c62828; background: rgba(198, 40, 40,  0.12); }
 .status-chip--issued           { color: #1565c0; background: rgba(21, 101, 192, 0.12); }
+.status-chip--change_request    { color: #fb8c00; background: rgba(255, 152, 0,  0.12); }
 
 /* Table header — uses primary color with readable white text in both modes */
 :deep(.items-table thead tr th.table-header) {

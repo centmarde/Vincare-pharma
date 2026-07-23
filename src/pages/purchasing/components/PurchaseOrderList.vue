@@ -446,26 +446,12 @@ function goToPage(p: number) {
   background: currentColor;
 }
 
-.status-chip--pending_approval {
-  color: #A16207;
-  background: rgba(183, 121, 31, 0.12);
-}
-.status-chip--approved {
-  color: #2563EB;
-  background: rgba(51, 102, 204, 0.12);
-}
-.status-chip--rejected {
-  color: #DC2626;
-  background: rgba(197, 48, 48, 0.12);
-}
-.status-chip--issued {
-  color: #7C3AED;
-  background: rgba(79, 70, 229, 0.12);
-}
-.status-chip--complete {
-  color: #15803D;
-  background: rgba(47, 133, 90, 0.12);
-}
+.status-chip--pending_approval { color: #A16207; background: rgba(183, 121, 31, 0.12); }
+.status-chip--approved { color: #2563EB; background: rgba(51, 102, 204, 0.12); }
+.status-chip--rejected { color: #DC2626; background: rgba(197, 48, 48, 0.12); }
+.status-chip--issued { color: #7C3AED; background: rgba(79, 70, 229, 0.12); }
+.status-chip--complete { color: #15803D; background: rgba(47, 133, 90, 0.12); }
+.status-chip--change_request    { color: #fb8c00; background: rgba(255, 152, 0,  0.12); }
 
 :deep(.v-table thead tr th) {
   background: rgba(0, 0, 0, 0.03) !important;

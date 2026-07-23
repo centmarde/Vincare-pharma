@@ -51,6 +51,7 @@ const {
   reorderRequests,
   showReorderDialog,
   reorderCount,
+  // proposeEditPR,
 } = usePurchaseRequisitionList()
 const { mobile } = useDisplay()
 onMounted(() => {
@@ -115,7 +116,8 @@ function onPRSubmitted() {
   prefillItemsForDialog.value = []
 }
 
-async function onPRUpdated(data: { items: any[]; remarks: string }) {
+// PurchaseRequisitionList.vue — restore the direct-save version
+async function onPRUpdate(data: { items: any[]; remarks: string }) {
   if (!selectedPR.value) return
   const success = await prStore.updatePR({
     prId: selectedPR.value.id,
@@ -407,9 +409,12 @@ async function onPRUpdated(data: { items: any[]; remarks: string }) {
           <!-- Actions -->
           <template #item.actions="{ item }">
             <div class="d-flex actions-gap" style="white-space: nowrap">
-              <v-btn variant="outlined" size="small" class="text-none" @click="openDetail(item)">
-                View
-              </v-btn>
+                <div class="d-flex actions-gap" style="white-space: nowrap">
+                <v-btn variant="outlined"  size="small" class="text-none" @click="openDetail(item)">
+                  <v-icon color="primary" start>mdi-eye</v-icon>
+                  View
+                </v-btn>
+              </div>
               <template v-if="item.status === 'approved'">
                 <v-btn
                   variant="outlined"
@@ -565,7 +570,7 @@ async function onPRUpdated(data: { items: any[]; remarks: string }) {
     <!-- Detail Modal -->
     <PRDetailModal v-if="selectedPR" v-model="showModal" :pr="selectedPR"
     @approve="openConfirm('APPROVE', $event)" @reject="openConfirm('REJECT', $event)"
-    @unapprove="handleUnapprove" @update="onPRUpdated"/>
+    @unapprove="handleUnapprove" @update="onPRUpdate"/>
 
     <!-- Confirm Dialog -->
     <ConfirmDialog
@@ -613,7 +618,7 @@ async function onPRUpdated(data: { items: any[]; remarks: string }) {
 }
 
 .status-chip--pending_approval {
-  color: #A16207;
+  color: #C2922E;
   background: rgba(183, 121, 31, 0.12);
 }
 .status-chip--approved {
@@ -632,6 +637,11 @@ async function onPRUpdated(data: { items: any[]; remarks: string }) {
   color: #15803D;
   background: rgba(47, 133, 90, 0.12);
 }
+.status-chip--change_request {
+  color: #fb8c00;
+  background: rgba(255, 152, 0, 0.12);
+}
+
 
 /* ─── Table ───────────────────────────────────────────────────── */
 .actions-gap {
