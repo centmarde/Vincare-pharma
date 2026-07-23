@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import ActionRequiredDialog from '../dialogs/ActionRequiredDialog.vue'
+import RequestHistoryListDialog from '../dialogs/RequestHistoryListDialog.vue'
 import { useChangeRequestsPR } from '@/pages/purchasing/stores/composables/useChangeRequestsPR'
 import { formatDatePR_ISO } from '@/utils/helpers'
+
+import { useRequestHistory } from '../composables/useRequestHistory'
 
 
 const { requests, loading } = useChangeRequestsPR()
@@ -28,6 +31,21 @@ function openRequest(req: any) {
   selectedReq.value = req
   selected.value = true
 }
+
+const historyDialog = ref(false)
+const {
+  loading: historyLoading,
+  paginatedRequests: historyPaginatedRequests,
+  requests: historyRequests,
+  page: historyPage,
+  totalPages: historyTotalPages,
+  totalItems: historyTotalItems,
+  fetchHistory,
+} = useRequestHistory()
+
+watch(historyDialog, (val) => {
+  if (val) fetchHistory()
+})
 </script>
 
 <template>
@@ -104,7 +122,15 @@ function openRequest(req: any) {
         <div class="text-caption text-medium-emphasis">No pending change requests.</div>
       </div>
 
+      <div class="text-center mt-4">
+        <v-btn size="small" variant="text" class="text-none" color="primary" @click="historyDialog = true">
+          <v-icon start size="16">mdi-history</v-icon>
+          View Request History
+        </v-btn>
+      </div>
+
       <ActionRequiredDialog v-model="selected" :request="selectedReq" />
+      <RequestHistoryListDialog v-model="historyDialog" />
     </v-card-text>
   </v-card>
 </template>
