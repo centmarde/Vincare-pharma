@@ -7,14 +7,13 @@ import QuickStatsCards from './QuickStatsCards.vue'
 import MonthlyChart from './MonthlyChart.vue'
 import TopProducts from './TopProducts.vue'
 import ActionRequired from './ActionRequired.vue'
-import RequestHistory from './RequestHistory.vue'
 import { useExecutiveStatic } from '../composables/executiveStatic'
 
 const dash = useExecutiveDashboard()
 const staticData = useExecutiveStatic()
 
 const searchQuery = ref('')
-const rightPanelView = ref<'actionRequired' | 'requestHistory' | 'topProducts'>('actionRequired')
+const rightPanelView = ref<'actionRequired' | 'topProducts'>('actionRequired')
 </script>
 
 <template>
@@ -66,21 +65,10 @@ const rightPanelView = ref<'actionRequired' | 'requestHistory' | 'topProducts'>(
             <v-icon start size="16">mdi-package-variant-closed</v-icon>
             Top Products
           </v-btn>
-          <v-btn
-            variant="text"
-            size="small"
-            class="text-none flex-grow-1"
-            :class="{ 'toggle-active': rightPanelView === 'requestHistory' }"
-            @click="rightPanelView = 'requestHistory'"
-          >
-            <v-icon start size="16">mdi-history</v-icon>
-            History
-          </v-btn>
         </div>
 
         <div class="flex-grow-1 d-flex">
           <ActionRequired v-if="rightPanelView === 'actionRequired'" class="flex-grow-1" />
-          <RequestHistory v-else-if="rightPanelView === 'requestHistory'" class="flex-grow-1" />
           <TopProducts v-else class="flex-grow-1" />
         </div>
       </v-col>
