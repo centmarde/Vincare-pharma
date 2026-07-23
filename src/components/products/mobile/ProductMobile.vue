@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ProductType } from '@/stores/productsData'
+import { formatCurrency } from '@/utils/helpers'
 
 const props = defineProps<{
   products: ProductType[]
@@ -8,11 +9,13 @@ const props = defineProps<{
   itemsPerPage: number
   totalProducts: number
   sortBy: any[]
+  isEditRestricted?: boolean
 }>()
 
 const emit = defineEmits<{
   'edit': [product: ProductType]
   'delete': [product: ProductType]
+  'logs': [product: ProductType]
   'update:page': [page: number]
   'update:options': [options: any]
 }>()
@@ -53,15 +56,15 @@ function nextPage() {
           <template #prepend>
             <v-chip
               :color="
-                (product.actual_count ?? 0) <= 0 ? 'error'
-                : product.reorder_level && (product.actual_count ?? 0) <= product.reorder_level ? 'primary'
+                (product.current_stock ?? 0) <= 0 ? 'error'
+                : product.reorder_level && (product.current_stock ?? 0) <= product.reorder_level ? 'primary'
                 : 'black'
               "
               size="small"
               variant="outlined"
               class="mr-2"
             >
-              {{ product.actual_count ?? 0 }}
+              {{ product.current_stock ?? 0 }}
             </v-chip>
           </template>
 
@@ -74,8 +77,18 @@ function nextPage() {
 
           <template #append>
             <div class="d-flex ga-1">
+              <v-btn v-if="!isEditRestricted" icon="mdi-delete" size="small" variant="text" color="error" @click="emit('delete', product)"></v-btn>
               <v-btn icon="mdi-pencil" size="small" variant="text" color="info" @click="emit('edit', product)"></v-btn>
-              <v-btn icon="mdi-delete" size="small" variant="text" color="error" @click="emit('delete', product)"></v-btn>
+              <v-btn
+                icon="mdi-history"
+                size="small"
+                variant="outlined"
+                color="primary"
+                @click="emit('logs', product)"
+              >
+                <v-icon size="16">mdi-text-box-search-outline</v-icon>
+                <v-tooltip activator="parent" location="top">View transaction history</v-tooltip>
+              </v-btn>
             </div>
           </template>
         </v-card-item>
@@ -87,13 +100,13 @@ function nextPage() {
             <v-col cols="6">
               <div class="text-caption text-grey-darken-1">Selling Price</div>
               <div class="text-body-2 font-weight-medium">
-                {{ product.selling_price != null ? `$${Number(product.selling_price).toFixed(2)}` : '—' }}
+                {{ product.selling_price != null ? formatCurrency(Number(product.selling_price)) : '—' }}
               </div>
             </v-col>
             <v-col cols="6">
               <div class="text-caption text-grey-darken-1">Cost Price</div>
               <div class="text-body-2 font-weight-medium">
-                {{ product.cost_price != null ? `$${Number(product.cost_price).toFixed(2)}` : '—' }}
+                {{ product.cost_price != null ? formatCurrency(Number(product.cost_price)) : '—' }}
               </div>
             </v-col>
             <v-col cols="6">

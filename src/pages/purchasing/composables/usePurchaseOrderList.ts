@@ -2,6 +2,7 @@ import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import { useTransactionsDataStore } from '@/stores/transactionsData'
 import { useTransactionsData } from '@/composables/useTransactionsData'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
+import { useProductsDataStore } from '@/stores/productsData'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import type { PurchaseOrder } from './usePODetailModal'
 import { useLogsDataStore } from '@/stores/logsData'
@@ -9,6 +10,7 @@ import { useAuthUserStore } from '@/stores/authUser'
 import { useToast } from 'vue-toastification'
 import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+
 
 const toast = useToast()
 
@@ -21,6 +23,16 @@ export const headers = [
   { title: 'ISSUED AT',   key: 'created_at',    sortable: true,  align: 'center' as const },
   { title: 'STATUS',      key: 'status',        sortable: true,  align: 'center' as const },
   { title: 'ACTIONS',     key: 'actions',       sortable: false, align: 'center' as const },
+] as const
+
+export const headersWarehouse = [
+  { title: 'PO #',        key: 'po_no',        sortable: true,  align: 'center' as const },
+  { title: 'TOTAL',       key: 'total_amount',  sortable: false, align: 'center' as const },
+  { title: 'SHIP VIA',    key: 'ship_via',      sortable: true,  align: 'center' as const },
+  { title: 'SHIP METHOD', key: 'ship_method',   sortable: true,  align: 'center' as const },
+  { title: 'ISSUED AT',   key: 'created_at',    sortable: true,  align: 'center' as const },
+  { title: 'STATUS',      key: 'status',        sortable: true,  align: 'center' as const },
+  { title: 'ACTIONS',     key: 'actions',       sortable: false, align: 'center' as const},
 ] as const
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -38,6 +50,7 @@ export function usePurchaseOrderList() {
   const { loading }   = storeToRefs(txStore)
   const logsStore = useLogsDataStore()
   const authStore = useAuthUserStore()
+  const productsStore = useProductsDataStore()
   const { poStatusOptions } = useTransactionsData()
 
   // ─── State ────────────────────────────────────────────────────────
@@ -54,9 +67,10 @@ export function usePurchaseOrderList() {
   const sortKey          = ref('created_at')
   const sortOrder        = ref<'asc' | 'desc'>('desc')
   const searchInput      = ref(search.value)
+  const stats = ref({ total: 0, pending: 0, complete: 0, totalCost: 0 })
 
   const prItemsCache  = ref<Record<number, PR>>({})
-  const confirmDialog = ref({ show: false, poId: 0, poNumber: '' })
+  const confirmDialog = ref({ show: false, poId: 0, poNumber: '', referenceNo: '' as string | null })
 
 
   // ─── Helpers ──────────────────────────────────────────────────────
@@ -98,49 +112,58 @@ export function usePurchaseOrderList() {
     itemsPerPage: number
     sortBy:       { key: string; order: string }[]
   }) {
-    const [data, count] = await Promise.all([txStore.fetchTransactions({
-      po_no_not_null: true,
-      status:         filterStatus.value ?? undefined,
-      search:         search.value.trim() || undefined,
-      orderBy:        (sortBy[0]?.key ?? sortKey.value) as any,
-      ascending:      sortBy[0] != null ? sortBy[0].order === 'asc' : sortOrder.value === 'asc',
-      limit:          itemsPerPage,
-      offset:         (page - 1) * itemsPerPage,
-    }),
-    txStore.fetchTransactionsCount({ 
-      po_no_not_null: true, 
-      status: filterStatus.value ?? undefined, 
-      search: search.value.trim() || undefined})
-  ])
 
-    serverItems.value = data.map((tx: any) => ({
-      id:             tx.id,
-      reference_no:   tx.po_no,
-      requisition_no: tx.requisition_no,
-      po_no:          tx.po_no,
-      status:         tx.status ?? 'issued',
-      supplier_id:    tx.supplier_id,
-      total_amount:   tx.total_amount,
-      created_at:     tx.created_at,
-      created_by:     tx.created_by,
-      is_delivered:   tx.status === 'complete',
-      ship_via:       tx.ship_via    ?? null,
-      ship_method:    tx.ship_method ?? null,
-      requisition_id: tx.id,
-      updated_at:     tx.updated_at  ?? null,
+    if (!authStore.users.length) await authStore.getAllUsers()
+      
+    const { rows, totalCount } = await txStore.fetchPurchaseOrdersRPC({
+      status:     filterStatus.value ?? undefined,
+      search:     search.value.trim() || undefined,
+      orderBy:    (sortBy[0]?.key ?? sortKey.value) as any,
+      ascending:  sortBy[0] != null ? sortBy[0].order === 'asc' : sortOrder.value === 'asc',
+      limit:      itemsPerPage,
+      offset:     (page - 1) * itemsPerPage,
+    })
+
+    serverItems.value = rows.map((row: any) => ({
+      id:             row.id,
+      reference_no:   row.reference_no,
+      requisition_no: row.requisition_no,
+      po_no:          row.po_no,
+      status:         row.status ?? 'issued',
+      supplier_id:    row.supplier_id,
+      total_amount:   row.total_amount,
+      created_at:     row.created_at,
+      created_by:     row.created_by,
+      is_delivered:   row.status === 'complete',
+      ship_via:       row.ship_via    ?? null,
+      ship_method:    row.ship_method ?? null,
+      requisition_id: row.id,
+      updated_at:     row.updated_at  ?? null,
     }))
 
-    totalItems.value = count
+    totalItems.value = totalCount
 
-    // Pre-fetch linked PRs for supplier summary + PODetailModal
-    await Promise.all(
-      serverItems.value.map(async po => {
-        if (!prItemsCache.value[po.id]) {
-          const pr = await prsStore.fetchPRByRequisitionId(po.id)
-          if (pr) prItemsCache.value[po.id] = pr
-        }
-      })
-    )
+    // Populate PR cache straight from the RPC row's embedded items — no more N+1 fetch
+    rows.forEach(row => {
+      const names = prsStore.resolveUserNames(row.created_by, row.approved_by)
+      prItemsCache.value[row.id] = prsStore.mapRPCRowToPR(row, names)
+    })
+  }
+
+  async function loadStats() {
+    const { rows } = await txStore.fetchPurchaseOrdersRPC({
+      orderBy: 'created_at',
+      ascending: false,
+      limit: 1000, // adjust upward if you expect more POs than this
+      offset: 0,
+    })
+
+    stats.value = {
+      total: rows.length,
+      pending: rows.filter((r: any) => r.status !== 'complete').length,
+      complete: rows.filter((r: any) => r.status === 'complete').length,
+      totalCost: rows.reduce((sum: number, r: any) => sum + (r.total_amount ?? 0), 0),
+    }
   }
 
   // ─── Actions ──────────────────────────────────────────────────────
@@ -159,12 +182,17 @@ export function usePurchaseOrderList() {
   }
 
   function openConfirm(po: PurchaseOrder) {
-    confirmDialog.value = { show: true, poId: po.id, poNumber: po.po_no ?? po.reference_no }
+      confirmDialog.value = {
+    show:        true,
+    poId:        po.id,
+    poNumber:    po.po_no ?? po.reference_no,
+    referenceNo: po.reference_no,
+  }
   }
 
   async function handleMarkReceived() {
-    const { poId, poNumber } = confirmDialog.value
-    const success = await prsStore.markPOAsReceived(poId)
+    const { poId, poNumber, referenceNo } = confirmDialog.value
+    const success = await prsStore.markPOAsReceived({ id: poId, reference_no: referenceNo })
     if (success) {
       const { user } = await authStore.getCurrentUser()
       if (user) {
@@ -176,8 +204,20 @@ export function usePurchaseOrderList() {
         module:         'stock_in',
       })
     }
+
+      // NEW — complete any reorder requests tied to the products just received
+    const productIds = (selectedPR.value?.items ?? [])
+        .map(i => i.product_id)
+        .filter((id): id is number => id != null)
+      if (productIds.length) {
+        await productsStore.completeReorderRequests(productIds)
+      }
+
       confirmDialog.value.show = false
-      await loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
+      await Promise.all([
+        loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] }),
+        loadStats(),
+      ])
     }
   }
 
@@ -196,6 +236,7 @@ export function usePurchaseOrderList() {
 
   async function init() {
     await supplierStore.fetchSuppliers()
+    await loadStats()
   }
 
   return {
@@ -208,5 +249,6 @@ export function usePurchaseOrderList() {
     resolveSupplier, statusLabel, getSupplierSummary,
     loadItems, openDetail, openDetailForSku,
     openConfirm, handleMarkReceived, init,
+    stats,
   }
 }

@@ -133,7 +133,7 @@ const userTableHeaders = [
 </script>
 
 <template>
-  <v-container fluid class="pa-2 bg-surface-variant rounded align-start">
+  <v-container fluid class="pa-2 rounded align-start">
     <v-card class="mx-auto w-100 pa-0" rounded="lg" elevation="1">
       <v-card-title class="pa-5 d-flex justify-space-between align-center">
         <div>

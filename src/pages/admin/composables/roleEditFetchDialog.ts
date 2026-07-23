@@ -1,7 +1,7 @@
 import { ref, watch } from 'vue'
 import { useUserRolesStore } from '@/stores/roles'
 import { useUserPagesStore } from '@/stores/pages'
-import { navigationConfig } from '@/utils/navigation'
+import { navigationConfig, flattenNavigationItems } from '@/utils/navigation'
 
 export function useRoleEditFetchDialog() {
   const rolesStore = useUserRolesStore()
@@ -54,11 +54,9 @@ export function useRoleEditFetchDialog() {
 
     // Build mapping from navigation config
     navigationConfig.forEach((group) => {
-      group.children.forEach((item) => {
-        if (item.route) {
-          // Use permission if available, otherwise use the route itself
-          routeToPermissionMap[item.route] = item.permission || item.route
-        }
+      flattenNavigationItems(group.children).forEach((item) => {
+        // Use permission if available, otherwise use the route itself
+        routeToPermissionMap[item.route] = item.permission || item.route
       })
     })
 
@@ -75,12 +73,10 @@ export function useRoleEditFetchDialog() {
 
     // Build mapping from navigation config and collect routes
     navigationConfig.forEach((group) => {
-      group.children.forEach((item) => {
-        if (item.route) {
-          routeSet.add(item.route)
-          if (item.permission) {
-            permissionToRouteMap[item.permission] = item.route
-          }
+      flattenNavigationItems(group.children).forEach((item) => {
+        routeSet.add(item.route)
+        if (item.permission) {
+          permissionToRouteMap[item.permission] = item.route
         }
       })
     })
@@ -108,7 +104,8 @@ export function useRoleEditFetchDialog() {
     loading.value = true
     try {
       // First, delete existing role pages for this role
-      await pagesStore.deleteRolePagesByRoleId(roleId)
+      const deleted = await pagesStore.deleteRolePagesByRoleId(roleId)
+      if (!deleted) throw new Error('Failed to clear existing permissions.')
 
       // Convert permissions to routes
       const routes = permissionsToRoutes(selectedPermissions)

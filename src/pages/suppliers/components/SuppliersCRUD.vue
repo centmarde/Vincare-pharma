@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useSuppliers } from '../composables/useSuppliers'
 import { formatDatePR_ISO } from '@/utils/helpers'
+import  SupplierFormDialog  from './dialogs/SupplierFormDialog.vue'
 
 const {
   suppliers, loading, error,
@@ -15,7 +16,6 @@ const {
 const search = ref('')
 const showFormModal = ref(false)
 const showDeleteModal = ref(false)
-const formRef = ref()
 
 
 function openCreateModal() {
@@ -34,7 +34,7 @@ function openDeleteModal(supplier: typeof supplierToDelete.value) {
 }
 
 async function submitForm() {
-  const success = await handleSubmit(formRef.value)
+  const success = await handleSubmit() // CHANGED — no formRef arg
   if (success) showFormModal.value = false
 }
 
@@ -47,8 +47,8 @@ onMounted(fetchSuppliers)
 </script>
 
 <template>
-  <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
-    <v-card class="mx-auto w-100" max-width="1400" rounded="lg" elevation="1">
+  <v-container fluid class="pa-2 fill-height align-start">
+    <v-card class="mx-auto w-100" rounded="lg" elevation="1">
 
       <!-- Header -->
       <v-card-title class="d-flex justify-space-between align-center pa-5">
@@ -146,133 +146,15 @@ onMounted(fetchSuppliers)
     </v-card>
 
     <!-- ── Add / Edit Modal ──────────────────────────────────────────── -->
-    <v-dialog v-model="showFormModal" max-width="560" persistent>
-      <v-card rounded="lg">
-
-        <v-card-title class="pa-5 pb-3 text-h6 font-weight-bold">
-          {{ editingSupplier ? 'Edit Supplier' : 'Add Supplier' }}
-        </v-card-title>
-
-        <v-divider />
-
-        <v-card-text class="pa-5">
-          <v-form ref="formRef">
-            <v-row dense>
-
-              <v-col cols="12">
-                <label class="field-label">Supplier Name <span class="text-error">*</span></label>
-                <v-text-field
-                  v-model="form.name"
-                  placeholder="e.g. MedSupply Inc."
-                  variant="outlined"
-                  density="compact"
-                  hide-details="auto"
-                  :rules="[rules.required]"
-                />
-              </v-col>
-
-              <v-col cols="12" md="6">
-                <label class="field-label">Contact Person</label>
-                <v-text-field
-                  v-model="form.contact_person"
-                  placeholder="e.g. Juan dela Cruz"
-                  variant="outlined"
-                  density="compact"
-                  hide-details
-                />
-              </v-col>
-
-              <v-col cols="12" md="6">
-                <label class="field-label">Phone</label>
-                <v-text-field
-                  v-model="form.contact_no"
-                  placeholder="e.g. 09123456789"
-                  variant="outlined"
-                  density="compact"
-                  hide-details
-                />
-              </v-col>
-
-              <v-col cols="12" md="6">
-                <label class="field-label">Email</label>
-                <v-text-field
-                  v-model="form.email"
-                  placeholder="e.g. supplier@email.com"
-                  variant="outlined"
-                  density="compact"
-                  hide-details="auto"
-                  :rules="[rules.email]"
-                />
-              </v-col>
-
-              <v-col cols="12" md="6">
-                <label class="field-label">Balance (₱)</label>
-                <v-text-field
-                  v-model.number="form.balance"
-                  placeholder="e.g. 0.00"
-                  variant="outlined"
-                  density="compact"
-                  hide-details
-                  type="number"
-                  prefix="₱"
-                />
-              </v-col>
-
-              <v-col cols="12">
-                <label class="field-label">Address</label>
-                <v-textarea
-                  v-model="form.address"
-                  placeholder="e.g. 2F N.B. Bldg., Ochoa Avenue"
-                  variant="outlined"
-                  density="compact"
-                  rows="2"
-                  hide-details
-                />
-              </v-col>
-
-              <v-col cols="12">
-                <v-switch
-                  v-model="form.is_active"
-                  color="primary"
-                  hide-details
-                  density="compact"
-                  :label="form.is_active ? 'Active' : 'Inactive'"
-                />
-              </v-col>
-
-            </v-row>
-
-            <v-alert
-              v-if="error"
-              type="error"
-              variant="tonal"
-              density="compact"
-              class="mt-3"
-            >
-              {{ error }}
-            </v-alert>
-          </v-form>
-        </v-card-text>
-
-        <v-divider />
-
-        <v-card-actions class="pa-4 justify-end" style="gap: 8px">
-          <v-btn variant="outlined" class="text-none" @click="showFormModal = false">
-            Cancel
-          </v-btn>
-          <v-btn
-            color="primary"
-            class="text-none font-weight-bold"
-            elevation="0"
-            :loading="loading"
-            @click="submitForm"
-          >
-            {{ editingSupplier ? 'Save Changes' : 'Add Supplier' }}
-          </v-btn>
-        </v-card-actions>
-
-      </v-card>
-    </v-dialog>
+    <SupplierFormDialog 
+      v-model="showFormModal" 
+      v-model:form="form"
+      :dialog-mode="editingSupplier ? 'edit' : 'create'"
+      :loading="loading"
+      :rules="rules"
+      @submit="submitForm"
+      @close="showFormModal = false"
+    />
 
     <!-- ── Delete Confirmation ───────────────────────────────────────── -->
     <v-dialog v-model="showDeleteModal" max-width="420">

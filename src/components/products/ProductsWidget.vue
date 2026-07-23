@@ -1,14 +1,26 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useDisplay } from 'vuetify'
+import { formatCurrency, formatMonthYear } from '@/utils/helpers'
 import { useProductsWidget } from '@/components/products/composables/useProductsWidget.ts'
 import { useTheme } from '@/stores/useTheme'
+import { useLogsDataStore, type LogType } from '@/stores/logsData'
 import ProductMobile from './mobile/ProductMobile.vue'
 import ProductFormDialog from './dialogs/ProductFormDialog.vue'
 import ProductDeleteDialog from './dialogs/ProductDeleteDialog.vue'
 import StockStatusCards from '../products/StockStatusCards.vue'
+import LogsViewDialog from '@/pages/logs/dialogs/LogsViewDialog.vue'
+import { useProductsDataStore } from '@/stores/productsData'
+import { useAuthUserStore } from '@/stores/authUser'
+import { canViewSupplierName } from '@/utils/roleHelpers'
+import PurchaseRequisitionDialog from '@/pages/purchasing/components/dialogs/PurchaseRequisitionDialog.vue'
+
 
 const { mobile } = useDisplay()
+const logsStore = useLogsDataStore()
+const productsDataStore = useProductsDataStore()
+const authUser = useAuthUserStore()
+
 const {
   form,
   showDialog,
@@ -24,13 +36,13 @@ const {
   headers,
   loading,
   totalProducts,
-  lowStockProducts,
   products,
-  allOutOfStockCount,
-  allLowStockCount,
   rules,
   showStockDialog,
   stockDialogType,
+  stockStatusCards,
+  stockDialogProducts,
+  activeStockCard,
   openCreateDialog,
   openEditDialog,
   openDeleteDialog,
@@ -40,19 +52,85 @@ const {
   handleDelete,
   handleSearch,
   handleTableOptions,
+  //Stock order for Purchaser
+  isEditRestricted,
+  isPurchaser,
+  reorderRequestInfo,
+  canRequestReorder,   // NEW
+  selectedReorderProductIds,
+  toggleReorderSelection,
+  showPurchaseRequisitionDialog,
+  prefillItemsForDialog,
+  reorderReasonMap,
+  showReorderPRConfirm,          // NEW
+  confirmCreatePRFromSelection,  // NEW
+  proceedCreatePRFromSelection,  // NEW
+  productIgnore,
+  IGNORE_DURATIONS,
 } = useProductsWidget()
 
-function handleStockCardClick(type: 'out-of-stock' | 'low-stock') {
-  stockDialogType.value = type
+// Manage ignored items dialog
+const showManageIgnoredDialog = ref(false)
+
+// Build list of ignored products with their info by matching product IDs from allEligibleProducts
+const ignoredProductEntries = computed(() => {
+  const ignoredIds = productIgnore.activeIgnoredIdsArray.value
+  return ignoredIds
+    .map(id => {
+      const product = productsDataStore.products.find(p => p.id === id)
+      const info = productIgnore.getIgnoreInfo(id)
+      return {
+        id,
+        product_name: product?.product_name ?? `Product #${id}`,
+        sku: product?.sku ?? 'N/A',
+        remainingMs: info?.remainingMs ?? 0,
+        remainingLabel: info ? productIgnore.formatRemainingTime(info.remainingMs) : 'Expired',
+      }
+    })
+    .filter(entry => entry.remainingMs > 0)
+})
+
+function handleStockCardClick(type: string) {
+  stockDialogType.value = type as any
   showStockDialog.value = true
+  productsDataStore.fetchReorderRequests(true) // Fetch all reorder requests, including resolved ones
+}
+
+async function requestReorder(product: any) {
+  const reason = reorderReasonMap[stockDialogType.value]
+  if (!reason) return
+  const result = await productsDataStore.createReorderRequest({ product_id: product.id, reason })
+  if (result?.success) await productsDataStore.fetchReorderRequests(true)
+}
+function onPRSubmitted(){}
+
+// Logs dialog state
+const showLogsDialog = ref(false)
+const productLogs = ref<LogType[]>([])
+
+const openLogsDialog = async (product: any) => {
+  await logsStore.fetchLogs()
+
+  productLogs.value = logsStore.logs.filter((log: LogType) => {
+    const isProductRelated =
+      (log.module?.toLowerCase().includes('stock') && log.description?.toLowerCase().includes((product.product_name ?? '').toLowerCase())) ||
+      (log.module?.toLowerCase().includes('product') && log.description?.toLowerCase().includes((product.product_name ?? '').toLowerCase())) ||
+      log.description?.toLowerCase().includes((product.sku ?? '').toLowerCase())
+    return isProductRelated
+  })
+  showLogsDialog.value = true
+}
+
+const closeLogsDialog = () => {
+  showLogsDialog.value = false
+  productLogs.value = []
 }
 
 const { getCurrentTheme } = useTheme()
 const isDark = computed<'light' | 'dark'>(() => getCurrentTheme())
 
-// Theme-aware stock color logic
 function stockColor(item: any) {
-  const stock = item.actual_count ?? 0
+  const stock = item.current_stock ?? 0
   const isOutOfStock = stock <= 0
   const isLowStock = item.reorder_level && stock <= item.reorder_level
 
@@ -65,22 +143,22 @@ function stockColor(item: any) {
 <template>
   <v-card>
     <!-- Toolbar -->
-    <v-card-title class="d-flex align-center flex-wrap ga-2 pa-3">
-      <v-icon icon="mdi-package-variant" class="mr-1" color="primary"></v-icon>
-      <span class="text-h6 font-weight-bold">Products</span>
-      <v-spacer></v-spacer>
+    <div class="d-flex align-center ga-2 pa-3">
+      <v-icon icon="mdi-package-variant" color="primary"></v-icon>
+      <span class="text-h6 font-weight-bold mr-auto">Products</span>
       <template v-if="!mobile">
         <v-text-field
           v-model="searchQuery"
           label="Search products..."
           prepend-inner-icon="mdi-magnify"
           variant="outlined"
-          density="comfortable"
+          density="compact"
           hide-details
-          class="max-width-300"
+          class="search-field"
           @keyup.enter="handleSearch"
         ></v-text-field>
-        <v-btn color="primary" variant="elevated" @click="openCreateDialog">
+        <!-- I want to restrict this when the user is a warehouse user -->
+        <v-btn color="primary" variant="elevated" @click="openCreateDialog" v-if="!isEditRestricted">
           <v-icon icon="mdi-plus" class="mr-1"></v-icon>
           Add Product
         </v-btn>
@@ -94,7 +172,7 @@ function stockColor(item: any) {
           @click="openCreateDialog"
         ></v-btn>
       </template>
-    </v-card-title>
+    </div>
 
     <!-- Mobile search -->
     <div v-if="mobile" class="px-3 pb-2">
@@ -109,49 +187,25 @@ function stockColor(item: any) {
       ></v-text-field>
     </div>
 
-    <!-- Low stock alert -->
-    <div class="px-3 pt-2">
-      <v-expansion-panels v-if="lowStockProducts.length > 0">
-        <v-expansion-panel bg-color="warning" elevation="0" rounded="lg">
-          <v-expansion-panel-title class="py-2">
-            <div class="d-flex align-center ga-2">
-              <v-icon icon="mdi-alert-circle-outline" color="primary" size="small"></v-icon>
-              <span class="text-body-2 font-weight-medium">
-                Low Stock Alert —
-                <strong
-                  >{{ lowStockProducts.length }} product{{
-                    lowStockProducts.length > 1 ? 's' : ''
-                  }}</strong
-                >
-                need{{ lowStockProducts.length > 1 ? '' : 's' }} to be reordered
-              </span>
-            </div>
-          </v-expansion-panel-title>
-          <v-expansion-panel-text class="pa-0">
-            <v-list density="compact" bg-color="transparent">
-              <v-list-item
-                v-for="p in lowStockProducts"
-                :key="p.id"
-                :prepend-icon="(p.actual_count ?? 0) <= 0 ? 'mdi-close-circle' : 'mdi-alert'"
-                density="compact"
-              >
-                <v-list-item-title class="text-body-2">{{ p.product_name }}</v-list-item-title>
-                <v-list-item-subtitle class="text-caption">
-                  {{ p.actual_count ?? 0 }} units left · reorder at {{ p.reorder_level }}
-                </v-list-item-subtitle>
-              </v-list-item>
-            </v-list>
-          </v-expansion-panel-text>
-        </v-expansion-panel>
-      </v-expansion-panels>
-    </div>
-
     <!-- Stock Status Cards -->
     <StockStatusCards
-      :out-of-stock-count="allOutOfStockCount"
-      :low-stock-count="allLowStockCount"
+      :cards="stockStatusCards"
       @show-dialog="handleStockCardClick"
     />
+
+    <!-- Manage Ignored Items link -->
+    <div v-if="ignoredProductEntries.length > 0" class="d-flex justify-end px-3 pb-1">
+      <v-btn
+        variant="text"
+        color="grey-darken-1"
+        size="small"
+        class="text-none"
+        prepend-icon="mdi-bell-off-outline"
+        @click="showManageIgnoredDialog = true"
+      >
+        {{ ignoredProductEntries.length }} ignored product{{ ignoredProductEntries.length > 1 ? 's' : '' }}
+      </v-btn>
+    </div>
 
     <v-divider class="mt-3"></v-divider>
 
@@ -175,17 +229,24 @@ function stockColor(item: any) {
         @update:options="handleTableOptions"
       >
         <template #[`item.selling_price`]="{ value }">
-          <span v-if="value != null">${{ Number(value).toFixed(2) }}</span>
+          <span v-if="value != null">{{ formatCurrency(Number(value)) }}</span>
           <span v-else class="text-grey">-</span>
         </template>
         <template #[`item.cost_price`]="{ value }">
-          <span v-if="value != null">${{ Number(value).toFixed(2) }}</span>
+          <span v-if="value != null">{{ formatCurrency(Number(value)) }}</span>
           <span v-else class="text-grey">-</span>
         </template>
-        <template #[`item.actual_count`]="{ item }">
+        <template #[`item.unit`]="{ item }">
+          <span>{{ item.unit || 'N/A' }}</span>
+        </template>
+        <template #[`item.current_stock`]="{ item }">
           <v-chip :color="stockColor(item)" size="small" variant="outlined">
-            {{ item.actual_count ?? 0 }}
+            {{ item.current_stock ?? 0 }}
           </v-chip>
+        </template>
+        <template #[`item.expiry_date`]="{ value }">
+          <span v-if="value">{{ formatMonthYear(value) }}</span>
+          <span v-else class="text-grey">-</span>
         </template>
         <template #[`expanded-row`]="{ item }">
           <tr>
@@ -213,7 +274,7 @@ function stockColor(item: any) {
                     <div>
                       <div class="text-caption text-grey-darken-1">Supplier</div>
                       <div class="text-body-1 font-weight-medium">
-                        {{ item.suppliers?.name || 'N/A' }}
+                        {{ canViewSupplierName(authUser.userRole) ? (item.suppliers?.name || 'N/A') : 'Restricted' }}
                       </div>
                     </div>
                   </v-col>
@@ -232,6 +293,14 @@ function stockColor(item: any) {
         <template #[`item.actions`]="{ item }">
           <div class="d-flex ga-1">
             <v-btn
+              v-if="!isEditRestricted"
+              icon="mdi-delete"
+              size="small"
+              variant="text"
+              color="error"
+              @click="openDeleteDialog(item)"
+            ></v-btn>
+            <v-btn
               icon="mdi-pencil"
               size="small"
               variant="text"
@@ -239,12 +308,15 @@ function stockColor(item: any) {
               @click="openEditDialog(item)"
             ></v-btn>
             <v-btn
-              icon="mdi-delete"
+              icon="mdi-history"
               size="small"
-              variant="text"
-              color="error"
-              @click="openDeleteDialog(item)"
-            ></v-btn>
+              variant="outlined"
+              color="primary"
+              @click="openLogsDialog(item)"
+            >
+              <v-icon size="16">mdi-text-box-search-outline</v-icon>
+              <v-tooltip activator="parent" location="top">View transaction history</v-tooltip>
+            </v-btn>
           </div>
         </template>
         <template #[`no-data`]>
@@ -264,8 +336,10 @@ function stockColor(item: any) {
         :items-per-page="itemsPerPage"
         :total-products="totalProducts"
         :sort-by="sortBy"
+        :is-edit-restricted="isEditRestricted"
         @edit="openEditDialog"
         @delete="openDeleteDialog"
+        @logs="openLogsDialog"
         @update:page="page = $event"
         @update:options="handleTableOptions"
       />
@@ -280,6 +354,7 @@ function stockColor(item: any) {
     :loading="loading"
     :mobile="mobile"
     :rules="rules"
+    :is-edit-restricted="isEditRestricted"
     @submit="handleSubmit"
     @close="closeDialog"
   />
@@ -293,32 +368,332 @@ function stockColor(item: any) {
     @close="closeDeleteDialog"
   />
 
-  <!-- Stock Status Dialog (placeholder for future development) -->
-  <v-dialog v-model="showStockDialog" max-width="500">
+  <PurchaseRequisitionDialog
+    v-model="showPurchaseRequisitionDialog"
+    :prefill-items="prefillItemsForDialog"
+    @submitted="onPRSubmitted"
+  />
+
+  <!-- Logs View Dialog -->
+  <LogsViewDialog
+    v-model="showLogsDialog"
+    :logs="productLogs"
+    @close="closeLogsDialog"
+  />
+
+  <!-- Stock Status Dialog -->
+  <v-dialog v-model="showStockDialog" max-width="600">
     <v-card>
       <v-card-title class="d-flex align-center pa-4">
         <v-icon
-          :icon="stockDialogType === 'out-of-stock' ? 'mdi-close-circle-outline' : 'mdi-alert-outline'"
-          :color="stockDialogType === 'out-of-stock' ? 'error' : 'warning'"
+          :icon="activeStockCard?.icon"
+          :color="activeStockCard?.color"
           class="mr-2"
           size="28"
         ></v-icon>
-        <span class="text-h6 font-weight-bold">
-          {{ stockDialogType === 'out-of-stock' ? 'Out of Stock' : 'Low Stock' }}
-        </span>
+        <span class="text-h6 font-weight-bold">{{ activeStockCard?.label }}</span>
         <v-spacer></v-spacer>
         <v-btn icon="mdi-close" variant="text" size="small" @click="showStockDialog = false"></v-btn>
       </v-card-title>
       <v-divider></v-divider>
-      <v-card-text class="pa-4 text-body-1 text-medium-emphasis">
-        <p>This feature is under development.</p>
+      <v-card-text class="pa-0" style="max-height: 400px; overflow-y: auto;">
+        <v-list v-if="stockDialogProducts.length > 0" density="comfortable">
+          <v-list-item
+            v-for="p in stockDialogProducts"
+            :key="p.id"
+            @click="openEditDialog(p); showStockDialog = false"
+          >
+            <template #prepend>
+              <v-checkbox-btn
+              v-if="isPurchaser && stockDialogType !== 'no-reorder-level' && canRequestReorder(p.id)"
+              :model-value="selectedReorderProductIds.includes(p.id)"
+              @click.stop
+              @update:model-value="(val) => toggleReorderSelection(p.id, !!val)"
+              />
+            </template>
+            <v-list-item-title class="font-weight-medium">
+              {{ p.product_name }}
+            </v-list-item-title>
+            <v-list-item-subtitle>
+              <template v-if="stockDialogType === 'out-of-stock' || stockDialogType === 'low-stock'">
+                Stock: {{ p.current_stock ?? 0 }}
+                <span v-if="p.reorder_level != null"> · reorder at {{ p.reorder_level }}</span>
+              </template>
+              <template v-else-if="stockDialogType === 'no-reorder-level'">
+                Current stock: {{ p.current_stock ?? 0 }} units
+              </template>
+              <template v-else-if="stockDialogType === 'expiring-soon' || stockDialogType === 'expired'">
+                Expiry: {{ p.expiry_date || 'N/A' }}
+              </template>
+            </v-list-item-subtitle>
+               <template #append>
+                <div class="d-flex align-center ga-2">
+                  <v-chip size="small" variant="outlined">{{ p.sku || 'No SKU' }}</v-chip>
+                  <!-- Ignore / Dismiss button -->
+                  <v-menu location="bottom" offset-y>
+                    <template #activator="{ props: menuProps }">
+                      <v-btn
+                        v-bind="menuProps"
+                        size="small"
+                        variant="outlined"
+                        color="blue"
+                        @click.stop
+                        class="ignore-btn"
+                      >
+                        <v-icon size="16">mdi-bell-off-outline</v-icon>
+                        <v-tooltip activator="parent" location="top">Ignore this product item</v-tooltip>
+                      </v-btn>
+                    </template>
+                    <v-list density="compact" min-width="200">
+                      <template v-if="!productIgnore.isIgnored(p.id)">
+                        <v-list-item
+                          @click.stop="productIgnore.confirmIgnore(p.id, p.product_name ?? '', IGNORE_DURATIONS.ONE_DAY, '1 day')"
+                        >
+                          <template #prepend>
+                            <v-icon size="small">mdi-clock-outline</v-icon>
+                          </template>
+                          <v-list-item-title>Ignore for 1 day</v-list-item-title>
+                        </v-list-item>
+                        <v-list-item
+                          @click.stop="productIgnore.confirmIgnore(p.id, p.product_name ?? '', IGNORE_DURATIONS.ONE_WEEK, '1 week')"
+                        >
+                          <template #prepend>
+                            <v-icon size="small">mdi-calendar-week</v-icon>
+                          </template>
+                          <v-list-item-title>Ignore for 1 week</v-list-item-title>
+                        </v-list-item>
+                        <v-list-item
+                          @click.stop="productIgnore.confirmIgnore(p.id, p.product_name ?? '', IGNORE_DURATIONS.ONE_MONTH, '1 month')"
+                        >
+                          <template #prepend>
+                            <v-icon size="small">mdi-calendar-month</v-icon>
+                          </template>
+                          <v-list-item-title>Ignore for 1 month</v-list-item-title>
+                        </v-list-item>
+                      </template>
+                      <template v-else>
+                        <v-list-item @click.stop="productIgnore.unignoreProduct(p.id)">
+                          <template #prepend>
+                            <v-icon size="small" color="warning">mdi-bell-ring-outline</v-icon>
+                          </template>
+                          <v-list-item-title>Unignore (show alerts)</v-list-item-title>
+                          <v-list-item-subtitle>
+                            Remaining: {{ productIgnore.formatRemainingTime(productIgnore.getIgnoreInfo(p.id)?.remainingMs ?? 0) }}
+                          </v-list-item-subtitle>
+                        </v-list-item>
+                      </template>
+                    </v-list>
+                  </v-menu>
+                  <v-btn
+                    v-if="stockDialogType !== 'no-reorder-level' && canRequestReorder(p.id)"
+                    size="small"
+                    variant="outlined"
+                    color="primary"
+                    prepend-icon="mdi-cart-plus"
+                    class="text-none"
+                    @click.stop="requestReorder(p)"
+                    >
+                      Reorder
+                  </v-btn>
+                  <v-chip
+                    v-if="reorderRequestInfo.get(p.id)?.status === 'pending'"
+                    size="small"
+                    color="green"
+                    variant="tonal"
+                    class="font-weight-medium"
+                    >
+                      <v-icon start size="14">mdi-check-circle</v-icon>
+                      Pending
+                  </v-chip>
+                  <v-chip
+                    v-else-if="reorderRequestInfo.get(p.id)?.status === 'approved'"
+                    size="small"
+                    color="blue"
+                    variant="tonal"
+                    class="font-weight-medium"
+                    >
+                    <v-icon start size="14">mdi-clipboard-check-outline</v-icon>
+                    Approved
+                  </v-chip>
+                  <v-chip
+                    v-else-if="reorderRequestInfo.get(p.id)?.status === 'awaiting_stock'"
+                    size="small"
+                    color="indigo"
+                    variant="tonal"
+                    class="font-weight-medium"
+                    >
+                    <v-icon start size="14">mdi-truck-delivery-outline</v-icon>
+                    Awaiting Stock
+                  </v-chip>
+                  <v-chip
+                    v-else-if="reorderRequestInfo.get(p.id)?.status === 'rejected'"
+                    size="small"
+                    color="red"
+                    variant="tonal"
+                    class="font-weight-medium"
+                    >
+                    <v-icon start size="14">mdi-close-circle-outline</v-icon>
+                    Rejected
+                  </v-chip>
+                </div>
+              </template>
+          </v-list-item>
+        </v-list>
+        <div v-else class="text-center py-8">
+          <v-icon icon="mdi-check-circle-outline" size="40" color="success"></v-icon>
+          <p class="text-grey mt-2">No products in this category</p>
+        </div>
+        <v-divider v-if="isPurchaser && selectedReorderProductIds.length" />
+        <v-card-actions
+          v-if="isPurchaser && selectedReorderProductIds.length"
+          class="pa-4 d-flex justify-end"
+        >
+          <v-btn
+            color="primary"
+            class="text-none font-weight-bold"
+            prepend-icon="mdi-file-document-edit-outline"
+            @click="confirmCreatePRFromSelection"
+          >
+            Create Purchase Requisition ({{ selectedReorderProductIds.length }})
+          </v-btn>
+        </v-card-actions>
       </v-card-text>
+    </v-card>
+    <v-dialog v-model="showReorderPRConfirm" max-width="440">
+      <v-card>
+        <v-card-title class="d-flex align-center pa-4">
+          <v-icon icon="mdi-help-circle-outline" color="primary" class="mr-2"></v-icon>
+          <span class="text-h6 font-weight-bold">Confirm Reorder Selection</span>
+        </v-card-title>
+        <v-divider></v-divider>
+        <v-card-text class="pa-4">
+          <p class="mb-3">
+            You're about to flag
+            <strong>{{ selectedReorderProductIds.length }}</strong>
+            product(s) for reorder and start a new Purchase Requisition:
+          </p>
+          <ul class="pl-4">
+            <li
+              v-for="p in stockDialogProducts.filter(prod => selectedReorderProductIds.includes(prod.id))"
+              :key="p.id"
+            >
+              {{ p.product_name }}
+            </li>
+          </ul>
+        </v-card-text>
+        <v-divider></v-divider>
+        <v-card-actions class="pa-4 d-flex justify-end">
+          <v-btn variant="outlined" class="text-none" @click="showReorderPRConfirm = false">
+            Cancel
+          </v-btn>
+          <v-btn
+            color="primary"
+            class="text-none font-weight-bold"
+            @click="proceedCreatePRFromSelection"
+          >
+            Continue
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+  </v-dialog>
+  <!-- Ignore Confirmation Dialog -->
+  <v-dialog :model-value="productIgnore.showIgnoreConfirm.value" @update:model-value="productIgnore.showIgnoreConfirm.value = $event" max-width="420">
+    <v-card>
+      <v-card-title class="d-flex align-center pa-4">
+        <v-icon icon="mdi-bell-off-outline" color="orange-darken-2" class="mr-2"></v-icon>
+        <span class="text-h6 font-weight-bold">Dismiss Alert</span>
+      </v-card-title>
+      <v-divider></v-divider>
+      <v-card-text class="pa-4">
+        <p>
+          Are you sure you want to ignore
+          <strong>{{ productIgnore.pendingIgnoreProductName.value }}</strong>
+          for <strong>{{ productIgnore.pendingIgnoreDurationLabel.value }}</strong>?
+        </p>
+        <p class="text-caption text-grey mt-2">
+          It will be hidden from stock status alerts until the time expires.
+        </p>
+      </v-card-text>
+      <v-divider></v-divider>
+      <v-card-actions class="pa-4 d-flex justify-end ga-2">
+        <v-btn variant="outlined" class="text-none" @click="productIgnore.cancelIgnore">
+          Cancel
+        </v-btn>
+        <v-btn
+          color="primary"
+          variant="elevated"
+          class="text-none font-weight-bold"
+          @click="productIgnore.executeIgnore"
+        >
+          <v-icon start size="18">mdi-bell-off-outline</v-icon>
+          Dismiss
+        </v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+
+  <!-- Manage Ignored Items Dialog -->
+  <v-dialog v-model="showManageIgnoredDialog" max-width="560">
+    <v-card>
+      <v-card-title class="d-flex align-center pa-4">
+        <v-icon icon="mdi-bell-off-outline" color="grey-darken-1" class="mr-2"></v-icon>
+        <span class="text-h6 font-weight-bold">Ignored Products</span>
+        <v-spacer></v-spacer>
+        <v-chip size="small" variant="tonal" color="grey-darken-1">
+          {{ ignoredProductEntries.length }} product{{ ignoredProductEntries.length > 1 ? 's' : '' }}
+        </v-chip>
+        <v-btn icon="mdi-close" variant="text" size="small" @click="showManageIgnoredDialog = false"></v-btn>
+      </v-card-title>
+      <v-divider></v-divider>
+      <v-card-text class="pa-0" style="max-height: 400px; overflow-y: auto;">
+        <v-list v-if="ignoredProductEntries.length > 0" density="comfortable">
+          <v-list-item v-for="entry in ignoredProductEntries" :key="entry.id">
+            <v-list-item-title class="font-weight-medium">
+              {{ entry.product_name }}
+            </v-list-item-title>
+            <v-list-item-subtitle>
+              SKU: {{ entry.sku }} · Remaining: {{ entry.remainingLabel }}
+            </v-list-item-subtitle>
+            <template #append>
+              <v-btn
+                size="small"
+                variant="outlined"
+                color="warning"
+                class="text-none"
+                prepend-icon="mdi-bell-ring-outline"
+                @click="productIgnore.unignoreProduct(entry.id)"
+              >
+                Unignore
+              </v-btn>
+            </template>
+          </v-list-item>
+        </v-list>
+        <div v-else class="text-center py-8">
+          <v-icon icon="mdi-check-circle-outline" size="40" color="success"></v-icon>
+          <p class="text-grey mt-2">No ignored products</p>
+        </div>
+      </v-card-text>
+      <v-divider v-if="ignoredProductEntries.length > 0"></v-divider>
+      <v-card-actions v-if="ignoredProductEntries.length > 0" class="pa-4 d-flex justify-end">
+        <v-btn
+          color="error"
+          variant="tonal"
+          class="text-none"
+          prepend-icon="mdi-bell-off-outline"
+          @click="ignoredProductEntries.forEach(e => productIgnore.unignoreProduct(e.id))"
+        >
+          Unignore All
+        </v-btn>
+      </v-card-actions>
     </v-card>
   </v-dialog>
 </template>
 
 <style scoped>
-.max-width-300 {
-  max-width: 300px;
+.search-field {
+  min-width: 280px;
+  max-width: 420px;
+  width: 100%;
 }
 </style>

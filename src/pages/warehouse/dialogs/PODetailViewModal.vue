@@ -33,7 +33,7 @@ const missingSkuCount = computed(
 const missingActualCount = computed(
   () =>
     transactionItems.value.filter((item) => {
-      const value = item.actual_count
+      const value = item.actual_count_stock_in
 
       return value == null || Number(value) <= 0
     }).length,
@@ -41,12 +41,13 @@ const missingActualCount = computed(
 async function saveAllItems(): Promise<boolean> {
   const updates = transactionItems.value
     .filter(
-      (item) => item.product_id && item.sku?.toString().trim() && Number(item.actual_count) > 0,
+      (item) => item.product_id && item.sku?.toString().trim() && Number(item.actual_count_stock_in) > 0,
     )
     .map((item) => ({
-      product_id: item.product_id!,
-      sku: item.sku!.toString().trim(),
-      actual_count: Number(item.actual_count),
+      transaction_item_id:   item.id,
+      product_id:            item.product_id!,
+      sku:                   item.sku!.toString().trim(),
+      actual_count_stock_in: Number(item.actual_count_stock_in),
     }))
 
   if (!updates.length) return true
@@ -60,6 +61,7 @@ async function saveAllItems(): Promise<boolean> {
     savingAll.value = false
   }
 }
+
 async function handleMarkAsReceived() {
   if (missingSkuCount.value > 0) {
     toast.error(`Please fill in SKU for all ${missingSkuCount.value} item(s).`)
@@ -131,25 +133,27 @@ async function handleMarkAsReceived() {
           <v-divider :class="mobile ? 'mb-3' : 'mb-6'" />
 
           <!-- Supplier / Ship To -->
-          <v-row class="mb-4">
-            <v-col :cols="mobile ? 12 : 6" :class="mobile ? 'mb-3' : ''">
-              <div :class="mobile ? 'text-caption font-weight-bold mb-1' : 'text-caption font-weight-bold mb-2'">SUPPLIER</div>
-              <v-card flat border rounded="lg" :class="mobile ? 'pa-3' : 'pa-4'">
-                <div v-for="supplier in uniqueSuppliers" :key="supplier.id">
-                  <div class="font-weight-medium">{{ supplier.name }}</div>
-                  <div :class="mobile ? 'text-caption' : 'text-body-2'">{{ supplier.address ?? '—' }}</div>
-                  <div :class="mobile ? 'text-caption' : 'text-body-2'">{{ supplier.contact_no ?? '—' }}</div>
-                </div>
+          <v-row class="mb-4" align="stretch">
+            <v-col :cols="mobile ? 12 : 6" class="d-flex flex-column">
+              <div :class="mobile
+                  ? 'text-caption font-weight-bold text-medium-emphasis mb-1' : 'text-caption font-weight-bold text-medium-emphasis mb-2'">
+                SUPPLIER
+              </div>
+              <v-card flat border rounded="lg" class="pa-3 flex-grow-1 d-flex align-center justify-center">
+                <span class="text-body-2 text-medium-emphasis">—</span>
               </v-card>
             </v-col>
 
-            <v-col :cols="mobile ? 12 : 6">
-              <div :class="mobile ? 'text-caption font-weight-bold mb-1' : 'text-caption font-weight-bold mb-2'">SHIP TO</div>
-              <v-card flat border rounded="lg" :class="mobile ? 'pa-3' : 'pa-4'">
-                <div class="font-weight-medium">{{ company.name }}</div>
-                <div :class="mobile ? 'text-caption' : 'text-body-2'">{{ company.address }}</div>
-                <div :class="mobile ? 'text-caption' : 'text-body-2'">Butuan City</div>
-                <div :class="mobile ? 'text-caption' : 'text-body-2'">{{ company.contact }}</div>
+            <v-col :cols="mobile ? 12 : 6" class="d-flex flex-column">
+              <div :class="mobile
+                  ? 'text-caption font-weight-bold text-medium-emphasis mb-1' : 'text-caption font-weight-bold text-medium-emphasis mb-2'">
+                SHIP TO
+              </div>
+              <v-card flat border rounded="lg" class="pa-3 flex-grow-1" >
+                <div class="text-body-1 font-weight-medium mb-1">{{ company.name }}</div>
+                <div class="text-body-2">{{ company.address }}</div>
+                <div class="text-body-2">{{ company.contact }}</div>
+                <div class="text-body-2">{{ company.email }}</div>
               </v-card>
             </v-col>
           </v-row>
@@ -182,7 +186,7 @@ async function handleMarkAsReceived() {
                 <td class="text-center" style="width: 130px">
                   <v-text-field
                     v-if="skuEditMode"
-                    v-model.number="item.actual_count"
+                    v-model.number="item.actual_count_stock_in"
                     type="number"
                     density="compact"
                     variant="outlined"
@@ -191,7 +195,7 @@ async function handleMarkAsReceived() {
                     class="input-number"
                     style="width: 120px"
                   />
-                  <span v-else>{{ item.actual_count ?? '—' }}</span>
+                  <span v-else>{{ item.actual_count_stock_in ?? '—' }}</span>
                 </td>
                 <td class="text-center" style="width: 130px">
                   <v-text-field
@@ -259,7 +263,7 @@ async function handleMarkAsReceived() {
                   <div style="flex: 1; min-width: 0;">
                     <div class="text-caption text-medium-emphasis mb-1">Actual count</div>
                     <v-text-field
-                      v-model.number="item.actual_count"
+                      v-model.number="item.actual_count_stock_in"
                       type="number"
                       density="compact"
                       variant="outlined"
@@ -284,7 +288,7 @@ async function handleMarkAsReceived() {
                 <div v-else class="d-flex ga-3 text-caption">
                   <div>
                     <span class="text-medium-emphasis">Actual: </span>
-                    <span class="font-weight-medium">{{ item.actual_count ?? '—' }}</span>
+                    <span class="font-weight-medium">{{ item.actual_count_stock_in ?? '—' }}</span>
                   </div>
                   <div>
                     <span class="text-medium-emphasis">SKU: </span>
@@ -303,13 +307,17 @@ async function handleMarkAsReceived() {
 
           <!-- Signatures -->
           <v-row class="mb-6">
-            <v-col :cols="mobile ? 6 : 6">
-              <div :class="mobile ? 'text-caption font-weight-bold mb-3' : 'text-caption font-weight-bold mb-6'">REQUESTED BY:</div>
-              <div :class="mobile ? 'text-caption' : 'text-body-2'">{{ pr?.requester_name ?? '—' }}</div>
+            <v-col :cols="mobile ? 6 : 6" class="d-flex flex-column align-center text-center">
+              <div :class="mobile ? 'text-caption font-weight-bold text-medium-emphasis mb-3' : 'text-caption font-weight-bold text-medium-emphasis mb-6'">REQUESTED BY:</div>
+              <div :class="mobile ? 'text-caption font-weight-medium' : 'text-body-2 font-weight-medium'">{{ pr?.requester_name }}</div>
+              <v-divider :style="mobile ? 'width: 120px' : 'width: 200px'" class="mb-1" />
+              <div class="text-caption text-medium-emphasis">REQUESTER</div>
             </v-col>
-            <v-col :cols="mobile ? 6 : 6">
-              <div :class="mobile ? 'text-caption font-weight-bold mb-3' : 'text-caption font-weight-bold mb-6'">APPROVED BY:</div>
-              <div :class="mobile ? 'text-caption' : 'text-body-2'">{{ pr?.reviewer_name ?? '—' }}</div>
+            <v-col :cols="mobile ? 6 : 6" class="d-flex flex-column align-center text-center">
+              <div :class="mobile ? 'text-caption font-weight-bold text-medium-emphasis mb-3' : 'text-caption font-weight-bold text-medium-emphasis mb-6'">APPROVED BY:</div>
+              <div :class="mobile ? 'text-caption font-weight-medium' : 'text-body-2 font-weight-medium'">{{ pr?.reviewer_name }}</div>
+              <v-divider :style="mobile ? 'width: 120px' : 'width: 200px'" class="mb-1" />
+              <div class="text-caption text-medium-emphasis">APPROVER</div>
             </v-col>
           </v-row>
         </div>
@@ -336,7 +344,7 @@ async function handleMarkAsReceived() {
             variant="flat"
             size="small"
             :loading="savingAll"
-            :disabled="missingSkuCount > 0 || savingAll"
+            :disabled="missingSkuCount > 0 || missingActualCount > 0 || savingAll"
             @click="handleMarkAsReceived"
           >
             <template v-if="missingSkuCount > 0">

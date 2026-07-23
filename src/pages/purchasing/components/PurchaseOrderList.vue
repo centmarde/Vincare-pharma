@@ -2,10 +2,11 @@
 import { usePurchaseOrderList, headers } from '../composables/usePurchaseOrderList'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import ViewPODetailModal from './dialogs/PODetailModal.vue'
+import { onMounted, computed } from 'vue'
 import { useDisplay } from 'vuetify'
-import { onMounted } from 'vue'
 
 const {
+  stats,
   filterStatus,
   showDetailModal,
   selectedPO,
@@ -42,14 +43,71 @@ function goToPage(p: number) {
 }
 </script>
 <template>
-  <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
+  <v-container fluid class="pa-2 fill-height align-start">
+
+      <div class="stats-grid mb-2">
+        <v-card elevation="1" class="stat-card rounded-xl" 
+          @click="filterStatus = null">
+          <v-card-text class="d-flex align-center" style="gap: 12px">
+            <v-avatar color="indigo" variant="tonal" size="40">
+              <v-icon icon="mdi-file-document-multiple-outline" />
+            </v-avatar>
+            <div>
+              <div class="text-subtitle-2">Total POs</div>
+              <div class="text-h6 font-weight-bold text-indigo">{{ stats.total.toLocaleString() }}</div>
+            </div>
+          </v-card-text>
+        </v-card>
+
+        <v-card elevation="1" class="stat-card rounded-xl"
+          :class="{ 'stat-card--active': filterStatus === 'issued' }"
+          @click="filterStatus = 'issued'"
+          @click:clear="clearSearch">
+          <v-card-text class="d-flex align-center" style="gap: 12px">
+            <v-avatar color="#1565c0" variant="tonal" size="40">
+              <v-icon icon="mdi-truck-outline" />
+            </v-avatar>
+            <div>
+              <div class="text-subtitle-2">Pending / Issued</div>
+              <div class="text-h6 font-weight-bold">{{ stats.pending.toLocaleString() }}</div>
+            </div>
+          </v-card-text>
+        </v-card>
+
+        <v-card elevation="1" class="stat-card rounded-xl"
+          :class="{ 'stat-card--active': filterStatus === 'complete' }"
+          @click="filterStatus = 'complete'"
+          @click:clear="clearSearch">
+          <v-card-text class="d-flex align-center" style="gap: 12px">
+            <v-avatar color="#2e7d32" variant="tonal" size="40">
+              <v-icon icon="mdi-check-circle-outline" />
+            </v-avatar>
+            <div>
+              <div class="text-subtitle-2">Complete</div>
+              <div class="text-h6 font-weight-bold">{{ stats.complete.toLocaleString() }}</div>
+            </div>
+          </v-card-text>
+        </v-card>
+
+        <v-card elevation="1" class="stat-card rounded-xl">
+          <v-card-text class="d-flex align-center" style="gap: 12px">
+            <v-avatar color="green" variant="tonal" size="40">
+              <span class="text-h6 font-weight-bold">₱</span>
+            </v-avatar>
+            <div>
+              <div class="text-subtitle-2">Total Orders Issued</div>
+              <div class="text-h6 font-weight-bold">{{ formatCurrency(stats.totalCost) }}</div>
+            </div>
+          </v-card-text>
+        </v-card>
+      </div>
     <v-card class="mx-auto w-100 pa-0" rounded="lg" elevation="1">
       <!-- Header -->
       <v-card-title class="pa-4 pa-sm-5">
         <div class="d-flex justify-space-between align-center" :class="mobile ? 'mb-3' : ''">
           <div class="d-flex align-center">
             <v-icon
-              icon="mdi-file-clock-outline"
+              icon="mdi-package-check"
               :size="mobile ? 28 : 36"
               class="mr-1 text-primary"
             />
@@ -145,7 +203,7 @@ function goToPage(p: number) {
           :items="serverItems"
           :items-length="totalItems"
           :loading="loading"
-          
+
           :items-per-page-options="[5, 10, 15, 20, 25, 50, 100]"
           hover
           loading-text="Loading purchase orders..."
@@ -388,30 +446,12 @@ function goToPage(p: number) {
   background: currentColor;
 }
 
-.status-chip--pending_approval {
-  color: #c2922e;
-  background: rgba(194, 146, 46, 0.12);
-}
-.status-chip--pending {
-  color: #c2922e;
-  background: rgba(194, 146, 46, 0.12);
-}
-.status-chip--approved {
-  color: #2e7d32;
-  background: rgba(46, 125, 50, 0.12);
-}
-.status-chip--complete {
-  color: #2e7d32;
-  background: rgba(46, 125, 50, 0.12);
-}
-.status-chip--rejected {
-  color: #c62828;
-  background: rgba(198, 40, 40, 0.12);
-}
-.status-chip--issued {
-  color: #1565c0;
-  background: rgba(21, 101, 192, 0.12);
-}
+.status-chip--pending_approval { color: #A16207; background: rgba(183, 121, 31, 0.12); }
+.status-chip--approved { color: #2563EB; background: rgba(51, 102, 204, 0.12); }
+.status-chip--rejected { color: #DC2626; background: rgba(197, 48, 48, 0.12); }
+.status-chip--issued { color: #7C3AED; background: rgba(79, 70, 229, 0.12); }
+.status-chip--complete { color: #15803D; background: rgba(47, 133, 90, 0.12); }
+.status-chip--change_request    { color: #fb8c00; background: rgba(255, 152, 0,  0.12); }
 
 :deep(.v-table thead tr th) {
   background: rgba(0, 0, 0, 0.03) !important;
@@ -425,5 +465,27 @@ function goToPage(p: number) {
 }
 :deep(.v-table tbody tr:not(:last-child) td) {
   border-bottom: 1px solid rgba(0, 0, 0, 0.05) !important;
+}
+.stat-card {
+  min-height: 96px;
+  display: flex;
+  align-items: center;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  border: 3px solid rgba(0, 0, 0, 0.06);
+}
+.stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+}
+.stat-card--active {
+  border-color: #3F51B5;
+  background-color: rgba(50, 75, 219, 0.08);
+  box-shadow: 0 4px 12px rgba(var(--v-theme-primary), 0.2);
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  width: 100%;
 }
 </style>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { usePurchaseOrderList, headers } from '@/pages/purchasing/composables/usePurchaseOrderList'
-import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import { usePurchaseOrderList, headers, headersWarehouse } from '@/pages/purchasing/composables/usePurchaseOrderList'
+import { formatCurrency, formatDateShort } from '@/utils/helpers'
 import PODetailSkuModal from '../dialogs/PODetailViewModal.vue'
 import PODetailViewModal from '../dialogs/PODetailModal.vue'
 import { ref, computed, onMounted } from 'vue'
@@ -74,7 +74,7 @@ function goToPage(p: number) {
 }
 </script>
 <template>
-  <div class="pa-2 bg-surface-variant fill-height align-start">
+  <div class="pa-2 fill-height align-start">
     <v-card class="mx-auto w-100 pa-0" rounded="lg" elevation="1">
       <!-- Header -->
       <v-card-title class="pa-5">
@@ -132,7 +132,7 @@ function goToPage(p: number) {
         v-if="!mobile"
         v-model:items-per-page="itemsPerPage"
         :items-per-page-options="[5, 10, 15, 25, 50, 100]"
-        :headers="headers"
+        :headers="headersWarehouse"
         :items="serverItems"
         :items-length="totalItems"
         :loading="loading"
@@ -145,22 +145,6 @@ function goToPage(p: number) {
           <span class="text-body-2 font-weight-bold" style="white-space: nowrap">{{
             item.reference_no
           }}</span>
-        </template>
-
-        <template #item.supplier_id="{ item }">
-          <div>
-            <span class="text-body-2">{{ getSupplierSummary(item.id).display }}</span>
-            <v-tooltip v-if="getSupplierSummary(item.id).isMultiple" location="top">
-              <template #activator="{ props }">
-                <v-icon v-bind="props" size="14" class="ml-1 text-medium-emphasis">
-                  mdi-information-outline
-                </v-icon>
-              </template>
-              <div v-for="name in getSupplierSummary(item.id).names" :key="name">
-                {{ name }}
-              </div>
-            </v-tooltip>
-          </div>
         </template>
 
         <template #item.total_amount="{ item }">
@@ -177,7 +161,7 @@ function goToPage(p: number) {
 
         <template #item.created_at="{ item }">
           <span class="text-body-2">{{
-            item.created_at ? formatDatePR_ISO(item.created_at) : '—'
+            item.created_at ? formatDateShort(item.created_at) : '—'
           }}</span>
         </template>
 
@@ -192,29 +176,31 @@ function goToPage(p: number) {
         </template>
 
         <template #item.actions="{ item }">
-          <div class="d-flex align-center" style="gap: 6px; white-space: nowrap">
+          <div class="d-flex align-center justify-center ga-2">
             <v-btn variant="outlined" size="small" class="text-none" @click="openDetail(item)">
               View
             </v-btn>
-            <v-btn
-              v-if="item.status !== 'complete'"
-              size="small"
-              color="primary"
-              @click="openMarkReceivedDialog(item)"
-            >
-              Mark as Received
-            </v-btn>
+            <div style="width: 150px;">
+              <v-btn
+                v-if="item.status !== 'complete'"
+                size="small"
+                color="primary"
+                @click="openMarkReceivedDialog(item)"
+              >
+                Mark as Received
+              </v-btn>
 
-            <v-chip
-              v-if="item.status === 'complete'"
-              color="green"
-              size="small"
-              variant="tonal"
-              label
-            >
-              <v-icon start size="14">mdi-check-circle</v-icon>
-              Delivered
-            </v-chip>
+              <v-chip
+                v-if="item.status === 'complete'"
+                color="green"
+                size="small"
+                variant="tonal"
+                label
+              >
+                <v-icon start size="14">mdi-check-circle</v-icon>
+                Delivered
+              </v-chip>
+            </div>
           </div>
         </template>
       </v-data-table-server>
@@ -269,7 +255,7 @@ function goToPage(p: number) {
                 </div>
                 <div>
                   <span class="text-medium-emphasis">Issued: </span>
-                  <span>{{ item.created_at ? formatDatePR_ISO(item.created_at) : '—' }}</span>
+                  <span>{{ item.created_at ? formatDateShort(item.created_at) : '—' }}</span>
                 </div>
               </div>
             </v-card-text>

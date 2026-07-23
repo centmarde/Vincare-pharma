@@ -1,0 +1,173 @@
+/**
+ * Generative / document-number / date-formatting helpers.
+ * Consolidated here so stores and other modules share a single source
+ * of truth instead of duplicating logic inline.
+ */
+
+import { supabase } from '@/lib/supabase'
+
+// ─── Document-number sequencing ──────────────────────────────────────────────
+// Document numbers are `PREFIX-YYYY-NNN` (sequence at split('-')[2]). The next
+// number is (numeric max of the existing sequences for that prefix) + 1.
+//
+// IMPORTANT: compute the max NUMERICALLY, never by sorting the strings. Lexical
+// ordering of zero-padded numbers is only correct within one pad width — once a
+// yearly series crosses it, sorting breaks (e.g. "SO-2026-1000" sorts BELOW
+// "SO-2026-999" because '1' < '9'), which would stall generation on a duplicate
+// forever.
+
+/** Highest sequence number across a series' existing document numbers, or 0. */
+export function maxDocSeq(existing: (string | null | undefined)[]): number {
+  return existing.reduce<number>((max, ref) => {
+    const seq = parseInt(ref?.split('-')[2] ?? '', 10)
+    return Number.isFinite(seq) && seq > max ? seq : max
+  }, 0)
+}
+
+/** Next `PREFIX-NNN` document number given the existing numbers for that prefix. */
+export function nextDocNumber(
+  existing: (string | null | undefined)[],
+  prefix: string,
+  pad = 3,
+): string {
+  return `${prefix}${String(maxDocSeq(existing) + 1).padStart(pad, '0')}`
+}
+
+type DocType = 'PR' | 'PO' | 'SI'
+
+// Every doc type mints its number into reference_no — that's the "live"
+// column for whatever stage a row is currently at (see purchaseRequisitionData's
+// issuePurchaseOrder/markPOAsReceived). alsoScan lists the archive column(s)
+// that ALSO hold numbers of this prefix, once a row has moved past that
+// stage — without scanning them too, a new PR could mint a sequence number
+// already used by an issued PR now sitting in requisition_no.
+const DOC_CONFIG: Record<DocType, { column: 'reference_no'; alsoScan: string[] }> = {
+  PR: { column: 'reference_no', alsoScan: ['requisition_no'] },
+  PO: { column: 'reference_no', alsoScan: ['po_no'] },
+  SI: { column: 'reference_no', alsoScan: [] }, // SI is terminal — never archived elsewhere
+}
+
+export async function generateDocNumber(
+  type: DocType,
+  getLatest: (
+    column: 'requisition_no' | 'po_no' | 'reference_no',
+    prefix: string,
+    alsoScan?: string[],
+  ) => Promise<number>
+): Promise<string> {
+  const year   = new Date().getFullYear()
+  const prefix = `${type}-${year}-`
+  const config = DOC_CONFIG[type]
+  const last   = await getLatest(config.column, prefix, config.alsoScan)
+  return `${prefix}${String(last + 1).padStart(3, '0')}`
+}
+
+// ─── Generic Supabase-backed number generators ──────────────────────────────
+
+/**
+ * Next `PREFIX-YYYY-NNN` document number for a `transactions` column.
+ *
+ * Fetches ALL existing numbers for the prefix (no order/limit) and computes the
+ * NUMERIC max + 1 via {@link maxDocSeq}. Never `.order(col,desc).limit(1)` — that
+ * lexical shortcut is only correct within one pad width and stalls once a series
+ * crosses it (see the note above). The number is minted into `column`.
+ *
+ * `alsoScan` columns are additionally scanned for the max but never written to.
+ * This is the per-type-column migration's transition safety net: a type whose
+ * numbers are being moved out of `reference_no` into a dedicated column must also
+ * scan `reference_no` for the max, or — while the backfill hasn't run and the
+ * dedicated column is still empty — the generator would restart at 001 and
+ * collide with numbers still living in `reference_no`. Harmless to keep after the
+ * backfill (reference_no holds no numbers for that prefix anymore).
+ */
+export async function generateNextNumber(
+  column: string,
+  prefix: string,
+  alsoScan: string[] = [],
+): Promise<string> {
+  const nums: (string | null | undefined)[] = []
+  for (const col of [column, ...alsoScan]) {
+    const { data } = await supabase
+      .from('transactions')
+      .select(col)
+      .like(col, `${prefix}%`)
+    nums.push(...((data ?? []) as unknown as Record<string, string>[]).map((r) => r[col]))
+  }
+  return nextDocNumber(nums, prefix)
+}
+
+/**
+ * Retries an insert whose row includes a freshly-minted document number, when
+ * that insert fails on the number's unique-index collision (Postgres 23505).
+ *
+ * Client-side numbering is read-max-then-insert across two separate requests
+ * (see the note atop this file) — two concurrent creates can both read the
+ * same max and mint the same number. The partial-unique indexes on the
+ * document-number columns turn that into a safe-fail insert error rather than
+ * a silent duplicate; this wrapper turns that safe-fail into an invisible
+ * retry instead of surfacing a raw DB error to the user. `regenerate` is
+ * called again on each retry so it re-reads the now-updated max. Any error
+ * OTHER than 23505 (network, RLS, validation, ...) is returned immediately
+ * un-retried — existing handleError/toast call sites see it exactly as before.
+ */
+export async function insertWithDocRetry<T>(
+  regenerate: () => Promise<string>,
+  attemptInsert: (docNo: string) => Promise<{ data: T | null; error: { code?: string; message: string } | null }>,
+  maxAttempts = 3,
+): Promise<{ data: T | null; docNo: string | null; error: { code?: string; message: string } | null }> {
+  let lastError: { code?: string; message: string } | null = null
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const docNo = await regenerate()
+    const { data, error } = await attemptInsert(docNo)
+    if (!error) return { data, docNo, error: null }
+    if (error.code !== '23505') return { data: null, docNo: null, error }
+    lastError = error
+  }
+  return { data: null, docNo: null, error: lastError }
+}
+
+/**
+ * Highest existing sequence number for a column+prefix (numeric max, or 0).
+ * Kept for {@link generateDocNumber}'s callback signature; numeric-based now.
+ */
+export async function getLatestReferenceNo(
+  column: 'requisition_no' | 'po_no' | 'reference_no',
+  prefix: string,
+  alsoScan: string[] = [],
+): Promise<number> {
+  const nums: (string | null | undefined)[] = []
+  for (const col of [column, ...alsoScan]) {
+    const { data } = await supabase
+      .from('transactions')
+      .select(col)
+      .like(col, `${prefix}%`)
+    nums.push(...((data ?? []) as unknown as Record<string, string>[]).map((r) => r[col]))
+  }
+  return maxDocSeq(nums)
+}
+
+/** Generate a Purchase Requisition number (PR-YYYY-NNN). */
+export async function generatePRNumber(): Promise<string> {
+  return generateNextNumber('requisition_no', `PR-${new Date().getFullYear()}-`)
+}
+
+/** Generate a Purchase Order number (PO-YYYY-NNN). */
+export async function generatePONumber(): Promise<string> {
+  return generateNextNumber('po_no', `PO-${new Date().getFullYear()}-`)
+}
+
+/** Generate a Stock-In / SI number (SI-YYYY-NNN). */
+export async function generateSINumber(): Promise<string> {
+  return generateNextNumber('reference_no', `SI-${new Date().getFullYear()}-`)
+}
+
+/** Generate an In-House Order number (IH-YYYY-NNN) — minted into inhouse_no. */
+export async function generateIHNumber(): Promise<string> {
+  return generateNextNumber('inhouse_no', `IH-${new Date().getFullYear()}-`, ['reference_no'])
+}
+
+/** Generate a Reorder number (RO-YYYY-NNN) — minted into reference_no. */
+export async function generateRONumber(): Promise<string> {
+  return generateNextNumber('reference_no', `RO-${new Date().getFullYear()}-`)
+}
+

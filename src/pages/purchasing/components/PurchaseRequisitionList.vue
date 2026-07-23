@@ -1,12 +1,23 @@
 <script setup lang="ts">
 import { usePurchaseRequisitionList, headers } from '../composables/usePurchaseRequisitionList'
+import type { ReorderPrefillItem } from '../composables/usePurchaseRequisition'
+import PurchaseRequisitionDialog from './dialogs/PurchaseRequisitionDialog.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import ConfirmDialog from './dialogs/ConfirmDialog.vue'
+import ReorderRequestsDialog from './dialogs/ReorderRequestsDialog.vue'
 import PRDetailModal from './dialogs/PRDetailModal.vue'
 import IssuePOModal from './dialogs/IssuePOModal.vue'
-import { computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useDisplay } from 'vuetify'
+import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
+
+const prStore = usePurchaseRequisitionStore()
+
+const selectedReorderIds = ref<number[]>([])
+const prefillItemsForDialog = ref<ReorderPrefillItem[]>([])
 
 const {
+  stats,
   init,
   loading,
   selectedPR,
@@ -22,18 +33,25 @@ const {
   itemsPerPage,
   statusOptions,
   showModal,
-  search,
+  itemNames,
   showPOModal,
   selectedPRForPO,
   confirmDialog,
-  searchInput, 
-  commitSearch, 
+  confirmLoading,
+  searchInput,
+  commitSearch,
   clearSearch,
   openDetail,
   openConfirm,
   closeConfirm,
   handleConfirm,
+  handleUnapprove,
   openPurchaseOrder,
+  openReorderDialog,
+  reorderRequests,
+  showReorderDialog,
+  reorderCount,
+  // proposeEditPR,
 } = usePurchaseRequisitionList()
 const { mobile } = useDisplay()
 onMounted(() => {
@@ -42,6 +60,22 @@ onMounted(() => {
       loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
     }
 })
+const showNewPRDialog = ref(false)
+
+// Clear prefill items when the dialog is closed without submitting
+watch(showNewPRDialog, (isOpen) => {
+  if (!isOpen) {
+    prefillItemsForDialog.value = []
+  }
+})
+
+// Clear reorder selection when the reorder dialog is closed
+watch(() => showReorderDialog.value, (isOpen) => {
+  if (!isOpen) {
+    selectedReorderIds.value = []
+  }
+})
+
 const totalPages = computed(() => Math.max(1, Math.ceil(totalItems.value / itemsPerPage.value)))
 function goToPage(p: number) {
   // window.scrollTo({ top: 100, behavior: 'smooth' as ScrollBehavior })
@@ -49,17 +83,135 @@ function goToPage(p: number) {
   page.value = p
   loadItems({ page: p, itemsPerPage: itemsPerPage.value, sortBy: [] })
 }
+
+function createPRFromReorder() {
+  prefillItemsForDialog.value = reorderRequests.value
+    .filter(r => selectedReorderIds.value.includes(r.id))
+    .filter(r => r.product) // guard against orphaned rows
+    .map(r => {
+      const shortfall = (r.product.reorder_level ?? 0) - (r.product.current_stock ?? 0)
+      return {
+        reorder_request_id: r.id,
+        product_id:         r.product.id,
+        item_description:   r.product.product_name ?? '',
+        unit:                r.product.unit ?? 'Box',
+        supplier_id:         r.product.supplier_id ?? null,
+        cost_per_unit:       r.product.cost_price ?? 0,
+        offer_per_unit:      r.product.selling_price ?? 0,
+        suggested_qty:       Math.max(shortfall, 1),
+      }
+    })
+
+  showReorderDialog.value = false
+  showNewPRDialog.value = true
+}
+
+function onPRSubmitted() {
+  page.value = 1
+  loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
+  // CHANGED — resolving reorder requests no longer happens at PR-submission
+  // time; it now happens when the PR is approved/rejected (see
+  // purchaseRequisitionData.approvePR/rejectPR).
+  selectedReorderIds.value = []
+  prefillItemsForDialog.value = []
+}
+
+// PurchaseRequisitionList.vue — restore the direct-save version
+async function onPRUpdate(data: { items: any[]; remarks: string }) {
+  if (!selectedPR.value) return
+  const success = await prStore.updatePR({
+    prId: selectedPR.value.id,
+    items: data.items,
+    remarks: data.remarks,
+  })
+  if (success) {
+    showModal.value = false
+    loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
+  }
+}
 </script>
 
 <template>
-  <v-container fluid class="pa-2 bg-surface-variant fill-height align-start">
+  <v-container fluid class="pa-2 fill-height align-start">
+
+    <div class="stats-grid mb-2">
+        <v-card elevation="1" class="stat-card rounded-xl" @click="filterStatus = null">
+          <v-card-text class="d-flex align-center" style="gap: 12px">
+            <v-avatar color="purple" variant="tonal" size="40">
+              <v-icon icon="mdi-file-document-multiple-outline" />
+            </v-avatar>
+            <div>
+              <div class="text-subtitle-2">Total PRs</div>
+              <div class="text-h6 font-weight-bold text-purple">{{ stats.total.toLocaleString() }}</div>
+            </div>
+          </v-card-text>
+        </v-card>
+
+        <v-card elevation="1" class="stat-card rounded-xl" @click="openReorderDialog">
+          <v-card-text class="d-flex align-center" style="gap: 12px">
+            <v-avatar color="teal" variant="tonal" size="40">
+              <v-icon icon="mdi-cart-arrow-down" />
+            </v-avatar>
+            <div>
+              <div class="text-subtitle-2">Reorder Requests</div>
+              <div class="text-h6 font-weight-bold text-teal">{{ reorderCount.toLocaleString() }}</div>
+            </div>
+          </v-card-text>
+        </v-card>
+
+        <v-card elevation="1" class="stat-card rounded-xl"
+          :class="{ 'stat-card--active': filterStatus === 'pending_approval' }"
+          @click="filterStatus = 'pending_approval'"
+        >
+          <v-card-text class="d-flex align-center" style="gap: 12px">
+            <v-avatar color="#c2922e" variant="tonal" size="40">
+              <v-icon icon="mdi-clock-alert-outline" />
+            </v-avatar>
+            <div>
+              <div class="text-subtitle-2">Pending Approval</div>
+              <div class="text-h6 font-weight-bold">{{ stats.pending.toLocaleString() }}</div>
+            </div>
+          </v-card-text>
+        </v-card>
+
+        <v-card elevation="1" class="stat-card rounded-xl"
+          :class="{ 'stat-card--active': filterStatus === 'approved' }"
+          @click="filterStatus = 'approved'"
+          >
+          <v-card-text class="d-flex align-center" style="gap: 12px">
+            <v-avatar color="#2563EB" variant="tonal" size="40">
+              <v-icon icon="mdi-check-circle-outline" />
+            </v-avatar>
+            <div>
+              <div class="text-subtitle-2">Approved</div>
+              <div class="text-h6 font-weight-bold">{{ stats.approved.toLocaleString() }}</div>
+            </div>
+          </v-card-text>
+        </v-card>
+
+        <v-card rounded="lg" elevation="1" class="stat-card rounded-xl"
+          :class="{ 'stat-card--active': filterStatus === 'rejected' }"
+          @click="filterStatus = 'rejected'">
+          <v-card-text class="d-flex align-center" style="gap: 12px">
+            <v-avatar color="#DC2626" variant="tonal" size="40">
+              <v-icon icon="mdi-close-circle-outline" />
+            </v-avatar>
+            <div>
+              <div class="text-subtitle-2">Rejected</div>
+              <div class="text-h6 font-weight-bold">{{ stats.rejected.toLocaleString() }}</div>
+            </div>
+          </v-card-text>
+        </v-card>
+      </div>
+
+    <!-- V-Data-Table -->
     <v-card class="mx-auto w-100" rounded="lg" elevation="1">
       <!-- Header -->
       <v-card-title class="pa-4 pa-sm-5">
         <div class="d-flex justify-space-between align-center" :class="mobile ? 'mb-3' : ''">
           <div class="d-flex align-center">
             <v-icon
-              icon="mdi-file-clock-outline"
+              icon="mdi-clipboard-list-outline"
               :size="mobile ? 28 : 36"
               class="mr-1 text-primary"
             />
@@ -104,6 +256,15 @@ function goToPage(p: number) {
                 />
               </v-list>
             </v-menu>
+            <v-btn
+              color="primary"
+              class="text-none font-weight-bold"
+              prepend-icon="mdi-plus"
+              elevation="0"
+              @click="showNewPRDialog = true"
+            >
+              New Requisition
+            </v-btn>
           </div>
         </div>
 
@@ -144,6 +305,14 @@ function goToPage(p: number) {
               />
             </v-list>
           </v-menu>
+          <v-btn
+            variant="flat"
+            icon="mdi-plus"
+            density="compact"
+            color="primary"
+            size="40"
+            @click="showNewPRDialog = true"
+          />
         </div>
       </v-card-title>
 
@@ -157,7 +326,7 @@ function goToPage(p: number) {
           :items="serverItems"
           :items-length="totalItems"
           :loading="loading"
-          
+
           :items-per-page-options="[5, 10, 15, 20, 25, 50, 100]"
           hover
           loading-text="Loading purchase orders..."
@@ -173,11 +342,29 @@ function goToPage(p: number) {
 
           <!-- Items -->
           <template #item.items="{ item }">
-            <div style="white-space: normal; word-break: break-word; min-width: 160px">
-              <div class="text-body-2">{{ itemSummary(item.items) }}</div>
-              <div class="text-caption text-medium-emphasis">
-                {{ item.items.length }} line {{ item.items.length === 1 ? 'item' : 'items' }}
-              </div>
+            <div>
+              <span class="text-body-2">
+                {{ itemSummary(item.items) }}
+              </span>
+
+              <v-tooltip v-if="item.items.length > 1" location="top">
+                <template #activator="{ props }">
+                  <v-icon
+                    v-bind="props"
+                    size="14"
+                    class="ml-1 text-medium-emphasis"
+                  >
+                    mdi-information-outline
+                  </v-icon>
+                </template>
+
+                <div
+                  v-for="name in itemNames(item.items)"
+                  :key="name"
+                >
+                  {{ name }}
+                </div>
+              </v-tooltip>
             </div>
           </template>
 
@@ -222,29 +409,12 @@ function goToPage(p: number) {
           <!-- Actions -->
           <template #item.actions="{ item }">
             <div class="d-flex actions-gap" style="white-space: nowrap">
-              <v-btn variant="outlined" size="small" class="text-none" @click="openDetail(item)">
-                View
-              </v-btn>
-              <template v-if="item.status === 'pending_approval'">
-                <v-btn
-                  color="green-darken-2"
-                  size="small"
-                  class="text-none"
-                  elevation="0"
-                  @click="openConfirm('APPROVE', item)"
-                >
-                  Approve
+                <div class="d-flex actions-gap" style="white-space: nowrap">
+                <v-btn variant="outlined"  size="small" class="text-none" @click="openDetail(item)">
+                  <v-icon color="primary" start>mdi-eye</v-icon>
+                  View
                 </v-btn>
-                <v-btn
-                  variant="outlined"
-                  size="small"
-                  color="red-darken-2"
-                  class="text-none"
-                  @click="openConfirm('REJECT', item)"
-                >
-                  Reject
-                </v-btn>
-              </template>
+              </div>
               <template v-if="item.status === 'approved'">
                 <v-btn
                   variant="outlined"
@@ -349,32 +519,6 @@ function goToPage(p: number) {
               >
                 View Details
               </v-btn>
-
-              <template v-if="item.status === 'pending_approval'">
-                <div class="d-flex" style="gap: 6px">
-                  <v-btn
-                    color="green-darken-2"
-                    size="small"
-                    class="text-none"
-                    elevation="0"
-                    style="flex: 1"
-                    @click="openConfirm('APPROVE', item)"
-                  >
-                    Approve
-                  </v-btn>
-                  <v-btn
-                    variant="outlined"
-                    size="small"
-                    color="red-darken-2"
-                    class="text-none"
-                    style="flex: 1"
-                    @click="openConfirm('REJECT', item)"
-                  >
-                    Reject
-                  </v-btn>
-                </div>
-              </template>
-
               <template v-if="item.status === 'approved'">
                 <v-btn
                   variant="outlined"
@@ -417,53 +561,38 @@ function goToPage(p: number) {
       </template>
     </v-card>
 
+    <!-- New Purchase Requisition -->
+    <PurchaseRequisitionDialog v-model="showNewPRDialog" :prefill-items="prefillItemsForDialog" @submitted="onPRSubmitted" />
+
     <!-- 3. Add the Modal Component -->
     <IssuePOModal v-model="showPOModal" :pr="selectedPRForPO" />
 
     <!-- Detail Modal -->
-    <PRDetailModal v-if="selectedPR" v-model="showModal" :pr="selectedPR" />
+    <PRDetailModal v-if="selectedPR" v-model="showModal" :pr="selectedPR"
+    @approve="openConfirm('APPROVE', $event)" @reject="openConfirm('REJECT', $event)"
+    @unapprove="handleUnapprove" @update="onPRUpdate"/>
 
     <!-- Confirm Dialog -->
-    <v-dialog v-model="confirmDialog.show" :max-width="mobile ? '100%' : '400'" persistent>
-      <v-card rounded="lg">
-        <v-card-title class="d-flex align-center ga-2 pt-5 px-5">
-          <v-icon
-            :color="confirmDialog.action === 'APPROVE' ? 'green-darken-2' : 'red-darken-2'"
-            size="22"
-          >
-            {{
-              confirmDialog.action === 'APPROVE'
-                ? 'mdi-check-circle-outline'
-                : 'mdi-close-circle-outline'
-            }}
-          </v-icon>
-          <span class="text-body-1 font-weight-bold">
-            {{ confirmDialog.action === 'APPROVE' ? 'Approve' : 'Reject' }} Purchase Requisition
-          </span>
-        </v-card-title>
+    <ConfirmDialog
+      v-model="confirmDialog.show"
+      :confirmData="{
+        show: confirmDialog.show,
+        action: confirmDialog.action,
+        prNumber: confirmDialog.prNumber
+      }"
+      :loading="confirmLoading"
+      @close="closeConfirm"
+      @confirm="handleConfirm"
+    />
 
-        <v-card-text class="px-5 pb-2 text-body-2 text-medium-emphasis">
-          Are you sure you want to
-          <strong>{{ confirmDialog.action }}</strong
-          >&nbsp;- <strong>({{ confirmDialog.prNumber }})</strong>? This action cannot be undone.
-        </v-card-text>
-
-        <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end ga-2">
-          <v-btn variant="outlined" class="text-none" :disabled="loading" @click="closeConfirm">
-            Cancel
-          </v-btn>
-          <v-btn
-            :color="confirmDialog.action === 'APPROVE' ? 'green-darken-2' : 'red-darken-2'"
-            :variant="confirmDialog.action === 'APPROVE' ? 'flat' : 'outlined'"
-            class="text-none"
-            :loading="loading"
-            @click="handleConfirm"
-          >
-            Yes, {{ confirmDialog.action === 'APPROVE' ? 'Approve' : 'Reject' }}
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <!-- Reorder Requests Dialog -->
+    <ReorderRequestsDialog
+      v-model="showReorderDialog"
+      :reorderRequests="reorderRequests"
+      :selectedReorderIds="selectedReorderIds"
+      @update:selectedReorderIds="selectedReorderIds = $event"
+      @create-pr="createPRFromReorder"
+    />
   </v-container>
 </template>
 
@@ -489,29 +618,30 @@ function goToPage(p: number) {
 }
 
 .status-chip--pending_approval {
-  color: #c2922e;
-  background: rgba(194, 146, 46, 0.12);
-}
-.status-chip--pending {
-  color: #c2922e;
-  background: rgba(194, 146, 46, 0.12);
+  color: #C2922E;
+  background: rgba(183, 121, 31, 0.12);
 }
 .status-chip--approved {
-  color: #2e7d32;
-  background: rgba(46, 125, 50, 0.12);
-}
-.status-chip--complete {
-  color: #2e7d32;
-  background: rgba(46, 125, 50, 0.12);
+  color: #2563EB;
+  background: rgba(51, 102, 204, 0.12);
 }
 .status-chip--rejected {
-  color: #c62828;
-  background: rgba(198, 40, 40, 0.12);
+  color: #DC2626;
+  background: rgba(197, 48, 48, 0.12);
 }
 .status-chip--issued {
-  color: #1565c0;
-  background: rgba(21, 101, 192, 0.12);
+  color: #7C3AED;
+  background: rgba(79, 70, 229, 0.12);
 }
+.status-chip--complete {
+  color: #15803D;
+  background: rgba(47, 133, 90, 0.12);
+}
+.status-chip--change_request {
+  color: #fb8c00;
+  background: rgba(255, 152, 0, 0.12);
+}
+
 
 /* ─── Table ───────────────────────────────────────────────────── */
 .actions-gap {
@@ -541,5 +671,27 @@ function goToPage(p: number) {
 }
 .pr-mobile-card:active {
   box-shadow: 0 0 0 2px rgba(var(v-theme-primary), 0.3) !important;
+}
+.stat-card {
+  min-height: 96px;
+  display: flex;
+  align-items: center;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  border: 3px solid rgba(0, 0, 0, 0.06);
+}
+.stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+}
+.stat-card--active {
+  border-color: #A63EB8;
+  background-color: rgba(50, 75, 219, 0.08);
+  box-shadow: 0 4px 12px rgba(var(--v-theme-primary), 0.2);
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  width: 100%;
 }
 </style>

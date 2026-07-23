@@ -4,24 +4,17 @@
       <div class="announcements-view">
         <!-- Page Header -->
         <v-container fluid class="pa-0 mt-5">
-          <v-row class="ma-0 mb-4">
-            <v-col cols="12" class="pa-4">
-              <div class="d-flex align-center justify-space-between">
-                <div>
-                  <h1 class="text-h4 font-weight-bold mb-1">Announcements Management</h1>
-                  <p class="text-subtitle-1 text-medium-emphasis">
-                    Create, edit, and manage system announcements
-                  </p>
+          <v-row class="ma-0">
+          <v-col cols="12" class="pa-4">
+              <div class="d-flex flex-column ga-3">
+                <div class="d-flex align-center justify-space-between">
+                  <div>
+                    <h1 class="text-h4 font-weight-bold mb-1">Announcements Management</h1>
+                    <p class="text-subtitle-1 text-medium-emphasis">
+                      Create, edit, and manage system announcements
+                    </p>
+                  </div>
                 </div>
-                <v-btn
-                  color="primary"
-                  variant="flat"
-                  size="large"
-                  prepend-icon="mdi-plus"
-                  @click="openCreateDialog"
-                >
-                  New Announcement
-                </v-btn>
               </div>
             </v-col>
           </v-row>
@@ -49,7 +42,7 @@
                       variant="outlined"
                       color="primary"
                       block
-                      density="comfortable"
+
                     >
                       Clear Search
                     </v-btn>
@@ -288,6 +281,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useDisplay } from 'vuetify'
 import { useAnnouncementsDataStore } from '@/stores/announcementsData'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useToast } from 'vue-toastification'
@@ -301,6 +295,7 @@ import AnnouncementDetailDialog from './dialogs/AnnouncementDetailDialog.vue'
 const announcementsStore = useAnnouncementsDataStore()
 const authStore = useAuthUserStore()
 const toast = useToast()
+const { mobile } = useDisplay()
 
 // Reactive state
 const showDialog = ref(false)

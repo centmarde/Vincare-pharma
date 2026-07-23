@@ -6,7 +6,7 @@ import {
   type UpdateRoleData,
 } from '@/stores/roles'
 import { useUserPagesStore } from '@/stores/pages'
-import { navigationConfig } from '@/utils/navigation'
+import { navigationConfig, flattenNavigationItems } from '@/utils/navigation'
 import { useToast } from 'vue-toastification'
 
 export function useAdminUserRoles() {
@@ -100,12 +100,10 @@ export function useAdminUserRoles() {
 
         // Build mapping from navigation config and collect routes
         navigationConfig.forEach((group) => {
-          group.children.forEach((item) => {
-            if (item.route) {
-              routeSet.add(item.route)
-              if (item.permission) {
-                permissionToRouteMap[item.permission] = item.route
-              }
+          flattenNavigationItems(group.children).forEach((item) => {
+            routeSet.add(item.route)
+            if (item.permission) {
+              permissionToRouteMap[item.permission] = item.route
             }
           })
         })
@@ -123,7 +121,8 @@ export function useAdminUserRoles() {
 
         // For editing, first delete existing role pages (silent mode)
         if (isEditing.value) {
-          await userPagesStore.deleteRolePagesByRoleId(targetRoleId, true)
+          const deleted = await userPagesStore.deleteRolePagesByRoleId(targetRoleId, true)
+          if (!deleted) throw new Error('Failed to clear existing permissions.')
         }
 
         // Create new role pages for each route (silent mode)

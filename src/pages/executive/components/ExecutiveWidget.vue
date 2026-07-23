@@ -1,24 +1,18 @@
 <script setup lang="ts">
-import { useExecutiveStatic } from '../composables/executiveStatic'
-import { computed, ref } from 'vue'
+import { useExecutiveDashboard } from '../composables/useExecutiveDashboard'
+import { ref } from 'vue'
 import HeaderBar from './HeaderBar.vue'
 import KpiCards from './KpiCards.vue'
 import QuickStatsCards from './QuickStatsCards.vue'
 import MonthlyChart from './MonthlyChart.vue'
 import TopProducts from './TopProducts.vue'
 import ActionRequired from './ActionRequired.vue'
+import { useExecutiveStatic } from '../composables/executiveStatic'
 
-const dashboard = useExecutiveStatic()
+const dash = useExecutiveDashboard()
+const staticData = useExecutiveStatic()
 
-// Search query (shared via v-model to HeaderBar)
 const searchQuery = ref('')
-
-// Top products sorted by revenue descending
-const topProducts = computed(() => [...dashboard.topProducts].sort((a, b) => b.revenue - a.revenue))
-
-const revenueGrowth = dashboard.kpiCards[0].trendLabel.split(' ')[0]
-
-// Toggle between 'actionRequired' (default) and 'topProducts'
 const rightPanelView = ref<'actionRequired' | 'topProducts'>('actionRequired')
 </script>
 
@@ -26,26 +20,28 @@ const rightPanelView = ref<'actionRequired' | 'topProducts'>('actionRequired')
   <v-container fluid class="pa-0 executive-widget">
     <HeaderBar v-model:search="searchQuery" />
 
-    <KpiCards :cards="dashboard.kpiCards" />
-
-    <QuickStatsCards
-      :total-orders="dashboard.totalOrders"
-      :pending-orders="dashboard.pendingOrders"
-      :revenue-growth="revenueGrowth"
+    <KpiCards
+      :cards="dash.kpiCards.value"
+      :loading="dash.loading.value"
+      :error="dash.error.value"
+      :date-from="dash.dateFrom.value"
+      :date-to="dash.dateTo.value"
+      :revenue-growth="dash.kpiCards.value[0]?.trendLabel.split(' ')[0] ?? '0%'"
+      @apply="(from, to) => dash.applyDateRange(from, to)"
+      @refresh="dash.resetToCurrentMonth()"
     />
 
     <v-row class="ma-0" align="stretch">
       <v-col cols="12" lg="8" class="pa-2 d-flex">
         <MonthlyChart
-          :monthly-data="dashboard.monthlyData"
-          :total-revenue="dashboard.totalRevenue"
-          :total-expenses="dashboard.totalExpenses"
+          :monthly-data="staticData.monthlyData"
+          :total-revenue="staticData.totalRevenue"
+          :total-expenses="staticData.totalExpenses"
           class="flex-grow-1"
         />
       </v-col>
 
       <v-col cols="12" lg="4" class="pa-2 d-flex flex-column">
-        <!-- Toggle Switch -->
         <div
           class="d-flex align-center mb-3 bg-surface-variant rounded-lg pa-1 toggle-switch flex-shrink-0"
         >
@@ -73,7 +69,7 @@ const rightPanelView = ref<'actionRequired' | 'topProducts'>('actionRequired')
 
         <div class="flex-grow-1 d-flex">
           <ActionRequired v-if="rightPanelView === 'actionRequired'" class="flex-grow-1" />
-          <TopProducts v-else :products="topProducts" class="flex-grow-1" />
+          <TopProducts v-else class="flex-grow-1" />
         </div>
       </v-col>
     </v-row>

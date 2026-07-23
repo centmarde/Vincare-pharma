@@ -1,8 +1,17 @@
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useUserPagesStore } from '@/stores/pages'
-import { navigationConfig } from '@/utils/navigation'
+import { navigationConfig, isNavigationItem, type NavigationChild } from '@/utils/navigation'
 import type { RouteLocationNormalized, NavigationGuardNext, Router } from 'vue-router'
+
+// Recursively collect every route in a group's children, including routes
+// nested one level deep inside a sub-group (e.g. Finance Controls ->
+// Income Statement Controls -> Income Statement).
+function collectRoutes(children: NavigationChild[]): string[] {
+  return children.flatMap((child) =>
+    isNavigationItem(child) ? [child.route] : collectRoutes(child.children),
+  )
+}
 
 /**
  * Authentication and role-based page access guard
@@ -37,7 +46,7 @@ export const authGuard = async (
       // Only enforce role-page rules for routes that exist in our navigation config.
       // (Keeps guard from blocking non-menu technical routes unless you add them to navigationConfig.)
       const navRoutes = new Set(
-        navigationConfig.flatMap((group) => group.children.map((child) => child.route)),
+        navigationConfig.flatMap((group) => collectRoutes(group.children)),
       )
 
       if (!navRoutes.has(to.path)) {

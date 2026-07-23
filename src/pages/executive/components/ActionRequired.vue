@@ -1,120 +1,146 @@
 <script setup lang="ts">
-import { formatCurrency } from '@/utils/helpers'
+import { ref, computed, watch } from 'vue'
+import ActionRequiredDialog from '../dialogs/ActionRequiredDialog.vue'
+import RequestHistoryListDialog from '../dialogs/RequestHistoryListDialog.vue'
+import { useChangeRequestsPR } from '@/pages/purchasing/stores/composables/useChangeRequestsPR'
+import { formatDatePR_ISO } from '@/utils/helpers'
 
-interface ActionItem {
-  title: string
-  description: string
-  icon: string
-  color: string
-  priority: 'high' | 'medium' | 'low'
-  value?: string
+import { useRequestHistory } from '../composables/useRequestHistory'
+
+
+const { requests, loading } = useChangeRequestsPR()
+const selected = ref(false)
+const selectedReq = ref<any | null>(null)
+
+const page = ref(1)
+const perPage = 5
+
+const count = computed(() => requests.value?.length ?? 0)
+
+const totalPages = computed(() => Math.max(1, Math.ceil((requests.value || []).length / perPage)))
+const paginatedRequests = computed(() => {
+  const start = (page.value - 1) * perPage
+  return (requests.value || []).slice(start, start + perPage)
+})
+
+watch(() => requests.value?.length, () => {
+  page.value = 1
+})
+
+function openRequest(req: any) {
+  selectedReq.value = req
+  selected.value = true
 }
 
-const actionItems: ActionItem[] = [
-  {
-    title: 'PO-2024-0123',
-    description: 'Amoxicillin 500mg — Overdue by 5 days',
-    icon: 'mdi-cancel',
-    color: 'error',
-    priority: 'high',
-    value: '₱124,500',
-  },
-  {
-    title: 'PO-2024-0108',
-    description: 'Paracetamol 500mg — Partial delivery pending',
-    icon: 'mdi-alert-circle-outline',
-    color: 'warning',
-    priority: 'high',
-    value: '₱86,200',
-  },
-  {
-    title: 'Supplier Invoice #4581',
-    description: 'Payment overdue by 12 days',
-    icon: 'mdi-account-clock-outline',
-    color: 'warning',
-    priority: 'medium',
-    value: '₱45,800',
-  },
-  {
-    title: 'Stock Approval',
-    description: 'Metformin 500mg — Reorder level reached',
-    icon: 'mdi-package-variant-closed',
-    color: 'info',
-    priority: 'medium',
-  },
-  {
-    title: 'Supplier Renewal',
-    description: 'MedHealth Corp. — Contract expiring in 7 days',
-    icon: 'mdi-file-document-edit-outline',
-    color: 'info',
-    priority: 'low',
-  },
-]
+const historyDialog = ref(false)
+const {
+  loading: historyLoading,
+  paginatedRequests: historyPaginatedRequests,
+  requests: historyRequests,
+  page: historyPage,
+  totalPages: historyTotalPages,
+  totalItems: historyTotalItems,
+  fetchHistory,
+} = useRequestHistory()
 
-function priorityColor(priority: 'high' | 'medium' | 'low'): string {
-  if (priority === 'high') return 'error'
-  if (priority === 'medium') return 'warning'
-  return 'info'
-}
+watch(historyDialog, (val) => {
+  if (val) fetchHistory()
+})
 </script>
 
 <template>
   <v-card class="rounded-xl" elevation="0">
     <v-card-text class="pa-4 pa-md-6">
-      <div class="d-flex align-center mb-4">
-        <v-icon icon="mdi-bell-ring-outline" color="error" size="20" class="mr-2" />
-        <span class="text-h6 font-weight-bold">Action Required</span>
-        <v-spacer />
-        <v-chip
-          size="small"
-          color="error"
-          variant="tonal"
-          label
-        >
-          {{ actionItems.length }} items
-        </v-chip>
+      <v-row align="center" class="mb-2" no-gutters>
+        <v-col cols="auto" class="mr-2">
+          <v-icon icon="mdi-bell-ring-outline" color="error" size="20" />
+        </v-col>
+        <v-col>
+          <span class="text-h6 font-weight-bold">Action Required</span>
+        </v-col>
+        <v-col v-if="count" cols="auto">
+          <v-chip size="small" color="error" variant="flat">{{ count }}</v-chip>
+        </v-col>
+      </v-row>
+
+      <div v-if="loading" class="pa-6 text-center text-caption text-medium-emphasis">
+        <v-progress-circular indeterminate size="20" width="2" class="mb-2" />
+        <div>Loading requests…</div>
       </div>
 
-      <div
-        v-for="(item, idx) in actionItems"
-        :key="idx"
-        class="action-row"
-      >
-        <div class="d-flex align-start ga-3 mb-3">
-          <v-avatar
-            size="36"
-            rounded="lg"
-            :color="item.color"
-            variant="tonal"
-            class="flex-shrink-0"
+      <v-list v-else-if="requests.length" class="pa-0" lines="two">
+        <template v-for="(req, i) in paginatedRequests" :key="req.id">
+          <v-list-item
+            class="px-2 py-3 rounded-lg action-item"
+            @click="openRequest(req)"
           >
-            <v-icon :icon="item.icon" :color="item.color" size="18" />
-          </v-avatar>
-          <div class="flex-grow-1" style="min-width: 0">
-            <div class="d-flex align-center ga-2">
-              <span class="text-body-2 font-weight-medium text-truncate">
-                {{ item.title }}
+            <template #prepend>
+              <v-avatar size="32" rounded="lg" color="error" variant="tonal">
+                <v-icon color="error" icon="mdi-cancel" size="18" />
+              </v-avatar>
+            </template>
+
+            <v-list-item-title class="d-flex align-center ga-2 mb-1">
+              <v-chip size="x-small" color="error" variant="tonal" label>Undo</v-chip>
+              <span class="text-body-2 font-weight-medium">
+                {{ req.from_transaction_no ?? `#${req.transaction_id}` }}
               </span>
-              <v-chip
-                size="x-small"
-                :color="priorityColor(item.priority)"
-                variant="tonal"
-                label
-                class="flex-shrink-0"
-              >
-                {{ item.priority }}
-              </v-chip>
-            </div>
-            <div class="text-caption text-medium-emphasis mt-1">
-              {{ item.description }}
-            </div>
-          </div>
-          <div v-if="item.value" class="text-body-2 font-weight-bold text-right flex-shrink-0">
-            {{ item.value }}
-          </div>
-        </div>
-        <v-divider v-if="idx < actionItems.length - 1" class="mb-3" />
+              <v-spacer />
+              <span class="text-caption text-medium-emphasis flex-shrink-0">
+                {{ formatDatePR_ISO(req.created_at) }}
+              </span>
+            </v-list-item-title>
+
+            <v-list-item-subtitle
+              v-if="req.reason"
+              class="text-caption text-medium-emphasis"
+              style="white-space: normal; line-height: 1.4;"
+            >
+              <v-icon icon="mdi-comment-text-outline" size="12" class="mr-1" style="opacity: 0.7" />
+              {{ req.reason }}
+            </v-list-item-subtitle>
+
+            <template #append>
+              <v-icon icon="mdi-chevron-right" size="20" color="medium-emphasis" />
+            </template>
+          </v-list-item>
+
+          <v-divider v-if="i < paginatedRequests.length - 1" class="my-1" />
+        </template>
+
+        <v-pagination
+          v-if="totalPages > 1"
+          v-model="page"
+          :length="totalPages"
+          density="compact"
+          class="mt-4"
+        />
+      </v-list>
+
+      <div v-else class="pa-6 text-center">
+        <v-icon icon="mdi-check-circle-outline" size="32" color="success" class="mb-2" />
+        <div class="text-caption text-medium-emphasis">No pending change requests.</div>
       </div>
+
+      <div class="text-center mt-4">
+        <v-btn size="small" variant="text" class="text-none" color="primary" @click="historyDialog = true">
+          <v-icon start size="16">mdi-history</v-icon>
+          View Request History
+        </v-btn>
+      </div>
+
+      <ActionRequiredDialog v-model="selected" :request="selectedReq" />
+      <RequestHistoryListDialog v-model="historyDialog" />
     </v-card-text>
   </v-card>
 </template>
+
+<style scoped>
+.action-item {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.action-item:hover {
+  background-color: rgba(var(--v-theme-error), 0.05);
+}
+</style>

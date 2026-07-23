@@ -2,6 +2,8 @@
  * Utility functions for the application
  */
 
+import { formatDate } from './dateFormats'
+
 /**
  * Extracts a readable error message from various error formats
  * @param error - The error object to extract message from
@@ -126,22 +128,6 @@ export function getRoleText(
   roles: Array<{ id: number; title: string | null }>,
 ): string {
   return getRoleTitle(roleId, roles)
-}
-
-/**
- * Formats a date string into a human-readable format
- * @param dateString - The date string to format
- * @returns A formatted date string or 'N/A' if no date provided
- */
-export function formatDate(dateString: string | undefined): string {
-  if (!dateString) return 'N/A'
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 }
 
 /**
@@ -462,63 +448,31 @@ export const formatCurrency = (value: number): string =>
     maximumFractionDigits: 2,
   }).format(value).replace('PHP', '₱')
 
-export const formatDatePR_ISO = (dateString: string | null | undefined) => {
-  if (!dateString) return ''
-  const date = new Date(dateString)
-  
-  //This is for displaying in the PR list and PO list
-  const datePart = new Intl.DateTimeFormat('en-CA', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    timeZone: 'Asia/Manila', // Ensures correct timezone handling
-  }).format(date)
+// ── Generative / document-number helpers ────────────────────────────────────
+// These were extracted to a dedicated module so stores don't duplicate logic.
+// Re-export everything for backward compatibility.
+export {
+  maxDocSeq,
+  nextDocNumber,
+  generateNextNumber,
+  generateDocNumber,
+  getLatestReferenceNo,
+  insertWithDocRetry,
+  generatePRNumber,
+  generatePONumber,
+  generateSINumber,
+  generateIHNumber,
+} from './generativeHelpers'
 
-  const timePart = new Intl.DateTimeFormat('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true, // Enforces strict 24-hour business format
-    timeZone: 'Asia/Manila', // Ensures correct timezone handling
-  }).format(date)
-
-  return `${datePart} ${timePart}` // Output: "2026-06-13 21:30"
-}
-
-//This is for Exporting PDF PO
-export const formatDatePO_Written = (dateString: string | null | undefined) => {
-  if (!dateString) return ''
-  const date = new Date(dateString)
-  
-  const datePart = new Intl.DateTimeFormat('en-GB', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric'
-  }).format(date)
-
-  const timePart = new Intl.DateTimeFormat('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true 
-  }).format(date)
-
-  return `${datePart} at ${timePart}` // Output: "13 June 2026 at 09:30 PM"
-}
-
-
-type DocType = 'PR' | 'PO' | 'SI'
-
-const DOC_CONFIG: Record<DocType, { column: 'requisition_no' | 'po_no' | 'reference_no' }> = {
-  PR: { column: 'requisition_no' },
-  PO: { column: 'po_no' },
-  SI: { column: 'reference_no' },
-}
-
-export async function generateDocNumber(
-  type: DocType,
-  getLatest: (column: 'requisition_no' | 'po_no' | 'reference_no', prefix: string) => Promise<number>
-): Promise<string> {
-  const year   = new Date().getFullYear()
-  const prefix = `${type}-${year}-`
-  const last   = await getLatest(DOC_CONFIG[type].column, prefix)
-  return `${prefix}${String(last + 1).padStart(3, '0')}`
-}
+// ── Date-formatting helpers ─────────────────────────────────────────────────
+// Moved to a dedicated module so stores and components share a single source
+// of truth instead of duplicating logic inline.
+export {
+  formatDate,
+  formatDateShort,
+  parseMonthYear,
+  formatMonthYear,
+  maskMonthYearInput,
+  formatDatePR_ISO,
+  formatDatePO_Written,
+} from './dateFormats'

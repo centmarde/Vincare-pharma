@@ -36,9 +36,9 @@ const emit = defineEmits<{
       <v-card-text class="pa-4">
         <p>Are you sure you want to delete this product?</p>
         <p v-if="currentProduct" class="font-weight-bold mt-2">
-          {{ currentProduct.product_name }} (ID: {{ currentProduct.id }})
+          {{ currentProduct.product_name }} (ID: {{ currentProduct.id }}) Recorded on Logs
         </p>
-        <p class="text-caption text-grey mt-2">This action cannot be undone.</p>
+        <p class="text-caption text-grey mt-2">This action cannot be undone and the system will record the deletion.</p>
       </v-card-text>
 
       <v-divider></v-divider>

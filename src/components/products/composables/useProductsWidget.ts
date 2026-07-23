@@ -1,5 +1,5 @@
 // composables/useProductsWidget.ts
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useToast } from 'vue-toastification'
 import {
   useProductsDataStore,
@@ -7,16 +7,41 @@ import {
   type CreateProductData,
   type UpdateProductData,
 } from '@/stores/productsData'
+import { useLogsDataStore } from '@/stores/logsData'
+import type { ReorderPrefillItem } from '@/pages/purchasing/composables/usePurchaseRequisition'
+import { useAuthUserStore } from '@/stores/authUser'
+import { isPurchasingRole, isProductEditRestricted } from '@/utils/roleHelpers'
+import { useProductIgnore, IGNORE_DURATIONS } from '@/components/products/composables/useProductIgnore'
+
+interface StockStatusCardDef {
+  type: 'out-of-stock' | 'low-stock' | 'no-reorder-level' | 'expiring-soon' | 'expired'
+  label: string
+  icon: string
+  color: string
+  filter: (p: ProductType) => boolean
+}
+
+  export const reorderReasonMap: Record<string, 'reorder_outofstock' | 'reorder_lowstock' | 'reorder_expiring' | 'reorder_expired'> = {
+    'out-of-stock':  'reorder_outofstock',
+    'low-stock':     'reorder_lowstock',
+    'expiring-soon': 'reorder_expiring',
+    'expired':       'reorder_expired',
+  }
 
 export function useProductsWidget() {
   const toast = useToast()
   const productsStore = useProductsDataStore()
+  const authStore = useAuthUserStore()
+  const logsStore = useLogsDataStore()
+  const productIgnore = useProductIgnore()
 
   // Dialog states
   const showDialog = ref(false)
   const showDeleteDialog = ref(false)
   const dialogMode = ref<'create' | 'edit'>('create')
-
+  const EXPIRY_WARNING_DAYS = 30
+  const isPurchaser = computed(() => isPurchasingRole(authStore.userRole))
+  const isEditRestricted = computed(() => isProductEditRestricted(authStore.userRole))
 
   // Form state
   const form = ref<any>(null)
@@ -31,7 +56,6 @@ export function useProductsWidget() {
     cost_price: null,
     selling_price: null,
     current_stock: null,
-    actual_count: null,
     reorder_level: null,
     supplier_id: null,
     batch_no: null,
@@ -50,14 +74,13 @@ export function useProductsWidget() {
   const searchQuery = ref('')
   const itemsPerPage = ref(10)
   const page = ref(1)
-  const sortBy = ref([{ key: 'actual_count', order: 'asc' as 'asc' | 'desc' }])
+  const sortBy = ref([{ key: 'current_stock', order: 'asc' as 'asc' | 'desc' }])
 
   // Expanded rows
   const expanded = ref<string[]>([])
 
   // Stock status dialog
   const showStockDialog = ref(false)
-  const stockDialogType = ref<'out-of-stock' | 'low-stock'>('out-of-stock')
 
   // Eligible product IDs (those in stock_in transactions)
   const eligibleProductIds = ref<Set<number>>(new Set())
@@ -68,9 +91,9 @@ export function useProductsWidget() {
     { title: 'ID', key: 'id', sortable: true },
     { title: 'Product Name', key: 'product_name', sortable: true },
     { title: 'SKU', key: 'sku', sortable: true },
-    { title: 'Stock', key: 'actual_count', sortable: true },
+    { title: 'Stock', key: 'current_stock', sortable: true },
     { title: 'Selling Price', key: 'selling_price', sortable: true },
-    { title: 'Cost Price', key: 'cost_price', sortable: true },
+    { title: 'Unit', key: 'unit', sortable: true },
     { title: 'Batch No.', key: 'batch_no' },
     { title: 'Expiry Date', key: 'expiry_date' },
     { title: 'Actions', key: 'actions', sortable: false },
@@ -86,31 +109,93 @@ export function useProductsWidget() {
   const loading = computed(() => productsStore.loading)
   const totalProducts = computed(() => productsStore.totalCount)
 
-  const lowStockProducts = computed(() =>
-    products.value.filter(p => {
-      const stock = p.actual_count ?? 0
-      const reorder = p.reorder_level ?? 0
-      return reorder > 0 && stock <= reorder
-    })
-  )
-
   // All-products stock status counts (not paginated, from the full store)
+  // Filters out products that have been ignored/dismissed by the user
   const allEligibleProducts = computed(() =>
     productsStore.products.filter(
-      p => p.sku != null && p.sku !== 'null' && eligibleProductIds.value.has(p.id)
+      p => p.sku != null && p.sku !== 'null' && eligibleProductIds.value.has(p.id) && !productIgnore.activeIgnoredIds.value.has(p.id)
     )
   )
 
-  const allOutOfStockCount = computed(
-    () => allEligibleProducts.value.filter(p => (p.current_stock ?? 0) <= 0).length
-  )
+  function daysUntilExpiry(expiryDate: string | null | undefined): number | null {
+  if (!expiryDate) return null
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const expiry = new Date(expiryDate)
+  expiry.setHours(0, 0, 0, 0)
+  return Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+}
 
-  const allLowStockCount = computed(
-    () => allEligibleProducts.value.filter(p => {
+const stockStatusCardDefs: StockStatusCardDef[] = [
+  {
+    type: 'out-of-stock',
+    label: 'Out of Stock',
+    icon: 'mdi-close-circle-outline',
+    color: 'error',
+    filter: p => (p.current_stock ?? 0) <= 0,
+  },
+  {
+    type: 'low-stock',
+    label: 'Low Stock',
+    icon: 'mdi-alert-outline',
+    color: 'warning',
+    filter: p => {
       const stock = p.current_stock ?? 0
-      return stock > 0 && p.reorder_level && stock <= p.reorder_level
-    }).length
-  )
+      return stock > 0 && !!p.reorder_level && stock <= p.reorder_level
+    },
+  },
+  {
+    type: 'no-reorder-level',
+    label: 'No Reorder Level',
+    icon: 'mdi-information-outline',
+    color: 'info',
+    filter: p => p.reorder_level === null,
+  },
+  {
+    type: 'expiring-soon',
+    label: 'Expiring Soon',
+    icon: 'mdi-clock-alert-outline',
+    color: 'orange',
+    filter: p => {
+      const days = daysUntilExpiry(p.expiry_date)
+      return days !== null && days >= 0 && days <= EXPIRY_WARNING_DAYS
+    },
+  },
+  {
+    type: 'expired',
+    label: 'Expired',
+    icon: 'mdi-calendar-remove',
+    color: 'error',
+    filter: p => {
+      const days = daysUntilExpiry(p.expiry_date)
+      return days !== null && days < 0
+    },
+  },
+]
+
+// Cards for the StockStatusCards row (label/icon/color/count)
+const stockStatusCards = computed(() =>
+  stockStatusCardDefs.map(def => ({
+    type: def.type,
+    label: def.label,
+    icon: def.icon,
+    color: def.color,
+    count: allEligibleProducts.value.filter(def.filter).length,
+  }))
+)
+
+const stockDialogType = ref<StockStatusCardDef['type']>('out-of-stock')
+
+// The active card's metadata (for dialog title/icon/color)
+const activeStockCard = computed(() =>
+  stockStatusCards.value.find(c => c.type === stockDialogType.value)
+)
+
+// The active card's filtered product list (for dialog body)
+const stockDialogProducts = computed<ProductType[]>(() => {
+  const def = stockStatusCardDefs.find(d => d.type === stockDialogType.value)
+  return def ? allEligibleProducts.value.filter(def.filter) : []
+})
 
   // Validation rules
   const rules = {
@@ -187,14 +272,53 @@ export function useProductsWidget() {
       const result = await productsStore.createProduct(cleaned as CreateProductData)
       if (result) {
         toast.success('Product created successfully')
+        try {
+          await logsStore.createLog({
+            action: 'create',
+            description: `Created product "${result.product_name}" (SKU: ${result.sku ?? 'N/A'})`,
+            module: 'products',
+          })
+        } catch (logErr) {
+          console.error('[Logging] Failed to create product log:', logErr)
+        }
         closeDialog()
       } else {
         toast.error('Failed to create product: ' + (productsStore.error || 'Unknown error'))
       }
     } else if (dialogMode.value === 'edit' && currentProduct.value) {
+      const oldData = currentProduct.value
       const result = await productsStore.updateProduct(currentProduct.value.id, cleaned as UpdateProductData)
       if (result) {
         toast.success('Product updated successfully')
+        try {
+          const changes: string[] = []
+          if (oldData.current_stock !== result.current_stock) changes.push(`stock=${oldData.current_stock ?? 'N/A'} → ${result.current_stock ?? 'N/A'}`)
+          if (oldData.cost_price !== result.cost_price) changes.push(`cost_price=${oldData.cost_price ?? 'N/A'} → ${result.cost_price ?? 'N/A'}`)
+          if (oldData.selling_price !== result.selling_price) changes.push(`selling_price=${oldData.selling_price ?? 'N/A'} → ${result.selling_price ?? 'N/A'}`)
+          if (oldData.reorder_level !== result.reorder_level) changes.push(`reorder_level=${oldData.reorder_level ?? 'N/A'} → ${result.reorder_level ?? 'N/A'}`)
+          if (oldData.offer_per_unit !== result.offer_per_unit) changes.push(`offer_per_unit=${oldData.offer_per_unit ?? 'N/A'} → ${result.offer_per_unit ?? 'N/A'}`)
+          if (oldData.cost_per_unit !== result.cost_per_unit) changes.push(`cost_per_unit=${oldData.cost_per_unit ?? 'N/A'} → ${result.cost_per_unit ?? 'N/A'}`)
+          if (oldData.supplier_id !== result.supplier_id) changes.push(`supplier_id=${oldData.supplier_id ?? 'N/A'} → ${result.supplier_id ?? 'N/A'}`)
+          if (oldData.batch_no !== result.batch_no) changes.push(`batch_no=${oldData.batch_no ?? 'N/A'} → ${result.batch_no ?? 'N/A'}`)
+          if (oldData.expiry_date !== result.expiry_date) changes.push(`expiry_date=${oldData.expiry_date ?? 'N/A'} → ${result.expiry_date ?? 'N/A'}`)
+          if (oldData.status !== result.status) changes.push(`status=${oldData.status ?? 'N/A'} → ${result.status ?? 'N/A'}`)
+          if (oldData.item_decription !== result.item_decription) changes.push(`item_description=${oldData.item_decription ?? 'N/A'} → ${result.item_decription ?? 'N/A'}`)
+          if (oldData.unit !== result.unit) changes.push(`unit=${oldData.unit ?? 'N/A'} → ${result.unit ?? 'N/A'}`)
+          if (oldData.no !== result.no) changes.push(`no=${oldData.no ?? 'N/A'} → ${result.no ?? 'N/A'}`)
+          if (oldData.barcode !== result.barcode) changes.push(`barcode=${oldData.barcode ?? 'N/A'} → ${result.barcode ?? 'N/A'}`)
+          if (oldData.product_name !== result.product_name) changes.push(`product_name="${oldData.product_name ?? 'N/A'}" → "${result.product_name ?? 'N/A'}"`)
+          if (oldData.generic_name !== result.generic_name) changes.push(`generic_name="${oldData.generic_name ?? 'N/A'}" → "${result.generic_name ?? 'N/A'}"`)
+          if (oldData.category !== result.category) changes.push(`category="${oldData.category ?? 'N/A'}" → "${result.category ?? 'N/A'}"`)
+          if (oldData.sku !== result.sku) changes.push(`sku="${oldData.sku ?? 'N/A'}" → "${result.sku ?? 'N/A'}"`)
+
+          await logsStore.createLog({
+            action: 'update',
+            description: `Updated product "${result.product_name}" (SKU: ${result.sku ?? 'N/A'}). ${changes.length ? 'Changes: ' + changes.join(', ') : 'No field changes detected'}`,
+            module: 'products',
+          })
+        } catch (logErr) {
+          console.error('[Logging] Failed to create product log:', logErr)
+        }
         closeDialog()
       } else {
         toast.error('Failed to update product: ' + (productsStore.error || 'Unknown error'))
@@ -204,9 +328,21 @@ export function useProductsWidget() {
 
   async function handleDelete() {
     if (!currentProduct.value) return
-    const result = await productsStore.deleteProduct(currentProduct.value.id)
+    const productName = currentProduct.value.product_name
+    const productSku = currentProduct.value.sku
+    const productId = currentProduct.value.id
+    const result = await productsStore.deleteProduct(productId)
     if (result) {
       toast.success('Product deleted successfully')
+      try {
+        await logsStore.createLog({
+          action: 'delete',
+          description: `Deleted product "${productName}" (SKU: ${productSku ?? 'N/A'}, ID: ${productId})`,
+          module: 'products',
+        })
+      } catch (logErr) {
+        console.error('[Logging] Failed to create product log:', logErr)
+      }
       closeDeleteDialog()
     } else {
       toast.error('Failed to delete product')
@@ -216,6 +352,69 @@ export function useProductsWidget() {
   function handleSearch() {
     fetchProducts()
   }
+
+  const reorderRequestInfo = computed(() => {
+    const map = new Map<number, { id: number; status: string }>()
+    for (const r of productsStore.reorderRequests) {
+      // FIXED — reorderRequests is sorted created_at desc (newest first).
+      // The old `.set()` here unconditionally overwrote, so iterating
+      // forward left the OLDEST entry per product in the map. That's now a
+      // real bug: a rejected row followed by a fresh pending re-flag would
+      // show as "Rejected" forever. Guard with `!map.has` so only the first
+      // (i.e. most recent) entry per product sticks.
+      if (r.product?.id != null && !map.has(r.product.id)) {
+        map.set(r.product.id, { id: r.id, status: r.status })
+      }
+    }
+    return map
+  })
+
+  // NEW — a product can be reordered if it has no request yet, OR its most
+  // recent request was rejected (re-flagging is allowed after rejection).
+  function canRequestReorder(productId: number): boolean {
+    const info = reorderRequestInfo.value.get(productId)
+    return !info || info.status === 'rejected'
+  }
+
+  // Purchaser-only bulk reorder-to-PR flow
+  const selectedReorderProductIds = ref<number[]>([])
+  const showPurchaseRequisitionDialog = ref(false)
+  const prefillItemsForDialog = ref<ReorderPrefillItem[]>([])
+  const showReorderPRConfirm = ref(false)
+
+  function toggleReorderSelection(productId: number, checked: boolean) {
+    if (checked) selectedReorderProductIds.value.push(productId)
+    else selectedReorderProductIds.value = selectedReorderProductIds.value.filter(id => id !== productId)
+  }
+
+    function confirmCreatePRFromSelection() {
+      if (!selectedReorderProductIds.value.length) return
+      showReorderPRConfirm.value = true
+    }
+
+    function proceedCreatePRFromSelection() {
+      const reason = reorderReasonMap[stockDialogType.value]
+      if (!reason || !selectedReorderProductIds.value.length) return
+
+      prefillItemsForDialog.value = stockDialogProducts.value
+        .filter(p => selectedReorderProductIds.value.includes(p.id))
+        .map(p => ({
+          reorder_request_id: null,     // no row exists yet
+          reorder_reason:     reason,   // tells the PR composable to create one on submit
+          product_id:         p.id,
+          item_description:   p.product_name ?? '',
+          unit:               p.unit ?? 'Box',
+          supplier_id:        p.supplier_id ?? null,
+          cost_per_unit:      p.cost_price ?? 0,
+          offer_per_unit:     p.selling_price ?? 0,
+        }))
+
+      showReorderPRConfirm.value = false
+      showStockDialog.value = false
+      showPurchaseRequisitionDialog.value = true
+    }
+
+
 
   async function handleTableOptions(options: any) {
     page.value = options.page
@@ -229,6 +428,14 @@ export function useProductsWidget() {
     await fetchEligibleProductIds()
     await fetchProducts()
     productsStore.startRealtime()
+  })
+
+  // Clear stale selection state when dialogs close
+  watch(showStockDialog, (open) => {
+    if (!open) selectedReorderProductIds.value = []
+  })
+  watch(showPurchaseRequisitionDialog, (open) => {
+    if (!open) prefillItemsForDialog.value = []
   })
 
   return {
@@ -251,9 +458,9 @@ export function useProductsWidget() {
     products,
     loading,
     totalProducts,
-    lowStockProducts,
-    allOutOfStockCount,
-    allLowStockCount,
+    stockStatusCards,
+    activeStockCard,
+    stockDialogProducts,
     // Validation
     rules,
     // Methods
@@ -266,5 +473,21 @@ export function useProductsWidget() {
     handleDelete,
     handleSearch,
     handleTableOptions,
+    //Stock order for Purchaser
+    isEditRestricted,
+    isPurchaser,
+    reorderRequestInfo,
+    canRequestReorder,   // NEW
+    selectedReorderProductIds,
+    toggleReorderSelection,
+    showPurchaseRequisitionDialog,
+    prefillItemsForDialog,
+    reorderReasonMap,
+    confirmCreatePRFromSelection,
+    proceedCreatePRFromSelection,
+    showReorderPRConfirm,
+    // Product Ignore / Dismiss
+    productIgnore,
+    IGNORE_DURATIONS,
   }
 }

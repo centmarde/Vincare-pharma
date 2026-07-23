@@ -7,6 +7,7 @@ import { useTheme } from '@/stores/useTheme.ts'
 import { useAuthUserStore } from '@/stores/authUser'
 import SlugName from './SlugName.vue'
 import { useUserPermissions } from '@/composables/useUserPermissions'
+import { flattenNavigationItems } from '@/utils/navigation'
 
 interface Props {
   config?: UIConfig | null
@@ -134,8 +135,7 @@ async function handleLogout() {
       :elevation="isScrolled ? 12 : 8"
       :height="xs ? 56 : 64"
       rounded="pill"
-      position="fixed"
-      class="mx-auto px-2"
+      class="mx-auto px-2 sticky-app-bar"
       :style="{
         top: navbarPositioning.top,
         left: navbarPositioning.left,
@@ -180,7 +180,7 @@ async function handleLogout() {
             <span class="text-subtitle-1 font-weight-bold text-primary">
               {{ navbarConfig.title }}
             </span>
-            <span class="text-caption text-medium-emphasis"> Academic Excellence </span>
+            <span class="text-caption text-medium-emphasis"> Manufacturing Excellence </span>
           </div>
         </div>
       </template>
@@ -198,7 +198,7 @@ async function handleLogout() {
                 :loading="isLoadingTheme"
                 variant="outlined"
                 rounded="pill"
-                size="large"
+                size="default"
                 :prepend-icon="themeIcon"
               >
                 <span>Theme</span>
@@ -338,7 +338,7 @@ async function handleLogout() {
               </template>
 
               <v-list-item
-                v-for="item in group.children"
+                v-for="item in flattenNavigationItems(group.children)"
                 :key="item.route"
                 :prepend-icon="item.icon"
                 :title="item.title"
@@ -396,5 +396,11 @@ async function handleLogout() {
 </template>
 
 <style scoped>
-/* All styling handled by Vuetify components and utilities only */
+/* Vuetify's own layout system normally keeps a top-level v-app-bar
+   position: fixed, but that can be undermined by an ancestor that
+   establishes a new containing block (transform/filter/etc. from page
+   transitions). Force it explicitly so the bar never scrolls away. */
+.sticky-app-bar {
+  position: fixed !important;
+}
 </style>

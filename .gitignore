@@ -1,7 +1,8 @@
 .DS_Store
 node_modules
 /dist
-
+auto-imports.d.ts
+components.d.ts
 # local env files
 .env.local
 .env.*.local
@@ -22,3 +23,13 @@ pnpm-debug.log*
 *.sln
 *.sw?
 .github
+
+# Local-only docs and manually-applied SQL (not part of repo workflow)
+CLAUDE.md
+# supabase/
+
+FINANCE_GL_PLAN.md
+SALES_HUB_REDESIGN.md
+SALES_FINANCE_DATA_MAP.md
+SALES_FINANCE_COLUMN_ATTRIBUTES.md
+

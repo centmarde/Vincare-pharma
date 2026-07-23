@@ -21,8 +21,3 @@ registerPlugins(app)
 
 app.mount('#app')
 
-// Initialize theme after app is mounted (Pinia and Vuetify are ready)
-// This loads the saved theme preference from localStorage
-import { useTheme } from '@/stores/useTheme'
-const themeStore = useTheme()
-themeStore.initializeTheme()

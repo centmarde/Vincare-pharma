@@ -2,7 +2,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchRandomVerse, type BibleVerse } from '../composables/bibleVerse'
-import { navigationConfig } from '@/utils/navigation'
+import { navigationConfig, flattenNavigationItems } from '@/utils/navigation'
+import type { NavigationChild } from '@/utils/navigation'
 
 const router = useRouter()
 
@@ -24,19 +25,24 @@ interface NavSearchItem {
 
 // Flatten navigation items into a searchable list for v-autocomplete
 const navItems = computed<NavSearchItem[]>(() => {
-  const items: NavSearchItem[] = []
+  const allChildren: NavigationChild[] = []
   for (const group of navigationConfig) {
-    for (const child of group.children) {
-      items.push({
-        title: child.title,
-        icon: child.icon,
-        route: child.route,
-        group: group.title,
-      })
-    }
+    allChildren.push(...group.children)
   }
-  return items
+  return flattenNavigationItems(allChildren).map(item => ({
+    title: item.title,
+    icon: item.icon,
+    route: item.route,
+    group: item.keywords || '',
+  }))
 })
+
+// The autocomplete's slot item is Vuetify's wrapper (carrying .raw) only when
+// Volar infers its generic item param; accept either shape so the icon/group
+// lookup doesn't depend on that inference resolving.
+function getRaw(item: NavSearchItem | { raw: NavSearchItem }): NavSearchItem {
+  return 'raw' in item ? item.raw : item
+}
 
 function goToRoute(route: string | null) {
   if (route) {
@@ -92,10 +98,10 @@ function goToRoute(route: string | null) {
             <template #item="{ props, item }">
               <v-list-item v-bind="props" class="rounded-lg">
                 <template #prepend>
-                  <v-icon :icon="item.raw.icon" size="18" color="primary" class="mr-2" />
+                  <v-icon :icon="getRaw(item).icon" size="18" color="primary" class="mr-2" />
                 </template>
                 <v-list-item-subtitle class="text-caption text-medium-emphasis">
-                  {{ item.raw.group }}
+                  {{ getRaw(item).group }}
                 </v-list-item-subtitle>
                 <template #append>
                   <v-icon size="14" color="grey">mdi-arrow-right-thin</v-icon>

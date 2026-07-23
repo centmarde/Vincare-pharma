@@ -68,25 +68,27 @@ const { poNumber, emptyRows, uniqueSuppliers } = usePODetailModal(props, emit)
           <v-divider :class="mobile ? 'mb-3' : 'mb-6'" />
 
           <!-- Supplier + Ship To -->
-          <v-row class="mb-4">
-            <v-col :cols="mobile ? 12 : 6" :class="mobile ? 'mb-3' : ''">
-              <div :class="mobile ? 'text-caption font-weight-bold text-medium-emphasis mb-1' : 'text-caption font-weight-bold text-medium-emphasis mb-2'">SUPPLIER</div>
-                <v-card flat border rounded="lg" class="pa-3" v-if="uniqueSuppliers.length">
-                  <div v-for="supplier in uniqueSuppliers" :key="supplier.id" class="mb-2">
-                    <div :class="mobile ? 'text-body-2 font-weight-medium' : 'text-body-1 font-weight-medium'">{{ supplier.name }}</div>
-                    <div :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">{{ supplier.address ?? '—' }}</div>
-                    <div :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">{{ supplier.contact_no ?? '—' }}</div>
-                  </div>
-                </v-card>
-              <div v-else :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">—</div>
+          <v-row class="mb-4" align="stretch">
+            <v-col :cols="mobile ? 12 : 6" class="d-flex flex-column">
+              <div :class="mobile
+                  ? 'text-caption font-weight-bold text-medium-emphasis mb-1' : 'text-caption font-weight-bold text-medium-emphasis mb-2'">
+                SUPPLIER
+              </div>
+              <v-card flat border rounded="lg" class="pa-3 flex-grow-1 d-flex align-center justify-center">
+                <span class="text-body-2 text-medium-emphasis">—</span>
+              </v-card>
             </v-col>
-            <v-col :cols="mobile ? 12 : 6">
-              <div :class="mobile ? 'text-caption font-weight-bold text-medium-emphasis mb-1' : 'text-caption font-weight-bold text-medium-emphasis mb-2'">SHIP TO</div>
-              <v-card flat border rounded="lg" class="pa-3">
-                <div :class="mobile ? 'text-body-2 font-weight-medium mb-1' : 'text-body-1 font-weight-medium mb-1'">{{ company.name }}</div>
-                <div :class="mobile ? 'text-caption' : 'text-body-2'">{{ company.address }}</div>
-                <div :class="mobile ? 'text-caption' : 'text-body-2'">{{ company.contact }}</div>
-                <div :class="mobile ? 'text-caption' : 'text-body-2'">{{ company.email }}</div>
+
+            <v-col :cols="mobile ? 12 : 6" class="d-flex flex-column">
+              <div :class="mobile
+                  ? 'text-caption font-weight-bold text-medium-emphasis mb-1' : 'text-caption font-weight-bold text-medium-emphasis mb-2'">
+                SHIP TO
+              </div>
+              <v-card flat border rounded="lg" class="pa-3 flex-grow-1" >
+                <div class="text-body-1 font-weight-medium mb-1">{{ company.name }}</div>
+                <div class="text-body-2">{{ company.address }}</div>
+                <div class="text-body-2">{{ company.contact }}</div>
+                <div class="text-body-2">{{ company.email }}</div>
               </v-card>
             </v-col>
           </v-row>
@@ -121,7 +123,6 @@ const { poNumber, emptyRows, uniqueSuppliers } = usePODetailModal(props, emit)
               <tr style="background-color: #1565c0;">
                 <th style="color:#fff; font-weight:600; padding: 10px 12px;">ITEM #</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px;">DESCRIPTION</th>
-                <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">SUPPLIER</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">QTY</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">UNIT PRICE</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">TOTAL</th>
@@ -131,19 +132,18 @@ const { poNumber, emptyRows, uniqueSuppliers } = usePODetailModal(props, emit)
               <tr v-for="item in pr?.items" :key="item.id">
                 <td>{{ item.no }}</td>
                 <td>{{ item.item_description }}</td>
-                <td class="text-right">{{ item.supplier_name ?? '—' }}</td>
-                <td class="text-right">{{ item.actual_count ?? '—' }}</td>
+                <td class="text-right">{{ item.actual_count_stock_in ?? '—' }}</td>
                 <td class="text-right">{{ formatCurrency(item.cost_per_unit) }}</td>
                 <td class="text-right">{{ formatCurrency(item.qty * item.cost_per_unit) }}</td>
               </tr>
               <tr v-for="n in emptyRows" :key="`empty-${n}`" class="empty-row">
-                <td colspan="5">&nbsp;</td>
+                <td colspan="4">&nbsp;</td>
               </tr>
             </tbody>
             <tfoot>
-              <tr style="background-color: #f5f5f5;">
-                <td colspan="4" style="text-align:right; font-weight:700; padding: 10px 12px;">TOTAL</td>
-                <td style="text-align:right; font-weight:700; padding: 10px 12px;">
+              <tr class="bg-grey-lighten-3">
+                <td colspan="4" class="text-black font-weight-bold" style="text-align:right;">TOTAL</td>
+                <td style="text-align:right; font-weight:700; padding: 10px 12px; color: #000;">
                   {{ formatCurrency(po?.total_amount ?? 0) }}
                 </td>
               </tr>
@@ -170,7 +170,7 @@ const { poNumber, emptyRows, uniqueSuppliers } = usePODetailModal(props, emit)
                 <v-divider class="my-1" />
                 <div class="d-flex flex-wrap ga-3 text-caption">
                   <div><span class="text-medium-emphasis">Supplier: </span>{{ item.supplier_name ?? '—' }}</div>
-                  <div><span class="text-medium-emphasis">Qty: </span>{{ item.actual_count ?? '—' }}</div>
+                  <div><span class="text-medium-emphasis">Qty: </span>{{ item.actual_count_stock_in ?? '—' }}</div>
                   <div><span class="text-medium-emphasis">Price: </span>{{ formatCurrency(item.cost_per_unit) }}</div>
                   <div><span class="text-medium-emphasis">Total: </span><span class="font-weight-medium">{{ formatCurrency(item.qty * item.cost_per_unit) }}</span></div>
                 </div>
@@ -186,15 +186,15 @@ const { poNumber, emptyRows, uniqueSuppliers } = usePODetailModal(props, emit)
 
           <!-- Signatures -->
           <v-row class="mb-6">
-            <v-col :cols="mobile ? 6 : 6">
+            <v-col :cols="mobile ? 6 : 6" class="d-flex flex-column align-center text-center">
               <div :class="mobile ? 'text-caption font-weight-bold text-medium-emphasis mb-3' : 'text-caption font-weight-bold text-medium-emphasis mb-6'">REQUESTED BY:</div>
-              <div :class="mobile ? 'text-caption font-weight-medium' : 'text-body-2 font-weight-medium'">{{ pr?.requester_name ?? '—' }}</div>
+              <div :class="mobile ? 'text-caption font-weight-medium' : 'text-body-2 font-weight-medium'">{{ pr?.requester_name }}</div>
               <v-divider :style="mobile ? 'width: 120px' : 'width: 200px'" class="mb-1" />
               <div class="text-caption text-medium-emphasis">REQUESTER</div>
             </v-col>
-            <v-col :cols="mobile ? 6 : 6">
+            <v-col :cols="mobile ? 6 : 6" class="d-flex flex-column align-center text-center">
               <div :class="mobile ? 'text-caption font-weight-bold text-medium-emphasis mb-3' : 'text-caption font-weight-bold text-medium-emphasis mb-6'">APPROVED BY:</div>
-              <div :class="mobile ? 'text-caption font-weight-medium' : 'text-body-2 font-weight-medium'">{{ pr?.reviewer_name ?? '—' }}</div>
+              <div :class="mobile ? 'text-caption font-weight-medium' : 'text-body-2 font-weight-medium'">{{ pr?.reviewer_name }}</div>
               <v-divider :style="mobile ? 'width: 120px' : 'width: 200px'" class="mb-1" />
               <div class="text-caption text-medium-emphasis">APPROVER</div>
             </v-col>

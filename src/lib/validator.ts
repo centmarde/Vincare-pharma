@@ -224,6 +224,14 @@ export const compareDatesValidator = (
   return comparisons[operator] || messages[operator]
 }
 
+// 👉 SKU Validator — ensures at least one non-whitespace character
+export const skuValidator = (value: string | null | undefined): string | boolean => {
+  if (value === null || value === undefined) return 'SKU is required'
+  if (typeof value !== 'string') return 'SKU is required'
+  if (value.trim().length === 0) return 'SKU is required'
+  return true
+}
+
 // 👉 Safe Error Message Extractor for Supabase errors
 export const getErrorMessage = (
   error: string | { message?: string } | null | undefined,

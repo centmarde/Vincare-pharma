@@ -18,6 +18,10 @@ export type SupplierType = {
   contact_person: string | null
   is_active: boolean | null
   balance: number | null
+  tin_no: string | null        
+  dti_no: string | null        
+  lto_no: string | null        
+  bank_details: string | null  
 }
 
 export type CreateSupplierData = {
@@ -28,6 +32,10 @@ export type CreateSupplierData = {
   contact_person?: string | null
   is_active?: boolean | null
   balance?: number | null
+  tin_no: string | null        
+  dti_no: string | null        
+  lto_no: string | null        
+  bank_details: string | null  
 }
 
 export type UpdateSupplierData = Partial<CreateSupplierData>
