@@ -4,12 +4,7 @@ import ActionRequiredDialog from '../dialogs/ActionRequiredDialog.vue'
 import { useChangeRequestsPR } from '@/pages/purchasing/stores/composables/useChangeRequestsPR'
 import { formatDatePR_ISO } from '@/utils/helpers'
 
-// CHANGED — was useChangeRequests (finance), now the PR-only composable.
-// Every request this list shows is now 'undo_pr' by construction (the
-// store only ever issues that type), so the request_type branching that
-// used to distinguish 'edit' vs 'undo_pr' styling is no longer needed —
-// but it's left in place harmlessly in case a second PR request type is
-// added later.
+
 const { requests, loading } = useChangeRequestsPR()
 const selected = ref(false)
 const selectedReq = ref<any | null>(null)
