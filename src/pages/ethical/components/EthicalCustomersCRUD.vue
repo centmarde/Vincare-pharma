@@ -56,7 +56,7 @@ onMounted(() => init())
       </v-card-text>
     </v-card>
 
-    <v-dialog v-model="showCreateDialog" persistent max-width="600px">
+    <v-dialog v-model="showCreateDialog" persistent max-width="800px">
       <v-card>
         <v-card-title>New Customer</v-card-title>
         <v-card-text>
@@ -70,7 +70,7 @@ onMounted(() => init())
       </v-card>
     </v-dialog>
 
-    <v-dialog v-model="showEditDialog" persistent max-width="600px">
+    <v-dialog v-model="showEditDialog" persistent max-width="800px">
       <v-card v-if="editingCustomer">
         <v-card-title>Edit Customer</v-card-title>
         <v-card-text>

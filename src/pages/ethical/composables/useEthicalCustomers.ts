@@ -29,7 +29,7 @@ export function useEthicalCustomers() {
     { title: 'VAT', key: 'is_vat_registered' },
     { title: 'Structure', key: 'business_structure' },
     { title: 'SEC/DTI #', key: 'reg_no' },
-    { title: 'Agent', key: 'agent_name' },
+    { title: 'MSR', key: 'agent_name' },
     { title: 'Status', key: 'is_active' },
     { title: '', key: 'actions', sortable: false, align: 'end' as const },
   ]

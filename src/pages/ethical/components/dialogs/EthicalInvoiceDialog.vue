@@ -96,7 +96,7 @@ async function handlePrint() {
             </v-col>
             <v-col cols="5" class="text-right">
               <div class="text-body-2">Date: {{ formatDatePR_ISO(order.created_at) }}</div>
-              <div class="text-body-2" v-if="order.agent?.name">Agent: {{ order.agent.name }}</div>
+              <div class="text-body-2" v-if="order.agent?.name">Medical Sales Representative: {{ order.agent.name }}</div>
               <div class="text-body-2" v-if="order.terms_days">Terms: Net {{ order.terms_days }} days</div>
               <div class="text-body-2" v-if="order.due_date">Due: {{ formatDatePR_ISO(order.due_date) }}</div>
             </v-col>
@@ -136,9 +136,9 @@ async function handlePrint() {
               <div class="d-flex justify-space-between text-body-2 mb-1" v-if="order.discount_amount">
                 <span>Discount:</span><span>-{{ formatCurrency(order.discount_amount) }}</span>
               </div>
-              <div class="d-flex justify-space-between text-body-2 mb-1" v-if="order.rebate_amount">
-                <span>Rebate:</span><span>-{{ formatCurrency(order.rebate_amount) }}</span>
-              </div>
+              <!-- Rebate is a separate deferred payout to the customer/MSR, NOT an
+                   invoice deduction, so it is deliberately omitted from the printed
+                   invoice — the invoice total is subtotal − discount only. -->
               <div class="d-flex justify-space-between text-body-1 font-weight-bold mb-1">
                 <span>Invoice Total:</span><span>{{ formatCurrency(order.total_amount ?? 0) }}</span>
               </div>

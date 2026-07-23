@@ -124,7 +124,7 @@ export const useAgentsDataStore = defineStore('agentsData', () => {
         .from('agents').insert([data]).select().single()
       if (createError) throw createError
       upsertLocal(created as AgentType)
-      toast.success('Agent created.')
+      toast.success('Medical Sales Representative created.')
       return created as AgentType
     } catch (err) {
       handleError(err, 'Failed to create agent')
@@ -143,7 +143,7 @@ export const useAgentsDataStore = defineStore('agentsData', () => {
         .from('agents').update(data).eq('id', id).select().single()
       if (updateError) throw updateError
       upsertLocal(updated as AgentType)
-      toast.success('Agent updated.')
+      toast.success('Medical Sales Representative updated.')
       return updated as AgentType
     } catch (err) {
       handleError(err, 'Failed to update agent')
@@ -161,7 +161,7 @@ export const useAgentsDataStore = defineStore('agentsData', () => {
       const { error: deleteError } = await supabase.from('agents').delete().eq('id', id)
       if (deleteError) throw deleteError
       removeLocal(id)
-      toast.success('Agent deleted.')
+      toast.success('Medical Sales Representative deleted.')
       return true
     } catch (err) {
       handleError(err, 'Failed to delete agent')

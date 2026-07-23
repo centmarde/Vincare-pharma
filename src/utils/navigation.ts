@@ -261,7 +261,7 @@ export const navigationConfig: NavigationGroup[] = [
         permission: 'ethical.customers.manage',
       },
       {
-        title: 'Sales Agents',
+        title: 'Medical Sales Representatives',
         icon: 'mdi-account-tie',
         route: '/ethical/agents',
         permission: 'ethical.agents.manage',
@@ -271,6 +271,12 @@ export const navigationConfig: NavigationGroup[] = [
         icon: 'mdi-percent',
         route: '/ethical/commissions',
         permission: 'ethical.commissions.view',
+      },
+      {
+        title: 'Rebate Payouts',
+        icon: 'mdi-cash-refund',
+        route: '/ethical/rebate-payouts',
+        permission: 'ethical.rebates.approve',
       },
       {
         title: 'Delivery Receipts',

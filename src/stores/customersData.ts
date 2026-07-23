@@ -8,6 +8,8 @@ import { useToast } from 'vue-toastification'
 const toast = useToast()
 
 export type BusinessStructure = 'corporation' | 'sole_proprietorship' | 'partnership' | 'other'
+export type RebatePaymentMode = 'cash' | 'gcash' | 'bank' | 'other'
+export type SchemeType = 'pushing' | 'tie_up' | 'dispensing' | 'trade_discount' | 'free_goods'
 
 export type CustomerType = {
   id: number
@@ -26,6 +28,22 @@ export type CustomerType = {
   business_structure: BusinessStructure | null
   sec_registration_no: string | null
   dti_registration_no: string | null
+  name_of_pmr: string | null
+  area: string | null
+  rebate_payment_mode: RebatePaymentMode | null
+  rebate_payment_account_no: string | null
+  scheme: SchemeType[] | null
+  term_days: number | null
+  product_sales_list: string | null
+  owner_name: string | null
+  owner_contact_no: string | null
+  purchaser_name: string | null
+  purchaser_contact_no: string | null
+  target_sales: number | null
+  discount_rate: number | null
+  rebate_rate: number | null
+  markup_percent: number | null
+  rebate_ratio_distribution: string | null
 }
 
 export type CreateCustomerData = {
@@ -43,6 +61,22 @@ export type CreateCustomerData = {
   business_structure?: BusinessStructure | null
   sec_registration_no?: string | null
   dti_registration_no?: string | null
+  name_of_pmr?: string | null
+  area?: string | null
+  rebate_payment_mode?: RebatePaymentMode | null
+  rebate_payment_account_no?: string | null
+  scheme?: SchemeType[] | null
+  term_days?: number | null
+  product_sales_list?: string | null
+  owner_name?: string | null
+  owner_contact_no?: string | null
+  purchaser_name?: string | null
+  purchaser_contact_no?: string | null
+  target_sales?: number | null
+  discount_rate?: number | null
+  rebate_rate?: number | null
+  markup_percent?: number | null
+  rebate_ratio_distribution?: string | null
 }
 
 export type UpdateCustomerData = CreateCustomerData
