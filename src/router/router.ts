@@ -31,6 +31,7 @@ import EthicalOrdersView from '@/pages/ethical/EthicalOrdersView.vue'
 import EthicalCustomersView from '@/pages/ethical/CustomersView.vue'
 import EthicalAgentsView from '@/pages/ethical/AgentsView.vue'
 import EthicalCommissionsView from '@/pages/ethical/CommissionsView.vue'
+import EthicalRebatePayoutsView from '@/pages/ethical/RebatePayoutsView.vue'
 import FinanceView from '@/pages/finance/FinanceView.vue'
 import ExpensesView from '@/pages/finance/ExpensesView.vue'
 import SupplierPaymentsView from '@/pages/finance/SupplierPaymentsView.vue'
@@ -200,6 +201,11 @@ const routes = setupLayouts([
   {
     path: '/ethical/commissions',
     component: EthicalCommissionsView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/ethical/rebate-payouts',
+    component: EthicalRebatePayoutsView,
     meta: { requiresAuth: true },
   },
   {

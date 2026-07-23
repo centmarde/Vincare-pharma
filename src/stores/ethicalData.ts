@@ -7,6 +7,7 @@ import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useCanvassDataStore } from '@/stores/canvassData'
 import { useDeliveryReceiptsDataStore } from '@/stores/deliveryReceiptsData'
+import { useGLDataStore } from '@/stores/glData'
 import { generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
 import type { ProductType } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
@@ -49,6 +50,9 @@ export type CollectionType = {
   void_reason?: string | null
 }
 
+export type RebateStatus = 'pending_approval' | 'approved' | 'paid' | 'rejected'
+export type RebatePaymentMethod = 'cash' | 'gcash' | 'cheque' | 'bank' | 'other'
+
 export type EthicalOrderType = {
   id: number
   created_at: string
@@ -69,6 +73,15 @@ export type EthicalOrderType = {
   paid_at: string | null
   created_by: string | null
   remarks: string | null
+  rebate_status: RebateStatus | null
+  rebate_approved_by: string | null
+  rebate_approved_at: string | null
+  rebate_rejected_reason: string | null
+  rebate_paid_at: string | null
+  rebate_payment_method: RebatePaymentMethod | null
+  rebate_reference: string | null
+  rebate_paid_to: string | null
+  rebate_cash_account_id: number | null
   customer?: CustomerType | null
   agent?: AgentType | null
   items?: EthicalItemType[]
@@ -117,7 +130,9 @@ function mapRow(row: any): EthicalOrderType {
     agent_id:       row.agent_id,
     status:         row.status,
     fulfillment_status: details.fulfillment_status ?? null,
-    subtotal:       (row.total_amount ?? 0) + discountAmount + rebateAmount,
+    // total_amount = subtotal − discount (rebate is a separate payout, never
+    // part of the invoice), so subtotal reconstructs as total + discount only.
+    subtotal:       (row.total_amount ?? 0) + discountAmount,
     total_amount:   row.total_amount,
     discount_amount: discountAmount,
     rebate_amount:  rebateAmount,
@@ -127,6 +142,15 @@ function mapRow(row: any): EthicalOrderType {
     paid_at:        details.paid_at ?? null,
     created_by:     row.created_by,
     remarks:        row.remarks,
+    rebate_status:  details.rebate_status ?? null,
+    rebate_approved_by: details.rebate_approved_by ?? null,
+    rebate_approved_at: details.rebate_approved_at ?? null,
+    rebate_rejected_reason: details.rebate_rejected_reason ?? null,
+    rebate_paid_at: details.rebate_paid_at ?? null,
+    rebate_payment_method: details.rebate_payment_method ?? null,
+    rebate_reference: details.rebate_reference ?? null,
+    rebate_paid_to: details.rebate_paid_to ?? null,
+    rebate_cash_account_id: details.rebate_cash_account_id ?? null,
     customer:       row.customer,
     agent:          row.agent,
     items: (row.transaction_items ?? []).map((li: any) => ({
@@ -145,6 +169,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
   const authStore = useAuthUserStore()
   const canvassStore = useCanvassDataStore()
   const drStore = useDeliveryReceiptsDataStore()
+  const glStore = useGLDataStore()
 
   const orders: Ref<EthicalOrderType[]> = ref([])
   const currentOrder: Ref<EthicalOrderType | undefined> = ref(undefined)
@@ -246,9 +271,13 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     const subtotal = payload.lines.reduce((sum, l) => sum + l.quantity * l.unit_price, 0)
     const discount = payload.discount ?? 0
     const rebate = payload.rebate ?? 0
-    const total = subtotal - discount - rebate
+    // Discount is an on-invoice price reduction, so it lowers the total. The
+    // rebate is a deferred incentive PAID OUT SEPARATELY (cash/GCash per the
+    // customer's rebate_payment_mode) — it's recorded on the order for the
+    // eventual payout but must NOT reduce what the customer owes here.
+    const total = subtotal - discount
     if (total < 0) {
-      toast.error('Total amount cannot be negative after discounts/rebates.'); loading.value = false; return { success: false }
+      toast.error('Total amount cannot be negative after discount.'); loading.value = false; return { success: false }
     }
 
     const year = new Date().getFullYear().toString()
@@ -377,7 +406,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
 
     const { data: order, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, total_amount, agent_id, ethical_details(amount_paid)')
+      .select('id, status, total_amount, agent_id, ethical_no, ethical_details(amount_paid, rebate_amount, rebate_status)')
       .eq('id', payload.orderId)
       .eq('transaction_type', 'ethical_order')
       .maybeSingle()
@@ -389,7 +418,9 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
       toast.error('Order is not open for collection.'); loading.value = false; return { success: false }
     }
 
-    const paid = (order.ethical_details as unknown as { amount_paid: number | null } | null)?.amount_paid ?? 0
+    const orderDetails = order.ethical_details as unknown as
+      { amount_paid: number | null; rebate_amount: number | null; rebate_status: string | null } | null
+    const paid = orderDetails?.amount_paid ?? 0
     const total = order.total_amount ?? 0
     const balance = total - paid
     if (payload.amount > balance) {
@@ -423,9 +454,18 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     }
 
     const nowIso = new Date().toISOString()
+    // The rebate only falls due once the order is paid IN FULL, and every rebate
+    // needs approval before cash moves — so full payment parks it in the
+    // approval queue rather than making it immediately payable.
+    const rebateAmount = orderDetails?.rebate_amount ?? 0
+    const rebateFallsDueNow =
+      newStatus === 'paid' && rebateAmount > 0 && !orderDetails?.rebate_status
+    const detailsUpdate: Record<string, unknown> = { amount_paid: paid + payload.amount, paid_at: nowIso }
+    if (rebateFallsDueNow) detailsUpdate.rebate_status = 'pending_approval'
+
     const { error: detailsError } = await supabase
       .from('ethical_details')
-      .update({ amount_paid: paid + payload.amount, paid_at: nowIso })
+      .update(detailsUpdate)
       .eq('transaction_id', payload.orderId)
     if (detailsError) console.warn('recordCollection: ethical_details update failed:', detailsError.message)
 
@@ -449,12 +489,252 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     })
     if (logError) console.warn('recordCollection: activity log insert failed:', logError.message)
 
+    // The rebate is a real obligation the moment the order is settled in full, so
+    // accrue the expense now rather than waiting for the cash to leave:
+    //   DR 6030 Computed Rebates / CR 2020 Accrued Expenses
+    // Best-effort per the JS-over-RPC trade-off — a failure here is logged and
+    // surfaced, never silently swallowed, since it would understate expenses.
+    if (rebateFallsDueNow && !detailsError) {
+      const glResult = await glStore.postJournalEntry(
+        nowIso.slice(0, 10),
+        'accrual',
+        payload.orderId,
+        `Rebate accrued on fully-paid ethical order ${order.ethical_no ?? payload.orderId}`,
+        [
+          { account_code: '6030', debit: rebateAmount, credit: 0, memo: 'Computed rebate earned on full payment' },
+          { account_code: '2020', debit: 0, credit: rebateAmount, memo: 'Rebate payable, pending approval' },
+        ],
+        user.id,
+      )
+      if (!glResult.success) {
+        console.warn('recordCollection: rebate accrual posting failed:', glResult.error)
+        toast.warning('Collection recorded, but the rebate accrual did not post to the GL — verify with Finance.')
+      }
+    }
+
     if (detailsError) toast.warning('Collection recorded, but the order balance may be out of sync — verify manually.')
     else toast.success('Collection recorded.')
     await fetchOrders()
     await fetchCollections(payload.orderId)
     loading.value = false
     return { success: true, collectionId: collection.id }
+  }
+
+  // ---- Rebate payout workflow ---------------------------------------------
+  // A rebate is earned per order, falls due only once that order is paid IN
+  // FULL, and always needs approval before cash goes out. It's paid to the
+  // client's purchaser (an individual), so it's a selling expense (6030), never
+  // a discount off the invoice.
+
+  const rebateQueue: Ref<EthicalOrderType[]> = ref([])
+
+  // Orders whose rebate is live: fully paid, has a rebate, not yet settled or
+  // rejected. rebate_status is null for orders paid before this workflow
+  // existed, so treat null-on-a-paid-order as pending rather than stranding it.
+  const fetchRebateQueue = async () => {
+    loading.value = true
+    clearError()
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('transactions')
+        .select(SELECT_ORDER)
+        .eq('transaction_type', 'ethical_order')
+        .eq('status', 'paid')
+        .order('created_at', { ascending: false })
+      if (fetchError) throw fetchError
+      rebateQueue.value = (data ?? [])
+        .map(mapRow)
+        .filter(o => (o.rebate_amount ?? 0) > 0
+          && o.rebate_status !== 'paid'
+          && o.rebate_status !== 'rejected')
+      return rebateQueue.value
+    } catch (err) {
+      handleError(err, 'Failed to fetch rebate queue.')
+      toast.error('Failed to fetch rebate queue.')
+      return []
+    } finally {
+      loading.value = false
+    }
+  }
+
+  // Guarded on the current status so a stale/duplicate click can't re-approve or
+  // approve something already paid out.
+  const approveRebate = async (orderId: number) => {
+    loading.value = true
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
+
+    const { data: updated, error: updateError } = await supabase
+      .from('ethical_details')
+      .update({ rebate_status: 'approved', rebate_approved_by: user.id, rebate_approved_at: new Date().toISOString() })
+      .eq('transaction_id', orderId)
+      .eq('rebate_status', 'pending_approval')
+      .select('id')
+    if (updateError) {
+      handleError(updateError, 'Failed to approve rebate.')
+      toast.error(updateError.message || 'Failed to approve rebate.')
+      loading.value = false; return { success: false }
+    }
+    if (!updated?.length) {
+      toast.warning('Rebate is no longer pending approval — refresh and try again.')
+      loading.value = false; return { success: false }
+    }
+
+    const { error: logError } = await supabase.from('logs').insert({
+      created_by: user.id, action: 'rebate_approved',
+      description: 'Rebate approved for payout', module: 'ethical', transaction_id: orderId,
+    })
+    if (logError) console.warn('approveRebate: activity log insert failed:', logError.message)
+
+    toast.success('Rebate approved.')
+    await fetchRebateQueue()
+    loading.value = false
+    return { success: true }
+  }
+
+  // Rejecting reverses the accrual posted at full payment — otherwise 6030 keeps
+  // an expense for money that will never be paid.
+  const rejectRebate = async (orderId: number, reason: string) => {
+    loading.value = true
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
+
+    const { data: order } = await supabase
+      .from('transactions')
+      .select('ethical_no, ethical_details(rebate_amount)')
+      .eq('id', orderId)
+      .maybeSingle()
+    const rebateAmount = (order?.ethical_details as unknown as { rebate_amount: number | null } | null)?.rebate_amount ?? 0
+
+    const { data: updated, error: updateError } = await supabase
+      .from('ethical_details')
+      .update({ rebate_status: 'rejected', rebate_rejected_reason: reason, rebate_approved_by: user.id, rebate_approved_at: new Date().toISOString() })
+      .eq('transaction_id', orderId)
+      .eq('rebate_status', 'pending_approval')
+      .select('id')
+    if (updateError) {
+      handleError(updateError, 'Failed to reject rebate.')
+      toast.error(updateError.message || 'Failed to reject rebate.')
+      loading.value = false; return { success: false }
+    }
+    if (!updated?.length) {
+      toast.warning('Rebate is no longer pending approval — refresh and try again.')
+      loading.value = false; return { success: false }
+    }
+
+    if (rebateAmount > 0) {
+      const glResult = await glStore.postJournalEntry(
+        new Date().toISOString().slice(0, 10),
+        'accrual',
+        orderId,
+        `Rebate rejected — reversing accrual on order ${order?.ethical_no ?? orderId}`,
+        [
+          { account_code: '2020', debit: rebateAmount, credit: 0, memo: 'Reverse rebate payable — rejected' },
+          { account_code: '6030', debit: 0, credit: rebateAmount, memo: 'Reverse computed rebate — rejected' },
+        ],
+        user.id,
+      )
+      if (!glResult.success) {
+        console.warn('rejectRebate: accrual reversal failed:', glResult.error)
+        toast.warning('Rebate rejected, but the GL reversal did not post — verify with Finance.')
+      }
+    }
+
+    const { error: logError } = await supabase.from('logs').insert({
+      created_by: user.id, action: 'rebate_rejected',
+      description: `Rebate rejected: ${reason}`, module: 'ethical', transaction_id: orderId,
+    })
+    if (logError) console.warn('rejectRebate: activity log insert failed:', logError.message)
+
+    toast.success('Rebate rejected.')
+    await fetchRebateQueue()
+    loading.value = false
+    return { success: true }
+  }
+
+  // Disburse an approved rebate. paidTo + reference are required support: the
+  // recipient is an individual and the customer's owner may never acknowledge
+  // it, so our own record is the only backing for the 6030 deduction.
+  const payRebate = async (payload: {
+    orderId: number
+    method: RebatePaymentMethod
+    reference?: string
+    paidTo: string
+    cashAccountId: number
+  }) => {
+    loading.value = true
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
+    if (!payload.paidTo?.trim()) { toast.warning('Record who received the rebate.'); loading.value = false; return { success: false } }
+
+    const { data: order } = await supabase
+      .from('transactions')
+      .select('ethical_no, ethical_details(rebate_amount)')
+      .eq('id', payload.orderId)
+      .maybeSingle()
+    const rebateAmount = (order?.ethical_details as unknown as { rebate_amount: number | null } | null)?.rebate_amount ?? 0
+
+    const { data: account } = await supabase
+      .from('cash_accounts').select('id, name, classification, balance').eq('id', payload.cashAccountId).maybeSingle()
+    if (!account) { toast.error('Cash account not found.'); loading.value = false; return { success: false } }
+
+    const nowIso = new Date().toISOString()
+    const { data: updated, error: updateError } = await supabase
+      .from('ethical_details')
+      .update({
+        rebate_status: 'paid', rebate_paid_at: nowIso, rebate_payment_method: payload.method,
+        rebate_reference: payload.reference || null, rebate_paid_to: payload.paidTo.trim(),
+        rebate_cash_account_id: payload.cashAccountId,
+      })
+      .eq('transaction_id', payload.orderId)
+      .eq('rebate_status', 'approved')
+      .select('id')
+    if (updateError) {
+      handleError(updateError, 'Failed to record rebate payout.')
+      toast.error(updateError.message || 'Failed to record rebate payout.')
+      loading.value = false; return { success: false }
+    }
+    if (!updated?.length) {
+      toast.warning('Rebate is not approved for payout — refresh and try again.')
+      loading.value = false; return { success: false }
+    }
+
+    // Settle the liability against the funding account:
+    //   DR 2020 Accrued Expenses / CR 1010 Cash on Hand | 1020 Cash in Bank
+    const cashCode = account.classification === 'PETTY_CASH' ? '1010' : '1020'
+    const glResult = await glStore.postJournalEntry(
+      nowIso.slice(0, 10),
+      'disbursement',
+      payload.orderId,
+      `Rebate paid to ${payload.paidTo.trim()} for order ${order?.ethical_no ?? payload.orderId} via ${payload.method}${payload.reference ? ` (${payload.reference})` : ''}`,
+      [
+        { account_code: '2020', debit: rebateAmount, credit: 0, memo: 'Settle rebate payable' },
+        { account_code: cashCode, debit: 0, credit: rebateAmount, memo: `Rebate payout via ${payload.method}` },
+      ],
+      user.id,
+    )
+    if (!glResult.success) {
+      console.warn('payRebate: disbursement posting failed:', glResult.error)
+      toast.warning('Rebate marked paid, but the GL entry did not post — verify with Finance.')
+    }
+
+    const { error: balanceError } = await supabase
+      .from('cash_accounts')
+      .update({ balance: (account.balance ?? 0) - rebateAmount })
+      .eq('id', payload.cashAccountId)
+    if (balanceError) console.warn('payRebate: cash account balance update failed:', balanceError.message)
+
+    const { error: logError } = await supabase.from('logs').insert({
+      created_by: user.id, action: 'rebate_paid',
+      description: `Rebate of ${rebateAmount} paid to ${payload.paidTo.trim()} via ${payload.method}${payload.reference ? ` ref ${payload.reference}` : ''}`,
+      module: 'ethical', transaction_id: payload.orderId,
+    })
+    if (logError) console.warn('payRebate: activity log insert failed:', logError.message)
+
+    toast.success('Rebate payout recorded.')
+    await fetchRebateQueue()
+    loading.value = false
+    return { success: true }
   }
 
   // Issue a Delivery Receipt for the fulfilled quantities. Document-only (stock
@@ -854,10 +1134,11 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
   }
 
   return {
-    orders, currentOrder, collections, commissionSummary, loading, error,
+    orders, currentOrder, collections, commissionSummary, rebateQueue, loading, error,
     fetchOrders, fetchOrderById, createOrder, recordCollection, cancelOrder,
     recheckStock, canvassToPRs, issueDeliveryReceipt,
     fetchCollections, markCommissionPaid, fetchCommissionSummary,
+    fetchRebateQueue, approveRebate, rejectRebate, payRebate,
     startRealtime, stopRealtime, clearError, resetStore,
   }
 })

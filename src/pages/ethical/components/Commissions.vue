@@ -20,11 +20,11 @@ onMounted(() => init())
 
       <v-card-text>
         <div class="mb-4">
-          <h4 class="mb-3">Commission Summary by Agent</h4>
+          <h4 class="mb-3">Commission Summary by Medical Sales Representative</h4>
           <v-table dense>
             <thead>
               <tr>
-                <th>Agent</th>
+                <th>MSR</th>
                 <th class="text-right">Total Commission</th>
                 <th class="text-right">Unpaid</th>
                 <th class="text-right">Paid</th>

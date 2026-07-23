@@ -92,7 +92,7 @@ watch(
       <v-card-text>
         <v-row class="mb-2">
           <v-col>Customer: <strong>{{ order.customer?.name }}</strong></v-col>
-          <v-col>Agent: <strong>{{ order.agent?.name }}</strong></v-col>
+          <v-col>Medical Sales Representative: <strong>{{ order.agent?.name }}</strong></v-col>
           <v-col>Due Date: <strong :class="{ 'text-error': isOverdue }">{{ order.due_date ? new Date(order.due_date).toLocaleDateString() : '—' }}</strong></v-col>
         </v-row>
         <v-row class="mb-4">
@@ -129,11 +129,13 @@ watch(
 
         <div class="text-right mt-4 space-y-1">
           <div>Subtotal: {{ order.subtotal?.toFixed(2) }}</div>
-          <div v-if="order.discount_amount">Discount: {{ order.discount_amount.toFixed(2) }}</div>
-          <div v-if="order.rebate_amount">Rebate: {{ order.rebate_amount.toFixed(2) }}</div>
+          <div v-if="order.discount_amount">Discount: −{{ order.discount_amount.toFixed(2) }}</div>
           <div><strong>Invoice Total: {{ order.total_amount?.toFixed(2) }}</strong></div>
           <div>Amount Paid: {{ order.amount_paid?.toFixed(2) }}</div>
           <div class="text-lg font-weight-bold">Balance: {{ balance.toFixed(2) }}</div>
+          <div v-if="order.rebate_amount" class="text-caption text-medium-emphasis mt-1">
+            Rebate: {{ order.rebate_amount.toFixed(2) }} — paid separately, not part of the invoice
+          </div>
         </div>
 
         <v-card v-if="isAwaitingStock" variant="outlined" rounded="lg" class="my-4 bg-orange-lighten-5">

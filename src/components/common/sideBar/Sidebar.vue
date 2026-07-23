@@ -225,11 +225,9 @@ const handleLogout = async () => {
 
       <!-- Version Info -->
       <v-list-item class="pa-4">
-        <v-list-item-content>
-          <v-list-item-subtitle class="text-caption grey--text text-center">
-            {{ footerVersionText }}
-          </v-list-item-subtitle>
-        </v-list-item-content>
+        <v-list-item-subtitle class="text-caption grey--text text-center">
+          {{ footerVersionText }}
+        </v-list-item-subtitle>
       </v-list-item>
     </template>
   </v-navigation-drawer>
