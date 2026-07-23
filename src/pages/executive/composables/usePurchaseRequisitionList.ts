@@ -1,3 +1,4 @@
+import { useChangeRequestPRStore } from '@/pages/purchasing/stores/oldChangeRequestPR'
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import { useTransactionsData } from '@/composables/useTransactionsData'
 import { useTransactionsDataStore } from '@/stores/transactionsData'
@@ -156,6 +157,16 @@ export function usePurchaseRequisitionList() {
       ])
       confirmLoading.value = false
     }
+
+  async function handleUnapprove(pr: PR, reason?: string) {
+      const changeRequestPRStore = useChangeRequestPRStore()
+      const result = await changeRequestPRStore.handleUnapprove(pr, reason)
+
+      if (result.success) {
+        // Refresh the list to reflect any status changes
+        await loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
+      }
+    }
   async function openPurchaseOrder(pr: PR) {
     selectedPRForPO.value = pr
     showPOModal.value     = true
@@ -181,6 +192,6 @@ export function usePurchaseRequisitionList() {
     handleConfirm, openPurchaseOrder,
     loadItems, init,
     stats,
-
+    handleUnapprove,
   }
 }

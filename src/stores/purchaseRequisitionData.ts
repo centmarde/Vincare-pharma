@@ -207,7 +207,6 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
   }
 
   // ─── Update PR (from PREditDialog) ──────────────────────────────
-  // ─── Update PR (from PREditDialog) ──────────────────────────────
   async function updatePR(payload: {
     prId: number
     items: PRItem[]
@@ -305,8 +304,6 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     const itemsNeedingProduct = [...newItems, ...changedExistingItems]
 
     if (itemsNeedingProduct.length) {
-      // Pull a candidate pool by name (for the fallback tier) — sku is
-      // fetched here too so the SKU tier below doesn't need a second query.
       const names = [
         ...new Set(itemsNeedingProduct.map((i) => i.item_description).filter(Boolean)),
       ]
@@ -322,11 +319,6 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         return false
       }
 
-      // Any item's CURRENT product_id (from what's on file, for changed-
-      // existing items) may carry a SKU that doesn't share the item's NEW
-      // typed name — e.g. renaming an item whose old product had a SKU.
-      // We need that row's SKU too, so fetch by id for anything with a
-      // product_id not already covered by the name-based pool above.
       const idsAlreadyCovered = new Set((candidatesByName || []).map((p) => p.id))
       const idsToFetch = [
         ...new Set(
@@ -345,122 +337,109 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       }
       const allCandidates = [...(candidatesByName || []), ...candidatesById]
 
-      const findByNameUnitSupplierExpiry = (
+      // expiry_date is the BATCH identity — always compared as its own gate,
+      // never bundled in with "cosmetic" fields like name/unit/supplier.
+      const sameExpiry = (a: string | null | undefined, b: string | null | undefined) =>
+        (a ?? null) === (b ?? null)
+
+      const findExactMatch = (
         name: string,
         supplierId: number | null,
         unit: string,
         expiryDate: string | null,
+        requireSku: boolean,
       ) =>
         allCandidates.find(
           (p) =>
             p.product_name === name &&
             (p.supplier_id ?? null) === (supplierId ?? null) &&
             p.unit === unit &&
-            (p.expiry_date ?? null) === (expiryDate ?? null),
+            sameExpiry(p.expiry_date, expiryDate) &&
+            (!requireSku || !!p.sku),
         )
 
-      // ── TIERED MATCHING ──────────────────────────────────────────────
-      // Tier 1: item.product_id is already set (picked via ProductPicker,
-      //         or carried over from the existing line) — trust it outright,
-      //         no re-derivation from typed text fields.
-      // Tier 2: the CURRENT product on file for this item has a non-null
-      //         SKU — meaning it's already been received/tracked in the
-      //         warehouse and is potentially referenced by Sales. Reuse
-      //         that row's id even if the typed name/unit/expiry differ,
-      //         rather than spinning off a duplicate for a real, in-use
-      //         product. (Field differences here are a "correction on an
-      //         already-live product" situation, not a "new batch" one —
-      //         flagged in the return value below so the caller can warn.)
-      // Tier 3: fallback — match by name + unit + supplier_id + expiry_date,
-      //         for products that have never been received (SKU still null,
-      //         still "just an idea" from a PR that hasn't become stock).
-      // Tier 4: no match on any tier — insert a new product row.
       const skuMismatchWarnings: { itemDescription: string; sku: string }[] = []
 
       const productIdByIndex: (number | null)[] = itemsNeedingProduct.map((item) => {
         const supplierId = item.supplier_id ? Number(item.supplier_id) : null
+        let resolvedId: number | null = null
 
-        // Tier 1 — trust an already-set product_id if it's still a valid,
-        // exact match on file (guards against a stale id after data drift).
+        // ── Tier 1/2 — only apply if item.product_id points at a product
+        // that is STILL THE SAME BATCH (expiry_date unchanged). If expiry
+        // differs, the picked product_id is discarded outright — a changed
+        // expiry always means "find or create the row for this batch," never
+        // "keep reusing the old batch's row."
         if (item.product_id != null && item.product_id > 0) {
           const picked = allCandidates.find((p) => p.id === item.product_id)
-          if (picked) {
-            // Tier 2 nested inside Tier 1: if this exact picked product has
-            // a SKU (already received/live), keep it regardless of minor
-            // text-field mismatches — just flag it for a caller-side warning.
-            if (picked.sku) {
-              const differs =
-                picked.unit !== item.unit ||
-                picked.product_name !== item.item_description ||
-                (picked.supplier_id ?? null) !== supplierId ||
-                (picked.expiry_date ?? null) !== (item.expiry_date ?? null)
-              if (differs) {
-                skuMismatchWarnings.push({
-                  itemDescription: item.item_description,
-                  sku: picked.sku,
-                })
-              }
-              return item.product_id
-            }
-            // No SKU yet — still require an exact field match to reuse it,
-            // same as before (a genuinely different product shouldn't
-            // silently inherit a stale product_id).
-            if (
+          if (picked && sameExpiry(picked.expiry_date, item.expiry_date ?? null)) {
+            const exactCosmetic =
               picked.unit === item.unit &&
               picked.product_name === item.item_description &&
-              (picked.supplier_id ?? null) === supplierId &&
-              (picked.expiry_date ?? null) === (item.expiry_date ?? null)
-            ) {
-              return item.product_id
+              (picked.supplier_id ?? null) === supplierId
+
+            if (exactCosmetic) {
+              // Tier 1 — exact match on every field, including expiry.
+              resolvedId = picked.id
+            } else if (picked.sku) {
+              // Tier 2 — same batch (expiry matches), only a cosmetic
+              // field (name typo/unit/supplier) differs, and it's already
+              // tracked stock. Reuse it, just warn.
+              resolvedId = picked.id
+              skuMismatchWarnings.push({
+                itemDescription: item.item_description,
+                sku: picked.sku,
+              })
             }
+            // else: same expiry, cosmetic mismatch, no SKU yet — falls
+            // through to tier 3/4 below, same as a genuinely new item.
           }
+          // else: no picked product, or expiry_date changed — falls through.
         }
 
-        // Tier 2 (no usable product_id) — look for ANY product matching the
-        // typed name that already has a SKU. A SKU'd product is real,
-        // received stock — reuse it rather than duplicate it, even though
-        // we got here via typed text rather than a picker selection.
-        const skuMatch = allCandidates.find(
-          (p) => p.product_name === item.item_description && !!p.sku,
-        )
-        if (skuMatch) {
-          const differs =
-            skuMatch.unit !== item.unit ||
-            (skuMatch.supplier_id ?? null) !== supplierId ||
-            (skuMatch.expiry_date ?? null) !== (item.expiry_date ?? null)
-          if (differs) {
-            skuMismatchWarnings.push({
-              itemDescription: item.item_description,
-              sku: skuMatch.sku!,
-            })
-          }
-          return skuMatch.id
+        // ── Tier 3 — no usable product_id (or it was discarded above).
+        // Look for an EXACT match (name + unit + supplier + expiry, i.e.
+        // this exact batch) that's already SKU-tracked — reuse instead of
+        // duplicating a real, received batch.
+        if (resolvedId === null) {
+          const skuMatch = findExactMatch(
+            item.item_description,
+            supplierId,
+            item.unit,
+            item.expiry_date ?? null,
+            true, // requireSku
+          )
+          if (skuMatch) resolvedId = skuMatch.id
         }
 
-        // Tier 3 — fallback match for not-yet-received products.
-        const match = findByNameUnitSupplierExpiry(
-          item.item_description,
-          supplierId,
-          item.unit,
-          item.expiry_date ?? null,
-        )
-        return match ? match.id : null
+        // ── Tier 4 — fallback exact match for not-yet-received batches
+        // (no SKU requirement).
+        if (resolvedId === null) {
+          const match = findExactMatch(
+            item.item_description,
+            supplierId,
+            item.unit,
+            item.expiry_date ?? null,
+            false,
+          )
+          if (match) resolvedId = match.id
+        }
+
+        // null here means: no existing row for this exact batch — create one.
+        return resolvedId
       })
 
       if (skuMismatchWarnings.length) {
-        // Non-blocking — the update still proceeds (per Tier 2 reusing the
-        // row), this just surfaces that an already-live/received product
-        // was targeted with different field values than what's on file.
         console.warn(
-          'updatePR: reused SKU-tracked product(s) despite field differences:',
+          'updatePR: reused SKU-tracked product(s) despite cosmetic field differences (same batch/expiry):',
           skuMismatchWarnings,
         )
         toast.warning(
-          `Note: "${skuMismatchWarnings[0].itemDescription}" is already tracked (SKU ${skuMismatchWarnings[0].sku}) — reused that product instead of creating a duplicate.`,
+          `Note: "${skuMismatchWarnings[0].itemDescription}" is already tracked (SKU ${skuMismatchWarnings[0].sku}) for this batch — reused that product instead of creating a duplicate.`,
         )
       }
 
-      // Tier 4 — create products that matched nothing above.
+      // ── Tier 5 — create products that matched nothing above (genuinely
+      // new batches, or genuinely new products).
       const toCreateIndexes = productIdByIndex
         .map((id, idx) => (id === null ? idx : -1))
         .filter((idx) => idx !== -1)
@@ -497,15 +476,11 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         })
       }
 
-      // Split resolved product ids back out by which item they belong to.
       const newItemsProductIds = productIdByIndex.slice(0, newItems.length)
       const changedItemsProductIds = productIdByIndex.slice(newItems.length)
 
-      // Insert brand-new transaction_items
       if (newItems.length) {
-        const { error: insertError } = await supabase
-        .from('transaction_items')
-        .insert(
+        const { error: insertError } = await supabase.from('transaction_items').insert(
           newItems.map((item, index) => ({
             transaction_id: payload.prId,
             product_id: newItemsProductIds[index]!,
@@ -520,7 +495,6 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         }
       }
 
-      // Update changed-existing transaction_items: repoint product_id + qty
       for (let index = 0; index < changedExistingItems.length; index++) {
         const item = changedExistingItems[index]
         const { error: updateItemError } = await supabase
