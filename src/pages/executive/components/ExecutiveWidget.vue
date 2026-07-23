@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useExecutiveDashboard } from '../composables/useExecutiveDashboard'
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import HeaderBar from './HeaderBar.vue'
 import KpiCards from './KpiCards.vue'
 import QuickStatsCards from './QuickStatsCards.vue'
@@ -13,9 +13,6 @@ const dash = useExecutiveDashboard()
 const staticData = useExecutiveStatic()
 
 const searchQuery = ref('')
-const topProducts = computed(() =>
-  [...staticData.topProducts].sort((a, b) => b.revenue - a.revenue),
-)
 const rightPanelView = ref<'actionRequired' | 'topProducts'>('actionRequired')
 </script>
 
@@ -72,7 +69,7 @@ const rightPanelView = ref<'actionRequired' | 'topProducts'>('actionRequired')
 
         <div class="flex-grow-1 d-flex">
           <ActionRequired v-if="rightPanelView === 'actionRequired'" class="flex-grow-1" />
-          <TopProducts v-else :products="topProducts" class="flex-grow-1" />
+        <TopProducts v-else class="flex-grow-1" />
         </div>
       </v-col>
     </v-row>

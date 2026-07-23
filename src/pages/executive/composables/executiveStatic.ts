@@ -20,16 +20,9 @@ export interface MonthlyData {
   orders: number
 }
 
-export interface TopProduct {
-  name: string
-  qty: number
-  revenue: number
-}
-
 export interface ExecutiveDashboardData {
   kpiCards: KpiCard[]
   monthlyData: MonthlyData[]
-  topProducts: TopProduct[]
   totalRevenue: number
   totalExpenses: number
   totalOrders: number
@@ -97,14 +90,6 @@ export function useExecutiveStatic(): ExecutiveDashboardData {
       { month: 'Oct', revenue: 125_000, expenses: 84_000, orders: 34 },
       { month: 'Nov', revenue: 130_000, expenses: 86_000, orders: 35 },
       { month: 'Dec', revenue: 41_500, expenses: 28_700, orders: 9 },
-    ],
-
-    topProducts: [
-      { name: 'Amoxicillin 500mg', qty: 1_240, revenue: 248_000 },
-      { name: 'Paracetamol 500mg', qty: 1_180, revenue: 118_000 },
-      { name: 'Omeprazole 20mg', qty: 890, revenue: 133_500 },
-      { name: 'Losartan 50mg', qty: 760, revenue: 114_000 },
-      { name: 'Metformin 500mg', qty: 720, revenue: 72_000 },
     ],
   }
 }
