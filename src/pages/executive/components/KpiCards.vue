@@ -3,14 +3,19 @@ import { useRouter } from 'vue-router'
 import { ref, watch } from 'vue'
 import type { KpiCard } from '../composables/useExecutiveDashboard'
 import { formatCurrency } from '@/utils/helpers'
+import QuickStatsCards from './QuickStatsCards.vue'
+import { useExecutiveStatic } from '../composables/executiveStatic'
+
+const staticData = useExecutiveStatic()
 
 const props = defineProps<{
-    cards: KpiCard[]
-    loading?: boolean
-    error?: string
-    dateFrom?: string
-    dateTo?: string
-  }>()
+  cards: KpiCard[]
+  loading?: boolean
+  error?: string
+  dateFrom?: string
+  dateTo?: string
+  revenueGrowth?: string
+}>()
 
 const emit = defineEmits<{
   apply: [dateFrom: string, dateTo: string]
@@ -26,8 +31,18 @@ const draftDateTo = ref(props.dateTo ?? '')
 
 // If the committed dates change from outside (e.g. the Refresh button
 // resets them to "this month"), keep the draft fields in sync too.
-watch(() => props.dateFrom, (value) => { draftDateFrom.value = value ?? '' })
-watch(() => props.dateTo, (value) => { draftDateTo.value = value ?? '' })
+watch(
+  () => props.dateFrom,
+  (value) => {
+    draftDateFrom.value = value ?? ''
+  },
+)
+watch(
+  () => props.dateTo,
+  (value) => {
+    draftDateTo.value = value ?? ''
+  },
+)
 
 function applyDateRange() {
   emit('apply', draftDateFrom.value, draftDateTo.value)
@@ -103,31 +118,70 @@ function goToRoute(kpi: KpiCard) {
 
 <template>
   <!-- Error Banner -->
-  <v-alert v-if="error" type="error" variant="tonal" density="compact" class="ma-2 mb-0 rounded-lg" closable :text="error" />
+  <v-alert
+    v-if="error"
+    type="error"
+    variant="tonal"
+    density="compact"
+    class="ma-2 mb-0 rounded-lg"
+    closable
+    :text="error"
+  />
 
   <!-- Date Range Filter -->
-   <!-- how to make this buttons to end? -->
-  <v-row class="ma-0 mb-3 align-center justify-end">
+  <v-row class="ma-0 mb-3 align-center justify-space-between">
+    <QuickStatsCards
+      :total-orders="staticData.totalOrders"
+      :pending-orders="staticData.pendingOrders"
+      :revenue-growth="revenueGrowth ?? '0%'"
+    />
     <v-col cols="auto" class="pa-1">
       <span class="text-body-2 font-weight-medium text-medium-emphasis">From:</span>
     </v-col>
     <v-col cols="auto" class="pa-1">
-      <v-text-field v-model="draftDateFrom" type="date" density="compact" variant="outlined" hide-details style="max-width: 160px" />
+      <v-text-field
+        v-model="draftDateFrom"
+        type="date"
+        density="compact"
+        variant="outlined"
+        hide-details
+        style="max-width: 160px"
+      />
     </v-col>
     <v-col cols="auto" class="pa-1">
       <span class="text-body-2 text-medium-emphasis">to</span>
     </v-col>
     <v-col cols="auto" class="pa-1">
-      <v-text-field v-model="draftDateTo" type="date" density="compact" variant="outlined" hide-details style="max-width: 160px" />
+      <v-text-field
+        v-model="draftDateTo"
+        type="date"
+        density="compact"
+        variant="outlined"
+        hide-details
+        style="max-width: 160px"
+      />
     </v-col>
     <v-col cols="auto" class="pa-1">
-      <v-btn color="primary" variant="flat" size="small" class="text-none" :loading="loading" @click="applyDateRange">
+      <v-btn
+        color="primary"
+        variant="flat"
+        size="small"
+        class="text-none"
+        :loading="loading"
+        @click="applyDateRange"
+      >
         Apply
       </v-btn>
     </v-col>
     <v-col cols="auto" class="pa-1">
-      <v-btn variant="tonal" size="extra-small" icon="mdi-calendar-refresh" :loading="loading"
-        title="Reset to this month" @click="refreshToCurrentMonth" />
+      <v-btn
+        variant="tonal"
+        size="extra-small"
+        icon="mdi-calendar-refresh"
+        :loading="loading"
+        title="Reset to this month"
+        @click="refreshToCurrentMonth"
+      />
     </v-col>
   </v-row>
 
@@ -150,28 +204,59 @@ function goToRoute(kpi: KpiCard) {
   </v-row>
 
   <!-- Cards -->
-   <v-row v-else class="ma-0 mb-4" align="stretch">
+  <v-row v-else class="ma-0 mb-4" align="stretch">
     <v-col v-for="(kpi, i) in cards" :key="i" cols="12" sm="6" lg="3" class="pa-2">
-      <v-card class="kpi-card rounded-xl h-100 d-flex flex-column" elevation="0"
+      <v-card
+        class="kpi-card rounded-xl h-100 d-flex flex-column"
+        elevation="0"
         :class="[`kpi-card--${kpi.color}`, { 'kpi-card--clickable': !!kpi.route }]"
-        :style="cardStyle(kpi)" @click="goToRoute(kpi)">
+        :style="cardStyle(kpi)"
+        @click="goToRoute(kpi)"
+      >
         <v-card-text class="pa-4 d-flex flex-column flex-grow-1">
           <div class="d-flex align-start justify-space-between mb-3">
             <div class="kpi-header-text">
-              <div class="text-caption font-weight-medium text-medium-emphasis">{{ kpi.title }}</div>
-               <div class="font-weight-bold kpi-value mt-1" :title="displayValue(kpi.value, kpi.isCurrency)">
+              <div class="text-caption font-weight-medium text-medium-emphasis">
+                {{ kpi.title }}
+              </div>
+              <div
+                class="font-weight-bold kpi-value mt-1"
+                :title="displayValue(kpi.value, kpi.isCurrency)"
+              >
                 {{ displayValue(kpi.value, kpi.isCurrency) }}
               </div>
             </div>
             <div class="d-flex flex-column align-end ga-1 kpi-icon-col">
-              <v-avatar size="44" rounded="lg" class="kpi-avatar" :color="kpi.color" variant="tonal">
+              <v-avatar
+                size="44"
+                rounded="lg"
+                class="kpi-avatar"
+                :color="kpi.color"
+                variant="tonal"
+              >
                 <v-icon :icon="kpi.icon" :color="kpi.color" size="24" />
               </v-avatar>
-              <svg v-if="kpi.sparkline?.length" :width="60" :height="24" viewBox="0 0 60 24" class="mt-1">
-                <path :d="sparklinePath(kpi.sparkline)" fill="none"
-                  :stroke="`rgb(var(--v-theme-${kpi.color}))`" stroke-width="1.5"
-                  stroke-linecap="round" stroke-linejoin="round" />
-                <circle :cx="60" :cy="sparklineDotY(kpi.sparkline)" r="2" :fill="`rgb(var(--v-theme-${kpi.color}))`" />
+              <svg
+                v-if="kpi.sparkline?.length"
+                :width="60"
+                :height="24"
+                viewBox="0 0 60 24"
+                class="mt-1"
+              >
+                <path
+                  :d="sparklinePath(kpi.sparkline)"
+                  fill="none"
+                  :stroke="`rgb(var(--v-theme-${kpi.color}))`"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <circle
+                  :cx="60"
+                  :cy="sparklineDotY(kpi.sparkline)"
+                  r="2"
+                  :fill="`rgb(var(--v-theme-${kpi.color}))`"
+                />
               </svg>
             </div>
           </div>
@@ -186,8 +271,15 @@ function goToRoute(kpi: KpiCard) {
 
           <!-- Badges -->
           <div v-if="kpi.badges?.length" class="d-flex flex-wrap ga-1 mt-1">
-            <v-chip v-for="(badge, bi) in kpi.badges" :key="bi" size="x-small"
-              :color="badge.color ?? 'grey'" variant="tonal" label class="text-caption">
+            <v-chip
+              v-for="(badge, bi) in kpi.badges"
+              :key="bi"
+              size="x-small"
+              :color="badge.color ?? 'grey'"
+              variant="tonal"
+              label
+              class="text-caption"
+            >
               <span class="font-weight-medium">{{ badge.label }}:</span>
               <span class="ms-1">{{ displayValue(badge.value, badge.isCurrency) }}</span>
             </v-chip>
@@ -221,7 +313,7 @@ function goToRoute(kpi: KpiCard) {
   max-width: 100%;
 }
 .kpi-header-text {
-  min-width: 0;   /* allows this flex item to shrink below its content's natural width */
+  min-width: 0; /* allows this flex item to shrink below its content's natural width */
   flex: 1 1 auto;
 }
 .kpi-icon-col {

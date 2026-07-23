@@ -26,47 +26,79 @@ function openSuppliers() {
 </script>
 
 <template>
-  <v-row class="ma-0 mb-4">
-    <v-col cols="6" sm="3" class="pa-2">
-      <v-card class="rounded-xl quick-stat-card" elevation="0">
-        <v-card-text class="pa-4 text-center">
-          <v-icon icon="mdi-file-document-outline" color="primary" size="28" class="mb-1" />
-          <div class="text-h5 font-weight-bold">{{ totalOrders }}</div>
+  <v-row class="ma-0 mx-2 my-2" justify="start">
+    <v-col cols="auto" class="pa-1">
+      <v-tooltip location="top">
+        <template #activator="{ props }">
+          <v-icon
+            v-bind="props"
+            icon="mdi-file-document-outline"
+            color="primary"
+            size="22"
+            class="quick-stat-icon"
+          />
+        </template>
+        <div class="text-center pa-2">
+          <div class="text-h6 font-weight-bold">{{ totalOrders }}</div>
           <div class="text-caption text-medium-emphasis">Total Orders</div>
-        </v-card-text>
-      </v-card>
+        </div>
+      </v-tooltip>
     </v-col>
-    <v-col cols="6" sm="3" class="pa-2">
-      <v-card class="rounded-xl quick-stat-card" elevation="0">
-        <v-card-text class="pa-4 text-center">
-          <v-icon icon="mdi-clock-alert-outline" color="warning" size="28" class="mb-1" />
-          <div class="text-h5 font-weight-bold">{{ pendingOrders }}</div>
+
+    <v-col cols="auto" class="pa-1">
+      <v-tooltip location="top">
+        <template #activator="{ props }">
+          <v-icon
+            v-bind="props"
+            icon="mdi-clock-alert-outline"
+            color="warning"
+            size="22"
+            class="quick-stat-icon"
+          />
+        </template>
+        <div class="text-center pa-2">
+          <div class="text-h6 font-weight-bold">{{ pendingOrders }}</div>
           <div class="text-caption text-medium-emphasis">Pending Orders</div>
-        </v-card-text>
-      </v-card>
+        </div>
+      </v-tooltip>
     </v-col>
-    <v-col cols="6" sm="3" class="pa-2">
-      <v-card
-        class="rounded-xl quick-stat-card"
-        elevation="0"
-        style="cursor: pointer;"
-        @click="openSuppliers"
-      >
-        <v-card-text class="pa-4 text-center">
-          <v-icon icon="mdi-truck-delivery" color="info" size="28" class="mb-1" />
-          <div class="text-h5 font-weight-bold">{{ activeSuppliersCount }}</div>
+
+    <v-col cols="auto" class="pa-1">
+      <v-tooltip location="top">
+        <template #activator="{ props }">
+          <v-icon
+            v-bind="props"
+            icon="mdi-truck-delivery"
+            color="info"
+            size="22"
+            class="quick-stat-icon"
+            style="cursor: pointer"
+            @click="openSuppliers"
+          />
+        </template>
+        <div class="text-center pa-2">
+          <div class="text-h6 font-weight-bold">{{ activeSuppliersCount }}</div>
           <div class="text-caption text-medium-emphasis">Active Suppliers</div>
-        </v-card-text>
-      </v-card>
+        </div>
+      </v-tooltip>
     </v-col>
-    <v-col cols="6" sm="3" class="pa-2">
-      <v-card class="rounded-xl quick-stat-card" elevation="0">
-        <v-card-text class="pa-4 text-center">
-          <v-icon icon="mdi-trending-up" color="success" size="28" class="mb-1" />
-          <div class="text-h5 font-weight-bold">{{ revenueGrowth }}</div>
+
+    <v-col cols="auto" class="pa-1">
+      <v-tooltip location="top">
+        <template #activator="{ props }">
+          <v-icon
+            v-bind="props"
+            icon="mdi-trending-up"
+            color="success"
+            size="22"
+            class="quick-stat-icon"
+          />
+        </template>
+        <div class="text-center pa-2">
+          <div class="text-h6 font-weight-bold">{{ revenueGrowth }}</div>
           <div class="text-caption text-medium-emphasis">Revenue Growth</div>
-        </v-card-text>
-      </v-card>
+        </div>
+      </v-tooltip>
     </v-col>
   </v-row>
 

@@ -137,10 +137,10 @@
 }
 
 /* ── Quick Stats ────────────────────────────── */
-.quick-stat-card {
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  transition: transform 0.2s ease;
+.quick-stat-icon {
+  transition: transform 0.15s ease, opacity 0.15s ease;
 }
-.quick-stat-card:hover {
-  transform: translateY(-2px);
+.quick-stat-icon:hover {
+  transform: scale(1.1);
+  opacity: 0.8;
 }
