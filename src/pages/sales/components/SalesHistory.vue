@@ -4,6 +4,7 @@ import { useSalesHistory, headers } from '../composables/useSalesHistory'
 import PosReceiptDialog from '../dialogs/PosReceiptDialog.vue'
 import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
+import { useSalesChangeRequestStore } from '../stores/salesChangeRequest'
 import type { SaleType } from '@/stores/salesData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
@@ -17,7 +18,7 @@ const {
 // Voiding a completed sale now needs executive approval. A sale isn't edited —
 // void + re-ring — so the request is void-only.
 const { showDialog, config, isPending, loadPending, open, submit, submitting } =
-  useChangeRequestFiling('sales', 'sale')
+  useChangeRequestFiling(useSalesChangeRequestStore())
 
 function openChange(s: SaleType) {
   open({

@@ -7,6 +7,7 @@ import EthicalInvoiceDialog from './EthicalInvoiceDialog.vue'
 import DeliveryReceiptDialog from '@/components/deliveryReceipts/DeliveryReceiptDialog.vue'
 import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
+import { useChangeRequestsDataStore } from '@/stores/changeRequestsData'
 import { expensePaymentMethods } from '@/stores/financeData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
@@ -37,7 +38,7 @@ watch(issuedReceipt, (dr) => { if (dr) showReceipt.value = true })
 
 // Undoing a recorded collection now needs executive approval (void-only).
 const { showDialog: crDialog, config: crConfig, isPending: crPending, loadPending: crLoad, open: crOpen, submit: crSubmit, submitting: crSubmitting } =
-  useChangeRequestFiling('ethical', 'ethical_collection')
+  useChangeRequestFiling(useChangeRequestsDataStore())
 watch(collections, () => { void crLoad() }, { immediate: true })
 
 function requestUndoCollection(c: CollectionType) {
@@ -242,8 +243,10 @@ watch(
                   Mark Paid
                 </v-btn>
                 <v-chip v-if="crPending(c.id)" size="x-small" color="warning" variant="tonal" label>undo pending</v-chip>
-                <v-btn v-else icon="mdi-pencil-box-outline" size="x-small" variant="text" color="primary"
-                  title="Request edit or undo of this collection (needs executive approval)" @click="requestUndoCollection(c)" />
+                <v-btn v-else prepend-icon="mdi-pencil-box-outline" size="small" variant="tonal" color="primary" class="text-none"
+                  title="Request edit or undo of this collection (needs executive approval)" @click="requestUndoCollection(c)">
+                  Request Change
+                </v-btn>
               </td>
             </tr>
           </tbody>

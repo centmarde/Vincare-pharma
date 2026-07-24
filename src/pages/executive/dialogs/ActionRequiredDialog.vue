@@ -1,10 +1,16 @@
 <script setup lang="ts">
 import { useChangeRequestsPR } from '@/pages/purchasing/stores/composables/useChangeRequestsPR'
+import { useFinanceChangeRequests } from '@/pages/finance/stores/composables/useFinanceChangeRequests'
+import { useSalesChangeRequests } from '@/pages/sales/stores/composables/useSalesChangeRequests'
 import { formatDatePR_ISO } from '@/utils/helpers'
 import { computed, ref, watch } from 'vue'
 
-// CHANGED — was useChangeRequests (finance), now the PR-only composable.
-const { approve, reject } = useChangeRequestsPR()
+// Generalized to approve/reject a request from ANY module's queue — the
+// request passed in (from ActionRequired.vue's merged list) carries a
+// `source` tag saying which composable actually owns it.
+const pr = useChangeRequestsPR()
+const finance = useFinanceChangeRequests()
+const sales = useSalesChangeRequests()
 
 const selected = defineModel<boolean>('modelValue', { default: false })
 const props = defineProps<{ request?: any }>()
@@ -23,11 +29,39 @@ watch(selected, (open) => {
   }
 })
 
+function composableFor(source: string | undefined) {
+  if (source === 'finance') return finance
+  if (source === 'sales') return sales
+  return pr
+}
+
+const moduleLabel = computed(() => {
+  const source = request.value?.source
+  if (source === 'finance') return 'Finance'
+  if (source === 'sales') return 'Sales'
+  return 'Purchase Requisition'
+})
+
+// 'undo_pr' → Undo (purchase requisition unapprove); 'void' → Void (undo a
+// recorded document); 'edit' → Edit (proposed field changes).
+function requestTypeLabel(requestType: string): string {
+  if (requestType === 'undo_pr') return 'Undo'
+  if (requestType === 'void') return 'Void'
+  return 'Edit'
+}
+
+const warningText = computed(() => {
+  const type = request.value?.request_type
+  if (type === 'undo_pr') return 'Approving will revert this purchase requisition back to Pending Approval.'
+  if (type === 'void') return 'Approving will void this document — its ledger entry is reversed and any affected balances are restored.'
+  return 'Approving will apply the proposed edits to this document.'
+})
+
 async function onApprove() {
   if (!request.value || isApproving.value) return
   isApproving.value = true
   try {
-    const result = await approve(request.value.id)
+    const result = await composableFor(request.value.source).approve(request.value.id)
     if (result.success) selected.value = false
   } finally {
     isApproving.value = false
@@ -42,7 +76,7 @@ async function confirmReject() {
   if (!request.value || isRejecting.value) return
   isRejecting.value = true
   try {
-    const result = await reject(
+    const result = await composableFor(request.value.source).reject(
       request.value.id,
       rejectReason.value.trim() || 'Rejected by approver.'
     )
@@ -87,11 +121,11 @@ async function confirmReject() {
                 <span class="text-body-2 font-weight-bold">
                   {{ request.from_transaction_no ?? `#${request.transaction_id}` }}
                 </span>
-                <v-chip size="x-small" color="error" variant="tonal" label>Undo</v-chip>
-                <v-chip size="x-small" variant="tonal" color="green" label>Purchase Requisition</v-chip>
+                <v-chip size="x-small" color="error" variant="tonal" label>{{ requestTypeLabel(request.request_type) }}</v-chip>
+                <v-chip size="x-small" variant="tonal" color="green" label>{{ moduleLabel }}</v-chip>
               </div>
               <div class="text-caption text-medium-emphasis mt-1">
-                {{ request.summary ?? 'Revert this purchase requisition to pending approval.' }}
+                {{ request.summary ?? warningText }}
               </div>
             </div>
           </div>
@@ -133,8 +167,7 @@ async function confirmReject() {
           icon="mdi-information-outline"
           class="mb-4 text-caption"
         >
-          Approving will revert this purchase requisition back to
-          <strong>Pending Approval</strong>. This cannot be undone.
+          {{ warningText }} This cannot be undone.
         </v-alert>
 
         <!-- Inline reject reason -->
