@@ -12,6 +12,9 @@ import type { ReorderPrefillItem } from '@/pages/purchasing/composables/usePurch
 import { useAuthUserStore } from '@/stores/authUser'
 import { isPurchasingRole, isProductEditRestricted } from '@/utils/roleHelpers'
 import { useProductIgnore, IGNORE_DURATIONS } from '@/components/products/composables/useProductIgnore'
+import { useWarehouseProductsDataStore } from '@/stores/warehouseProductsData'
+import { useReservedProductsDataStore, type ReservedProductType } from '@/stores/reservedProductsData'
+import { useCustomersDataStore } from '@/stores/customersData'
 
 interface StockStatusCardDef {
   type: 'out-of-stock' | 'low-stock' | 'no-reorder-level' | 'expiring-soon' | 'expired'
@@ -78,6 +81,16 @@ export function useProductsWidget() {
 
   // Expanded rows
   const expanded = ref<string[]>([])
+
+  // Warehouse filter
+  const selectedWarehouseId = ref<number | null>(null)
+  const warehouseProductIds = ref<number[]>([])
+  const warehouseStockMap = ref<Map<number, number>>(new Map())
+  const warehouseProductDetails = ref<Map<number, { total_qty: number }>>(new Map())
+
+  // Reserved products — maps product_id -> list of reservations with customer name
+  const reservedProductsMap = ref<Map<number, { customer_name: string; reserved_qty: number }[]>>(new Map())
+  const warehouseProductsIdToProductId = ref<Map<number, number>>(new Map())
 
   // Stock status dialog
   const showStockDialog = ref(false)
@@ -217,14 +230,108 @@ const stockDialogProducts = computed<ProductType[]>(() => {
   }
 
   async function fetchProducts() {
+    const ids = selectedWarehouseId.value && warehouseProductIds.value.length > 0
+      ? warehouseProductIds.value
+      : [...eligibleProductIds.value]
+
     await productsStore.fetchProducts({
       search: searchQuery.value,
       orderBy: (sortBy.value[0]?.key as any) || 'created_at',
       ascending: sortBy.value[0]?.order === 'asc',
       limit: itemsPerPage.value,
       offset: (page.value - 1) * itemsPerPage.value,
-      eligibleIds: [...eligibleProductIds.value],
+      eligibleIds: ids,
     })
+  }
+
+  function setWarehouseFilter(warehouseId: number | null) {
+    selectedWarehouseId.value = warehouseId
+    if (warehouseId) {
+      const warehouseProductsStore = useWarehouseProductsDataStore()
+      const reservedProductsStore = useReservedProductsDataStore()
+
+      warehouseProductsStore.fetchWarehouseProducts({ warehouse_id: warehouseId }).then(async () => {
+        warehouseProductIds.value = warehouseProductsStore.warehouseProducts
+          .map(wp => wp.product_id)
+          .filter((id): id is number => id != null)
+
+        // Build warehouse product ID -> product ID map
+        const wpToProductMap = new Map<number, number>()
+        for (const wp of warehouseProductsStore.warehouseProducts) {
+          if (wp.id != null && wp.product_id != null) {
+            wpToProductMap.set(wp.id, wp.product_id)
+          }
+        }
+        warehouseProductsIdToProductId.value = wpToProductMap
+
+        // Use RPC to get stock + reservations in a single query
+        const rpcRows = await reservedProductsStore.fetchWarehouseStockWithReservations(warehouseId)
+
+        const stockMap = new Map<number, number>()
+        const detailsMap = new Map<number, { total_qty: number }>()
+        const reservationsByProduct = new Map<number, { customer_name: string; reserved_qty: number }[]>()
+
+        for (const row of rpcRows) {
+          if (row.product_id == null) continue
+          const productId = row.product_id
+          stockMap.set(productId, row.available_stock)
+          detailsMap.set(productId, { total_qty: row.total_qty })
+          // Ensure reservations is always a proper array (Supabase may return jsonb as a string)
+          const reservations = Array.isArray(row.reservations)
+            ? row.reservations
+            : Array.isArray(row.reservations)
+              ? row.reservations
+              : typeof row.reservations === 'string'
+                ? (() => {
+                    try {
+                      const parsed = JSON.parse(row.reservations)
+                      return Array.isArray(parsed) ? parsed : []
+                    } catch {
+                      return []
+                    }
+                  })()
+                : []
+          reservationsByProduct.set(productId, reservations)
+
+          console.log(`[ProductsWidget] Product ${productId}: total_qty=${row.total_qty}, available_stock=${row.available_stock}, reservations=${JSON.stringify(reservations)}`)
+        }
+
+        warehouseStockMap.value = stockMap
+        warehouseProductDetails.value = detailsMap
+        reservedProductsMap.value = reservationsByProduct
+
+        fetchProducts()
+      })
+    } else {
+      warehouseProductIds.value = []
+      warehouseStockMap.value = new Map()
+      warehouseProductDetails.value = new Map()
+      reservedProductsMap.value = new Map()
+      warehouseProductsIdToProductId.value = new Map()
+      fetchProducts()
+    }
+  }
+
+  /**
+   * Get the warehouse-specific available stock (total_qty - sum of reserved_qty) for a product.
+   * Returns null if no warehouse filter is active or product not found in warehouse.
+   */
+  function getWarehouseStock(productId: number): number | null {
+    return warehouseStockMap.value.get(productId) ?? null
+  }
+
+  /**
+   * Get detailed warehouse product info for display.
+   */
+  function getWarehouseProductDetail(productId: number): { total_qty: number } | null {
+    return warehouseProductDetails.value.get(productId) ?? null
+  }
+
+  /**
+   * Get the list of reservations (customer name + qty) for a product.
+   */
+  function getProductReservations(productId: number): { customer_name: string; reserved_qty: number }[] {
+    return reservedProductsMap.value.get(productId) || []
   }
 
   function openCreateDialog() {
@@ -350,7 +457,11 @@ const stockDialogProducts = computed<ProductType[]>(() => {
   }
 
   function handleSearch() {
-    fetchProducts()
+    if (selectedWarehouseId.value && warehouseProductIds.value.length > 0) {
+      fetchProducts()
+    } else {
+      fetchProducts()
+    }
   }
 
   const reorderRequestInfo = computed(() => {
@@ -446,6 +557,7 @@ const stockDialogProducts = computed<ProductType[]>(() => {
     expanded,
     showStockDialog,
     stockDialogType,
+    selectedWarehouseId,
     // Computed
     headers,
     products,
@@ -465,6 +577,10 @@ const stockDialogProducts = computed<ProductType[]>(() => {
     handleSubmit,
     handleDelete,
     handleSearch,
+    setWarehouseFilter,
+    getWarehouseStock,
+    getWarehouseProductDetail,
+    getProductReservations,
     handleTableOptions,
     //Stock order for Purchaser
     isEditRestricted,

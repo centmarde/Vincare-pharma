@@ -14,14 +14,21 @@ import ManageIgnoredItemsDialog from './dialogs/ManageIgnoredItemsDialog.vue'
 import LogsViewDialog from '@/pages/logs/dialogs/LogsViewDialog.vue'
 import { useProductsDataStore } from '@/stores/productsData'
 import { useAuthUserStore } from '@/stores/authUser'
+import { useWarehousesDataStore } from '@/stores/warehouseData'
+import { useCustomersDataStore } from '@/stores/customersData'
 import { canViewSupplierName } from '@/utils/roleHelpers'
 import PurchaseRequisitionDialog from '@/pages/purchasing/components/dialogs/PurchaseRequisitionDialog.vue'
-
 
 const { mobile } = useDisplay()
 const logsStore = useLogsDataStore()
 const productsDataStore = useProductsDataStore()
 const authUser = useAuthUserStore()
+const customersStore = useCustomersDataStore()
+const warehousesStore = useWarehousesDataStore()
+
+// Fetch warehouses and customers on mount
+warehousesStore.fetchWarehouses()
+customersStore.fetchCustomers()
 
 const {
   form,
@@ -58,7 +65,7 @@ const {
   isEditRestricted,
   isPurchaser,
   reorderRequestInfo,
-  canRequestReorder,   // NEW
+  canRequestReorder, // NEW
   selectedReorderProductIds,
   toggleReorderSelection,
   showPurchaseRequisitionDialog,
@@ -67,6 +74,12 @@ const {
   proceedCreatePRFromSelection,
   productIgnore,
   IGNORE_DURATIONS,
+  // Warehouse filter
+  selectedWarehouseId,
+  setWarehouseFilter,
+  getWarehouseStock,
+  getWarehouseProductDetail,
+  getProductReservations,
 } = useProductsWidget()
 
 // Manage ignored items dialog
@@ -76,8 +89,8 @@ const showManageIgnoredDialog = ref(false)
 const ignoredProductEntries = computed(() => {
   const ignoredIds = productIgnore.activeIgnoredIdsArray.value
   return ignoredIds
-    .map(id => {
-      const product = productsDataStore.products.find(p => p.id === id)
+    .map((id) => {
+      const product = productsDataStore.products.find((p) => p.id === id)
       const info = productIgnore.getIgnoreInfo(id)
       return {
         id,
@@ -87,7 +100,7 @@ const ignoredProductEntries = computed(() => {
         remainingLabel: info ? productIgnore.formatRemainingTime(info.remainingMs) : 'Expired',
       }
     })
-    .filter(entry => entry.remainingMs > 0)
+    .filter((entry) => entry.remainingMs > 0)
 })
 
 function handleStockCardClick(type: string) {
@@ -102,7 +115,7 @@ async function requestReorder(product: any) {
   const result = await productsDataStore.createReorderRequest({ product_id: product.id, reason })
   if (result?.success) await productsDataStore.fetchReorderRequests(true)
 }
-function onPRSubmitted(){}
+function onPRSubmitted() {}
 
 // Logs dialog state
 const showLogsDialog = ref(false)
@@ -113,8 +126,10 @@ const openLogsDialog = async (product: any) => {
 
   productLogs.value = logsStore.logs.filter((log: LogType) => {
     const isProductRelated =
-      (log.module?.toLowerCase().includes('stock') && log.description?.toLowerCase().includes((product.product_name ?? '').toLowerCase())) ||
-      (log.module?.toLowerCase().includes('product') && log.description?.toLowerCase().includes((product.product_name ?? '').toLowerCase())) ||
+      (log.module?.toLowerCase().includes('stock') &&
+        log.description?.toLowerCase().includes((product.product_name ?? '').toLowerCase())) ||
+      (log.module?.toLowerCase().includes('product') &&
+        log.description?.toLowerCase().includes((product.product_name ?? '').toLowerCase())) ||
       log.description?.toLowerCase().includes((product.sku ?? '').toLowerCase())
     return isProductRelated
   })
@@ -138,6 +153,7 @@ function stockColor(item: any) {
   if (isLowStock) return 'warning'
   return isDark.value === 'dark' ? 'grey-lighten-2' : 'grey-darken-3'
 }
+
 </script>
 
 <template>
@@ -147,6 +163,21 @@ function stockColor(item: any) {
       <v-icon icon="mdi-package-variant" color="primary"></v-icon>
       <span class="text-h6 font-weight-bold mr-auto">Products</span>
       <template v-if="!mobile">
+        <!-- Warehouse filter -->
+        <v-select
+          v-model="selectedWarehouseId"
+          :items="[{ id: null, name: 'Main Warehouse' }, ...warehousesStore.warehouses]"
+          item-title="name"
+          item-value="id"
+          label="Filter by warehouse..."
+          prepend-inner-icon="mdi-warehouse"
+          variant="outlined"
+          density="compact"
+          hide-details
+          persistent-placeholder
+          class="warehouse-filter"
+          @update:model-value="(val) => setWarehouseFilter(val)"
+        ></v-select>
         <v-text-field
           v-model="searchQuery"
           label="Search products..."
@@ -158,7 +189,12 @@ function stockColor(item: any) {
           @keyup.enter="handleSearch"
         ></v-text-field>
         <!-- I want to restrict this when the user is a warehouse user -->
-        <v-btn color="primary" variant="elevated" @click="openCreateDialog" v-if="!isEditRestricted">
+        <v-btn
+          color="primary"
+          variant="elevated"
+          @click="openCreateDialog"
+          v-if="!isEditRestricted"
+        >
           <v-icon icon="mdi-plus" class="mr-1"></v-icon>
           Add Product
         </v-btn>
@@ -188,10 +224,7 @@ function stockColor(item: any) {
     </div>
 
     <!-- Stock Status Cards -->
-    <StockStatusCards
-      :cards="stockStatusCards"
-      @show-dialog="handleStockCardClick"
-    />
+    <StockStatusCards :cards="stockStatusCards" @show-dialog="handleStockCardClick" />
 
     <!-- Manage Ignored Items link -->
     <div v-if="ignoredProductEntries.length > 0" class="d-flex justify-end px-3 pb-1">
@@ -203,7 +236,9 @@ function stockColor(item: any) {
         prepend-icon="mdi-bell-off-outline"
         @click="showManageIgnoredDialog = true"
       >
-        {{ ignoredProductEntries.length }} ignored product{{ ignoredProductEntries.length > 1 ? 's' : '' }}
+        {{ ignoredProductEntries.length }} ignored product{{
+          ignoredProductEntries.length > 1 ? 's' : ''
+        }}
       </v-btn>
     </div>
 
@@ -240,8 +275,21 @@ function stockColor(item: any) {
           <span>{{ item.unit || 'N/A' }}</span>
         </template>
         <template #[`item.current_stock`]="{ item }">
-          <v-chip :color="stockColor(item)" size="small" variant="outlined">
+          <v-chip
+            v-if="!selectedWarehouseId"
+            :color="stockColor(item)"
+            size="small"
+            variant="outlined"
+          >
             {{ item.current_stock ?? 0 }}
+          </v-chip>
+          <v-chip
+            v-else
+            :color="(getWarehouseStock(item.id) ?? 0) <= 0 ? 'error' : 'success'"
+            size="small"
+            variant="outlined"
+          >
+            {{ getWarehouseStock(item.id) ?? 0 }}
           </v-chip>
         </template>
         <template #[`item.expiry_date`]="{ value }">
@@ -274,7 +322,11 @@ function stockColor(item: any) {
                     <div>
                       <div class="text-caption text-grey-darken-1">Supplier</div>
                       <div class="text-body-1 font-weight-medium">
-                        {{ canViewSupplierName(authUser.userRole) ? (item.suppliers?.name || 'N/A') : 'Restricted' }}
+                        {{
+                          canViewSupplierName(authUser.userRole)
+                            ? item.suppliers?.name || 'N/A'
+                            : 'Restricted'
+                        }}
                       </div>
                     </div>
                   </v-col>
@@ -285,6 +337,70 @@ function stockColor(item: any) {
                       <div class="text-body-1 font-weight-medium">{{ item.status || 'N/A' }}</div>
                     </div>
                   </v-col>
+
+                  <!-- Warehouse details when a warehouse filter is active -->
+                  <template v-if="selectedWarehouseId && getWarehouseProductDetail(item.id)">
+                    <v-col cols="12" class="py-2">
+                      <v-divider class="mb-2"></v-divider>
+                      <div class="text-subtitle-2 font-weight-bold text-grey-darken-1 mb-2">
+                        <v-icon icon="mdi-warehouse" size="18" class="mr-1"></v-icon>
+                        Warehouse Stock Details
+                      </div>
+                    </v-col>
+                    <v-col cols="12" md="4" class="d-flex align-center py-2">
+                      <v-icon
+                        icon="mdi-package-variant-closed"
+                        color="primary"
+                        class="mr-3"
+                      ></v-icon>
+                      <div>
+                        <div class="text-caption text-grey-darken-1">Total Qty</div>
+                        <div class="text-body-1 font-weight-medium">
+                          {{ getWarehouseProductDetail(item.id)?.total_qty ?? 0 }}
+                        </div>
+                      </div>
+                    </v-col>
+                    <v-col cols="12" md="4" class="d-flex align-center py-2">
+                      <v-icon icon="mdi-check-circle-outline" color="success" class="mr-3"></v-icon>
+                      <div>
+                        <div class="text-caption text-grey-darken-1">Available Stock</div>
+                        <div class="text-body-1 font-weight-medium">
+                          {{ getWarehouseStock(item.id) ?? 0 }}
+                        </div>
+                      </div>
+                    </v-col>
+                    <v-col cols="12" class="py-2">
+                      <v-divider class="mb-2"></v-divider>
+                      <div class="text-subtitle-2 font-weight-bold text-grey-darken-1 mb-2">
+                        <v-icon icon="mdi-bookmark-multiple" size="18" class="mr-1"></v-icon>
+                        Reserved to Customers
+                      </div>
+                      <template v-if="getProductReservations(item.id).length > 0">
+                        <v-list density="compact" class="pa-0" lines="one">
+                          <v-list-item
+                            v-for="(reservation, idx) in getProductReservations(item.id)"
+                            :key="idx"
+                            class="px-0"
+                          >
+                            <template #prepend>
+                              <v-icon icon="mdi-account" color="warning" size="20"></v-icon>
+                            </template>
+                            <v-list-item-title class="text-body-2">
+                              {{ reservation.customer_name }}
+                            </v-list-item-title>
+                            <template #append>
+                              <v-chip size="x-small" color="warning" variant="outlined">
+                                {{ reservation.reserved_qty }}
+                              </v-chip>
+                            </template>
+                          </v-list-item>
+                        </v-list>
+                      </template>
+                      <div v-else class="text-body-2 text-grey">
+                        No reservations for this product
+                      </div>
+                    </v-col>
+                  </template>
                 </v-row>
               </div>
             </td>
@@ -375,11 +491,7 @@ function stockColor(item: any) {
   />
 
   <!-- Logs View Dialog -->
-  <LogsViewDialog
-    v-model="showLogsDialog"
-    :logs="productLogs"
-    @close="closeLogsDialog"
-  />
+  <LogsViewDialog v-model="showLogsDialog" :logs="productLogs" @close="closeLogsDialog" />
 
   <!-- Stock Status Dialog (separated component) -->
   <StockStatusDialog
@@ -392,7 +504,12 @@ function stockColor(item: any) {
     :reorder-request-info="reorderRequestInfo"
     :can-request-reorder="canRequestReorder"
     :reorder-reason-map="reorderReasonMap"
-    @edit-product="(p) => { openEditDialog(p); showStockDialog = false }"
+    @edit-product="
+      (p) => {
+        openEditDialog(p)
+        showStockDialog = false
+      }
+    "
     @toggle-reorder="toggleReorderSelection"
     @request-reorder="requestReorder"
     @create-pr="proceedCreatePRFromSelection"
@@ -409,6 +526,11 @@ function stockColor(item: any) {
 .search-field {
   min-width: 280px;
   max-width: 420px;
+  width: 100%;
+}
+.warehouse-filter {
+  min-width: 200px;
+  max-width: 280px;
   width: 100%;
 }
 </style>
