@@ -23,7 +23,7 @@ export function useExpenseReport() {
   // The store's expenses list deliberately INCLUDES voided documents so they
   // stay visible in the Expenses table, flagged. This is a report of what was
   // actually spent, so it works off the un-voided subset only.
-  const liveExpenses = computed(() => expenses.value.filter((e) => !e.voided_at))
+  const liveExpenses = computed(() => expenses.value.filter((e) => e.status !== 'voided'))
 
   const usedCategories = computed(() => {
     const set = new Set<ExpenseCategory>()

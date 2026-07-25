@@ -4,6 +4,7 @@ import { useRemittance, headers } from '../composables/useRemittance'
 import RemittanceSubmitDialog from './RemittanceSubmitDialog.vue'
 import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
+import { useSalesChangeRequestStore } from '../stores/salesChangeRequest'
 import type { RemittanceType } from '@/stores/remittancesData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
@@ -18,7 +19,7 @@ const {
 // A remittance is a cash-reconciliation artifact (GL-silent), so a correction
 // to the counted cash / notes is an edit — there's no undo (allowVoid=false).
 const { showDialog, config, isPending, loadPending, open, submit, submitting } =
-  useChangeRequestFiling('sales', 'remittance')
+  useChangeRequestFiling(useSalesChangeRequestStore())
 
 function openChange(r: RemittanceType) {
   open({
@@ -130,10 +131,12 @@ onMounted(async () => { await init(); await loadPending() })
         <template #item.cr_actions="{ item }">
           <v-chip v-if="isPending(item.id)" size="x-small" color="warning" variant="tonal" label>Change pending</v-chip>
           <v-btn
-            v-else icon="mdi-pencil-box-outline" size="small" variant="text" color="primary"
+            v-else prepend-icon="mdi-pencil-box-outline" size="small" variant="tonal" color="primary" class="text-none"
             title="Request a correction (needs executive approval)"
             @click="openChange(item)"
-          />
+          >
+            Request Correction
+          </v-btn>
         </template>
       </v-data-table>
 

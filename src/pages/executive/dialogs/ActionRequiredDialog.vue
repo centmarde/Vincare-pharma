@@ -9,6 +9,17 @@ import { computed, ref, watch } from 'vue'
 const { approve: approveUndo, reject: rejectUndo } = useChangeRequestsPR()
 const { approve: approvePR, reject: rejectPR } = useExecutiveApprovePR()
 const prStore = usePurchaseRequisitionStore()
+import { useFinanceChangeRequests } from '@/pages/finance/stores/composables/useFinanceChangeRequests'
+import { useSalesChangeRequests } from '@/pages/sales/stores/composables/useSalesChangeRequests'
+import { formatDatePR_ISO } from '@/utils/helpers'
+import { computed, ref, watch } from 'vue'
+
+// Generalized to approve/reject a request from ANY module's queue — the
+// request passed in (from ActionRequired.vue's merged list) carries a
+// `source` tag saying which composable actually owns it.
+const pr = useChangeRequestsPR()
+const finance = useFinanceChangeRequests()
+const sales = useSalesChangeRequests()
 
 const selected = defineModel<boolean>('modelValue', { default: false })
 const props = defineProps<{ request?: any }>()
@@ -40,12 +51,41 @@ async ([open, k, txId]) => {
   }
 })
 
+function composableFor(source: string | undefined) {
+  if (source === 'finance') return finance
+  if (source === 'sales') return sales
+  return pr
+}
+
+const moduleLabel = computed(() => {
+  const source = request.value?.source
+  if (source === 'finance') return 'Finance'
+  if (source === 'sales') return 'Sales'
+  return 'Purchase Requisition'
+})
+
+// 'undo_pr' → Undo (purchase requisition unapprove); 'void' → Void (undo a
+// recorded document); 'edit' → Edit (proposed field changes).
+function requestTypeLabel(requestType: string): string {
+  if (requestType === 'undo_pr') return 'Undo'
+  if (requestType === 'void') return 'Void'
+  return 'Edit'
+}
+
+const warningText = computed(() => {
+  const type = request.value?.request_type
+  if (type === 'undo_pr') return 'Approving will revert this purchase requisition back to Pending Approval.'
+  if (type === 'void') return 'Approving will void this document — its ledger entry is reversed and any affected balances are restored.'
+  return 'Approving will apply the proposed edits to this document.'
+})
+
 async function onApprove() {
   if (!raw.value || isApproving.value) return
   isApproving.value = true
   try {
     const result =
       kind.value === 'undo' ? await approveUndo(raw.value.id) : await approvePR(raw.value.id)
+    const result = await composableFor(request.value.source).approve(request.value.id)
     if (result.success) selected.value = false
   } finally {
     isApproving.value = false
@@ -65,6 +105,10 @@ async function confirmReject() {
       kind.value === 'undo'
         ? await rejectUndo(raw.value.id, reason)
         : await rejectPR(raw.value.id, reason)
+    const result = await composableFor(request.value.source).reject(
+      request.value.id,
+      rejectReason.value.trim() || 'Rejected by approver.'
+    )
     if (result.success) selected.value = false
   } finally {
     isRejecting.value = false
@@ -107,6 +151,27 @@ async function confirmReject() {
                 <div class="text-caption text-medium-emphasis mt-1">
                   {{ raw.remarks || 'Awaiting approval to proceed.' }}
                 </div>
+        <!-- Transaction summary card -->
+        <v-sheet
+          rounded="lg"
+          variant="tonal"
+          color="surface-variant"
+          class="pa-3 mb-4"
+        >
+          <div class="d-flex align-center ga-3">
+            <v-avatar size="36" rounded="lg" color="error" variant="tonal" class="flex-shrink-0">
+              <v-icon color="error" icon="mdi-cancel" size="18" />
+            </v-avatar>
+            <div class="flex-grow-1" style="min-width: 0">
+              <div class="d-flex align-center ga-2 flex-wrap">
+                <span class="text-body-2 font-weight-bold">
+                  {{ request.from_transaction_no ?? `#${request.transaction_id}` }}
+                </span>
+                <v-chip size="x-small" color="error" variant="tonal" label>{{ requestTypeLabel(request.request_type) }}</v-chip>
+                <v-chip size="x-small" variant="tonal" color="green" label>{{ moduleLabel }}</v-chip>
+              </div>
+              <div class="text-caption text-medium-emphasis mt-1">
+                {{ request.summary ?? warningText }}
               </div>
             </div>
 
@@ -267,6 +332,18 @@ async function confirmReject() {
         </template>
 
         <!-- Inline reject reason (shared) -->
+        <!-- What happens if approved -->
+        <v-alert
+          type="warning"
+          variant="tonal"
+          density="compact"
+          icon="mdi-information-outline"
+          class="mb-4 text-caption"
+        >
+          {{ warningText }} This cannot be undone.
+        </v-alert>
+
+        <!-- Inline reject reason -->
         <v-expand-transition>
           <div v-if="showRejectInput" class="mb-4">
             <div class="text-caption font-weight-bold text-medium-emphasis mb-1">
