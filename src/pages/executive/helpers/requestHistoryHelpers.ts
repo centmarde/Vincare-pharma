@@ -1,7 +1,7 @@
 import type { RequestHistoryItem } from '../composables/useRequestHistory'
 
 export function getStatusColor(status: string): string {
-  return status === 'approved' ? 'success' : 'error'
+  return status === 'approved' ? 'green' : 'red'
 }
 
 export function getStatusIcon(status: string): string {
@@ -16,6 +16,8 @@ export function getRequestTypeLabel(type: string): string {
   switch (type) {
     case 'undo_pr':
       return 'Undo PR'
+    case 'pr_approval':
+      return 'PR Approval'
     case 'void':
       return 'Void'
     case 'edit':

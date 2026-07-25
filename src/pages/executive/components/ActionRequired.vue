@@ -3,32 +3,56 @@ import { ref, computed, watch } from 'vue'
 import ActionRequiredDialog from '../dialogs/ActionRequiredDialog.vue'
 import RequestHistoryListDialog from '../dialogs/RequestHistoryListDialog.vue'
 import { useChangeRequestsPR } from '@/pages/purchasing/stores/composables/useChangeRequestsPR'
+import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
 import { formatDatePR_ISO } from '@/utils/helpers'
-
 import { useRequestHistory } from '../composables/useRequestHistory'
 
+const { requests: undoRequests, loading: undoLoading } = useChangeRequestsPR()
+const { requests: pendingPRs, loading: prLoading } = useExecutiveApprovePR()
 
-const { requests, loading } = useChangeRequestsPR()
+type MergedActionItem =
+  | { kind: 'undo'; id: number; created_at: string; raw: any }
+  | { kind: 'pr_approval'; id: number; created_at: string; raw: any }
+
+const mergedItems = computed<MergedActionItem[]>(() => {
+  const undoItems: MergedActionItem[] = (undoRequests.value || []).map((r: any) => ({
+    kind: 'undo',
+    id: r.id,
+    created_at: r.created_at,
+    raw: r,
+  }))
+  const prItems: MergedActionItem[] = (pendingPRs.value || []).map((pr: any) => ({
+    kind: 'pr_approval',
+    id: pr.id,
+    created_at: pr.created_at,
+    raw: pr,
+  }))
+  return [...undoItems, ...prItems].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  )
+})
+
+const loading = computed(() => undoLoading.value || prLoading.value)
+
 const selected = ref(false)
-const selectedReq = ref<any | null>(null)
+const selectedReq = ref<MergedActionItem | null>(null)
 
 const page = ref(1)
 const perPage = 5
 
-const count = computed(() => requests.value?.length ?? 0)
-
-const totalPages = computed(() => Math.max(1, Math.ceil((requests.value || []).length / perPage)))
+const count = computed(() => mergedItems.value.length)
+const totalPages = computed(() => Math.max(1, Math.ceil(mergedItems.value.length / perPage)))
 const paginatedRequests = computed(() => {
   const start = (page.value - 1) * perPage
-  return (requests.value || []).slice(start, start + perPage)
+  return mergedItems.value.slice(start, start + perPage)
 })
 
-watch(() => requests.value?.length, () => {
+watch(() => mergedItems.value.length, () => {
   page.value = 1
 })
 
-function openRequest(req: any) {
-  selectedReq.value = req
+function openRequest(item: MergedActionItem) {
+  selectedReq.value = item
   selected.value = true
 }
 
@@ -68,37 +92,68 @@ watch(historyDialog, (val) => {
         <div>Loading requests…</div>
       </div>
 
-      <v-list v-else-if="requests.length" class="pa-0" lines="two">
-        <template v-for="(req, i) in paginatedRequests" :key="req.id">
-          <v-list-item
-            class="px-2 py-3 rounded-lg action-item"
-            @click="openRequest(req)"
-          >
+      <v-list v-else-if="mergedItems.length" class="pa-0" lines="two">
+        <template v-for="(item, i) in paginatedRequests" :key="`${item.kind}-${item.id}`">
+          <v-list-item class="px-2 py-3 rounded-lg action-item" @click="openRequest(item)">
             <template #prepend>
-              <v-avatar size="32" rounded="lg" color="error" variant="tonal">
-                <v-icon color="error" icon="mdi-cancel" size="18" />
+              <v-avatar
+                size="32"
+                rounded="lg"
+                :color="item.kind === 'undo' ? 'red' : 'green'"
+                variant="tonal"
+              >
+                <v-icon
+                  :color="item.kind === 'undo' ? 'red' : 'green'"
+                  :icon="item.kind === 'undo' ? 'mdi-cancel' : 'mdi-file-document-check-outline'"
+                  size="18"
+                />
               </v-avatar>
             </template>
 
-            <v-list-item-title class="d-flex align-center ga-2 mb-1">
-              <v-chip size="x-small" color="error" variant="tonal" label>Undo</v-chip>
-              <span class="text-body-2 font-weight-medium">
-                {{ req.from_transaction_no ?? `#${req.transaction_id}` }}
-              </span>
-              <v-spacer />
-              <span class="text-caption text-medium-emphasis flex-shrink-0">
-                {{ formatDatePR_ISO(req.created_at) }}
-              </span>
-            </v-list-item-title>
+            <!-- Undo request row -->
+            <template v-if="item.kind === 'undo'">
+              <v-list-item-title class="d-flex align-center ga-2 mb-1">
+                <v-chip size="x-small" color="red" variant="tonal" label>Undo</v-chip>
+                <span class="text-body-2 font-weight-medium">
+                  {{ item.raw.from_transaction_no ?? `#${item.raw.transaction_id}` }}
+                </span>
+                <v-spacer />
+                <span class="text-caption text-medium-emphasis flex-shrink-0">
+                  {{ formatDatePR_ISO(item.raw.created_at) }}
+                </span>
+              </v-list-item-title>
 
-            <v-list-item-subtitle
-              v-if="req.reason"
-              class="text-caption text-medium-emphasis"
-              style="white-space: normal; line-height: 1.4;"
-            >
-              <v-icon icon="mdi-comment-text-outline" size="12" class="mr-1" style="opacity: 0.7" />
-              {{ req.reason }}
-            </v-list-item-subtitle>
+              <v-list-item-subtitle
+                v-if="item.raw.reason"
+                class="text-caption text-medium-emphasis"
+                style="white-space: normal; line-height: 1.4"
+              >
+                <v-icon icon="mdi-comment-text-outline" size="12" class="mr-1" style="opacity: 0.7" />
+                {{ item.raw.reason }}
+              </v-list-item-subtitle>
+            </template>
+
+            <!-- PR approval row -->
+            <template v-else>
+              <v-list-item-title class="d-flex align-center ga-2 mb-1">
+                <v-chip size="x-small" color="green" variant="tonal" label>New</v-chip>
+                <span class="text-body-2 font-weight-medium">
+                  {{ item.raw.reference_no ?? item.raw.requisition_no ?? `#${item.raw.id}` }}
+                </span>
+                <v-spacer />
+                <span class="text-caption text-medium-emphasis flex-shrink-0">
+                  {{ formatDatePR_ISO(item.raw.created_at) }}
+                </span>
+              </v-list-item-title>
+
+              <v-list-item-subtitle
+                class="text-caption text-medium-emphasis"
+                style="white-space: normal; line-height: 1.4"
+              >
+                <v-icon icon="mdi-account-outline" size="12" class="mr-1" style="opacity: 0.7" />
+                {{ item.raw.requester_name ?? '—' }} · {{ item.raw.items?.length ?? 0 }} item(s)
+              </v-list-item-subtitle>
+            </template>
 
             <template #append>
               <v-icon icon="mdi-chevron-right" size="20" color="medium-emphasis" />
