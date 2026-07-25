@@ -4,6 +4,7 @@ import { useOrderDetail } from '../composables/useOrderDetail'
 import DeliveryReceiptDialog from '@/components/deliveryReceipts/DeliveryReceiptDialog.vue'
 import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
+import { useChangeRequestsDataStore } from '@/stores/changeRequestsData'
 import type { InhouseOrderType } from '@/stores/inhouseData'
 import type { CollectionType } from '@/stores/ethicalData'
 import { expensePaymentMethods } from '@/stores/financeData'
@@ -34,7 +35,7 @@ watch(issuedReceipt, (dr) => { if (dr) showReceipt.value = true })
 
 // Undoing a recorded payment now needs executive approval (void-only).
 const { showDialog: crDialog, config: crConfig, isPending: crPending, loadPending: crLoad, open: crOpen, submit: crSubmit, submitting: crSubmitting } =
-  useChangeRequestFiling('inhouse', 'inhouse_payment')
+  useChangeRequestFiling(useChangeRequestsDataStore())
 watch(payments, () => { void crLoad() })
 
 function requestUndoPayment(p: CollectionType) {
@@ -239,8 +240,10 @@ const productName = (id: number | null) =>
                 <span class="d-flex align-center ga-1">
                   <span class="text-medium-emphasis">{{ formatDatePR_ISO(p.created_at) }}</span>
                   <v-chip v-if="crPending(p.id)" size="x-small" color="warning" variant="tonal" label>undo pending</v-chip>
-                  <v-btn v-else icon="mdi-pencil-box-outline" size="x-small" variant="text" color="primary"
-                    title="Request edit or undo of this payment (needs executive approval)" @click="requestUndoPayment(p)" />
+                  <v-btn v-else prepend-icon="mdi-pencil-box-outline" size="small" variant="tonal" color="primary" class="text-none"
+                    title="Request edit or undo of this payment (needs executive approval)" @click="requestUndoPayment(p)">
+                    Request Change
+                  </v-btn>
                 </span>
               </div>
             </div>

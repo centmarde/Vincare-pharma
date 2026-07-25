@@ -4,6 +4,7 @@ import { useSupplierPayments, apHeaders, paymentHistoryHeaders } from '../compos
 import SupplierPaymentDialog from './dialogs/SupplierPaymentDialog.vue'
 import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
+import { useFinanceChangeRequestStore } from '../stores/financeChangeRequest'
 import { expensePaymentMethods, type SupplierPaymentType } from '@/stores/financeData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
@@ -15,7 +16,7 @@ const {
 
 // Edit/undo requests on a recorded supplier payment (executive-approved).
 const { showDialog, config, isPending, isEdited, editTooltip, loadPending, open, submit, submitting } =
-  useChangeRequestFiling('finance', 'supplier_payment')
+  useChangeRequestFiling(useFinanceChangeRequestStore())
 
 function openChange(p: SupplierPaymentType) {
   open({
@@ -101,17 +102,17 @@ onMounted(async () => { await init(); await loadPending() })
           hover
         >
           <template #item.reference_no="{ item }">
-            <span class="font-weight-medium" :class="{ 'text-decoration-line-through text-medium-emphasis': item.voided_at }">
+            <span class="font-weight-medium" :class="{ 'text-decoration-line-through text-medium-emphasis': item.status === 'voided' }">
               {{ item.reference_no }}
             </span>
             <v-chip
-              v-if="item.voided_at"
+              v-if="item.status === 'voided'"
               size="x-small"
               color="error"
               variant="tonal"
               label
               class="ml-2"
-              :title="item.void_reason ?? 'Reversed via an approved change request'"
+              title="Reversed via an approved change request"
             >
               VOIDED
             </v-chip>
@@ -147,13 +148,15 @@ onMounted(async () => { await init(); await loadPending() })
           </template>
 
           <template #item.cr_actions="{ item }">
-            <span v-if="item.voided_at" class="text-caption text-medium-emphasis">—</span>
+            <span v-if="item.status === 'voided'" class="text-caption text-medium-emphasis">—</span>
             <v-chip v-else-if="isPending(item.id)" size="x-small" color="warning" variant="tonal" label>Change pending</v-chip>
             <v-btn
-              v-else icon="mdi-pencil-box-outline" size="small" variant="text" color="primary"
+              v-else prepend-icon="mdi-pencil-box-outline" size="small" variant="tonal" color="primary" class="text-none"
               title="Request edit or undo (needs executive approval)"
               @click="openChange(item)"
-            />
+            >
+              Request Change
+            </v-btn>
           </template>
         </v-data-table>
       </v-card>

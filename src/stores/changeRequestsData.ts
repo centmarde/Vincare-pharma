@@ -559,13 +559,13 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     const { data: cur } = await supabase
       .from('transactions')
       .select(
-        'total_amount, cash_account_id, paid_at, payment_method, remarks, voided_at, finance_details(category, paid_to, department, or_si_no)',
+        'total_amount, cash_account_id, paid_at, payment_method, remarks, status, finance_details(category, paid_to, department, or_si_no)',
       )
       .eq('id', request.transaction_id)
       .eq('transaction_type', 'expense')
       .maybeSingle()
     if (!cur) return { success: false, error: 'Expense not found.' }
-    if (cur.voided_at) return { success: false, error: 'This expense has already been voided.' }
+    if (cur.status === 'voided') return { success: false, error: 'This expense has already been voided.' }
     const fd = ((Array.isArray(cur.finance_details)
       ? cur.finance_details[0]
       : cur.finance_details) ?? {}) as Record<string, unknown>
@@ -655,12 +655,12 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
   ): Promise<{ success: boolean; error?: string }> {
     const { data: pay } = await supabase
       .from('transactions')
-      .select('supplier_id, total_amount, voided_at')
+      .select('supplier_id, total_amount, status')
       .eq('id', targetId)
       .eq('transaction_type', 'supplier_payment')
       .maybeSingle()
     if (!pay) return { success: false, error: 'Supplier payment not found.' }
-    if (pay.voided_at) return { success: false, error: 'This payment has already been voided.' }
+    if (pay.status === 'voided') return { success: false, error: 'This payment has already been voided.' }
     const rev = await reverseProjectedEntry('disbursement', targetId, userId)
     if (!rev.ok)
       return { success: false, error: rev.error || 'Failed to reverse the payment journal entry.' }
@@ -668,17 +668,14 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     // Void marker first: it is what excludes the payment from every AP read, so
     // it must land before the compensating balance restore (otherwise a failure
     // between the two would credit the supplier back for a payment still live).
+    // (transactions.voided_at/voided_by/void_reason were dropped from the
+    // schema — status='voided' is the only signal now.)
     const { error: voidErr } = await supabase
       .from('transactions')
-      .update({
-        status: 'voided',
-        voided_at: new Date().toISOString(),
-        voided_by: userId,
-        void_reason: reason,
-      })
+      .update({ status: 'voided' })
       .eq('id', targetId)
       .eq('transaction_type', 'supplier_payment')
-      .is('voided_at', null)
+      .neq('status', 'voided')
     if (voidErr) return { success: false, error: voidErr.message }
 
     if (pay.supplier_id) {
@@ -710,12 +707,12 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     const changes = request.proposed_changes ?? {}
     const { data: cur } = await supabase
       .from('transactions')
-      .select('supplier_id, total_amount, payment_method, paid_at, remarks, voided_at')
+      .select('supplier_id, total_amount, payment_method, paid_at, remarks, status')
       .eq('id', request.transaction_id)
       .eq('transaction_type', 'supplier_payment')
       .maybeSingle()
     if (!cur) return { success: false, error: 'Supplier payment not found.' }
-    if (cur.voided_at) return { success: false, error: 'This payment has already been voided.' }
+    if (cur.status === 'voided') return { success: false, error: 'This payment has already been voided.' }
     const current: Record<string, unknown> = {
       amount: cur.total_amount,
       payment_method: cur.payment_method,

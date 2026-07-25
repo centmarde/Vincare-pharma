@@ -3,19 +3,46 @@ import { ref, computed, watch } from 'vue'
 import ActionRequiredDialog from '../dialogs/ActionRequiredDialog.vue'
 import RequestHistoryListDialog from '../dialogs/RequestHistoryListDialog.vue'
 import { useChangeRequestsPR } from '@/pages/purchasing/stores/composables/useChangeRequestsPR'
+import { useFinanceChangeRequests } from '@/pages/finance/stores/composables/useFinanceChangeRequests'
+import { useSalesChangeRequests } from '@/pages/sales/stores/composables/useSalesChangeRequests'
 import { formatDatePR_ISO } from '@/utils/helpers'
 
 import { useRequestHistory } from '../composables/useRequestHistory'
 
+// Aggregates every module's pending change-request queue into one widget so
+// an executive approves everything — PR undo, finance edit/void, sales
+// edit/void — from a single place. Each composable owns its own
+// store/fetch/approve/reject; this just tags each request with its `source`
+// so ActionRequiredDialog knows which composable to call back into.
+type ChangeRequestSource = 'pr' | 'finance' | 'sales'
 
-const { requests, loading } = useChangeRequestsPR()
+const pr = useChangeRequestsPR()
+const finance = useFinanceChangeRequests()
+const sales = useSalesChangeRequests()
+
+const requests = computed(() => [
+  ...pr.requests.value.map((r) => ({ ...r, source: 'pr' as ChangeRequestSource })),
+  ...finance.requests.value.map((r) => ({ ...r, source: 'finance' as ChangeRequestSource })),
+  ...sales.requests.value.map((r) => ({ ...r, source: 'sales' as ChangeRequestSource })),
+].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()))
+
+const loading = computed(() => pr.loading.value || finance.loading.value || sales.loading.value)
+
 const selected = ref(false)
 const selectedReq = ref<any | null>(null)
 
 const page = ref(1)
 const perPage = 5
 
-const count = computed(() => requests.value?.length ?? 0)
+const count = computed(() => requests.value.length)
+
+// 'undo_pr' → Undo (purchase requisition unapprove); 'void' → Void (undo a
+// recorded document); 'edit' → Edit (proposed field changes).
+function requestTypeLabel(requestType: string): string {
+  if (requestType === 'undo_pr') return 'Undo'
+  if (requestType === 'void') return 'Void'
+  return 'Edit'
+}
 
 const totalPages = computed(() => Math.max(1, Math.ceil((requests.value || []).length / perPage)))
 const paginatedRequests = computed(() => {
@@ -81,7 +108,7 @@ watch(historyDialog, (val) => {
             </template>
 
             <v-list-item-title class="d-flex align-center ga-2 mb-1">
-              <v-chip size="x-small" color="error" variant="tonal" label>Undo</v-chip>
+              <v-chip size="x-small" color="error" variant="tonal" label>{{ requestTypeLabel(req.request_type) }}</v-chip>
               <span class="text-body-2 font-weight-medium">
                 {{ req.from_transaction_no ?? `#${req.transaction_id}` }}
               </span>

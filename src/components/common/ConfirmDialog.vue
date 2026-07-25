@@ -28,7 +28,7 @@ const { isOpen, title, message, confirmText, cancelText, inputValue, inputLabel,
       <v-card-actions class="px-4 py-3">
         <v-spacer />
         <v-btn variant="text" color="grey" @click="resolve(false)">{{ cancelText }}</v-btn>
-        <v-btn variant="flat" color="primary" @click="resolve(true)" :disabled="!inputValue">{{ confirmText }}</v-btn>
+        <v-btn variant="flat" color="primary" @click="resolve(true)" :disabled="inputLabel != null && !inputValue">{{ confirmText }}</v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>

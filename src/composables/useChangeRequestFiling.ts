@@ -1,13 +1,31 @@
 import { ref } from 'vue'
-import {
-  useChangeRequestsDataStore,
-  type ChangeRequestTargetType, type ChangeRequestField, type ProposedChange, type AppliedEdit,
-} from '@/stores/changeRequestsData'
+import type { ChangeRequestField, ProposedChange, AppliedEdit } from '@/stores/changeRequestsData'
 
 // Cross-module helper for wiring the "Request change / undo" flow into any
 // document list/detail view without repeating the same state + handlers each
 // time. A view calls `open(cfg)` for a specific document; the shared
 // ChangeRequestDialog binds to `config`, and `submit` files the request.
+//
+// Takes the module's own change-request store as a parameter, so this stays
+// pure cross-module glue rather than being tied to one store: pass the shared
+// `useChangeRequestsDataStore()` for inhouse/ethical/GL (unchanged), or a
+// per-module store (e.g. `useFinanceChangeRequestStore()`,
+// `useSalesChangeRequestStore()`) for modules that own their own change
+// requests.
+export type ChangeRequestFilingStore = {
+  fetchPendingTargetIds: () => Promise<number[]>
+  fetchAppliedEdits: () => Promise<AppliedEdit[]>
+  proposeChange: (payload: {
+    transactionId: number
+    fromTransactionNo?: string | null
+    toTransactionNo?: string | null
+    requestType: 'edit' | 'void'
+    proposedChanges?: ProposedChange
+    summary?: string
+    reason?: string
+  }) => Promise<{ success: boolean; requestId?: number }>
+}
+
 export type ChangeRequestConfig = {
   id: number
   ref: string | null
@@ -17,9 +35,7 @@ export type ChangeRequestConfig = {
   allowVoid: boolean
 }
 
-export function useChangeRequestFiling(module: string, targetType: ChangeRequestTargetType) {
-  const store = useChangeRequestsDataStore()
-
+export function useChangeRequestFiling(store: ChangeRequestFilingStore) {
   const showDialog = ref(false)
   const config = ref<ChangeRequestConfig | null>(null)
   const pendingIds = ref<Set<number>>(new Set())
