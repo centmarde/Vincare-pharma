@@ -18,6 +18,7 @@ declare module 'vue' {
     InsideNavbar3: typeof import('./components/common/insideNavbar/InsideNavbar3.vue')['default']
     InsideNavbar4: typeof import('./components/common/insideNavbar/InsideNavbar4.vue')['default']
     LoginForm: typeof import('./components/auth/LoginForm.vue')['default']
+    ManageIgnoredItemsDialog: typeof import('./components/products/dialogs/ManageIgnoredItemsDialog.vue')['default']
     OuterFooter: typeof import('./components/common/outerFooters/OuterFooter.vue')['default']
     OuterFooter2: typeof import('./components/common/outerFooters/OuterFooter2.vue')['default']
     OuterNavbar1: typeof import('./components/common/outerNavbars/OuterNavbar1.vue')['default']
@@ -34,6 +35,7 @@ declare module 'vue' {
     Sidebar: typeof import('./components/common/sideBar/Sidebar.vue')['default']
     SlugName: typeof import('./components/common/insideNavbar/SlugName.vue')['default']
     StockStatusCards: typeof import('./components/products/StockStatusCards.vue')['default']
+    StockStatusDialog: typeof import('./components/products/dialogs/StockStatusDialog.vue')['default']
     SupplierCanvass: typeof import('./components/canvass/SupplierCanvass.vue')['default']
   }
 }

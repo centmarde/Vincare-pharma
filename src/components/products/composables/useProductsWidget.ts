@@ -380,17 +380,11 @@ const stockDialogProducts = computed<ProductType[]>(() => {
   const selectedReorderProductIds = ref<number[]>([])
   const showPurchaseRequisitionDialog = ref(false)
   const prefillItemsForDialog = ref<ReorderPrefillItem[]>([])
-  const showReorderPRConfirm = ref(false)
 
   function toggleReorderSelection(productId: number, checked: boolean) {
     if (checked) selectedReorderProductIds.value.push(productId)
     else selectedReorderProductIds.value = selectedReorderProductIds.value.filter(id => id !== productId)
   }
-
-    function confirmCreatePRFromSelection() {
-      if (!selectedReorderProductIds.value.length) return
-      showReorderPRConfirm.value = true
-    }
 
     function proceedCreatePRFromSelection() {
       const reason = reorderReasonMap[stockDialogType.value]
@@ -409,7 +403,6 @@ const stockDialogProducts = computed<ProductType[]>(() => {
           offer_per_unit:     p.selling_price ?? 0,
         }))
 
-      showReorderPRConfirm.value = false
       showStockDialog.value = false
       showPurchaseRequisitionDialog.value = true
     }
@@ -483,9 +476,7 @@ const stockDialogProducts = computed<ProductType[]>(() => {
     showPurchaseRequisitionDialog,
     prefillItemsForDialog,
     reorderReasonMap,
-    confirmCreatePRFromSelection,
     proceedCreatePRFromSelection,
-    showReorderPRConfirm,
     // Product Ignore / Dismiss
     productIgnore,
     IGNORE_DURATIONS,
