@@ -1,71 +1,51 @@
 <script setup lang="ts">
 import { useChangeRequestsPR } from '@/pages/purchasing/stores/composables/useChangeRequestsPR'
-import { useFinanceChangeRequests } from '@/pages/finance/stores/composables/useFinanceChangeRequests'
-import { useSalesChangeRequests } from '@/pages/sales/stores/composables/useSalesChangeRequests'
-import { useSharedChangeRequests } from '../composables/useSharedChangeRequests'
+import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
+import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
+import type { PRItem } from '@/stores/purchaseRequisitionData'
 import { formatDatePR_ISO } from '@/utils/helpers'
 import { computed, ref, watch } from 'vue'
 
-// Generalized to approve/reject a request from ANY module's queue — the
-// request passed in (from ActionRequired.vue's merged list) carries a
-// `source` tag saying which composable actually owns it.
-const pr = useChangeRequestsPR()
-const finance = useFinanceChangeRequests()
-const sales = useSalesChangeRequests()
-const shared = useSharedChangeRequests()
+const { approve: approveUndo, reject: rejectUndo } = useChangeRequestsPR()
+const { approve: approvePR, reject: rejectPR } = useExecutiveApprovePR()
+const prStore = usePurchaseRequisitionStore()
 
 const selected = defineModel<boolean>('modelValue', { default: false })
 const props = defineProps<{ request?: any }>()
 
 const request = computed(() => props.request)
+const kind = computed(() => request.value?.kind as 'undo' | 'pr_approval' | undefined)
+const raw = computed(() => request.value?.raw)
 
 const isApproving = ref(false)
 const isRejecting = ref(false)
 const showRejectInput = ref(false)
 const rejectReason = ref('')
 
-watch(selected, (open) => {
-  if (!open) {
-    showRejectInput.value = false
-    rejectReason.value = ''
+// Undo-request rows only carry transaction_id/reason — fetch the underlying
+// PR (with items) on demand so the same items table can render for both branches.
+const undoItems = ref<PRItem[]>([])
+const undoItemsLoading = ref(false)
+
+watch(() => [selected.value, kind.value, raw.value?.transaction_id] as const,
+async ([open, k, txId]) => {
+  if (!open || k !== 'undo' || !txId) return
+    undoItemsLoading.value = true
+    try {
+      const pr = await prStore.fetchPRByRequisitionId(txId)
+      undoItems.value = pr?.items ?? []
+    } finally {
+      undoItemsLoading.value = false
+    
   }
 })
 
-function composableFor(source: string | undefined) {
-  if (source === 'finance') return finance
-  if (source === 'sales') return sales
-  if (source === 'shared') return shared
-  return pr
-}
-
-const moduleLabel = computed(() => {
-  const source = request.value?.source
-  if (source === 'finance') return 'Finance'
-  if (source === 'sales') return 'Sales'
-  if (source === 'shared') return 'In-House / Ethical'
-  return 'Purchase Requisition'
-})
-
-// 'undo_pr' → Undo (purchase requisition unapprove); 'void' → Void (undo a
-// recorded document); 'edit' → Edit (proposed field changes).
-function requestTypeLabel(requestType: string): string {
-  if (requestType === 'undo_pr') return 'Undo'
-  if (requestType === 'void') return 'Void'
-  return 'Edit'
-}
-
-const warningText = computed(() => {
-  const type = request.value?.request_type
-  if (type === 'undo_pr') return 'Approving will revert this purchase requisition back to Pending Approval.'
-  if (type === 'void') return 'Approving will void this document — its ledger entry is reversed and any affected balances are restored.'
-  return 'Approving will apply the proposed edits to this document.'
-})
-
 async function onApprove() {
-  if (!request.value || isApproving.value) return
+  if (!raw.value || isApproving.value) return
   isApproving.value = true
   try {
-    const result = await composableFor(request.value.source).approve(request.value.id)
+    const result =
+      kind.value === 'undo' ? await approveUndo(raw.value.id) : await approvePR(raw.value.id)
     if (result.success) selected.value = false
   } finally {
     isApproving.value = false
@@ -77,13 +57,14 @@ function startReject() {
 }
 
 async function confirmReject() {
-  if (!request.value || isRejecting.value) return
+  if (!raw.value || isRejecting.value) return
   isRejecting.value = true
   try {
-    const result = await composableFor(request.value.source).reject(
-      request.value.id,
-      rejectReason.value.trim() || 'Rejected by approver.'
-    )
+    const reason = rejectReason.value.trim() || 'Rejected by approver.'
+    const result =
+      kind.value === 'undo'
+        ? await rejectUndo(raw.value.id, reason)
+        : await rejectPR(raw.value.id, reason)
     if (result.success) selected.value = false
   } finally {
     isRejecting.value = false
@@ -92,9 +73,8 @@ async function confirmReject() {
 </script>
 
 <template>
-  <v-dialog v-model="selected" max-width="560" persistent>
+  <v-dialog v-model="selected" max-width="720" persistent>
     <v-card class="rounded-xl" elevation="0">
-      <!-- Header -->
       <div class="d-flex align-center pa-4 pa-md-6 pb-2">
         <v-icon icon="mdi-shield-alert-outline" color="error" size="22" class="mr-2" />
         <span class="text-h6 font-weight-bold">Approval Required</span>
@@ -104,77 +84,189 @@ async function confirmReject() {
         </v-btn>
       </div>
 
-      <div v-if="!request" class="pa-6 text-center text-caption text-medium-emphasis">
+      <div v-if="!raw" class="pa-6 text-center text-caption text-medium-emphasis">
         No request selected.
       </div>
 
       <v-card-text v-else class="px-4 px-md-6 pb-4 pb-md-6 pt-0">
-        <!-- Transaction summary card -->
-        <v-sheet
-          rounded="lg"
-          variant="tonal"
-          color="surface-variant"
-          class="pa-3 mb-4"
-        >
-          <div class="d-flex align-center ga-3">
-            <v-avatar size="36" rounded="lg" color="error" variant="tonal" class="flex-shrink-0">
-              <v-icon color="error" icon="mdi-cancel" size="18" />
-            </v-avatar>
-            <div class="flex-grow-1" style="min-width: 0">
-              <div class="d-flex align-center ga-2 flex-wrap">
-                <span class="text-body-2 font-weight-bold">
-                  {{ request.from_transaction_no ?? `#${request.transaction_id}` }}
-                </span>
-                <v-chip size="x-small" color="error" variant="tonal" label>{{ requestTypeLabel(request.request_type) }}</v-chip>
-                <v-chip size="x-small" variant="tonal" color="green" label>{{ moduleLabel }}</v-chip>
-              </div>
-              <div class="text-caption text-medium-emphasis mt-1">
-                {{ request.summary ?? warningText }}
+        <!-- ═══ PR APPROVAL BRANCH ═══ -->
+        <template v-if="kind === 'pr_approval'">
+          <v-sheet rounded="lg" variant="tonal" color="surface-variant" class="pa-3 mb-4">
+            <div class="d-flex align-center ga-3">
+              <v-avatar size="36" rounded="lg" color="success" variant="tonal" class="flex-shrink-0">
+                <v-icon color="success" icon="mdi-file-document-check-outline" size="18" />
+              </v-avatar>
+              <div class="flex-grow-1" style="min-width: 0">
+                <div class="d-flex align-center ga-2 flex-wrap">
+                  <span class="text-body-2 font-weight-bold">
+                    {{ raw.reference_no ?? raw.requisition_no ?? `#${raw.id}` }}
+                  </span>
+                  <v-chip size="x-small" color="success" variant="tonal" label>New</v-chip>
+                  <v-chip size="x-small" variant="tonal" color="green" label>Purchase Requisition</v-chip>
+                </div>
+                <div class="text-caption text-medium-emphasis mt-1">
+                  {{ raw.remarks || 'Awaiting approval to proceed.' }}
+                </div>
               </div>
             </div>
-          </div>
 
-          <v-divider class="my-3" />
+            <v-divider class="my-3" />
 
-          <div class="d-flex ga-6">
-            <div>
-              <div class="text-caption text-medium-emphasis">Requested by</div>
-              <div class="text-body-2 text-high-emphasis">{{ request.created_by_email ?? '—' }}</div>
+            <div class="d-flex ga-6 flex-wrap">
+              <div>
+                <div class="text-caption text-medium-emphasis">Requested by</div>
+                <div class="text-body-2 text-high-emphasis">{{ raw.requester_name ?? '—' }}</div>
+              </div>
+              <div>
+                <div class="text-caption text-medium-emphasis">Requested on</div>
+                <div class="text-body-2 text-high-emphasis">{{ formatDatePR_ISO(raw.created_at) }}</div>
+              </div>
+              <div>
+                <div class="text-caption text-medium-emphasis">Total Amount</div>
+                <div class="text-body-2 text-high-emphasis">
+                  {{ raw.total_amount?.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' }) }}
+                </div>
+              </div>
             </div>
-            <div>
-              <div class="text-caption text-medium-emphasis">Requested on</div>
-              <div class="text-body-2 text-high-emphasis">{{ formatDatePR_ISO(request.created_at) }}</div>
-            </div>
-          </div>
-        </v-sheet>
-
-        <!-- Reason callout -->
-        <div class="mb-4">
-          <div class="text-caption font-weight-bold text-medium-emphasis mb-1">
-            REASON FOR REQUEST
-          </div>
-          <v-sheet
-            rounded="lg"
-            variant="tonal"
-            color="surface-variant"
-            class="pa-3 text-body-2 border-s-lg border-error"
-          >
-            {{ request.reason ?? '—' }}
           </v-sheet>
+
+          <div class="mb-4">
+            <div class="text-caption font-weight-bold text-medium-emphasis mb-2">
+              ITEMS ({{ raw.items?.length ?? 0 }})
+            </div>
+            <v-table density="compact" class="rounded-lg border">
+              <thead>
+                <tr>
+                  <th class="text-caption">No.</th>
+                  <th class="text-caption">Description</th>
+                  <th class="text-caption">Unit</th>
+                  <th class="text-caption">Supplier</th>
+                  <th class="text-caption text-right">Qty</th>
+                  <th class="text-caption text-right">Cost/Unit</th>
+                  <th class="text-caption text-right">Offer/Unit</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="it in raw.items" :key="it.id">
+                  <td class="text-caption">{{ it.no }}</td>
+                  <td class="text-caption">{{ it.item_description }}</td>
+                  <td class="text-caption">{{ it.unit }}</td>
+                  <td class="text-caption">{{ it.supplier_name }}</td>
+                  <td class="text-caption text-right">{{ it.qty }}</td>
+                  <td class="text-caption text-right">{{ it.cost_per_unit }}</td>
+                  <td class="text-caption text-right">{{ it.offer_per_unit }}</td>
+                </tr>
+              </tbody>
+            </v-table>
+          </div>
+
+          <v-alert
+            type="warning"
+            variant="tonal"
+            density="compact"
+            icon="mdi-information-outline"
+            class="mb-4 text-caption"
+          >
+            Approving will move this purchase requisition to
+            <strong>Approved</strong> status and resolve any linked reorder requests.
+          </v-alert>
+        </template>
+
+        <!-- ═══ UNDO REQUEST BRANCH (unchanged) ═══ -->
+        <template v-else>
+          <v-sheet rounded="lg" variant="tonal" color="surface-variant" class="pa-3 mb-4">
+            <div class="d-flex align-center ga-3">
+              <v-avatar size="36" rounded="lg" color="error" variant="tonal" class="flex-shrink-0">
+                <v-icon color="error" icon="mdi-cancel" size="18" />
+              </v-avatar>
+              <div class="flex-grow-1" style="min-width: 0">
+                <div class="d-flex align-center ga-2 flex-wrap">
+                  <span class="text-body-2 font-weight-bold">
+                    {{ raw.from_transaction_no ?? `#${raw.transaction_id}` }}
+                  </span>
+                  <v-chip size="x-small" color="error" variant="tonal" label>Undo</v-chip>
+                  <v-chip size="x-small" variant="tonal" color="green" label>Purchase Requisition</v-chip>
+                </div>
+                <div class="text-caption text-medium-emphasis mt-1">
+                  {{ raw.summary ?? 'Revert this purchase requisition to pending approval.' }}
+                </div>
+              </div>
+            </div>
+
+            <v-divider class="my-3" />
+
+            <div class="d-flex ga-6">
+              <div>
+                <div class="text-caption text-medium-emphasis">Requested by</div>
+                <div class="text-body-2 text-high-emphasis">{{ raw.created_by_email ?? '—' }}</div>
+              </div>
+              <div>
+                <div class="text-caption text-medium-emphasis">Requested on</div>
+                <div class="text-body-2 text-high-emphasis">{{ formatDatePR_ISO(raw.created_at) }}</div>
+              </div>
+            </div>
+          </v-sheet>
+
+          <div class="mb-4">
+            <div class="text-caption font-weight-bold text-medium-emphasis mb-1">
+              REASON FOR REQUEST
+            </div>
+            <v-sheet
+              rounded="lg"
+              variant="tonal"
+              color="surface-variant"
+              class="pa-3 text-body-2 border-s-lg border-error"
+            >
+              {{ raw.reason ?? '—' }}
+            </v-sheet>
+          </div>
+         <div class="mb-4">
+          <div class="text-caption font-weight-bold text-medium-emphasis mb-2">
+            ITEMS ON THIS REQUISITION ({{ undoItems.length }})
+          </div>
+          <div v-if="undoItemsLoading" class="text-center pa-4">
+            <v-progress-circular indeterminate size="20" width="2" />
+          </div>
+          <v-table v-else-if="undoItems.length" density="compact" class="rounded-lg border">
+            <thead>
+              <tr>
+                <th class="text-caption">No.</th>
+                <th class="text-caption">Description</th>
+                <th class="text-caption">Unit</th>
+                <th class="text-caption">Supplier</th>
+                <th class="text-caption text-right">Qty</th>
+                <th class="text-caption text-right">Cost/Unit</th>
+                <th class="text-caption text-right">Offer/Unit</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="it in undoItems" :key="it.id">
+                <td class="text-caption">{{ it.no }}</td>
+                <td class="text-caption">{{ it.item_description }}</td>
+                <td class="text-caption">{{ it.unit }}</td>
+                <td class="text-caption">{{ it.supplier_name }}</td>
+                <td class="text-caption text-right">{{ it.qty }}</td>
+                <td class="text-caption text-right">{{ it.cost_per_unit }}</td>
+                <td class="text-caption text-right">{{ it.offer_per_unit }}</td>
+              </tr>
+            </tbody>
+          </v-table>
+          <div v-else class="text-caption text-medium-emphasis pa-2">No items found.</div>
         </div>
 
-        <!-- What happens if approved -->
-        <v-alert
-          type="warning"
-          variant="tonal"
-          density="compact"
-          icon="mdi-information-outline"
-          class="mb-4 text-caption"
-        >
-          {{ warningText }} This cannot be undone.
-        </v-alert>
+          <v-alert
+            type="warning"
+            variant="tonal"
+            density="compact"
+            icon="mdi-information-outline"
+            class="mb-4 text-caption"
+          >
+            Approving will revert this purchase requisition back to
+            <strong>Pending Approval</strong>. This cannot be undone.
+          </v-alert>
+        </template>
 
-        <!-- Inline reject reason -->
+        <!-- Inline reject reason (shared) -->
         <v-expand-transition>
           <div v-if="showRejectInput" class="mb-4">
             <div class="text-caption font-weight-bold text-medium-emphasis mb-1">
@@ -192,24 +284,13 @@ async function confirmReject() {
           </div>
         </v-expand-transition>
 
-        <!-- Actions -->
+        <!-- Actions (shared) -->
         <div class="d-flex justify-end ga-2">
           <template v-if="!showRejectInput">
-            <v-btn
-              size="small"
-              variant="outlined"
-              class="text-none"
-              @click="selected = false"
-            >
+            <v-btn size="small" variant="outlined" class="text-none" @click="selected = false">
               Cancel
             </v-btn>
-            <v-btn
-              size="small"
-              variant="outlined"
-              color="error"
-              class="text-none"
-              @click="startReject"
-            >
+            <v-btn size="small" variant="outlined" color="error" class="text-none" @click="startReject">
               Reject
             </v-btn>
             <v-btn
@@ -225,12 +306,7 @@ async function confirmReject() {
           </template>
 
           <template v-else>
-            <v-btn
-              size="small"
-              variant="outlined"
-              class="text-none"
-              @click="showRejectInput = false"
-            >
+            <v-btn size="small" variant="outlined" class="text-none" @click="showRejectInput = false">
               Back
             </v-btn>
             <v-btn

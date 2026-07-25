@@ -152,7 +152,7 @@ watch(
         </div>
 
         <v-list v-else-if="filteredRequests.length" class="pa-4" lines="two">
-          <template v-for="(req, i) in paginatedFilteredRequests" :key="req.id">
+          <template v-for="(req, i) in paginatedFilteredRequests" :key="`${req.source}-${req.id}`">
             <v-list-item class="px-3 py-3 rounded-lg history-item mb-2" @click="openRequest(req)">
               <template #prepend>
                 <v-avatar

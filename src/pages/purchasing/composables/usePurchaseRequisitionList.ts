@@ -137,41 +137,6 @@ export function usePurchaseRequisitionList() {
     confirmDialog.value.show = false
   }
 
-  async function handleConfirm() {
-    if (!confirmDialog.value.show || confirmLoading.value) return
-    confirmLoading.value = true
-
-    const { action, prId, prNumber } = confirmDialog.value
-    const { user, error: authError } = await authStore.getCurrentUser()
-    const userId = !authError && user ? user.id : undefined
-
-    if (action === 'APPROVE') {
-      await prStore.approvePR(prId)
-      await logsStore.createLog({
-        created_by: userId,
-        action: 'approve_pr',
-        description: `Purchase requisition ${prNumber} approved`,
-        transaction_id: prId,
-        module: 'purchase_requisition',
-      })
-    } else {
-      await prStore.rejectPR(prId)
-      await logsStore.createLog({
-        created_by: userId,
-        action: 'reject_pr',
-        description: `Purchase requisition ${prNumber} rejected`,
-        transaction_id: prId,
-        module: 'purchase_requisition',
-      })
-    }
-    closeConfirm()
-    await Promise.all([
-      loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] }),
-      loadStats(),
-    ])
-    confirmLoading.value = false
-  }
-
   async function handleUnapprove(pr: PR, reason?: string) {
     const changeRequestPRStore = useChangeRequestPRStore()
     const result = await changeRequestPRStore.handleUnapprove(pr, reason)
@@ -225,7 +190,6 @@ export function usePurchaseRequisitionList() {
     openDetail,
     openConfirm,
     closeConfirm,
-    handleConfirm,
     handleUnapprove,
     openPurchaseOrder,
     loadItems,
