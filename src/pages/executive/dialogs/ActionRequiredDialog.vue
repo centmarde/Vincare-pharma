@@ -2,6 +2,7 @@
 import { useChangeRequestsPR } from '@/pages/purchasing/stores/composables/useChangeRequestsPR'
 import { useFinanceChangeRequests } from '@/pages/finance/stores/composables/useFinanceChangeRequests'
 import { useSalesChangeRequests } from '@/pages/sales/stores/composables/useSalesChangeRequests'
+import { useSharedChangeRequests } from '../composables/useSharedChangeRequests'
 import { formatDatePR_ISO } from '@/utils/helpers'
 import { computed, ref, watch } from 'vue'
 
@@ -11,6 +12,7 @@ import { computed, ref, watch } from 'vue'
 const pr = useChangeRequestsPR()
 const finance = useFinanceChangeRequests()
 const sales = useSalesChangeRequests()
+const shared = useSharedChangeRequests()
 
 const selected = defineModel<boolean>('modelValue', { default: false })
 const props = defineProps<{ request?: any }>()
@@ -32,6 +34,7 @@ watch(selected, (open) => {
 function composableFor(source: string | undefined) {
   if (source === 'finance') return finance
   if (source === 'sales') return sales
+  if (source === 'shared') return shared
   return pr
 }
 
@@ -39,6 +42,7 @@ const moduleLabel = computed(() => {
   const source = request.value?.source
   if (source === 'finance') return 'Finance'
   if (source === 'sales') return 'Sales'
+  if (source === 'shared') return 'In-House / Ethical'
   return 'Purchase Requisition'
 })
 
