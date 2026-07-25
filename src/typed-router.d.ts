@@ -159,10 +159,14 @@ declare module 'vue-router/auto-routes' {
     '/suppliers/components/SuppliersCRUD': RouteRecordInfo<'/suppliers/components/SuppliersCRUD', '/suppliers/components/SuppliersCRUD', Record<never, never>, Record<never, never>>,
     '/suppliers/SuppliersView': RouteRecordInfo<'/suppliers/SuppliersView', '/suppliers/SuppliersView', Record<never, never>, Record<never, never>>,
     '/warehouse/components/POlistWidget': RouteRecordInfo<'/warehouse/components/POlistWidget', '/warehouse/components/POlistWidget', Record<never, never>, Record<never, never>>,
+    '/warehouse/components/WareHouseFormDialog': RouteRecordInfo<'/warehouse/components/WareHouseFormDialog', '/warehouse/components/WareHouseFormDialog', Record<never, never>, Record<never, never>>,
+    '/warehouse/components/WareHouseListWidget': RouteRecordInfo<'/warehouse/components/WareHouseListWidget', '/warehouse/components/WareHouseListWidget', Record<never, never>, Record<never, never>>,
     '/warehouse/dialogs/PODetailModal': RouteRecordInfo<'/warehouse/dialogs/PODetailModal', '/warehouse/dialogs/PODetailModal', Record<never, never>, Record<never, never>>,
     '/warehouse/dialogs/PODetailViewModal': RouteRecordInfo<'/warehouse/dialogs/PODetailViewModal', '/warehouse/dialogs/PODetailViewModal', Record<never, never>, Record<never, never>>,
+    '/warehouse/mobile/WareHouseListMobile': RouteRecordInfo<'/warehouse/mobile/WareHouseListMobile', '/warehouse/mobile/WareHouseListMobile', Record<never, never>, Record<never, never>>,
     '/warehouse/ProductsListView': RouteRecordInfo<'/warehouse/ProductsListView', '/warehouse/ProductsListView', Record<never, never>, Record<never, never>>,
     '/warehouse/StockTransfersReviewView': RouteRecordInfo<'/warehouse/StockTransfersReviewView', '/warehouse/StockTransfersReviewView', Record<never, never>, Record<never, never>>,
+    '/warehouse/WareHouseListView': RouteRecordInfo<'/warehouse/WareHouseListView', '/warehouse/WareHouseListView', Record<never, never>, Record<never, never>>,
     '/warehouse/WareHouseView': RouteRecordInfo<'/warehouse/WareHouseView', '/warehouse/WareHouseView', Record<never, never>, Record<never, never>>,
   }
 }
