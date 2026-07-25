@@ -1,4 +1,5 @@
 import { ref, computed } from 'vue'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
 const STORAGE_KEY = 'vincare_ignored_products'
 
@@ -124,51 +125,27 @@ export function useProductIgnore() {
     return 'Less than a minute'
   }
 
-  // --- Confirmation dialog state ---
-  const showIgnoreConfirm = ref(false)
-  const pendingIgnoreProductId = ref<number | null>(null)
-  const pendingIgnoreProductName = ref('')
-  const pendingIgnoreDurationLabel = ref('')
-  const pendingIgnoreDurationMs = ref(0)
+  const { confirmDialog } = useConfirmDialog()
 
   /**
-   * Open the confirmation dialog before ignoring a product.
+   * Open the confirmation dialog before ignoring a product using the global ConfirmDialog.
    * @param productId - The product ID to ignore
    * @param productName - Display name of the product
    * @param durationMs - Duration in milliseconds
    * @param durationLabel - Human-readable duration label (e.g. "1 day")
    */
-  function confirmIgnore(productId: number, productName: string, durationMs: number, durationLabel: string) {
-    pendingIgnoreProductId.value = productId
-    pendingIgnoreProductName.value = productName
-    pendingIgnoreDurationMs.value = durationMs
-    pendingIgnoreDurationLabel.value = durationLabel
-    showIgnoreConfirm.value = true
-  }
-
-  /**
-   * Execute the pending ignore action after user confirmation.
-   */
-  function executeIgnore() {
-    if (pendingIgnoreProductId.value != null && pendingIgnoreDurationMs.value > 0) {
-      ignoreProduct(pendingIgnoreProductId.value, pendingIgnoreDurationMs.value)
+  async function confirmIgnore(productId: number, productName: string, durationMs: number, durationLabel: string) {
+    const confirmed = await confirmDialog(
+      `Are you sure you want to ignore **${productName}** for **${durationLabel}**?\n\nIt will be hidden from stock status alerts until the time expires.`,
+      {
+        title: 'Dismiss Alert',
+        confirmText: 'Dismiss',
+        cancelText: 'Cancel',
+      },
+    )
+    if (confirmed) {
+      ignoreProduct(productId, durationMs)
     }
-    resetIgnoreConfirm()
-  }
-
-  /**
-   * Cancel the ignore confirmation dialog.
-   */
-  function cancelIgnore() {
-    resetIgnoreConfirm()
-  }
-
-  function resetIgnoreConfirm() {
-    showIgnoreConfirm.value = false
-    pendingIgnoreProductId.value = null
-    pendingIgnoreProductName.value = ''
-    pendingIgnoreDurationMs.value = 0
-    pendingIgnoreDurationLabel.value = ''
   }
 
   // Load on initialization
@@ -196,13 +173,8 @@ export function useProductIgnore() {
     isIgnored,
     getIgnoreInfo,
     formatRemainingTime,
-    // Confirmation dialog state & methods
-    showIgnoreConfirm,
-    pendingIgnoreProductName,
-    pendingIgnoreDurationLabel,
+    // Confirmation dialog method (uses global ConfirmDialog)
     confirmIgnore,
-    executeIgnore,
-    cancelIgnore,
   }
 }
 
