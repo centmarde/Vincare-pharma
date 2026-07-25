@@ -6,7 +6,7 @@ import {
   expenseCategories, expenseDepartments, expensePaymentMethods,
 } from '@/stores/financeData'
 import type { ExpenseType } from '@/stores/financeData'
-import { useChangeRequestsDataStore } from '@/stores/changeRequestsData'
+import { useFinanceChangeRequestStore } from '../stores/financeChangeRequest'
 import type { ChangeRequestField, ProposedChange, AppliedEdit } from '@/stores/changeRequestsData'
 import { formatCurrency } from '@/utils/helpers'
 import type { AddExpensePayload } from '@/utils/cashAccountTypes'
@@ -26,7 +26,7 @@ export const headers = [
 
 export function useExpenses() {
   const financeStore = useFinanceDataStore()
-  const changeStore = useChangeRequestsDataStore()
+  const changeStore = useFinanceChangeRequestStore()
   const toast = useToast()
   const { expenses, cashAccounts, loading } = storeToRefs(financeStore)
 

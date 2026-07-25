@@ -4,6 +4,7 @@ import { useGeneralJournal } from '../composables/useGeneralJournal'
 import ManualEntryDialog from './dialogs/ManualEntryDialog.vue'
 import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
+import { useChangeRequestsDataStore } from '@/stores/changeRequestsData'
 import type { JournalEntry } from '@/stores/glData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
@@ -17,9 +18,11 @@ const {
 } = useGeneralJournal()
 
 // Reversing a posted entry now needs executive approval. An entry is corrected
-// by reversal, never edited — so the request is void-only.
+// by reversal, never edited — so the request is void-only. Journal entries
+// stay on the shared store (excluded from the finance/sales change-request
+// split — a journal_entries row can't be scoped the same way).
 const { showDialog, config, isPending, loadPending, open, submit, submitting } =
-  useChangeRequestFiling('gl', 'journal_entry')
+  useChangeRequestFiling(useChangeRequestsDataStore())
 
 function openChange(entry: JournalEntry) {
   open({
@@ -98,7 +101,7 @@ onMounted(loadPending)
                   <v-btn v-if="entry.status === 'draft'" size="x-small" variant="text" color="success"
                     @click="approveEntry(entry.id)">Approve</v-btn>
                   <v-chip v-else-if="entry.status === 'posted' && isPending(entry.id)" size="x-small" color="warning" variant="tonal" label>Reversal pending</v-chip>
-                  <v-btn v-else-if="entry.status === 'posted'" size="x-small" variant="text" color="error"
+                  <v-btn v-else-if="entry.status === 'posted'" size="small" variant="tonal" color="error" class="text-none"
                     @click="openChange(entry)">Reverse</v-btn>
                 </td>
               </tr>
