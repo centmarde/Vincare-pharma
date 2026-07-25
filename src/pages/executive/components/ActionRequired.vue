@@ -5,6 +5,7 @@ import RequestHistoryListDialog from '../dialogs/RequestHistoryListDialog.vue'
 import { useChangeRequestsPR } from '@/pages/purchasing/stores/composables/useChangeRequestsPR'
 import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
 import { formatDatePR_ISO } from '@/utils/helpers'
+import { useRequestHistory } from '../composables/useRequestHistory'
 
 const { requests: undoRequests, loading: undoLoading } = useChangeRequestsPR()
 const { requests: pendingPRs, loading: prLoading } = useExecutiveApprovePR()
@@ -56,6 +57,19 @@ function openRequest(item: MergedActionItem) {
 }
 
 const historyDialog = ref(false)
+const {
+  loading: historyLoading,
+  paginatedRequests: historyPaginatedRequests,
+  requests: historyRequests,
+  page: historyPage,
+  totalPages: historyTotalPages,
+  totalItems: historyTotalItems,
+  fetchHistory,
+} = useRequestHistory()
+
+watch(historyDialog, (val) => {
+  if (val) fetchHistory()
+})
 </script>
 
 <template>

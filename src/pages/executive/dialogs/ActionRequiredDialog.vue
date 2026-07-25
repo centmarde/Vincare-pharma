@@ -27,20 +27,18 @@ const rejectReason = ref('')
 const undoItems = ref<PRItem[]>([])
 const undoItemsLoading = ref(false)
 
-watch(
-  () => [selected.value, kind.value, raw.value?.transaction_id] as const,
-  async ([open, k, txId]) => {
-    if (!open || k !== 'undo' || !txId) return
+watch(() => [selected.value, kind.value, raw.value?.transaction_id] as const,
+async ([open, k, txId]) => {
+  if (!open || k !== 'undo' || !txId) return
     undoItemsLoading.value = true
     try {
       const pr = await prStore.fetchPRByRequisitionId(txId)
       undoItems.value = pr?.items ?? []
     } finally {
       undoItemsLoading.value = false
-    }
-  },
-)
-
+    
+  }
+})
 
 async function onApprove() {
   if (!raw.value || isApproving.value) return
