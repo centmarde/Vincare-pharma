@@ -9,6 +9,7 @@ import type { ExpenseCategory, ExpenseDepartment } from '@/stores/financeData'
 import { useGLDataStore } from '@/stores/glData'
 import { getErrorMessage } from '@/utils/helpers'
 import type { ProposedChange, AppliedEdit } from '@/stores/changeRequestsData'
+import { parseProposedChanges, serializeProposedChanges } from '@/stores/changeRequestsData'
 
 // Approval-gated change requests for the FINANCE module (expense + supplier
 // payment only — journal entries are a `journal_entries` row, not a
@@ -78,7 +79,7 @@ function mapRequestRow(row: any): FinanceChangeRequestType {
     created_at: row.created_at,
     transaction_id: row.transaction_id,
     request_type: row.request_type,
-    proposed_changes: (row.proposed_changes ?? {}) as ProposedChange,
+    proposed_changes: parseProposedChanges(row.proposed_changes),
     summary: row.summary ?? null,
     reason: row.reason ?? null,
     status: row.status,
@@ -257,7 +258,7 @@ export const useFinanceChangeRequestStore = defineStore('financeChangeRequest', 
         from_transaction_no: payload.fromTransactionNo ?? null,
         to_transaction_no: payload.toTransactionNo ?? null,
         request_type: payload.requestType,
-        proposed_changes: proposedChanges,
+        proposed_changes: serializeProposedChanges(proposedChanges),
         summary: payload.summary ?? null,
         reason: payload.reason ?? null,
         status: 'pending',

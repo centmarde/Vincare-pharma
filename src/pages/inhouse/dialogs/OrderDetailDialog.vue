@@ -39,17 +39,22 @@ const { showDialog: crDialog, config: crConfig, isPending: crPending, loadPendin
 watch(payments, () => { void crLoad() })
 
 function requestUndoPayment(p: CollectionType) {
+  if (!props.order) return
   crOpen({
-    id: p.id,
-    ref: props.order?.order_no ?? null,
+    // Must be the ORDER's transaction id — change_requests.transaction_id is
+    // FK'd to transactions.id, and a payment is a `collections` row, not a
+    // transactions row. Which payment this targets travels via meta below.
+    id: props.order.id,
+    ref: props.order.order_no ?? null,
     fields: [
       { key: 'amount', label: 'Amount', value: p.amount ?? 0, type: 'number' },
       { key: 'payment_method', label: 'Payment Method', value: p.payment_method, type: 'select', items: expensePaymentMethods.map((m) => ({ title: m.title, value: m.value })) },
       { key: 'reference_no', label: 'Reference / OR #', value: p.reference_no, type: 'text' },
     ],
-    voidSummary: `Void this ${formatCurrency(p.amount ?? 0)} payment on ${props.order?.order_no ?? 'the order'} — reverses it in the ledger (DR AR / CR cash) and rolls the order's paid amount + status back.`,
+    voidSummary: `Void this ${formatCurrency(p.amount ?? 0)} payment on ${props.order.order_no ?? 'the order'} — reverses it in the ledger (DR AR / CR cash) and rolls the order's paid amount + status back.`,
     allowEdit: true,
     allowVoid: true,
+    meta: { __collection_id: { from: p.id, to: p.id } },
   })
 }
 

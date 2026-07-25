@@ -47,7 +47,7 @@ import ChartOfAccountsView from '@/pages/finance/ChartOfAccountsView.vue'
 import SuppliersView from '@/pages/suppliers/SuppliersView.vue'
 import LogsView from '@/pages/logs/LogsView.vue'
 import WarehouseProductsListView from '@/pages/warehouse/ProductsListView.vue'
-
+import WarehousesListView from '@/pages/warehouse/WareHouseListView.vue'
 /**
  * Route definitions for the application
  */
@@ -91,7 +91,7 @@ const routes = setupLayouts([
     component: ExecutiveView,
     meta: { requiresAuth: true },
   },
-    {
+  {
     path: '/executive/purchase-requisition-dashboard',
     component: ExecutivePurchaseRequisitionDashboardView,
     meta: { requiresAuth: true },
@@ -276,6 +276,11 @@ const routes = setupLayouts([
   {
     path: '/logs',
     component: LogsView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/warehouse/warehouses-list',
+    component: WarehousesListView,
     meta: { requiresAuth: true },
   },
   {
