@@ -25,16 +25,17 @@ export type WarehouseStockWithReservationsRow = {
   product_id: number
   total_qty: number
   available_stock: number
-  reservations: {
-    customer_name: string
-    reserved_qty: number
-  }[]
+  customer_name: string | null
+  reserved_qty: number | null
 }
 
 type FetchReservedProductsOptions = {
   customer_id?: number | null
   warehouse_products_id?: number | null
-  orderBy?: keyof Pick<ReservedProductType, 'created_at' | 'customer_id' | 'warehouse_products_id' | 'reserved_qty'>
+  orderBy?: keyof Pick<
+    ReservedProductType,
+    'created_at' | 'customer_id' | 'warehouse_products_id' | 'reserved_qty'
+  >
   ascending?: boolean
   limit?: number
   offset?: number
@@ -137,7 +138,14 @@ export const useReservedProductsDataStore = defineStore('reservedProductsData', 
     clearError()
 
     try {
-      const { customer_id, warehouse_products_id, orderBy = 'created_at', ascending = false, limit, offset } = options
+      const {
+        customer_id,
+        warehouse_products_id,
+        orderBy = 'created_at',
+        ascending = false,
+        limit,
+        offset,
+      } = options
 
       let q = supabase.from('reserved_products').select('*')
 
@@ -232,7 +240,10 @@ export const useReservedProductsDataStore = defineStore('reservedProductsData', 
       reservedProducts.value = (data || []) as ReservedProductType[]
       return reservedProducts.value
     } catch (err) {
-      handleError(err, `Failed to fetch reserved products for warehouse product ID ${warehouseProductId}`)
+      handleError(
+        err,
+        `Failed to fetch reserved products for warehouse product ID ${warehouseProductId}`,
+      )
       return []
     } finally {
       loading.value = false
@@ -267,44 +278,24 @@ export const useReservedProductsDataStore = defineStore('reservedProductsData', 
     }
   }
 
-  /**
-   * Safely normalise the `reservations` field from the RPC result.
-   * Supabase may return `jsonb` columns as JSON strings rather than
-   * parsed arrays, so we ensure we always return a proper array.
-   */
-  function parseReservations(
-    reservations: unknown,
-  ): { customer_name: string; reserved_qty: number }[] {
-    if (Array.isArray(reservations)) return reservations
-    if (typeof reservations === 'string') {
-      try {
-        const parsed = JSON.parse(reservations)
-        return Array.isArray(parsed) ? parsed : []
-      } catch {
-        return []
-      }
-    }
-    return []
-  }
-
   const fetchWarehouseStockWithReservations = async (warehouseId: number) => {
     loading.value = true
     clearError()
 
     try {
-      const { data, error: rpcError } = await supabase
-        .rpc('get_warehouse_stock_with_reservations', { p_warehouse_id: warehouseId })
+      const { data, error: rpcError } = await supabase.rpc(
+        'get_warehouse_stock_with_reservations',
+        { p_warehouse_id: warehouseId },
+      )
+
+      //console.log(`[ReservedProductsStore] Calling RPC with p_warehouse_id=${warehouseId}`)
+      //console.log('[ReservedProductsStore] Raw RPC response data:', JSON.stringify(data, null, 2))
 
       if (rpcError) throw rpcError
 
       const rows = (data || []) as WarehouseStockWithReservationsRow[]
-      // Normalise `reservations` — Supabase may return jsonb as a JSON string
-      const normalisedRows = rows.map((row) => ({
-        ...row,
-        reservations: parseReservations(row.reservations),
-      }))
-      console.log('[ReservedProductsStore] RPC result:', normalisedRows)
-      return normalisedRows
+      //console.log('[ReservedProductsStore] RPC result rows:', rows)
+      return rows
     } catch (err) {
       handleError(err, 'Failed to fetch warehouse stock with reservations')
       return []
@@ -370,10 +361,7 @@ export const useReservedProductsDataStore = defineStore('reservedProductsData', 
     clearError()
 
     try {
-      const { error: deleteError } = await supabase
-        .from('reserved_products')
-        .delete()
-        .eq('id', id)
+      const { error: deleteError } = await supabase.from('reserved_products').delete().eq('id', id)
 
       if (deleteError) throw deleteError
 

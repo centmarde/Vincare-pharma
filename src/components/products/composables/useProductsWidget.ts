@@ -265,35 +265,42 @@ const stockDialogProducts = computed<ProductType[]>(() => {
         warehouseProductsIdToProductId.value = wpToProductMap
 
         // Use RPC to get stock + reservations in a single query
+        // RPC now returns individual rows per reservation (customer_name, reserved_qty as separate columns)
         const rpcRows = await reservedProductsStore.fetchWarehouseStockWithReservations(warehouseId)
 
         const stockMap = new Map<number, number>()
         const detailsMap = new Map<number, { total_qty: number }>()
         const reservationsByProduct = new Map<number, { customer_name: string; reserved_qty: number }[]>()
 
+        // Group individual RPC rows by product_id to build the reservations array
         for (const row of rpcRows) {
           if (row.product_id == null) continue
           const productId = row.product_id
-          stockMap.set(productId, row.available_stock)
-          detailsMap.set(productId, { total_qty: row.total_qty })
-          // Ensure reservations is always a proper array (Supabase may return jsonb as a string)
-          const reservations = Array.isArray(row.reservations)
-            ? row.reservations
-            : Array.isArray(row.reservations)
-              ? row.reservations
-              : typeof row.reservations === 'string'
-                ? (() => {
-                    try {
-                      const parsed = JSON.parse(row.reservations)
-                      return Array.isArray(parsed) ? parsed : []
-                    } catch {
-                      return []
-                    }
-                  })()
-                : []
-          reservationsByProduct.set(productId, reservations)
 
-          console.log(`[ProductsWidget] Product ${productId}: total_qty=${row.total_qty}, available_stock=${row.available_stock}, reservations=${JSON.stringify(reservations)}`)
+          // Set stock and total_qty from the first occurrence (same for all rows of this product)
+          if (!stockMap.has(productId)) {
+            stockMap.set(productId, row.available_stock)
+          }
+          if (!detailsMap.has(productId)) {
+            detailsMap.set(productId, { total_qty: row.total_qty })
+          }
+
+          // Build reservations array from individual rows (skip rows with no reservation)
+          if (row.customer_name != null && row.reserved_qty != null) {
+            const existing = reservationsByProduct.get(productId) || []
+            existing.push({
+              customer_name: row.customer_name,
+              reserved_qty: row.reserved_qty,
+            })
+            reservationsByProduct.set(productId, existing)
+          } else {
+            // Ensure every product has at least an empty array
+            if (!reservationsByProduct.has(productId)) {
+              reservationsByProduct.set(productId, [])
+            }
+          }
+
+          console.log(`[ProductsWidget] Product ${productId}: total_qty=${row.total_qty}, available_stock=${row.available_stock}, customer_name=${row.customer_name}, reserved_qty=${row.reserved_qty}`)
         }
 
         warehouseStockMap.value = stockMap
