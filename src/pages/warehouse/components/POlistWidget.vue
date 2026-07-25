@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { usePurchaseOrderList, headers, headersWarehouse } from '@/pages/purchasing/composables/usePurchaseOrderList'
+import {
+  usePurchaseOrderList,
+  headers,
+  headersWarehouse,
+} from '@/pages/purchasing/composables/usePurchaseOrderList'
 import { formatCurrency, formatDateShort } from '@/utils/helpers'
 import PODetailSkuModal from '../dialogs/PODetailViewModal.vue'
 import PODetailViewModal from '../dialogs/PODetailModal.vue'
@@ -83,7 +87,7 @@ function goToPage(p: number) {
           :class="mobile ? 'flex-column ga-3' : 'justify-space-between'"
         >
           <span class="text-h6 font-weight-bold" :class="mobile ? 'w-100' : ''"
-            >Warehouse Dashboard</span
+            >Main Warehouse Dashboard</span
           >
           <div class="d-flex align-center" :class="mobile ? 'w-100' : ''" style="gap: 12px">
             <v-text-field
@@ -180,7 +184,7 @@ function goToPage(p: number) {
             <v-btn variant="outlined" size="small" class="text-none" @click="openDetail(item)">
               View
             </v-btn>
-            <div style="width: 150px;">
+            <div style="width: 150px">
               <v-btn
                 v-if="item.status !== 'complete'"
                 size="small"
