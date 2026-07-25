@@ -37,15 +37,31 @@ const ACTION_REQUEST = 'change_requested'
 const ACTION_APPROVE = 'change_approved'
 const ACTION_REJECT = 'change_rejected'
 
-export type ChangeRequestTargetType =
-  | 'expense'
-  | 'supplier_payment'
-  | 'sale'
-  | 'remittance'
-  | 'inhouse_payment'
-  | 'ethical_collection'
-  | 'journal_entry'
-  | 'purchase_requisition'
+// Reserved proposed_changes keys. change_requests.transaction_id is FK'd to
+// transactions.id, but an in-house/ethical payment is a `collections` row, not
+// a transactions row — so the collection being voided/edited travels here
+// instead, keyed off the order's transaction_id. __prev_status stashes the
+// pre-gate status at propose time so a REJECT (or a memo-only edit approve,
+// which never sets a status of its own) can restore it instead of stranding
+// the document on 'change_request' (same fix already applied in the finance/
+// sales change-request stores).
+const PREV_STATUS_KEY = '__prev_status'
+const COLLECTION_ID_KEY = '__collection_id'
+
+function stripReservedKeys(changes: ProposedChange): ProposedChange {
+  const out: ProposedChange = {}
+  for (const [k, v] of Object.entries(changes)) {
+    if (k !== PREV_STATUS_KEY && k !== COLLECTION_ID_KEY) out[k] = v
+  }
+  return out
+}
+
+// NOTE: the old `ChangeRequestTargetType` union was removed — it was a leftover
+// from the v1 polymorphic schema (`target_type`/`target_id`, dropped when
+// change_requests was restructured to a single transaction_id FK). It was
+// referenced nowhere, and its values ('inhouse_payment', 'ethical_collection',
+// 'journal_entry') were never real `transactions.transaction_type` values, so
+// it actively misled dispatch code. Dispatch keys off transaction_type now.
 
 // One editable field surfaced in the proposal dialog. `value` is the current
 // value (prefilled) so the dialog can compute the diff automatically.
@@ -58,6 +74,33 @@ export type ChangeRequestField = {
 }
 
 export type ProposedChange = Record<string, { from: unknown; to: unknown }>
+
+// `change_requests.proposed_changes` is a **text** column, not jsonb (the lead
+// dev's no-jsonb schema convention; it was jsonb in the original 2026-07-20
+// migration and became text in the PR #83 restructure). PostgREST therefore
+// returns the stored JSON as a STRING, so it must be parsed before use — a bare
+// `as ProposedChange` cast compiles but silently yields a string, and every
+// `changes[key]` lookup then reads undefined (and `Object.entries()` on it
+// yields character/index pairs rather than fields). Tolerates an object too, so
+// this keeps working if the column type ever changes back.
+export function parseProposedChanges(raw: unknown): ProposedChange {
+  if (!raw) return {}
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw)
+      return parsed && typeof parsed === 'object' ? (parsed as ProposedChange) : {}
+    } catch {
+      return {}
+    }
+  }
+  return typeof raw === 'object' ? (raw as ProposedChange) : {}
+}
+
+// Matching write-side serializer, so the text column always receives real JSON
+// text rather than relying on PostgREST's object→text coercion.
+export function serializeProposedChanges(changes: ProposedChange): string {
+  return JSON.stringify(changes ?? {})
+}
 
 export type ChangeRequestType = {
   id: number // change_requests.id
@@ -105,7 +148,7 @@ function mapRequestRow(row: any): ChangeRequestType {
     created_at: row.created_at,
     transaction_id: row.transaction_id,
     request_type: row.request_type,
-    proposed_changes: (row.proposed_changes ?? {}) as ProposedChange,
+    proposed_changes: parseProposedChanges(row.proposed_changes),
     summary: row.summary ?? null,
     reason: row.reason ?? null,
     status: row.status,
@@ -128,6 +171,12 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
   const loading = ref(false)
   const error: Ref<string> = ref('')
 
+  // Remembers the last fetch scope so the internal re-fetch after an
+  // approve/reject preserves whatever filter the caller was using (e.g. the
+  // executive queue's inhouse/ethical type scope) instead of silently
+  // widening back to every pending request.
+  let lastFetchOptions: { status?: 'pending' | 'approved' | 'rejected'; types?: string[] } = {}
+
   const pendingCount = computed(() => requests.value.filter((r) => r.status === 'pending').length)
 
   const handleError = (err: unknown, defaultMessage: string) => {
@@ -137,18 +186,46 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     error.value = ''
   }
 
-  const fetchRequests = async (options: { status?: 'pending' | 'approved' | 'rejected' } = {}) => {
+  // `types` scopes to specific transaction_types via an inner join (e.g. the
+  // executive approver queue passes ['inhouse_order','ethical_order'] to pull
+  // only the in-house/ethical payment requests this shared store owns, without
+  // dragging in finance/sales/PR rows those modules' own stores already surface).
+  const fetchRequests = async (
+    options: { status?: 'pending' | 'approved' | 'rejected'; types?: string[] } = {},
+  ) => {
+    lastFetchOptions = options
     loading.value = true
     clearError()
     try {
-      let q = supabase.from('change_requests').select('*').order('created_at', { ascending: false })
-      if (options.status) q = q.eq('status', options.status)
-
-      const { data, error: fetchError } = await q
-      if (fetchError) throw fetchError
+      // The two select strings are kept as separate literals (rather than one
+      // conditional variable) because Supabase resolves the row type from the
+      // select string at compile time — a union of two select strings makes it
+      // unresolvable.
+      const types = options.types
+      const rows = await (async () => {
+        if (types?.length) {
+          let q = supabase
+            .from('change_requests')
+            .select('*, transactions!inner(transaction_type)')
+            .in('transactions.transaction_type', types)
+            .order('created_at', { ascending: false })
+          if (options.status) q = q.eq('status', options.status)
+          const { data, error: e } = await q
+          if (e) throw e
+          return data
+        }
+        let q = supabase
+          .from('change_requests')
+          .select('*')
+          .order('created_at', { ascending: false })
+        if (options.status) q = q.eq('status', options.status)
+        const { data, error: e } = await q
+        if (e) throw e
+        return data
+      })()
 
       if (!authStore.users.length) await authStore.getAllUsers()
-      requests.value = (data || []).map((row) => ({
+      requests.value = (rows || []).map((row: any) => ({
         ...mapRequestRow(row),
         created_by_email: authStore.users.find((u: any) => u.id === row.created_by)?.email ?? null,
       }))
@@ -171,6 +248,10 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     return mapRequestRow(data)
   }
 
+  // Business rule (devplan §Business Rules): only one active pending request
+  // per transaction. An order with several payments therefore allows only one
+  // open payment-void/edit request at a time — the next must wait for the
+  // current one to be approved/rejected.
   const hasPendingRequest = async (transactionId: number): Promise<boolean> => {
     const { data } = await supabase
       .from('change_requests')
@@ -183,24 +264,31 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
 
   // Which transactions currently have a pending request (drives the
   // "Change pending" chip on a list view). No longer filters by target type —
-  // callers filter their own lists.
+  // callers filter their own lists. Resolves to the collection id (not the
+  // order's transaction_id) for in-house/ethical payment requests, so the
+  // chip lands on the specific payment row rather than every payment on the
+  // order.
   const fetchPendingTargetIds = async (): Promise<number[]> => {
     const { data, error: e } = await supabase
       .from('change_requests')
-      .select('transaction_id')
+      .select('transaction_id, proposed_changes')
       .eq('status', 'pending')
     if (e) {
       handleError(e, 'Failed to fetch pending change requests')
       return []
     }
-    return (data || []).map((r: any) => r.transaction_id as number)
+    return (data || []).map((r: any) => {
+      const cid = parseProposedChanges(r.proposed_changes)[COLLECTION_ID_KEY]?.to
+      return typeof cid === 'number' ? cid : (r.transaction_id as number)
+    })
   }
 
-  // Transactions carrying an APPLIED edit — drives the "Edited" chip.
+  // Transactions carrying an APPLIED edit — drives the "Edited" chip. Same
+  // collection-id resolution as fetchPendingTargetIds above.
   const fetchAppliedEdits = async (): Promise<AppliedEdit[]> => {
     const { data, error: e } = await supabase
       .from('change_requests')
-      .select('transaction_id, summary, reason, resolved_at, to_transaction_no')
+      .select('transaction_id, summary, reason, resolved_at, to_transaction_no, proposed_changes')
       .eq('request_type', 'edit')
       .eq('status', 'approved')
       .order('resolved_at', { ascending: false })
@@ -208,7 +296,16 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
       handleError(e, 'Failed to fetch applied edits')
       return []
     }
-    return (data || []) as AppliedEdit[]
+    return (data || []).map((r: any) => {
+      const cid = parseProposedChanges(r.proposed_changes)[COLLECTION_ID_KEY]?.to
+      return {
+        transaction_id: typeof cid === 'number' ? cid : (r.transaction_id as number),
+        summary: r.summary ?? null,
+        reason: r.reason ?? null,
+        resolved_at: r.resolved_at ?? null,
+        to_transaction_no: r.to_transaction_no ?? null,
+      } as AppliedEdit
+    })
   }
 
   // The activity-log side. Same action names as the old encoding so log
@@ -252,7 +349,9 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
       return { success: false }
     }
 
-    // Friendly pre-check.
+    // Friendly pre-check — one pending request per transaction (see rule in
+    // hasPendingRequest). For an order with multiple payments this means a
+    // second payment's request is blocked until the first resolves.
     if (await hasPendingRequest(payload.transactionId)) {
       toast.warning('There is already a pending change request for this document.')
       loading.value = false
@@ -278,6 +377,9 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
         .neq('status', 'change_request') // guard: don't re-set if already set
     }
 
+    const proposedChanges: ProposedChange = { ...(payload.proposedChanges ?? {}) }
+    if (txnCheck?.status) proposedChanges[PREV_STATUS_KEY] = { from: txnCheck.status, to: 'change_request' }
+
     const { data, error: insertError } = await supabase
       .from('change_requests')
       .insert({
@@ -285,6 +387,7 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
         from_transaction_no: payload.fromTransactionNo ?? null,
         to_transaction_no: payload.toTransactionNo ?? null,
         request_type: payload.requestType,
+        proposed_changes: serializeProposedChanges(proposedChanges),
         summary: payload.summary ?? null,
         reason: payload.reason ?? null,
         status: 'pending',
@@ -331,11 +434,27 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
       note,
       toTransactionNo: null,
     })
-    loading.value = false
-    if (!ok) return { success: false }
+    if (!ok) {
+      loading.value = false
+      return { success: false }
+    }
+
+    // Restore the document's pre-gate status instead of leaving it stranded
+    // on 'change_request'.
+    const prevStatus = (request.proposed_changes?.[PREV_STATUS_KEY] as { from?: unknown } | undefined)?.from
+    if (typeof prevStatus === 'string') {
+      const { error: revertErr } = await supabase
+        .from('transactions')
+        .update({ status: prevStatus, updated_at: new Date().toISOString() })
+        .eq('id', request.transaction_id)
+        .eq('status', 'change_request')
+      if (revertErr) console.warn('rejectRequest: failed to restore document status:', revertErr.message)
+    }
+
     await logChangeEvent(ACTION_REJECT, request, user.id, note)
     toast.success('Change request rejected.')
-    await fetchRequests({ status: 'pending' })
+    await fetchRequests({ ...lastFetchOptions, status: 'pending' })
+    loading.value = false
     return { success: true }
   }
 
@@ -378,7 +497,7 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
       toast.success('Change request approved and applied.')
     }
     await logChangeEvent(ACTION_APPROVE, request, user.id, applied.resultRef ?? 'Applied.')
-    await fetchRequests({ status: 'pending' })
+    await fetchRequests({ ...lastFetchOptions, status: 'pending' })
     loading.value = false
     return { success: true }
   }
@@ -432,12 +551,14 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
         return applySaleChange(request)
       case 'remittance':
         return applyRemittanceChange(request)
-      case 'inhouse_payment':
+      case 'inhouse_order':
         return applyCollectionChange(request, userId, 'inhouse')
-      case 'ethical_collection':
+      case 'ethical_order':
         return applyCollectionChange(request, userId, 'ethical')
-      case 'journal_entry':
-        return applyJournalEntryChange(request, userId)
+      // NOTE: no 'journal_entry' case — that is not a transaction_type value.
+      // A GL entry is a journal_entries row, so it can never satisfy
+      // change_requests.transaction_id (FK → transactions.id); GL corrections
+      // go through GeneralJournal.vue's direct reversal instead.
       case 'purchase_requisition':
       case 'purchase_order':
       case 'stock_in':
@@ -555,7 +676,7 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     }
 
     // EDIT — read live state (for the stale-guard + the reissue base).
-    const changes = request.proposed_changes ?? {}
+    const changes = stripReservedKeys(request.proposed_changes ?? {})
     const { data: cur } = await supabase
       .from('transactions')
       .select(
@@ -704,7 +825,7 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
       return v.success ? { success: true, resultRef: request.from_transaction_no ?? undefined } : v
     }
 
-    const changes = request.proposed_changes ?? {}
+    const changes = stripReservedKeys(request.proposed_changes ?? {})
     const { data: cur } = await supabase
       .from('transactions')
       .select('supplier_id, total_amount, payment_method, paid_at, remarks, status')
@@ -785,7 +906,7 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
         success: false,
         error: 'A remittance is corrected by editing the counted amount, not voided.',
       }
-    const changes = request.proposed_changes ?? {}
+    const changes = stripReservedKeys(request.proposed_changes ?? {})
     const { data: cur } = await supabase
       .from('transactions')
       .select('remarks, remittance_details(actual_amount)')
@@ -827,9 +948,12 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
   }
 
   // ── In-house payment / Ethical collection (both are `collections` rows) ─────
-  // transaction_id is the collections row id. Both project as 'collection' (DR Cash / CR
-  // AR). Void reverses that, rolls back the collection, and rolls the order's
-  // amount_paid + status back. Payments aren't edited — void + re-record.
+  // request.transaction_id is the ORDER's transaction id (it has to be — the
+  // FK requires a real transactions row); the collection being voided/edited
+  // is carried separately in proposed_changes[__collection_id], stashed at
+  // propose time. Both project as 'collection' (DR Cash / CR AR). Void
+  // reverses that, rolls back the collection, and rolls the order's
+  // amount_paid + status back.
   // Reverse the collection's GL entry, soft-void it, then roll the order back.
   async function voidCollection(
     collectionId: number,
@@ -898,16 +1022,22 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     userId: string,
     kind: 'inhouse' | 'ethical',
   ): Promise<ApplyResult> {
+    const collectionId = Number(
+      (request.proposed_changes?.[COLLECTION_ID_KEY] as { to?: unknown } | undefined)?.to,
+    )
+    if (!collectionId || Number.isNaN(collectionId))
+      return { success: false, error: 'This request is missing its payment reference — please re-file it.' }
+
     if (request.request_type === 'void') {
-      const v = await voidCollection(request.transaction_id, userId, kind, request.reason)
+      const v = await voidCollection(collectionId, userId, kind, request.reason)
       return v.success ? { success: true, resultRef: request.from_transaction_no ?? undefined } : v
     }
 
-    const changes = request.proposed_changes ?? {}
+    const changes = stripReservedKeys(request.proposed_changes ?? {})
     const { data: cur } = await supabase
       .from('collections')
       .select('transaction_id, amount, payment_method, reference_no, remarks, voided_at')
-      .eq('id', request.transaction_id)
+      .eq('id', collectionId)
       .maybeSingle()
     if (!cur) return { success: false, error: 'Payment not found.' }
     if (cur.voided_at) return { success: false, error: 'This payment has already been voided.' }
@@ -920,7 +1050,9 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     const stale = firstStaleField(changes, current)
     if (stale) return staleError(stale)
 
-    // Memo-only (method/reference/remarks) → in place.
+    // Memo-only (method/reference/remarks) → in place. This path never sets a
+    // status of its own (unlike void/reissue), so the 'change_request' gate
+    // set at propose time must be cleared explicitly here.
     if (!('amount' in changes)) {
       const colUpdate: Record<string, unknown> = {}
       for (const [key, diff] of Object.entries(changes)) {
@@ -931,8 +1063,17 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
         const { error: e } = await supabase
           .from('collections')
           .update(colUpdate)
-          .eq('id', request.transaction_id)
+          .eq('id', collectionId)
         if (e) return { success: false, error: e.message }
+      }
+      const prevStatus = (request.proposed_changes?.[PREV_STATUS_KEY] as { from?: unknown } | undefined)?.from
+      if (typeof prevStatus === 'string') {
+        const { error: e } = await supabase
+          .from('transactions')
+          .update({ status: prevStatus, updated_at: new Date().toISOString() })
+          .eq('id', request.transaction_id)
+          .eq('status', 'change_request')
+        if (e) console.warn('applyCollectionChange: failed to restore order status:', e.message)
       }
       return { success: true, resultRef: request.from_transaction_no ?? undefined }
     }
@@ -948,7 +1089,7 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
         ((toVal(changes, 'reference_no') ?? cur.reference_no) as string | undefined) || undefined,
       remarks: reissueRemarks(request, toVal(changes, 'remarks') ?? cur.remarks),
     }
-    const v = await voidCollection(request.transaction_id, userId, kind, reissueReason(request))
+    const v = await voidCollection(collectionId, userId, kind, reissueReason(request))
     if (!v.success) return v
     const res =
       kind === 'inhouse'
@@ -964,25 +1105,6 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
       success: true,
       resultId: (res as any).paymentId ?? (res as any).collectionId ?? undefined,
     }
-  }
-
-  // ── GL journal entry ────────────────────────────────────────────────────────
-  // A posted entry is corrected by reversal, never edited. Reuse the GL
-  // reversal (posts a mirror + flips the original to 'reversed').
-  async function applyJournalEntryChange(
-    request: ChangeRequestType,
-    userId: string,
-  ): Promise<ApplyResult> {
-    if (request.request_type === 'edit')
-      return {
-        success: false,
-        error: 'A posted journal entry is corrected by reversal, not edited.',
-      }
-    const gl = useGLDataStore()
-    const rev = await gl.reverseJournalEntry(request.transaction_id, userId)
-    return rev.success
-      ? { success: true, resultRef: request.from_transaction_no ?? undefined }
-      : { success: false, error: rev.error || 'Failed to reverse the journal entry.' }
   }
 
   // ── Purchase Requisition unapprove ─────────────────────────────────────────
@@ -1088,3 +1210,4 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     resetStore,
   }
 })
+

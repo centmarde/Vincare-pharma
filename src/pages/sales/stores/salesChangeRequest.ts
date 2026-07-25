@@ -7,6 +7,7 @@ import { useAuthUserStore } from '@/stores/authUser'
 import { useSalesDataStore } from '@/stores/salesData'
 import { getErrorMessage } from '@/utils/helpers'
 import type { ProposedChange, AppliedEdit } from '@/stores/changeRequestsData'
+import { parseProposedChanges, serializeProposedChanges } from '@/stores/changeRequestsData'
 
 // Approval-gated change requests for the SALES module: POS sale (void only —
 // a sale isn't edited, it's void + re-ring) and remittance (edit only — a
@@ -72,7 +73,7 @@ function mapRequestRow(row: any): SalesChangeRequestType {
     created_at: row.created_at,
     transaction_id: row.transaction_id,
     request_type: row.request_type,
-    proposed_changes: (row.proposed_changes ?? {}) as ProposedChange,
+    proposed_changes: parseProposedChanges(row.proposed_changes),
     summary: row.summary ?? null,
     reason: row.reason ?? null,
     status: row.status,
@@ -247,7 +248,7 @@ export const useSalesChangeRequestStore = defineStore('salesChangeRequest', () =
         from_transaction_no: payload.fromTransactionNo ?? null,
         to_transaction_no: payload.toTransactionNo ?? null,
         request_type: payload.requestType,
-        proposed_changes: proposedChanges,
+        proposed_changes: serializeProposedChanges(proposedChanges),
         summary: payload.summary ?? null,
         reason: payload.reason ?? null,
         status: 'pending',

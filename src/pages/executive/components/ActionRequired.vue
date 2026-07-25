@@ -5,6 +5,7 @@ import RequestHistoryListDialog from '../dialogs/RequestHistoryListDialog.vue'
 import { useChangeRequestsPR } from '@/pages/purchasing/stores/composables/useChangeRequestsPR'
 import { useFinanceChangeRequests } from '@/pages/finance/stores/composables/useFinanceChangeRequests'
 import { useSalesChangeRequests } from '@/pages/sales/stores/composables/useSalesChangeRequests'
+import { useSharedChangeRequests } from '../composables/useSharedChangeRequests'
 import { formatDatePR_ISO } from '@/utils/helpers'
 
 import { useRequestHistory } from '../composables/useRequestHistory'
@@ -14,19 +15,21 @@ import { useRequestHistory } from '../composables/useRequestHistory'
 // edit/void — from a single place. Each composable owns its own
 // store/fetch/approve/reject; this just tags each request with its `source`
 // so ActionRequiredDialog knows which composable to call back into.
-type ChangeRequestSource = 'pr' | 'finance' | 'sales'
+type ChangeRequestSource = 'pr' | 'finance' | 'sales' | 'shared'
 
 const pr = useChangeRequestsPR()
 const finance = useFinanceChangeRequests()
 const sales = useSalesChangeRequests()
+const shared = useSharedChangeRequests()
 
 const requests = computed(() => [
   ...pr.requests.value.map((r) => ({ ...r, source: 'pr' as ChangeRequestSource })),
   ...finance.requests.value.map((r) => ({ ...r, source: 'finance' as ChangeRequestSource })),
   ...sales.requests.value.map((r) => ({ ...r, source: 'sales' as ChangeRequestSource })),
+  ...shared.requests.value.map((r) => ({ ...r, source: 'shared' as ChangeRequestSource })),
 ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()))
 
-const loading = computed(() => pr.loading.value || finance.loading.value || sales.loading.value)
+const loading = computed(() => pr.loading.value || finance.loading.value || sales.loading.value || shared.loading.value)
 
 const selected = ref(false)
 const selectedReq = ref<any | null>(null)

@@ -42,17 +42,22 @@ const { showDialog: crDialog, config: crConfig, isPending: crPending, loadPendin
 watch(collections, () => { void crLoad() }, { immediate: true })
 
 function requestUndoCollection(c: CollectionType) {
+  if (!order.value) return
   crOpen({
-    id: c.id,
-    ref: order.value?.order_no ?? null,
+    // Must be the ORDER's transaction id — change_requests.transaction_id is
+    // FK'd to transactions.id, and a collection is a `collections` row, not a
+    // transactions row. Which collection this targets travels via meta below.
+    id: order.value.id,
+    ref: order.value.order_no ?? null,
     fields: [
       { key: 'amount', label: 'Amount', value: c.amount ?? 0, type: 'number' },
       { key: 'payment_method', label: 'Payment Method', value: c.payment_method, type: 'select', items: expensePaymentMethods.map((m) => ({ title: m.title, value: m.value })) },
       { key: 'reference_no', label: 'Reference / OR #', value: c.reference_no, type: 'text' },
     ],
-    voidSummary: `Void this ${formatCurrency(c.amount ?? 0)} collection on ${order.value?.order_no ?? 'the order'} — reverses it in the ledger (DR AR / CR cash) and rolls the order's paid amount + status back.`,
+    voidSummary: `Void this ${formatCurrency(c.amount ?? 0)} collection on ${order.value.order_no ?? 'the order'} — reverses it in the ledger (DR AR / CR cash) and rolls the order's paid amount + status back.`,
     allowEdit: true,
     allowVoid: true,
+    meta: { __collection_id: { from: c.id, to: c.id } },
   })
 }
 

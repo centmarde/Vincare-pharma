@@ -33,6 +33,11 @@ export type ChangeRequestConfig = {
   voidSummary: string
   allowEdit: boolean
   allowVoid: boolean
+  // Reserved-key metadata (e.g. __collection_id) merged into every submit —
+  // invisible to the edit-diff UI, read back by the store's apply logic.
+  // Needed when `id` can't be the real transactions.id (e.g. a collection),
+  // since transactionId is FK-constrained to transactions.id.
+  meta?: ProposedChange
 }
 
 export function useChangeRequestFiling(store: ChangeRequestFilingStore) {
@@ -87,7 +92,7 @@ export function useChangeRequestFiling(store: ChangeRequestFilingStore) {
       transactionId: config.value.id,
       fromTransactionNo: config.value.ref,
       requestType: payload.requestType,
-      proposedChanges: payload.proposedChanges,
+      proposedChanges: { ...(config.value.meta ?? {}), ...payload.proposedChanges },
       summary: payload.summary,
       reason: payload.reason,
     })
