@@ -168,7 +168,7 @@ export const navigationConfig: NavigationGroup[] = [
       },
       {
         title: 'Warehouse List',
-        icon: 'mdi-truck',
+        icon: 'mdi mdi-format-list-checks',
         route: '/warehouse/warehouses-list',
       },
     ],
