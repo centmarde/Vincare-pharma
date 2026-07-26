@@ -3,9 +3,11 @@ import { usePODetailModal, company } from '@/pages/purchasing/composables/usePOD
 import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
 import { formatCurrency, formatDatePO_Written } from '@/utils/helpers'
 import { useProductsDataStore } from '@/stores/productsData'
-import type { PR } from '@/stores/purchaseRequisitionData'
+import { useWarehousesDataStore } from '@/stores/warehouseData'
+import { useWarehouseProductsDataStore } from '@/stores/warehouseProductsData'
+import type { PR, PRItem } from '@/stores/purchaseRequisitionData'
 import { useToast } from 'vue-toastification'
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useDisplay } from 'vuetify'
 
 const { mobile } = useDisplay()
@@ -22,11 +24,14 @@ const emit = defineEmits<{
   (e: 'mark-received', poId: number): void
 }>()
 const productsStore = useProductsDataStore()
+const warehousesStore = useWarehousesDataStore()
+const warehouseProductsStore = useWarehouseProductsDataStore()
 const toast = useToast()
 const savingAll = ref(false)
 const { printArea, uniqueSuppliers, handlePrint } = usePODetailModal(props as any, emit as any)
 const transactionItems = computed(() => props.pr?.items ?? [])
 const effectiveEmptyRows = computed(() => Math.max(0, 7 - transactionItems.value.length))
+const warehouses = computed(() => warehousesStore.warehouses)
 const missingSkuCount = computed(
   () => transactionItems.value.filter((item) => !item.sku?.toString().trim()).length,
 )
@@ -38,25 +43,88 @@ const missingActualCount = computed(
       return value == null || Number(value) <= 0
     }).length,
 )
-async function saveAllItems(): Promise<boolean> {
-  const updates = transactionItems.value
-    .filter(
-      (item) => item.product_id && item.sku?.toString().trim() && Number(item.actual_count_stock_in) > 0,
-    )
-    .map((item) => ({
-      transaction_item_id:   item.id,
-      product_id:            item.product_id!,
-      sku:                   item.sku!.toString().trim(),
-      actual_count_stock_in: Number(item.actual_count_stock_in),
-    }))
+const missingWarehouseCount = computed(
+  () =>
+    transactionItems.value.filter((item) => {
+      const wid = item.warehouse_id
+      return wid == null || Number(wid) <= 0
+    }).length,
+)
 
-  if (!updates.length) return true
+function getWarehouseName(item: PRItem): string {
+  const id = item.warehouse_id
+  if (id == null || id <= 0) return '—'
+  return warehouses.value.find((w) => w.id === id)?.name ?? '—'
+}
+
+onMounted(async () => {
+  await warehousesStore.fetchWarehouses()
+})
+async function saveAllItems(): Promise<boolean> {
+  const validItems = transactionItems.value.filter(
+    (item) =>
+      item.product_id &&
+      item.sku?.toString().trim() &&
+      Number(item.actual_count_stock_in) > 0 &&
+      item.warehouse_id != null &&
+      Number(item.warehouse_id) > 0,
+  )
+
+  if (!validItems.length) return true
 
   savingAll.value = true
   try {
-    const success = await productsStore.updateProductSkuAndCount(updates)
-    if (!success) toast.error('Failed saving product information.')
-    return success
+    // 1. Update product SKU and count
+    const updates = validItems.map((item) => ({
+      transaction_item_id: item.id,
+      product_id: item.product_id!,
+      sku: item.sku!.toString().trim(),
+      actual_count_stock_in: Number(item.actual_count_stock_in),
+    }))
+
+    const skuSuccess = await productsStore.updateProductSkuAndCount(updates)
+    if (!skuSuccess) {
+      toast.error('Failed saving product information.')
+      return false
+    }
+
+    // 2. Create/update warehouse product records for stock tracking
+    for (const item of validItems) {
+      const productId = item.product_id!
+      const warehouseId = Number(item.warehouse_id)
+      const qty = Number(item.actual_count_stock_in)
+
+      // Check if a warehouse_product record already exists
+      const existing = await warehouseProductsStore.fetchWarehouseProductByProductAndWarehouse(
+        productId,
+        warehouseId,
+      )
+
+      if (existing) {
+        // Update: add the new qty to existing total_qty
+        const updated = await warehouseProductsStore.updateWarehouseProduct(existing.id, {
+          total_qty: (existing.total_qty ?? 0) + qty,
+        })
+        if (!updated) {
+          toast.error(`Failed updating warehouse stock for ${item.item_description}.`)
+          return false
+        }
+      } else {
+        // Create a new warehouse_product record
+        const created = await warehouseProductsStore.createWarehouseProduct({
+          product_id: productId,
+          warehouse_id: warehouseId,
+          total_qty: qty,
+          notes: `Initial stock from PO ${props.po?.reference_no ?? ''}`,
+        })
+        if (!created) {
+          toast.error(`Failed creating warehouse stock for ${item.item_description}.`)
+          return false
+        }
+      }
+    }
+
+    return true
   } finally {
     savingAll.value = false
   }
@@ -69,6 +137,10 @@ async function handleMarkAsReceived() {
   }
   if (missingActualCount.value > 0) {
     toast.error(`Please fill in Actual Count for all ${missingActualCount.value} item(s).`)
+    return
+  }
+  if (missingWarehouseCount.value > 0) {
+    toast.error(`Please select warehouse for all ${missingWarehouseCount.value} item(s).`)
     return
   }
   if (props.po?.id == null) {
@@ -86,7 +158,7 @@ async function handleMarkAsReceived() {
 <template>
   <v-dialog
     :model-value="modelValue"
-    :max-width="mobile ? '95%' : '860'"
+    :max-width="mobile ? '95%' : '1100'"
     scrollable
     @update:model-value="emit('update:modelValue', $event)"
   >
@@ -168,12 +240,13 @@ async function handleMarkAsReceived() {
                 <th class="text-white text-right">TOTAL</th>
                 <th class="text-white text-center" style="width: 130px">ACTUAL COUNT</th>
                 <th class="text-white text-center" style="width: 130px">SKU</th>
+                <th class="text-white text-center" style="width: 170px">WAREHOUSE</th>
               </tr>
             </thead>
 
             <tbody>
               <tr v-if="transactionItems.length === 0">
-                <td colspan="6" class="text-center pa-4">No items found.</td>
+                <td colspan="7" class="text-center pa-4">No items found.</td>
               </tr>
 
               <tr v-for="(item, index) in transactionItems" :key="item.id">
@@ -209,16 +282,34 @@ async function handleMarkAsReceived() {
                   />
                   <span v-else>{{ item.sku ?? '—' }}</span>
                 </td>
+                <td class="text-center" style="width: 170px">
+                  <v-select
+                    v-if="skuEditMode"
+                    v-model="item['warehouse_id']"
+                    :items="warehouses"
+                    item-title="name"
+                    item-value="id"
+                    density="compact"
+                    variant="outlined"
+                    hide-details
+                    placeholder="Select warehouse"
+                    clearable
+                    style="width: 160px"
+                  />
+                  <span v-else>
+                    {{ getWarehouseName(item) }}
+                  </span>
+                </td>
               </tr>
 
               <tr v-for="n in effectiveEmptyRows" :key="`empty-${n}`">
-                <td colspan="6">&nbsp;</td>
+                <td colspan="7">&nbsp;</td>
               </tr>
             </tbody>
 
             <tfoot>
               <tr class="bg-grey-lighten-3">
-                <td colspan="5" class="text-right font-weight-bold">TOTAL</td>
+                <td colspan="6" class="text-right font-weight-bold">TOTAL</td>
                 <td class="text-center font-weight-bold">
                   {{ formatCurrency(po?.total_amount ?? 0) }}
                 </td>
@@ -258,6 +349,23 @@ async function handleMarkAsReceived() {
                   </div>
                 </div>
 
+                <!-- Warehouse select (always visible when in edit mode) -->
+                <div v-if="skuEditMode" class="mb-2">
+                  <div class="text-caption text-medium-emphasis mb-1">Warehouse</div>
+                  <v-select
+                    v-model="item['warehouse_id']"
+                    :items="warehouses"
+                    item-title="name"
+                    item-value="id"
+                    density="compact"
+                    variant="outlined"
+                    hide-details
+                    placeholder="Select warehouse"
+                    clearable
+                    style="width: 100%"
+                  />
+                </div>
+
                 <!-- Actual count + SKU inputs (always visible when in edit mode) -->
                 <div v-if="skuEditMode" class="d-flex ga-3">
                   <div style="flex: 1; min-width: 0;">
@@ -294,6 +402,10 @@ async function handleMarkAsReceived() {
                     <span class="text-medium-emphasis">SKU: </span>
                     <span class="font-weight-medium">{{ item.sku ?? '—' }}</span>
                   </div>
+                  <div>
+                    <span class="text-medium-emphasis">Warehouse: </span>
+                    <span class="font-weight-medium">{{ getWarehouseName(item) }}</span>
+                  </div>
                 </div>
               </v-card-text>
             </v-card>
@@ -328,12 +440,17 @@ async function handleMarkAsReceived() {
       <!-- Actions -->
       <v-card-actions :class="mobile ? 'pa-3 ga-2 flex-wrap' : 'pa-4 justify-end'">
         <div
-          v-if="skuEditMode && (missingSkuCount > 0 || missingActualCount > 0)"
+          v-if="skuEditMode && (missingSkuCount > 0 || missingActualCount > 0 || missingWarehouseCount > 0)"
           :class="mobile ? 'text-caption text-medium-emphasis w-100 mb-2' : 'text-body-2 text-medium-emphasis'"
         >
           <v-icon size="16" color="error" class="mr-1">mdi-alert-circle-outline</v-icon>
-          {{ missingSkuCount }} SKU{{ missingSkuCount !== 1 ? 's' : '' }} and
-          {{ missingActualCount }} actual count{{ missingActualCount !== 1 ? 's' : '' }} missing
+          <template v-if="missingSkuCount > 0">{{ missingSkuCount }} SKU{{ missingSkuCount !== 1 ? 's' : '' }} missing</template>
+          <template v-if="missingActualCount > 0">
+            {{ missingSkuCount > 0 ? ' / ' : '' }}{{ missingActualCount }} actual count{{ missingActualCount !== 1 ? 's' : '' }} missing
+          </template>
+          <template v-if="missingWarehouseCount > 0">
+            {{ missingSkuCount > 0 || missingActualCount > 0 ? ' / ' : '' }}{{ missingWarehouseCount }} warehouse{{ missingWarehouseCount !== 1 ? 's' : '' }} missing
+          </template>
         </div>
 
         <v-spacer v-if="!mobile" />
@@ -344,11 +461,11 @@ async function handleMarkAsReceived() {
             variant="flat"
             size="small"
             :loading="savingAll"
-            :disabled="missingSkuCount > 0 || missingActualCount > 0 || savingAll"
+            :disabled="missingSkuCount > 0 || missingActualCount > 0 || missingWarehouseCount > 0 || savingAll"
             @click="handleMarkAsReceived"
           >
             <template v-if="missingSkuCount > 0">
-              Input SKU ({{ missingSkuCount + missingActualCount }})
+              Input SKU ({{ missingSkuCount + missingActualCount + missingWarehouseCount }})
             </template>
             <template v-else> Mark as Received </template>
           </v-btn>
