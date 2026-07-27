@@ -38,6 +38,41 @@ const isRejecting = ref(false)
 const showRejectInput = ref(false)
 const rejectReason = ref('')
 
+// A change request can come from four modules and be three different types, so
+// the copy below must follow the request — describing a payment void as
+// "revert this purchase requisition to Pending Approval" tells the approver
+// they're doing something entirely different from what will actually happen.
+const source = computed(() => raw.value?.source as string | undefined)
+const isPRUndo = computed(() => source.value === 'pr')
+
+const moduleLabel = computed(() => {
+  if (source.value === 'finance') return 'Finance'
+  if (source.value === 'sales') return 'Sales'
+  if (source.value === 'shared') return 'In-House / Ethical'
+  return 'Purchase Requisition'
+})
+
+const requestTypeLabel = computed(() => {
+  const t = raw.value?.request_type
+  if (t === 'void') return 'Void'
+  if (t === 'edit') return 'Edit'
+  return 'Undo'
+})
+
+const undoWarning = computed(() => {
+  const t = raw.value?.request_type
+  if (t === 'void')
+    return 'Approving will void this document — its ledger entry is reversed and any affected balances are rolled back.'
+  if (t === 'edit') return 'Approving will apply the proposed changes to this document.'
+  return 'Approving will revert this purchase requisition back to Pending Approval.'
+})
+
+const undoFallbackSummary = computed(() =>
+  isPRUndo.value
+    ? 'Revert this purchase requisition to pending approval.'
+    : 'Apply this change request.',
+)
+
 // Undo-request rows only carry transaction_id/reason — fetch the underlying
 // PR (with items) on demand so the same items table can render for both branches.
 const undoItems = ref<PRItem[]>([])
@@ -208,11 +243,11 @@ async function confirmReject() {
                   <span class="text-body-2 font-weight-bold">
                     {{ raw.from_transaction_no ?? `#${raw.transaction_id}` }}
                   </span>
-                  <v-chip size="x-small" color="error" variant="tonal" label>Undo</v-chip>
-                  <v-chip size="x-small" variant="tonal" color="green" label>Purchase Requisition</v-chip>
+                  <v-chip size="x-small" color="error" variant="tonal" label>{{ requestTypeLabel }}</v-chip>
+                  <v-chip size="x-small" variant="tonal" color="green" label>{{ moduleLabel }}</v-chip>
                 </div>
                 <div class="text-caption text-medium-emphasis mt-1">
-                  {{ raw.summary ?? 'Revert this purchase requisition to pending approval.' }}
+                  {{ raw.summary ?? undoFallbackSummary }}
                 </div>
               </div>
             </div>
@@ -244,7 +279,7 @@ async function confirmReject() {
               {{ raw.reason ?? '—' }}
             </v-sheet>
           </div>
-         <div class="mb-4">
+         <div v-if="isPRUndo" class="mb-4">
           <div class="text-caption font-weight-bold text-medium-emphasis mb-2">
             ITEMS ON THIS REQUISITION ({{ undoItems.length }})
           </div>
@@ -285,8 +320,7 @@ async function confirmReject() {
             icon="mdi-information-outline"
             class="mb-4 text-caption"
           >
-            Approving will revert this purchase requisition back to
-            <strong>Pending Approval</strong>. This cannot be undone.
+            {{ undoWarning }} This cannot be undone.
           </v-alert>
         </template>
 
