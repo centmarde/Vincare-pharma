@@ -1,14 +1,30 @@
 <script setup lang="ts">
 import { useChangeRequestsPR } from '@/pages/purchasing/stores/composables/useChangeRequestsPR'
+import { useFinanceChangeRequests } from '@/pages/finance/stores/composables/useFinanceChangeRequests'
+import { useSalesChangeRequests } from '@/pages/sales/stores/composables/useSalesChangeRequests'
+import { useSharedChangeRequests } from '../composables/useSharedChangeRequests'
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
 import type { PRItem } from '@/stores/purchaseRequisitionData'
 import { formatDatePR_ISO } from '@/utils/helpers'
 import { computed, ref, watch } from 'vue'
 
-const { approve: approveUndo, reject: rejectUndo } = useChangeRequestsPR()
+const prChangeRequests = useChangeRequestsPR()
+const financeChangeRequests = useFinanceChangeRequests()
+const salesChangeRequests = useSalesChangeRequests()
+const sharedChangeRequests = useSharedChangeRequests()
 const { approve: approvePR, reject: rejectPR } = useExecutiveApprovePR()
 const prStore = usePurchaseRequisitionStore()
+
+// A change request must be approved through the store that owns it — each one
+// applies the change via its own module's reversal path. Dispatch on the
+// `source` tag ActionRequired stamped onto the row.
+function changeRequestOwner(source: string | undefined) {
+  if (source === 'finance') return financeChangeRequests
+  if (source === 'sales') return salesChangeRequests
+  if (source === 'shared') return sharedChangeRequests
+  return prChangeRequests
+}
 
 const selected = defineModel<boolean>('modelValue', { default: false })
 const props = defineProps<{ request?: any }>()
@@ -29,7 +45,13 @@ const undoItemsLoading = ref(false)
 
 watch(() => [selected.value, kind.value, raw.value?.transaction_id] as const,
 async ([open, k, txId]) => {
-  if (!open || k !== 'undo' || !txId) return
+  // Only PR undo requests have a purchase requisition behind them — a
+  // finance/sales/in-house request's transaction_id is an expense, sale or
+  // order, so looking it up as a PR would return nothing useful.
+  if (!open || k !== 'undo' || !txId || raw.value?.source !== 'pr') {
+    undoItems.value = []
+    return
+  }
     undoItemsLoading.value = true
     try {
       const pr = await prStore.fetchPRByRequisitionId(txId)
@@ -45,7 +67,9 @@ async function onApprove() {
   isApproving.value = true
   try {
     const result =
-      kind.value === 'undo' ? await approveUndo(raw.value.id) : await approvePR(raw.value.id)
+      kind.value === 'undo'
+        ? await changeRequestOwner(raw.value.source).approve(raw.value.id)
+        : await approvePR(raw.value.id)
     if (result.success) selected.value = false
   } finally {
     isApproving.value = false
@@ -63,7 +87,7 @@ async function confirmReject() {
     const reason = rejectReason.value.trim() || 'Rejected by approver.'
     const result =
       kind.value === 'undo'
-        ? await rejectUndo(raw.value.id, reason)
+        ? await changeRequestOwner(raw.value.source).reject(raw.value.id, reason)
         : await rejectPR(raw.value.id, reason)
     if (result.success) selected.value = false
   } finally {

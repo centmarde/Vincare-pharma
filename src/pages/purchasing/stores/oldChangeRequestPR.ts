@@ -4,7 +4,7 @@ import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
-import { parseProposedChanges } from '@/stores/changeRequestsData'
+import { parseProposedChanges } from '@/utils/changeRequests'
 
 const toast = useToast()
 

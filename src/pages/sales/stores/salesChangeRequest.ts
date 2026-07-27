@@ -6,8 +6,9 @@ import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useSalesDataStore } from '@/stores/salesData'
 import { getErrorMessage } from '@/utils/helpers'
-import type { ProposedChange, AppliedEdit } from '@/stores/changeRequestsData'
-import { parseProposedChanges, serializeProposedChanges } from '@/stores/changeRequestsData'
+import type { AppliedEdit } from '@/stores/changeRequestsData'
+import type { ProposedChange } from '@/utils/changeRequests'
+import { parseProposedChanges, serializeProposedChanges } from '@/utils/changeRequests'
 
 // Approval-gated change requests for the SALES module: POS sale (void only —
 // a sale isn't edited, it's void + re-ring) and remittance (edit only — a

@@ -8,8 +8,9 @@ import { useFinanceDataStore } from '@/stores/financeData'
 import type { ExpenseCategory, ExpenseDepartment } from '@/stores/financeData'
 import { useGLDataStore } from '@/stores/glData'
 import { getErrorMessage } from '@/utils/helpers'
-import type { ProposedChange, AppliedEdit } from '@/stores/changeRequestsData'
-import { parseProposedChanges, serializeProposedChanges } from '@/stores/changeRequestsData'
+import type { AppliedEdit } from '@/stores/changeRequestsData'
+import type { ProposedChange } from '@/utils/changeRequests'
+import { parseProposedChanges, serializeProposedChanges } from '@/utils/changeRequests'
 
 // Approval-gated change requests for the FINANCE module (expense + supplier
 // payment only — journal entries are a `journal_entries` row, not a
