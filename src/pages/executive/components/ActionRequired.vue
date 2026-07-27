@@ -128,6 +128,8 @@ watch(historyDialog, (val) => {
                 class="text-caption text-medium-emphasis"
                 style="white-space: normal; line-height: 1.4"
               >
+                <v-icon icon="mdi-account-outline" size="12" class="mr-1" style="opacity: 0.7" />
+                <span style="text-transform: uppercase">{{ item.raw.requester_name ?? '—' }}</span> ·
                 <v-icon icon="mdi-comment-text-outline" size="12" class="mr-1" style="opacity: 0.7" />
                 {{ item.raw.reason }}
               </v-list-item-subtitle>
@@ -136,7 +138,7 @@ watch(historyDialog, (val) => {
             <!-- PR approval row -->
             <template v-else>
               <v-list-item-title class="d-flex align-center ga-2 mb-1">
-                <v-chip size="x-small" color="green" variant="tonal" label>New</v-chip>
+                <v-chip size="x-small" color="info" variant="tonal" label>New</v-chip>
                 <span class="text-body-2 font-weight-medium">
                   {{ item.raw.reference_no ?? item.raw.requisition_no ?? `#${item.raw.id}` }}
                 </span>
