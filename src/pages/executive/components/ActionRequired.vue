@@ -3,24 +3,45 @@ import { ref, computed, watch } from 'vue'
 import ActionRequiredDialog from '../dialogs/ActionRequiredDialog.vue'
 import RequestHistoryListDialog from '../dialogs/RequestHistoryListDialog.vue'
 import { useChangeRequestsPR } from '@/pages/purchasing/stores/composables/useChangeRequestsPR'
+import { useFinanceChangeRequests } from '@/pages/finance/stores/composables/useFinanceChangeRequests'
+import { useSalesChangeRequests } from '@/pages/sales/stores/composables/useSalesChangeRequests'
+import { useSharedChangeRequests } from '../composables/useSharedChangeRequests'
 import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
 import { formatDatePR_ISO } from '@/utils/helpers'
 import { useRequestHistory } from '../composables/useRequestHistory'
 
+// Change requests come from FOUR module-scoped queues; each request is tagged
+// with its `source` so ActionRequiredDialog knows which composable owns the
+// approve/reject. Without all four, a module's requests are filed but never
+// surface to an approver (in-house/ethical, finance and sales were invisible
+// this way).
 const { requests: undoRequests, loading: undoLoading } = useChangeRequestsPR()
+const { requests: financeRequests, loading: financeLoading } = useFinanceChangeRequests()
+const { requests: salesRequests, loading: salesLoading } = useSalesChangeRequests()
+const { requests: sharedRequests, loading: sharedLoading } = useSharedChangeRequests()
 const { requests: pendingPRs, loading: prLoading } = useExecutiveApprovePR()
 
 type MergedActionItem =
   | { kind: 'undo'; id: number; created_at: string; raw: any }
   | { kind: 'pr_approval'; id: number; created_at: string; raw: any }
 
-const mergedItems = computed<MergedActionItem[]>(() => {
-  const undoItems: MergedActionItem[] = (undoRequests.value || []).map((r: any) => ({
+type ChangeRequestSource = 'pr' | 'finance' | 'sales' | 'shared'
+
+const toUndoItems = (list: any[] | undefined, source: ChangeRequestSource): MergedActionItem[] =>
+  (list || []).map((r: any) => ({
     kind: 'undo',
     id: r.id,
     created_at: r.created_at,
-    raw: r,
+    raw: { ...r, source },
   }))
+
+const mergedItems = computed<MergedActionItem[]>(() => {
+  const undoItems: MergedActionItem[] = [
+    ...toUndoItems(undoRequests.value, 'pr'),
+    ...toUndoItems(financeRequests.value, 'finance'),
+    ...toUndoItems(salesRequests.value, 'sales'),
+    ...toUndoItems(sharedRequests.value, 'shared'),
+  ]
   const prItems: MergedActionItem[] = (pendingPRs.value || []).map((pr: any) => ({
     kind: 'pr_approval',
     id: pr.id,
@@ -32,7 +53,14 @@ const mergedItems = computed<MergedActionItem[]>(() => {
   )
 })
 
-const loading = computed(() => undoLoading.value || prLoading.value)
+const loading = computed(
+  () =>
+    undoLoading.value ||
+    financeLoading.value ||
+    salesLoading.value ||
+    sharedLoading.value ||
+    prLoading.value,
+)
 
 const selected = ref(false)
 const selectedReq = ref<MergedActionItem | null>(null)

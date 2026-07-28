@@ -1,14 +1,30 @@
 <script setup lang="ts">
 import { useChangeRequestsPR } from '@/pages/purchasing/stores/composables/useChangeRequestsPR'
+import { useFinanceChangeRequests } from '@/pages/finance/stores/composables/useFinanceChangeRequests'
+import { useSalesChangeRequests } from '@/pages/sales/stores/composables/useSalesChangeRequests'
+import { useSharedChangeRequests } from '../composables/useSharedChangeRequests'
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
 import type { PRItem } from '@/stores/purchaseRequisitionData'
 import { formatDatePR_ISO } from '@/utils/helpers'
 import { computed, ref, watch } from 'vue'
 
-const { approve: approveUndo, reject: rejectUndo } = useChangeRequestsPR()
+const prChangeRequests = useChangeRequestsPR()
+const financeChangeRequests = useFinanceChangeRequests()
+const salesChangeRequests = useSalesChangeRequests()
+const sharedChangeRequests = useSharedChangeRequests()
 const { approve: approvePR, reject: rejectPR } = useExecutiveApprovePR()
 const prStore = usePurchaseRequisitionStore()
+
+// A change request must be approved through the store that owns it — each one
+// applies the change via its own module's reversal path. Dispatch on the
+// `source` tag ActionRequired stamped onto the row.
+function changeRequestOwner(source: string | undefined) {
+  if (source === 'finance') return financeChangeRequests
+  if (source === 'sales') return salesChangeRequests
+  if (source === 'shared') return sharedChangeRequests
+  return prChangeRequests
+}
 
 const selected = defineModel<boolean>('modelValue', { default: false })
 const props = defineProps<{ request?: any }>()
@@ -22,6 +38,41 @@ const isRejecting = ref(false)
 const showRejectInput = ref(false)
 const rejectReason = ref('')
 
+// A change request can come from four modules and be three different types, so
+// the copy below must follow the request — describing a payment void as
+// "revert this purchase requisition to Pending Approval" tells the approver
+// they're doing something entirely different from what will actually happen.
+const source = computed(() => raw.value?.source as string | undefined)
+const isPRUndo = computed(() => source.value === 'pr')
+
+const moduleLabel = computed(() => {
+  if (source.value === 'finance') return 'Finance'
+  if (source.value === 'sales') return 'Sales'
+  if (source.value === 'shared') return 'In-House / Ethical'
+  return 'Purchase Requisition'
+})
+
+const requestTypeLabel = computed(() => {
+  const t = raw.value?.request_type
+  if (t === 'void') return 'Void'
+  if (t === 'edit') return 'Edit'
+  return 'Undo'
+})
+
+const undoWarning = computed(() => {
+  const t = raw.value?.request_type
+  if (t === 'void')
+    return 'Approving will void this document — its ledger entry is reversed and any affected balances are rolled back.'
+  if (t === 'edit') return 'Approving will apply the proposed changes to this document.'
+  return 'Approving will revert this purchase requisition back to Pending Approval.'
+})
+
+const undoFallbackSummary = computed(() =>
+  isPRUndo.value
+    ? 'Revert this purchase requisition to pending approval.'
+    : 'Apply this change request.',
+)
+
 // Undo-request rows only carry transaction_id/reason — fetch the underlying
 // PR (with items) on demand so the same items table can render for both branches.
 const undoItems = ref<PRItem[]>([])
@@ -29,7 +80,13 @@ const undoItemsLoading = ref(false)
 
 watch(() => [selected.value, kind.value, raw.value?.transaction_id] as const,
 async ([open, k, txId]) => {
-  if (!open || k !== 'undo' || !txId) return
+  // Only PR undo requests have a purchase requisition behind them — a
+  // finance/sales/in-house request's transaction_id is an expense, sale or
+  // order, so looking it up as a PR would return nothing useful.
+  if (!open || k !== 'undo' || !txId || raw.value?.source !== 'pr') {
+    undoItems.value = []
+    return
+  }
     undoItemsLoading.value = true
     try {
       const pr = await prStore.fetchPRByRequisitionId(txId)
@@ -45,7 +102,9 @@ async function onApprove() {
   isApproving.value = true
   try {
     const result =
-      kind.value === 'undo' ? await approveUndo(raw.value.id) : await approvePR(raw.value.id)
+      kind.value === 'undo'
+        ? await changeRequestOwner(raw.value.source).approve(raw.value.id)
+        : await approvePR(raw.value.id)
     if (result.success) selected.value = false
   } finally {
     isApproving.value = false
@@ -63,7 +122,7 @@ async function confirmReject() {
     const reason = rejectReason.value.trim() || 'Rejected by approver.'
     const result =
       kind.value === 'undo'
-        ? await rejectUndo(raw.value.id, reason)
+        ? await changeRequestOwner(raw.value.source).reject(raw.value.id, reason)
         : await rejectPR(raw.value.id, reason)
     if (result.success) selected.value = false
   } finally {
@@ -184,11 +243,11 @@ async function confirmReject() {
                   <span class="text-body-2 font-weight-bold">
                     {{ raw.from_transaction_no ?? `#${raw.transaction_id}` }}
                   </span>
-                  <v-chip size="x-small" color="error" variant="tonal" label>Undo</v-chip>
-                  <v-chip size="x-small" variant="tonal" color="green" label>Purchase Requisition</v-chip>
+                  <v-chip size="x-small" color="error" variant="tonal" label>{{ requestTypeLabel }}</v-chip>
+                  <v-chip size="x-small" variant="tonal" color="green" label>{{ moduleLabel }}</v-chip>
                 </div>
                 <div class="text-caption text-medium-emphasis mt-1">
-                  {{ raw.summary ?? 'Revert this purchase requisition to pending approval.' }}
+                  {{ raw.summary ?? undoFallbackSummary }}
                 </div>
               </div>
             </div>
@@ -220,7 +279,7 @@ async function confirmReject() {
               {{ raw.reason ?? '—' }}
             </v-sheet>
           </div>
-         <div class="mb-4">
+         <div v-if="isPRUndo" class="mb-4">
           <div class="text-caption font-weight-bold text-medium-emphasis mb-2">
             ITEMS ON THIS REQUISITION ({{ undoItems.length }})
           </div>
@@ -261,8 +320,7 @@ async function confirmReject() {
             icon="mdi-information-outline"
             class="mb-4 text-caption"
           >
-            Approving will revert this purchase requisition back to
-            <strong>Pending Approval</strong>. This cannot be undone.
+            {{ undoWarning }} This cannot be undone.
           </v-alert>
         </template>
 
