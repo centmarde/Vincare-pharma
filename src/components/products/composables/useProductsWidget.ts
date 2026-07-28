@@ -51,7 +51,7 @@ export function useProductsWidget() {
   const showDialog = ref(false)
   const showDeleteDialog = ref(false)
   const dialogMode = ref<'create' | 'edit'>('create')
-  const EXPIRY_WARNING_DAYS = 30
+  const EXPIRY_WARNING_DAYS = 540 // 18 months
   const isPurchaser = computed(() => isPurchasingRole(authStore.userRole))
   const isEditRestricted = computed(() => isProductEditRestricted(authStore.userRole))
 
