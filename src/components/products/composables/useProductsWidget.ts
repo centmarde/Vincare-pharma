@@ -254,10 +254,12 @@ export function useProductsWidget() {
   }
 
   async function fetchProducts() {
-    // When a warehouse is selected, fetch ALL products and let the `products`
-    // computed filter by warehouseProductIds. Don't pass eligibleIds so the
-    // get_eligible_product_ids RPC is not used for warehouse filtering.
-    const ids = selectedWarehouseId.value ? undefined : [...eligibleProductIds.value]
+    // When a warehouse is selected, pass warehouseProductIds as eligibleIds so
+    // the database query itself filters by warehouse products. This ensures
+    // pagination and totalCount reflect only warehouse products, not all products.
+    const ids = selectedWarehouseId.value
+      ? [...warehouseProductIds.value]
+      : [...eligibleProductIds.value]
 
     await productsStore.fetchProducts({
       search: searchQuery.value,
@@ -265,7 +267,7 @@ export function useProductsWidget() {
       ascending: sortBy.value[0]?.order === 'asc',
       limit: itemsPerPage.value,
       offset: (page.value - 1) * itemsPerPage.value,
-      eligibleIds: ids,
+      eligibleIds: ids.length > 0 ? ids : undefined,
     })
   }
 
@@ -343,7 +345,7 @@ export function useProductsWidget() {
               }
             }
 
-            /*  console.log(
+            /* console.log(
               `[ProductsWidget] Product ${productId}: total_qty=${row.total_qty}, available_stock=${row.available_stock}, customer_name=${row.customer_name}, reserved_qty=${row.reserved_qty}`,
             ) */
           }
