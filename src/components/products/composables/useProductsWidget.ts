@@ -53,6 +53,7 @@ export function useProductsWidget() {
   const showDialog = ref(false)
   const showDeleteDialog = ref(false)
   const dialogMode = ref<'create' | 'edit'>('create')
+  const showStockDialog = ref(false)
   const EXPIRY_WARNING_DAYS = 540 // 18 months
   const isPurchaser = computed(() => isPurchasingRole(authStore.userRole))
   const isEditRestricted = computed(() => isProductEditRestricted(authStore.userRole))
@@ -105,8 +106,11 @@ export function useProductsWidget() {
   )
   const warehouseProductsIdToProductId = ref<Map<number, number>>(new Map())
 
-  // Stock status dialog
-  const showStockDialog = ref(false)
+  // Add reservation dialog
+  const showAddReservationDialog = ref(false)
+  const selectedProductForReservation = ref<ProductType | null>(null)
+  const reservationCustomerId = ref<number | null>(null)
+  const reservationQuantity = ref<number>(0)
 
   // Eligible product IDs (those in stock_in transactions)
   const eligibleProductIds = ref<Set<number>>(new Set())
@@ -710,6 +714,59 @@ export function useProductsWidget() {
     await fetchProducts()
   }
 
+  /**
+   * Open add reservation dialog for a product
+   */
+  function openAddReservationDialog(product: ProductType) {
+    selectedProductForReservation.value = product
+    reservationCustomerId.value = null
+    reservationQuantity.value = 0
+    showAddReservationDialog.value = true
+  }
+
+  /**
+   * Add a new customer reservation for a product in the selected warehouse
+   */
+  async function addReservation() {
+    if (!selectedProductForReservation.value || !reservationCustomerId.value || reservationQuantity.value <= 0) {
+      toast.error('Please fill in all reservation details')
+      return
+    }
+
+    if (!selectedWarehouseId.value) {
+      toast.error('Please select a warehouse first')
+      return
+    }
+
+    const reservedProductsStore = useReservedProductsDataStore()
+    const warehouseProductsStore = useWarehouseProductsDataStore()
+
+    // Find the warehouse_product_id for this product in the selected warehouse
+    const warehouseProduct = warehouseProductsStore.warehouseProducts.find(
+      wp => wp.product_id === selectedProductForReservation.value?.id && wp.warehouse_id === selectedWarehouseId.value
+    )
+
+    if (!warehouseProduct || warehouseProduct.id == null) {
+      toast.error('Product not found in selected warehouse')
+      return
+    }
+
+    const result = await reservedProductsStore.createReservedProduct({
+      warehouse_products_id: warehouseProduct.id,
+      customer_id: reservationCustomerId.value,
+      reserved_qty: reservationQuantity.value,
+    })
+
+    if (result) {
+      toast.success('Reservation added successfully')
+      showAddReservationDialog.value = false
+      // Refresh warehouse stock and reservations
+      await setWarehouseFilter(selectedWarehouseId.value)
+    } else {
+      toast.error('Failed to add reservation')
+    }
+  }
+
   // Lifecycle
   onMounted(async () => {
     await fetchEligibleProductIds()
@@ -719,10 +776,21 @@ export function useProductsWidget() {
 
   // Clear stale selection state when dialogs close
   watch(showStockDialog, (open) => {
-    if (!open) selectedReorderProductIds.value = []
+    if (!open) {
+      selectedReorderProductIds.value = []
+    }
   })
   watch(showPurchaseRequisitionDialog, (open) => {
-    if (!open) prefillItemsForDialog.value = []
+    if (!open) {
+      prefillItemsForDialog.value = []
+    }
+  })
+  watch(showAddReservationDialog, (open) => {
+    if (!open) {
+      selectedProductForReservation.value = null
+      reservationCustomerId.value = null
+      reservationQuantity.value = 0
+    }
   })
 
   return {
@@ -741,6 +809,10 @@ export function useProductsWidget() {
     showStockDialog,
     stockDialogType,
     selectedWarehouseId,
+    showAddReservationDialog,
+    selectedProductForReservation,
+    reservationCustomerId,
+    reservationQuantity,
     // Computed
     headers,
     products,
@@ -765,6 +837,8 @@ export function useProductsWidget() {
     getWarehouseProductDetail,
     getProductReservations,
     removeReservation,
+    addReservation,
+    openAddReservationDialog,
     handleTableOptions,
     //Stock order for Purchaser
     isEditRestricted,

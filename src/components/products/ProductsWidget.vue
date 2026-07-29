@@ -12,6 +12,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import StockStatusCards from '../products/StockStatusCards.vue'
 import StockStatusDialog from './dialogs/StockStatusDialog.vue'
 import ManageIgnoredItemsDialog from './dialogs/ManageIgnoredItemsDialog.vue'
+import AddReservationDialog from './dialogs/AddReservationDialog.vue'
 import LogsViewDialog from '@/pages/logs/dialogs/LogsViewDialog.vue'
 import { useProductsDataStore } from '@/stores/productsData'
 import { useAuthUserStore } from '@/stores/authUser'
@@ -82,6 +83,9 @@ const {
   getWarehouseProductDetail,
   getProductReservations,
   removeReservation,
+  openAddReservationDialog,
+  showAddReservationDialog,
+  selectedProductForReservation,
 } = useProductsWidget()
 
 // Manage ignored items dialog
@@ -378,6 +382,18 @@ function stockColor(item: any) {
                         </div>
                       </div>
                     </v-col>
+                    <v-col cols="12" md="4" class="d-flex align-center py-2">
+                      <v-btn
+                        icon="mdi-plus"
+                        size="small"
+                        variant="outlined"
+                        color="primary"
+                        @click="openAddReservationDialog(item)"
+                      >
+                        <v-icon size="16">mdi-bookmark-plus</v-icon>
+                        <v-tooltip activator="parent" location="top">Add Reservation</v-tooltip>
+                      </v-btn>
+                    </v-col>
                     <v-col cols="12" class="py-2">
                       <v-divider class="mb-2"></v-divider>
                       <div class="text-subtitle-2 font-weight-bold text-grey-darken-1 mb-2">
@@ -539,6 +555,14 @@ function stockColor(item: any) {
 
   <!-- Confirm Dialog -->
   <ConfirmDialog />
+
+  <!-- Add Reservation Dialog -->
+  <AddReservationDialog
+    v-model="showAddReservationDialog"
+    :selected-product="selectedProductForReservation"
+    :selected-warehouse-id="selectedWarehouseId"
+    @reservation-added="selectedWarehouseId && setWarehouseFilter(selectedWarehouseId)"
+  />
 </template>
 
 <style scoped>
