@@ -21,6 +21,7 @@ import {
   type ReservedProductType,
 } from '@/stores/reservedProductsData'
 import { useCustomersDataStore } from '@/stores/customersData'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
 interface StockStatusCardDef {
   type: 'out-of-stock' | 'low-stock' | 'no-reorder-level' | 'expiring-soon' | 'expired'
@@ -46,6 +47,7 @@ export function useProductsWidget() {
   const authStore = useAuthUserStore()
   const logsStore = useLogsDataStore()
   const productIgnore = useProductIgnore()
+  const confirmDialog = useConfirmDialog()
 
   // Dialog states
   const showDialog = ref(false)
@@ -97,8 +99,8 @@ export function useProductsWidget() {
   const warehouseStockMap = ref<Map<number, number>>(new Map())
   const warehouseProductDetails = ref<Map<number, { total_qty: number }>>(new Map())
 
-  // Reserved products — maps product_id -> list of reservations with customer name
-  const reservedProductsMap = ref<Map<number, { customer_name: string; reserved_qty: number }[]>>(
+  // Reserved products — maps product_id -> list of reservations with customer name and reservation id
+  const reservedProductsMap = ref<Map<number, { id: number; customer_name: string; reserved_qty: number }[]>>(
     new Map(),
   )
   const warehouseProductsIdToProductId = ref<Map<number, number>>(new Map())
@@ -308,7 +310,6 @@ export function useProductsWidget() {
           warehouseProductsIdToProductId.value = wpToProductMap
 
           // Use RPC to get stock + reservations in a single query
-          // RPC now returns individual rows per reservation (customer_name, reserved_qty as separate columns)
           const rpcRows =
             await reservedProductsStore.fetchWarehouseStockWithReservations(warehouseId)
 
@@ -316,8 +317,11 @@ export function useProductsWidget() {
           const detailsMap = new Map<number, { total_qty: number }>()
           const reservationsByProduct = new Map<
             number,
-            { customer_name: string; reserved_qty: number }[]
+            { id: number; customer_name: string; reserved_qty: number }[]
           >()
+
+          // Track which warehouse_product_ids have reservations to fetch their IDs
+          const warehouseProductIdsWithReservations = new Set<number>()
 
           // Group individual RPC rows by product_id to build the reservations array
           for (const row of rpcRows) {
@@ -335,7 +339,15 @@ export function useProductsWidget() {
             // Build reservations array from individual rows (skip rows with no reservation)
             if (row.customer_name != null && row.reserved_qty != null) {
               const existing = reservationsByProduct.get(productId) || []
+
+              // Track warehouse_product_id for later ID fetch
+              if (row.warehouse_product_id != null) {
+                warehouseProductIdsWithReservations.add(row.warehouse_product_id)
+              }
+
+              // Use a placeholder ID - we'll update it after fetching actual reservation IDs
               existing.push({
+                id: row.warehouse_product_id, // temporarily use warehouse_product_id as key
                 customer_name: row.customer_name,
                 reserved_qty: row.reserved_qty,
               })
@@ -346,15 +358,40 @@ export function useProductsWidget() {
                 reservationsByProduct.set(productId, [])
               }
             }
+          }
 
-            /*  console.log(
-              `[ProductsWidget] Product ${productId}: total_qty=${row.total_qty}, available_stock=${row.available_stock}, customer_name=${row.customer_name}, reserved_qty=${row.reserved_qty}`,
-            ) */
+          // Fetch actual reservation IDs from the reserved_products table
+          const reservationIdMap = new Map<number, number>() // warehouse_product_id -> reservation id
+          if (warehouseProductIdsWithReservations.size > 0) {
+            const reservationRows = await reservedProductsStore.fetchReservedProductsByWarehouseProductIds(
+              Array.from(warehouseProductIdsWithReservations)
+            )
+
+            for (const rp of reservationRows) {
+              if (rp.warehouse_products_id != null && rp.id != null) {
+                reservationIdMap.set(rp.warehouse_products_id, rp.id)
+              }
+            }
+          }
+
+          // Update reservation entries with actual reservation IDs
+          const finalReservationsByProduct = new Map<
+            number,
+            { id: number; customer_name: string; reserved_qty: number }[]
+          >()
+
+          for (const [productId, reservations] of reservationsByProduct) {
+            const updatedReservations = reservations.map(res => ({
+              id: reservationIdMap.get(res.id) || 0,
+              customer_name: res.customer_name,
+              reserved_qty: res.reserved_qty,
+            }))
+            finalReservationsByProduct.set(productId, updatedReservations)
           }
 
           warehouseStockMap.value = stockMap
           warehouseProductDetails.value = detailsMap
-          reservedProductsMap.value = reservationsByProduct
+          reservedProductsMap.value = finalReservationsByProduct
 
           fetchProducts()
         })
@@ -388,8 +425,52 @@ export function useProductsWidget() {
    */
   function getProductReservations(
     productId: number,
-  ): { customer_name: string; reserved_qty: number }[] {
+  ): { id: number; customer_name: string; reserved_qty: number }[] {
     return reservedProductsMap.value.get(productId) || []
+  }
+
+
+  /**
+   * Remove a customer reservation by its ID and refresh warehouse stock data.
+   */
+  async function removeReservation(reservationId: number) {
+    console.log('[ProductsWidget] Attempting to remove reservation with ID:', reservationId)
+
+    const confirmed = await confirmDialog.confirmDialog(
+      'Are you sure you want to remove this reservation? This action cannot be undone.',
+      {
+        title: 'Remove Reservation',
+        confirmText: 'Remove',
+        cancelText: 'Cancel',
+      },
+    )
+
+    if (!confirmed) {
+      console.log('[ProductsWidget] Reservation removal cancelled by user')
+      return
+    }
+
+    console.log('[ProductsWidget] User confirmed, proceeding with deletion...')
+
+    const reservedProductsStore = useReservedProductsDataStore()
+    console.log('[ProductsWidget] Reserved products store error:', reservedProductsStore.error)
+
+    const result = await reservedProductsStore.deleteReservedProduct(reservationId)
+
+    console.log('[ProductsWidget] Delete result:', result)
+    console.log('[ProductsWidget] Reserved products store error after delete:', reservedProductsStore.error)
+
+    if (result) {
+      toast.success('Reservation removed successfully')
+      // Refresh warehouse stock and reservations
+      if (selectedWarehouseId.value) {
+        console.log('[ProductsWidget] Refreshing warehouse filter:', selectedWarehouseId.value)
+        await setWarehouseFilter(selectedWarehouseId.value)
+      }
+    } else {
+      toast.error('Failed to remove reservation')
+      console.error('[ProductsWidget] Failed to delete reservation. Store error:', reservedProductsStore.error)
+    }
   }
 
   function openCreateDialog() {
@@ -683,6 +764,7 @@ export function useProductsWidget() {
     getWarehouseStock,
     getWarehouseProductDetail,
     getProductReservations,
+    removeReservation,
     handleTableOptions,
     //Stock order for Purchaser
     isEditRestricted,

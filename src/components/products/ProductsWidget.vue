@@ -8,6 +8,7 @@ import { useLogsDataStore, type LogType } from '@/stores/logsData'
 import ProductMobile from './mobile/ProductMobile.vue'
 import ProductFormDialog from './dialogs/ProductFormDialog.vue'
 import ProductDeleteDialog from './dialogs/ProductDeleteDialog.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import StockStatusCards from '../products/StockStatusCards.vue'
 import StockStatusDialog from './dialogs/StockStatusDialog.vue'
 import ManageIgnoredItemsDialog from './dialogs/ManageIgnoredItemsDialog.vue'
@@ -80,6 +81,7 @@ const {
   getWarehouseStock,
   getWarehouseProductDetail,
   getProductReservations,
+  removeReservation,
 } = useProductsWidget()
 
 // Manage ignored items dialog
@@ -385,8 +387,8 @@ function stockColor(item: any) {
                       <template v-if="getProductReservations(item.id).length > 0">
                         <v-list density="compact" class="pa-0" lines="one">
                           <v-list-item
-                            v-for="(reservation, idx) in getProductReservations(item.id)"
-                            :key="idx"
+                            v-for="reservation in getProductReservations(item.id)"
+                            :key="reservation.id"
                             class="px-0"
                           >
                             <template #prepend>
@@ -396,9 +398,16 @@ function stockColor(item: any) {
                               {{ reservation.customer_name }}
                             </v-list-item-title>
                             <template #append>
-                              <v-chip size="x-small" color="warning" variant="outlined">
+                              <v-chip size="x-small" color="warning" variant="outlined" class="mr-2">
                                 {{ reservation.reserved_qty }}
                               </v-chip>
+                              <v-btn
+                                icon="mdi-delete"
+                                size="x-small"
+                                variant="text"
+                                color="error"
+                                @click.stop="removeReservation(reservation.id)"
+                              ></v-btn>
                             </template>
                           </v-list-item>
                         </v-list>
@@ -527,6 +536,9 @@ function stockColor(item: any) {
     v-model="showManageIgnoredDialog"
     :ignored-product-entries="ignoredProductEntries"
   />
+
+  <!-- Confirm Dialog -->
+  <ConfirmDialog />
 </template>
 
 <style scoped>
