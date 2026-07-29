@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import type { ProductType } from '@/stores/productsData'
 import { useProductIgnore, IGNORE_DURATIONS } from '@/components/products/composables/useProductIgnore'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
+import { formatMonthYear } from '@/utils/helpers'
 
 const props = defineProps<{
   modelValue: boolean
@@ -94,7 +95,7 @@ async function confirmCreatePRFromSelection() {
                 Current stock: {{ p.current_stock ?? 0 }} units
               </template>
               <template v-else-if="stockDialogType === 'expiring-soon' || stockDialogType === 'expired'">
-                Expiry: {{ p.expiry_date || 'N/A' }}
+                Expiry: {{ p.expiry_date ? formatMonthYear(p.expiry_date) : 'N/A' }}
               </template>
             </v-list-item-subtitle>
             <template #append>
