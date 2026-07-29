@@ -109,6 +109,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
   const pickerTotalCount = ref(0)
   const reorderRequests: Ref<any[]> = ref([])
   const reorderCount:    Ref<number> = ref(0)
+  const statusProductExpiry: Ref<ProductType[]> = ref([])
   const REORDER_TYPES = ['reorder_outofstock', 'reorder_lowstock', 'reorder_expiring', 'reorder_expired']
   
   
@@ -191,6 +192,32 @@ export const useProductsDataStore = defineStore('productsData', () => {
       handleError(err, 'Failed to fetch eligible product IDs')
       return []
     }
+  }
+
+  const fetchStatusProductExpiry = async (eligibleIds: number[]) => {
+    if (!eligibleIds.length) {
+      statusProductExpiry.value = []
+      return []
+    }
+
+    try{
+      const { data, error: fetchError } = await supabase
+      .from('products')
+      .select('*, suppliers(*)')
+      .in('id', eligibleIds)
+
+      if (fetchError) throw fetchError
+      
+      statusProductExpiry.value = (data || []) as ProductType[]
+      // I want to display statusProductExpiry in the console for debugging purposes, so I will log it here
+      console.log('Products with expiry status:', statusProductExpiry.value)
+      return statusProductExpiry.value
+    }catch(err){
+      handleError(err, 'Failed to fetch products with expiry status')
+      console.error('Error fetching products with expiry status:', err)
+      return []
+    }
+
   }
 
   // Actions
@@ -748,11 +775,16 @@ export const useProductsDataStore = defineStore('productsData', () => {
     else products.value[idx] = product
 
     if (currentProduct.value?.id === product.id) currentProduct.value = product
+
+    const statusIdx = statusProductExpiry.value.findIndex((p) => p.id === product.id)
+    if (statusIdx !== -1) statusProductExpiry.value[statusIdx] = product
   }
 
   const removeProductLocal = (id: number) => {
     products.value = products.value.filter((p) => p.id !== id)
     if (currentProduct.value?.id === id) currentProduct.value = undefined
+
+    statusProductExpiry.value = statusProductExpiry.value.filter((p) => p.id !== id)
   }
 
   const resetStore = () => {
@@ -809,5 +841,9 @@ export const useProductsDataStore = defineStore('productsData', () => {
     // Local helpers (optional)
     upsertProductLocal,
     removeProductLocal,
+
+    // Product expiry status
+    statusProductExpiry,
+    fetchStatusProductExpiry,
   }
 })

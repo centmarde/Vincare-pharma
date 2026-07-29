@@ -147,11 +147,11 @@ export function useProductsWidget() {
   // All-products stock status counts (not paginated, from the full store)
   // Filters out products that have been ignored/dismissed by the user
   const allEligibleProducts = computed(() =>
-    productsStore.products.filter(
+    productsStore.statusProductExpiry.filter(
       (p) =>
         p.sku != null &&
         p.sku !== 'null' &&
-        eligibleProductIds.value.has(p.id) &&
+        // eligibleProductIds.value.has(p.id) &&
         !productIgnore.activeIgnoredIds.value.has(p.id),
     ),
   )
@@ -243,7 +243,21 @@ export function useProductsWidget() {
   // The active card's filtered product list (for dialog body)
   const stockDialogProducts = computed<ProductType[]>(() => {
     const def = stockStatusCardDefs.find((d) => d.type === stockDialogType.value)
-    return def ? allEligibleProducts.value.filter(def.filter) : []
+    if (!def) return []
+
+    const filtered = allEligibleProducts.value.filter(def.filter)
+
+    // arrange by FEFO First Expire, First Out (soonest expiry first) for expiring/expired products to get actions first than other products
+    if (stockDialogType.value === 'expiring-soon' || stockDialogType.value === 'expired') {
+      return [...filtered].sort((a, b) => {
+        if (!a.expiry_date && !b.expiry_date) return 0
+        if (!a.expiry_date) return 1 // no date sinks to the bottom
+        if (!b.expiry_date) return -1
+        return new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime()
+      })
+    }
+
+    return filtered
   })
 
   // Validation rules
@@ -669,6 +683,7 @@ export function useProductsWidget() {
   // Lifecycle
   onMounted(async () => {
     await fetchEligibleProductIds()
+    await productsStore.fetchStatusProductExpiry([...eligibleProductIds.value])
     await fetchProducts()
     productsStore.startRealtime()
   })
