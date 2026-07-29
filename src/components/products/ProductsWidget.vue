@@ -177,7 +177,14 @@ function stockColor(item: any) {
           persistent-placeholder
           class="warehouse-filter"
           @update:model-value="(val) => setWarehouseFilter(val)"
-        ></v-select>
+        >
+          <template #prepend-item>
+            <v-list-item v-if="selectedWarehouseId" @click="setWarehouseFilter(null)">
+              <v-list-item-title class="text-caption text-grey-darken-1">Clear filter</v-list-item-title>
+            </v-list-item>
+            <v-divider class="mt-2"></v-divider>
+          </template>
+        </v-select>
         <v-text-field
           v-model="searchQuery"
           label="Search products..."

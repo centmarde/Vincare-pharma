@@ -254,10 +254,14 @@ export function useProductsWidget() {
   }
 
   async function fetchProducts() {
-    // When a warehouse is selected, fetch ALL products and let the `products`
-    // computed filter by warehouseProductIds. Don't pass eligibleIds so the
-    // get_eligible_product_ids RPC is not used for warehouse filtering.
-    const ids = selectedWarehouseId.value ? undefined : [...eligibleProductIds.value]
+    // When a warehouse is selected, restrict the server query to only products
+    // linked to that warehouse so client-side filtering and server pagination
+    // stay aligned. Otherwise, use the eligible product IDs.
+    const ids = selectedWarehouseId.value
+      ? warehouseProductIds.value.length > 0
+        ? [...warehouseProductIds.value]
+        : [-1]
+      : [...eligibleProductIds.value]
 
     await productsStore.fetchProducts({
       search: searchQuery.value,
