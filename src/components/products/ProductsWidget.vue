@@ -80,6 +80,9 @@ const {
   getWarehouseStock,
   getWarehouseProductDetail,
   getProductReservations,
+  expiryFilterValue,
+  expiryFilterLabel,
+  clearExpiryFilter,
 } = useProductsWidget()
 
 // Manage ignored items dialog
@@ -188,6 +191,19 @@ function stockColor(item: any) {
           class="search-field"
           @keyup.enter="handleSearch"
         ></v-text-field>
+        <v-text-field
+          v-model="expiryFilterValue"
+          type="month"
+          label="Expiring as of..."
+          prepend-inner-icon="mdi-calendar-month-outline"
+          variant="outlined"
+          density="compact"
+          hide-details
+          clearable
+          persistent-placeholder
+          class="expiry-filter"
+          @click:clear="clearExpiryFilter"
+        ></v-text-field>
         <!-- I want to restrict this when the user is a warehouse user -->
         <v-btn
           color="primary"
@@ -221,6 +237,32 @@ function stockColor(item: any) {
         hide-details
         @keyup.enter="handleSearch"
       ></v-text-field>
+      <v-text-field
+        v-model="expiryFilterValue"
+        type="month"
+        label="Expiring as of..."
+        prepend-inner-icon="mdi-calendar-month-outline"
+        variant="outlined"
+        density="compact"
+        hide-details
+        clearable
+        class="mt-2"
+        @click:clear="clearExpiryFilter"
+      ></v-text-field>
+    </div>
+    
+    <!-- How to make this to the end of right part -->
+    <div v-if="expiryFilterLabel" class="d-flex justify-end px-3 pt-2">
+      <v-chip
+        color="orange"
+        variant="tonal"
+        size="small"
+        closable
+        prepend-icon="mdi-calendar-month-outline"
+        @click:close="clearExpiryFilter"
+      >
+        Filtering Expiring Soon: {{ expiryFilterLabel }}
+      </v-chip>
     </div>
 
     <!-- Stock Status Cards -->
@@ -524,11 +566,16 @@ function stockColor(item: any) {
 
 <style scoped>
 .search-field {
-  min-width: 280px;
-  max-width: 420px;
+  min-width: 200px;
+  max-width: 280px;
   width: 100%;
 }
 .warehouse-filter {
+  min-width: 200px;
+  max-width: 280px;
+  width: 100%;
+}
+.expiry-filter {
   min-width: 200px;
   max-width: 280px;
   width: 100%;

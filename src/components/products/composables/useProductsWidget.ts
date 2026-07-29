@@ -54,6 +54,8 @@ export function useProductsWidget() {
   const EXPIRY_WARNING_DAYS = 540 // 18 months
   const isPurchaser = computed(() => isPurchasingRole(authStore.userRole))
   const isEditRestricted = computed(() => isProductEditRestricted(authStore.userRole))
+  const expiryFilterValue = ref<string>('')
+
 
   // Form state
   const form = ref<any>(null)
@@ -194,8 +196,18 @@ export function useProductsWidget() {
       icon: 'mdi-clock-alert-outline',
       color: 'orange',
       filter: (p) => {
-        const days = daysUntilExpiry(p.expiry_date)
-        return days !== null && days >= 0 && days <= EXPIRY_WARNING_DAYS
+        const ref = expiryFilterParsed.value
+
+        if (!ref) {
+          // Default: rolling 18-month window from today
+          const days = daysUntilExpiry(p.expiry_date)
+          return days !== null && days >= 0 && days <= EXPIRY_WARNING_DAYS
+        }
+
+        // Filtered: flag if the selected month falls within 18 calendar months
+        // before the product's expiry date (inclusive on both ends)
+        const monthsDiff = monthsUntilExpiryFrom(p.expiry_date, ref)
+        return monthsDiff !== null && monthsDiff >= 0 && monthsDiff <= 18
       },
     },
     {
@@ -618,11 +630,40 @@ export function useProductsWidget() {
     showPurchaseRequisitionDialog.value = true
   }
 
+  function clearExpiryFilter() {
+    expiryFilterValue.value = ''
+  }
+
+  const expiryFilterParsed = computed<{ year: number; month: number } | null>(() => {
+    if (!expiryFilterValue.value) return null
+    const [y, m] = expiryFilterValue.value.split('-').map(Number)
+    if (!y || !m) return null
+    return { year: y, month: m } // month is 1-indexed, matches <input type="month"> output
+  })
+
+  const expiryFilterLabel = computed<string | null>(() => {
+    const ref = expiryFilterParsed.value
+    if (!ref) return null
+    const date = new Date(ref.year, ref.month - 1, 1)
+    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) // "Apr 2025"
+  })
+
   async function handleTableOptions(options: any) {
     page.value = options.page
     itemsPerPage.value = options.itemsPerPage
     sortBy.value = options.sortBy
     await fetchProducts()
+  }
+
+  function monthsUntilExpiryFrom(
+    expiryDate: string | null | undefined,
+    ref: { year: number; month: number },
+  ): number | null {
+    if (!expiryDate) return null
+    const expiry = new Date(expiryDate)
+    const expiryMonthsTotal = expiry.getFullYear() * 12 + expiry.getMonth() // 0-indexed
+    const refMonthsTotal = ref.year * 12 + (ref.month - 1) // normalize to 0-indexed
+    return expiryMonthsTotal - refMonthsTotal
   }
 
   // Lifecycle
@@ -694,5 +735,10 @@ export function useProductsWidget() {
     // Product Ignore / Dismiss
     productIgnore,
     IGNORE_DURATIONS,
+    // expiring card by filter
+    expiryFilterValue,
+    expiryFilterLabel,
+    clearExpiryFilter,
+
   }
 }
