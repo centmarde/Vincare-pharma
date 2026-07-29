@@ -8,6 +8,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AddReservationDialog: typeof import('./components/products/dialogs/AddReservationDialog.vue')['default']
     BottomBar: typeof import('./components/common/BottomBar.vue')['default']
     ChangeRequestDialog: typeof import('./components/changeRequests/ChangeRequestDialog.vue')['default']
     ConfirmDialog: typeof import('./components/common/ConfirmDialog.vue')['default']
