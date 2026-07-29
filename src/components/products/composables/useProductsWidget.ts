@@ -758,8 +758,13 @@ export function useProductsWidget() {
     const start = new Date(ref.year, ref.month - 1, 1)
     const end = new Date(ref.year, ref.month - 1 + 18 + 1, 0) // last day of ref+18 months
 
-    const toISODate = (d: Date) => d.toISOString().slice(0, 10)
-    return { start: toISODate(start), end: toISODate(end) }
+    const toLocalISODate = (d: Date) => {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+    return { start: toLocalISODate(start), end: toLocalISODate(end) }
   })
 
   async function handleTableOptions(options: any) {
@@ -867,8 +872,11 @@ async function addReservation() {
       reservationQuantity.value = 0
     }
   })
-  watch(expiryFilterValue, () => {
-    page.value = 1 // avoid landing on a now-out-of-range page
+    watch(expiryFilterValue, (val) => {
+    // Only refetch on a real clear ('') or a fully-formed 'YYYY-MM' value —
+    // ignore any transient partial state the native month picker might emit.
+    if (val !== '' && !/^\d{4}-\d{2}$/.test(val)) return
+    page.value = 1
     fetchProducts()
   })
 
