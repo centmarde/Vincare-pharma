@@ -132,11 +132,11 @@ export const useWarehouseProductsDataStore = defineStore('warehouseProductsData'
 
       let q = supabase.from('warehouse_products').select('*')
 
-      if (typeof product_id === 'number') {
+      if (product_id != null) {
         q = q.eq('product_id', product_id)
       }
 
-      if (typeof warehouse_id === 'number') {
+      if (warehouse_id != null) {
         q = q.eq('warehouse_id', warehouse_id)
       }
 
