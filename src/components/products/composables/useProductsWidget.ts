@@ -275,20 +275,18 @@ export function useProductsWidget() {
 
   // Methods
   async function fetchEligibleProductIds() {
-    try {
-      const ids = await productsStore.fetchEligibleProductIds()
-      eligibleProductIds.value = new Set(ids)
-      //console.log('[ProductsWidget] Eligible product IDs from stock_in transactions:', ids)
-    } catch (err) {
-      console.error('[ProductsWidget] Failed to fetch eligible product IDs:', err)
-      eligibleProductIds.value = new Set()
+      try {
+        const ids = await productsStore.fetchEligibleProductIds()
+        eligibleProductIds.value = new Set(ids)
+        //console.log('[ProductsWidget] Eligible product IDs from stock_in transactions:', ids)
+      } catch (err) {
+        console.error('[ProductsWidget] Failed to fetch eligible product IDs:', err)
+        eligibleProductIds.value = new Set()
+      }
     }
-  }
-
   async function fetchProducts() {
-    // When a warehouse is selected, restrict the server query to only products
-    // linked to that warehouse so client-side filtering and server pagination
-    // stay aligned. Otherwise, use the eligible product IDs.
+    const range = expiryFilterRange.value
+
     const ids = selectedWarehouseId.value
       ? warehouseProductIds.value.length > 0
         ? [...warehouseProductIds.value]
@@ -297,11 +295,13 @@ export function useProductsWidget() {
 
     await productsStore.fetchProducts({
       search: searchQuery.value,
-      orderBy: (sortBy.value[0]?.key as any) || 'created_at',
-      ascending: sortBy.value[0]?.order === 'asc',
+      orderBy: range ? 'expiry_date' : (sortBy.value[0]?.key as any) || 'created_at',
+      ascending: range ? true : sortBy.value[0]?.order === 'asc',
       limit: itemsPerPage.value,
       offset: (page.value - 1) * itemsPerPage.value,
       eligibleIds: ids,
+      expiryStart: range?.start,
+      expiryEnd: range?.end,
     })
   }
 
@@ -751,6 +751,17 @@ export function useProductsWidget() {
     return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) // "Apr 2025"
   })
 
+  const expiryFilterRange = computed<{ start: string; end: string } | null>(() => {
+    const ref = expiryFilterParsed.value
+    if (!ref) return null
+
+    const start = new Date(ref.year, ref.month - 1, 1)
+    const end = new Date(ref.year, ref.month - 1 + 18 + 1, 0) // last day of ref+18 months
+
+    const toISODate = (d: Date) => d.toISOString().slice(0, 10)
+    return { start: toISODate(start), end: toISODate(end) }
+  })
+
   async function handleTableOptions(options: any) {
     page.value = options.page
     itemsPerPage.value = options.itemsPerPage
@@ -855,6 +866,10 @@ async function addReservation() {
       reservationCustomerId.value = null
       reservationQuantity.value = 0
     }
+  })
+  watch(expiryFilterValue, () => {
+    page.value = 1 // avoid landing on a now-out-of-range page
+    fetchProducts()
   })
 
   return {

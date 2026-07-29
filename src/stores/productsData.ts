@@ -74,6 +74,8 @@ type FetchProductsOptions = {
   limit?: number
   offset?: number
   eligibleIds?: number[]
+  expiryStart?: string // 'YYYY-MM-DD'
+  expiryEnd?: string   // 'YYYY-MM-DD'
 }
 
 export type ProductPickerResult = {
@@ -235,6 +237,8 @@ export const useProductsDataStore = defineStore('productsData', () => {
         limit,
         offset,
         eligibleIds,
+        expiryStart, 
+        expiryEnd,
       } = options
 
       let q = supabase.from('products').select('*, suppliers(*)', { count: 'exact' })
@@ -254,6 +258,11 @@ export const useProductsDataStore = defineStore('productsData', () => {
       }
       if (eligibleIds && eligibleIds.length > 0) {
         q = q.in('id', eligibleIds)
+      }
+
+      // NEW — expiry window filter (drives the month/year picker)
+      if (expiryStart && expiryEnd) {
+        q = q.gte('expiry_date', expiryStart).lte('expiry_date', expiryEnd)
       }
 
       // When sorting by stock, use reorder_level percentage (stock health) ordering
