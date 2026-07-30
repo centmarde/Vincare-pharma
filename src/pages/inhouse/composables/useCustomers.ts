@@ -36,6 +36,11 @@ const emptyForm = (): CreateCustomerData => ({
   name: '', agency_type: 'government', contact_person: '', contact_no: '', email: '', address: '', is_active: true,
   is_vat_registered: false, tin_number: '',
   business_structure: 'other', sec_registration_no: '', dti_registration_no: '',
+  // Both feed the AR Statement of Accounts register: `area` is a column on it,
+  // and without `term_days` an In-House receivable has no due date at all
+  // (In-House orders carry no due-date convention of their own) so it can never
+  // land in an aging bucket.
+  area: '', term_days: null,
 })
 
 export function useCustomers() {
@@ -79,6 +84,7 @@ export function useCustomers() {
       is_vat_registered: c.is_vat_registered, tin_number: c.tin_number,
       business_structure: c.business_structure, sec_registration_no: c.sec_registration_no,
       dti_registration_no: c.dti_registration_no,
+      area: c.area, term_days: c.term_days,
     }
     showForm.value = true
   }
