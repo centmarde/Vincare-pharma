@@ -171,7 +171,11 @@ export type RemittanceDiscrepancyRow = {
   receivable_status: 'outstanding' | 'paid' | null
 }
 
-export type ARAgingTerm = 'current' | '1-30' | '31-60' | '61-90' | '90+' | 'no-term'
+// Buckets match the accountant's Statement of Accounts sheet: 1-30 / 31-60 /
+// 61-90 / 91-180 / over 6 months. `current` (not yet due) and `no-term` (no due
+// date convention exists — every in-house order today) are app-side additions
+// the sheet has no column for; they are never overdue, so they never age.
+export type ARAgingTerm = 'current' | '1-30' | '31-60' | '61-90' | '91-180' | '180+' | 'no-term'
 
 export type ARAgingRow = {
   id: number
@@ -1370,7 +1374,8 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     if (daysOverdue <= 30) return '1-30'
     if (daysOverdue <= 60) return '31-60'
     if (daysOverdue <= 90) return '61-90'
-    return '90+'
+    if (daysOverdue <= 180) return '91-180'
+    return '180+'
   }
 
   const fetchARAging = async () => {
