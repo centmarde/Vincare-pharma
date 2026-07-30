@@ -175,6 +175,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
   const createOrder = async (payload: {
     customerId: number
     govtPoNo?: string   // the government's external PO number (documentation-only)
+    poAmount?: number   // the value on that PO (documentation-only; AR SOA column)
     remarks?: string
     lines: InhouseLineInput[]
   }) => {
@@ -210,6 +211,10 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
           status: 'negotiating',
           customer_id: payload.customerId,
           total_amount: subtotal,
+          // The government's PO value, as printed on their PO. Documentation
+          // only — nothing keys off it; it's a column on the AR Statement of
+          // Accounts register so the accountant can eyeball ordered-vs-delivered.
+          po_amount: payload.poAmount ?? null,
           remarks: payload.remarks || null,
           created_by: user.id,
         })

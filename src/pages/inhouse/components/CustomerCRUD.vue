@@ -85,6 +85,26 @@ onMounted(init)
             <v-text-field v-model="form.email" label="Email" variant="outlined" density="compact" class="mb-2" hide-details />
             <v-textarea v-model="form.address" label="Address" variant="outlined" density="compact" rows="2" class="mb-2" hide-details />
             <v-text-field
+              v-model="form.area"
+              label="Area"
+              hint="Sales area — a column on the Statement of Accounts register"
+              persistent-hint
+              variant="outlined"
+              density="compact"
+              class="mb-2"
+            />
+            <v-text-field
+              v-model.number="form.term_days"
+              label="Term (days)"
+              type="number"
+              min="0"
+              hint="Payment terms from delivery. Without this, receivables for this customer have no due date and cannot be aged."
+              persistent-hint
+              variant="outlined"
+              density="compact"
+              class="mb-2"
+            />
+            <v-text-field
               v-model="form.tin_number"
               label="TIN"
               hint="BIR Tax Identification Number, e.g. 123-456-789-000"

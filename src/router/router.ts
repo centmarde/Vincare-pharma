@@ -37,6 +37,7 @@ import ExpensesView from '@/pages/finance/ExpensesView.vue'
 import SupplierPaymentsView from '@/pages/finance/SupplierPaymentsView.vue'
 import DiscrepanciesView from '@/pages/finance/DiscrepanciesView.vue'
 import AccountsReceivableView from '@/pages/finance/AccountsReceivableView.vue'
+import StatementOfAccountsView from '@/pages/finance/StatementOfAccountsView.vue'
 import CashAccountsView from '@/pages/finance/CashAccountsView.vue'
 import ExpenseReportView from '@/pages/finance/ExpenseReportView.vue'
 import IncomeStatementView from '@/pages/finance/IncomeStatementView.vue'
@@ -226,6 +227,11 @@ const routes = setupLayouts([
   {
     path: '/finance/accounts-receivable',
     component: AccountsReceivableView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/finance/statement-of-accounts',
+    component: StatementOfAccountsView,
     meta: { requiresAuth: true },
   },
   {

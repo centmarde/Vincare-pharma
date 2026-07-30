@@ -10,7 +10,7 @@ const emit = defineEmits<{
 defineProps<{ modelValue: boolean }>()
 
 const {
-  loading, customerId, govtPoNo, remarks, lines,
+  loading, customerId, govtPoNo, poAmount, remarks, lines,
   customerOptions, productOptions, isGovtCustomer,
   offerTotal, costTotal, profit, marginPct,
   addLine, removeLine, onProductChange, unitFor, submit, init,
@@ -35,6 +35,14 @@ onMounted(init)
           <v-col v-if="isGovtCustomer" cols="12" md="6">
             <label class="lbl">Government PO # (documentation)</label>
             <v-text-field v-model="govtPoNo" placeholder="Their PO number, for the record" variant="outlined" density="compact" hide-details />
+          </v-col>
+          <v-col v-if="isGovtCustomer" cols="12" md="6">
+            <label class="lbl">PO Amount (documentation)</label>
+            <v-text-field
+              v-model.number="poAmount" type="number" min="0"
+              placeholder="Value printed on their PO"
+              variant="outlined" density="compact" hide-details
+            />
           </v-col>
         </v-row>
         <!-- The company's own PO number is NOT typed — it's derived from the order

@@ -25,15 +25,18 @@ export function useRaiseOrder(onCreated: () => void) {
   const loading = ref(false)
   const customerId = ref<number | null>(null)
   const govtPoNo = ref('')   // the government's external PO # (documentation-only)
+  const poAmount = ref<number | null>(null)  // the value on that PO (documentation-only)
   const remarks = ref('')
   const lines = ref<FormLine[]>([])
 
   // Persist a draft so a reload / crash mid-entry doesn't wipe the order.
+  // Version bumped to 2 when poAmount was added — an older draft has a
+  // different shape and is discarded rather than half-applied.
   const draft = useFormDraft({
     key: 'inhouse-raise-order',
-    version: 1,
-    refs: { customerId, govtPoNo, remarks, lines },
-    isEmpty: () => customerId.value == null && !govtPoNo.value && !remarks.value
+    version: 2,
+    refs: { customerId, govtPoNo, poAmount, remarks, lines },
+    isEmpty: () => customerId.value == null && !govtPoNo.value && poAmount.value == null && !remarks.value
       && !lines.value.some((l) => l.product_id != null || l.offer_unit > 0 || l.cost_unit > 0),
   })
 
@@ -69,7 +72,7 @@ export function useRaiseOrder(onCreated: () => void) {
   const marginPct = computed(() => offerTotal.value === 0 ? 0 : Math.round((profit.value / offerTotal.value) * 100))
 
   // Clear a stale govt PO # if the user switches to a customer that isn't govt/LGU.
-  watch(isGovtCustomer, (govt) => { if (!govt) govtPoNo.value = '' })
+  watch(isGovtCustomer, (govt) => { if (!govt) { govtPoNo.value = ''; poAmount.value = null } })
 
   function addLine() { lines.value.push({ product_id: null, qty: 1, offer_unit: 0, cost_unit: 0 }) }
   function removeLine(i: number) { lines.value.splice(i, 1) }
@@ -89,6 +92,7 @@ export function useRaiseOrder(onCreated: () => void) {
     const result = await inhouse.createOrder({
       customerId: customerId.value,
       govtPoNo: govtPoNo.value || undefined,
+      poAmount: poAmount.value ?? undefined,
       remarks: remarks.value || undefined,
       lines: validLines.value.map((l) => ({
         product_id: l.product_id!, qty: l.qty, unit_price: l.offer_unit, cost_price: l.cost_unit,
@@ -99,7 +103,7 @@ export function useRaiseOrder(onCreated: () => void) {
   }
 
   function reset() {
-    customerId.value = null; govtPoNo.value = ''; remarks.value = ''; lines.value = []; addLine()
+    customerId.value = null; govtPoNo.value = ''; poAmount.value = null; remarks.value = ''; lines.value = []; addLine()
   }
 
   async function init() {
@@ -110,7 +114,7 @@ export function useRaiseOrder(onCreated: () => void) {
   }
 
   return {
-    loading, customerId, govtPoNo, remarks, lines,
+    loading, customerId, govtPoNo, poAmount, remarks, lines,
     customerOptions, productOptions, isGovtCustomer,
     offerTotal, costTotal, profit, marginPct,
     addLine, removeLine, onProductChange, unitFor, submit, reset, init,
