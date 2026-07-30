@@ -160,7 +160,7 @@ async function confirmReject() {
                   <span class="text-body-2 font-weight-bold">
                     {{ raw.reference_no ?? raw.requisition_no ?? `#${raw.id}` }}
                   </span>
-                  <v-chip size="x-small" color="success" variant="tonal" label>New</v-chip>
+                  <v-chip size="x-small" color="warning" variant="tonal" label>New</v-chip>
                   <v-chip size="x-small" variant="tonal" color="green" label>Purchase Requisition</v-chip>
                 </div>
                 <div class="text-caption text-medium-emphasis mt-1">
