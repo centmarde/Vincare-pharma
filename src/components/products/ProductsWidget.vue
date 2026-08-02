@@ -8,9 +8,11 @@ import { useLogsDataStore, type LogType } from '@/stores/logsData'
 import ProductMobile from './mobile/ProductMobile.vue'
 import ProductFormDialog from './dialogs/ProductFormDialog.vue'
 import ProductDeleteDialog from './dialogs/ProductDeleteDialog.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import StockStatusCards from '../products/StockStatusCards.vue'
 import StockStatusDialog from './dialogs/StockStatusDialog.vue'
 import ManageIgnoredItemsDialog from './dialogs/ManageIgnoredItemsDialog.vue'
+import AddReservationDialog from './dialogs/AddReservationDialog.vue'
 import LogsViewDialog from '@/pages/logs/dialogs/LogsViewDialog.vue'
 import { useProductsDataStore } from '@/stores/productsData'
 import { useAuthUserStore } from '@/stores/authUser'
@@ -80,6 +82,13 @@ const {
   getWarehouseStock,
   getWarehouseProductDetail,
   getProductReservations,
+  expiryFilterValue,
+  expiryFilterLabel,
+  clearExpiryFilter,
+  removeReservation,
+  openAddReservationDialog,
+  showAddReservationDialog,
+  selectedProductForReservation,
 } = useProductsWidget()
 
 // Manage ignored items dialog
@@ -177,7 +186,14 @@ function stockColor(item: any) {
           persistent-placeholder
           class="warehouse-filter"
           @update:model-value="(val) => setWarehouseFilter(val)"
-        ></v-select>
+        >
+          <template #prepend-item>
+            <v-list-item v-if="selectedWarehouseId" @click="setWarehouseFilter(null)">
+              <v-list-item-title class="text-caption text-grey-darken-1">Clear filter</v-list-item-title>
+            </v-list-item>
+            <v-divider class="mt-2"></v-divider>
+          </template>
+        </v-select>
         <v-text-field
           v-model="searchQuery"
           label="Search products..."
@@ -187,6 +203,19 @@ function stockColor(item: any) {
           hide-details
           class="search-field"
           @keyup.enter="handleSearch"
+        ></v-text-field>
+        <v-text-field
+          v-model="expiryFilterValue"
+          type="month"
+          label="Expiring as of..."
+          prepend-inner-icon="mdi-calendar-month-outline"
+          variant="outlined"
+          density="compact"
+          hide-details
+          clearable
+          persistent-placeholder
+          class="expiry-filter"
+          @click:clear="clearExpiryFilter"
         ></v-text-field>
         <!-- I want to restrict this when the user is a warehouse user -->
         <v-btn
@@ -221,6 +250,32 @@ function stockColor(item: any) {
         hide-details
         @keyup.enter="handleSearch"
       ></v-text-field>
+      <v-text-field
+        v-model="expiryFilterValue"
+        type="month"
+        label="Expiring as of..."
+        prepend-inner-icon="mdi-calendar-month-outline"
+        variant="outlined"
+        density="compact"
+        hide-details
+        clearable
+        class="mt-2"
+        @click:clear="clearExpiryFilter"
+      ></v-text-field>
+    </div>
+    
+    <!-- How to make this to the end of right part -->
+    <div v-if="expiryFilterLabel" class="d-flex justify-end px-3 pt-2">
+      <v-chip
+        color="orange"
+        variant="tonal"
+        size="small"
+        closable
+        prepend-icon="mdi-calendar-month-outline"
+        @click:close="clearExpiryFilter"
+      >
+        Filtering Expiring Soon: {{ expiryFilterLabel }}
+      </v-chip>
     </div>
 
     <!-- Stock Status Cards -->
@@ -369,6 +424,18 @@ function stockColor(item: any) {
                         </div>
                       </div>
                     </v-col>
+                    <v-col cols="12" md="4" class="d-flex align-center py-2">
+                      <v-btn
+                        icon="mdi-plus"
+                        size="small"
+                        variant="outlined"
+                        color="primary"
+                        @click="openAddReservationDialog(item)"
+                      >
+                        <v-icon size="16">mdi-bookmark-plus</v-icon>
+                        <v-tooltip activator="parent" location="top">Add Reservation</v-tooltip>
+                      </v-btn>
+                    </v-col>
                     <v-col cols="12" class="py-2">
                       <v-divider class="mb-2"></v-divider>
                       <div class="text-subtitle-2 font-weight-bold text-grey-darken-1 mb-2">
@@ -378,8 +445,8 @@ function stockColor(item: any) {
                       <template v-if="getProductReservations(item.id).length > 0">
                         <v-list density="compact" class="pa-0" lines="one">
                           <v-list-item
-                            v-for="(reservation, idx) in getProductReservations(item.id)"
-                            :key="idx"
+                            v-for="reservation in getProductReservations(item.id)"
+                            :key="reservation.id"
                             class="px-0"
                           >
                             <template #prepend>
@@ -389,9 +456,16 @@ function stockColor(item: any) {
                               {{ reservation.customer_name }}
                             </v-list-item-title>
                             <template #append>
-                              <v-chip size="x-small" color="warning" variant="outlined">
+                              <v-chip size="x-small" color="warning" variant="outlined" class="mr-2">
                                 {{ reservation.reserved_qty }}
                               </v-chip>
+                              <v-btn
+                                icon="mdi-delete"
+                                size="x-small"
+                                variant="text"
+                                color="error"
+                                @click.stop="removeReservation(reservation.id)"
+                              ></v-btn>
                             </template>
                           </v-list-item>
                         </v-list>
@@ -453,6 +527,12 @@ function stockColor(item: any) {
         :total-products="totalProducts"
         :sort-by="sortBy"
         :is-edit-restricted="isEditRestricted"
+        :selected-warehouse-id="selectedWarehouseId"
+        :get-warehouse-stock="getWarehouseStock"
+        :get-warehouse-product-detail="getWarehouseProductDetail"
+        :get-product-reservations="getProductReservations"
+        :open-add-reservation-dialog="openAddReservationDialog"
+        :remove-reservation="removeReservation"
         @edit="openEditDialog"
         @delete="openDeleteDialog"
         @logs="openLogsDialog"
@@ -520,15 +600,31 @@ function stockColor(item: any) {
     v-model="showManageIgnoredDialog"
     :ignored-product-entries="ignoredProductEntries"
   />
+
+  <!-- Confirm Dialog -->
+  <ConfirmDialog />
+
+  <!-- Add Reservation Dialog -->
+  <AddReservationDialog
+    v-model="showAddReservationDialog"
+    :selected-product="selectedProductForReservation"
+    :selected-warehouse-id="selectedWarehouseId"
+    @reservation-added="selectedWarehouseId && setWarehouseFilter(selectedWarehouseId)"
+  />
 </template>
 
 <style scoped>
 .search-field {
-  min-width: 280px;
-  max-width: 420px;
+  min-width: 200px;
+  max-width: 280px;
   width: 100%;
 }
 .warehouse-filter {
+  min-width: 200px;
+  max-width: 280px;
+  width: 100%;
+}
+.expiry-filter {
   min-width: 200px;
   max-width: 280px;
   width: 100%;

@@ -90,8 +90,8 @@ export function useExecutiveDashboard() {
     const netMargin = rev > 0 ? ((net / rev) * 100).toFixed(1) : '0.0'
 
     // Turn the overdue-by-term map into badges
-    const termColors: Record<string, string> = { '1-30': 'warning', '31-60': 'orange', '61-90': 'deep-orange', '90+': 'error' }
-    const termLabels: Record<string, string> = { '1-30': '1-30d', '31-60': '31-60d', '61-90': '61-90d', '90+': '90+d' }
+    const termColors: Record<string, string> = { '1-30': 'warning', '31-60': 'orange', '61-90': 'deep-orange', '91-180': 'error', '180+': 'error' }
+    const termLabels: Record<string, string> = { '1-30': '1-30d', '31-60': '31-60d', '61-90': '61-90d', '91-180': '91-180d', '180+': '>6mo' }
     const overdueBadges: KpiBadge[] = []
     for (const [key, amount] of Object.entries(store.overdueByTerm)) {
       if (amount > 0 && key in termLabels) {

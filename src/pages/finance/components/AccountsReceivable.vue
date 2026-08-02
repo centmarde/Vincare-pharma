@@ -23,7 +23,8 @@ const termColor: Record<string, string> = {
   '1-30': 'warning',
   '31-60': 'warning',
   '61-90': 'error',
-  '90+': 'error',
+  '91-180': 'error',
+  '180+': 'error',
 }
 
 const termLabels: Record<string, string> = {
@@ -31,7 +32,8 @@ const termLabels: Record<string, string> = {
   '1-30': '1–30 days',
   '31-60': '31–60 days',
   '61-90': '61–90 days',
-  '90+': '90+ days',
+  '91-180': '91–180 days',
+  '180+': 'Over 6 months',
   'no-term': 'No term',
 }
 </script>
@@ -53,7 +55,7 @@ const termLabels: Record<string, string> = {
           <v-card rounded="lg" elevation="1" class="pa-4">
             <div class="text-caption text-medium-emphasis">Overdue</div>
             <div class="text-h5 font-weight-bold text-error">{{ formatCurrency(overdueReceivable) }}</div>
-            <div class="text-caption text-medium-emphasis">Past due date (1-30 through 90+)</div>
+            <div class="text-caption text-medium-emphasis">Past due date (1-30 through over 6 months)</div>
           </v-card>
         </v-col>
         <v-col cols="12" sm="6" md="6">

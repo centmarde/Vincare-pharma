@@ -13,11 +13,11 @@ export const arHeaders = [
   { title: 'TERM',         key: 'term',          sortable: false, align: 'center' as const },
 ] as const
 
-export const AR_TERM_ORDER: ARAgingTerm[] = ['current', '1-30', '31-60', '61-90', '90+', 'no-term']
+export const AR_TERM_ORDER: ARAgingTerm[] = ['current', '1-30', '31-60', '61-90', '91-180', '180+', 'no-term']
 
 // Worst-first precedence for picking a single "headline" term per customer jacket.
 const TERM_SEVERITY: Record<ARAgingTerm, number> = {
-  '90+': 5, '61-90': 4, '31-60': 3, '1-30': 2, current: 1, 'no-term': 0,
+  '180+': 6, '91-180': 5, '61-90': 4, '31-60': 3, '1-30': 2, current: 1, 'no-term': 0,
 }
 
 export type ARCustomerJacket = {

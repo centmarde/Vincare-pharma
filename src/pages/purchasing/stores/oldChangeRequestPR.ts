@@ -107,6 +107,7 @@ export const useChangeRequestPRStore = defineStore('changeRequestPR', () => {
       requests.value = (data || []).map((row) => ({
         ...mapRequestRow(row),
         created_by_email: authStore.users.find((u: any) => u.id === row.created_by)?.email ?? null,
+        requester_name: authStore.users.find((u: any) => u.id === row.created_by)?.full_name ?? null
       }))
       return requests.value
     } catch (err) {

@@ -355,6 +355,12 @@ export const navigationConfig: NavigationGroup[] = [
             permission: 'finance.ar.view',
           },
           {
+            title: 'Statement of Accounts',
+            icon: 'mdi-file-table-outline',
+            route: '/finance/statement-of-accounts',
+            permission: 'finance.soa.view',
+          },
+          {
             title: 'Supplier Payments',
             icon: 'mdi-bank-transfer-out',
             route: '/finance/supplier-payments',
