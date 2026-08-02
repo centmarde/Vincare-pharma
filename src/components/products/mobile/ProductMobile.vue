@@ -77,7 +77,7 @@ function nextPage() {
               variant="outlined"
               class="mr-2"
             >
-              {{ product.current_stock ?? 0 }}
+              {{ Math.max(0, product.current_stock ?? 0) }}
             </v-chip>
           </template>
 
@@ -159,13 +159,13 @@ function nextPage() {
               <v-col cols="6">
                 <div class="text-caption text-grey-darken-1">Total Qty</div>
                 <div class="text-body-2 font-weight-medium">
-                  {{ getWarehouseProductDetail(product.id)?.total_qty ?? 0 }}
+                  {{ Math.max(0, getWarehouseProductDetail(product.id)?.total_qty ?? 0) }}
                 </div>
               </v-col>
               <v-col cols="6">
                 <div class="text-caption text-grey-darken-1">Available Stock</div>
                 <div class="text-body-2 font-weight-medium">
-                  {{ (getWarehouseStock?.(product.id) ?? 0) }}
+                  {{ Math.max(0, getWarehouseStock?.(product.id) ?? 0) }}
                 </div>
               </v-col>
             </v-row>
