@@ -24,6 +24,7 @@ export type PRItem = {
   supplier_id?: string | null
   expiry_date?: string | null
   actual_count_stock_in?: number | null
+  warehouse_id?: number | null
 }
 
 export type RequisitionItemType = {

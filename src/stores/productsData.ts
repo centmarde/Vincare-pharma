@@ -74,6 +74,8 @@ type FetchProductsOptions = {
   limit?: number
   offset?: number
   eligibleIds?: number[]
+  expiryStart?: string // 'YYYY-MM-DD'
+  expiryEnd?: string   // 'YYYY-MM-DD'
 }
 
 export type ProductPickerResult = {
@@ -109,6 +111,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
   const pickerTotalCount = ref(0)
   const reorderRequests: Ref<any[]> = ref([])
   const reorderCount:    Ref<number> = ref(0)
+  const statusProductExpiry: Ref<ProductType[]> = ref([])
   const REORDER_TYPES = ['reorder_outofstock', 'reorder_lowstock', 'reorder_expiring', 'reorder_expired']
   
   
@@ -193,47 +196,61 @@ export const useProductsDataStore = defineStore('productsData', () => {
     }
   }
 
+  const fetchStatusProductExpiry = async (eligibleIds: number[]) => {
+    if (!eligibleIds.length) {
+      statusProductExpiry.value = []
+      return []
+    }
+
+    try{
+      const { data, error: fetchError } = await supabase
+      .from('products')
+      .select('*, suppliers(*)')
+      .in('id', eligibleIds)
+
+      if (fetchError) throw fetchError
+      
+      statusProductExpiry.value = (data || []) as ProductType[]
+      // I want to display statusProductExpiry in the console for debugging purposes, so I will log it here
+      console.log('Products with expiry status:', statusProductExpiry.value)
+      return statusProductExpiry.value
+    }catch(err){
+      handleError(err, 'Failed to fetch products with expiry status')
+      console.error('Error fetching products with expiry status:', err)
+      return []
+    }
+
+  }
+
   // Actions
   const fetchProducts = async (options: FetchProductsOptions = {}) => {
+    let productsRequestId = 0 // NEW — track the latest request ID
+    const requestId = ++productsRequestId // NEW — stamp this call
     loading.value = true
     clearError()
 
     try {
       const {
-        search,
-        category,
-        supplier_id,
-        orderBy = 'current_stock',
-        ascending = true,
-        limit,
-        offset,
-        eligibleIds,
+        search, category, supplier_id,
+        orderBy = 'current_stock', ascending = true,
+        limit, offset, eligibleIds, expiryStart, expiryEnd,
       } = options
 
       let q = supabase.from('products').select('*, suppliers(*)', { count: 'exact' })
 
-      if (category) {
-        q = q.eq('category', category)
-      }
-      if (typeof supplier_id === 'number') {
-        q = q.eq('supplier_id', supplier_id)
-      }
+      if (category) q = q.eq('category', category)
+      if (typeof supplier_id === 'number') q = q.eq('supplier_id', supplier_id)
       if (search && search.trim()) {
-        // Supabase: use `or` for simple multi-column search
         const s = search.trim().replace(/,/g, '')
-        q = q.or(
-          `product_name.ilike.%${s}%,generic_name.ilike.%${s}%,barcode.ilike.%${s}%,sku.ilike.%${s}%`,
-        )
+        q = q.or(`product_name.ilike.%${s}%,generic_name.ilike.%${s}%,barcode.ilike.%${s}%,sku.ilike.%${s}%`)
       }
-      if (eligibleIds && eligibleIds.length > 0) {
-        q = q.in('id', eligibleIds)
-      }
+      if (eligibleIds && eligibleIds.length > 0) q = q.in('id', eligibleIds)
+      if (expiryStart && expiryEnd) q = q.gte('expiry_date', expiryStart).lte('expiry_date', expiryEnd)
 
-      // When sorting by stock, use reorder_level percentage (stock health) ordering
       if (orderBy === 'current_stock') {
-        // Order by reorder_level descending first (prioritize items needing reorder),
-        // then by current_stock as requested (asc/desc)
-        q = q.order('reorder_level', { ascending: false, nullsFirst: false })
+        
+        // comment to make the curren_stock order by ascending or descending and nulls first or last
+        // q = q.order('reorder_level', { ascending: false, nullsFirst: false })
         q = q.order(orderBy as string, { ascending })
       } else {
         q = q.order(orderBy as string, { ascending })
@@ -245,10 +262,16 @@ export const useProductsDataStore = defineStore('productsData', () => {
         q = q.limit(limit)
       }
 
-
       const { data, count, error: fetchError } = await q
 
       if (fetchError) throw fetchError
+
+      // NEW — a newer request has already started (or finished) since this
+      // one was fired. Its result is stale — discard it instead of clobbering
+      // the table with out-of-date rows.
+      if (requestId !== productsRequestId) {
+        return products.value
+      }
 
       products.value = (data || []) as ProductType[]
       totalCount.value = count ?? 0
@@ -257,7 +280,8 @@ export const useProductsDataStore = defineStore('productsData', () => {
       handleError(err, 'Failed to fetch products')
       return []
     } finally {
-      loading.value = false
+      // Only the most recent request should clear the loading spinner
+      if (requestId === productsRequestId) loading.value = false
     }
   }
 
@@ -748,11 +772,16 @@ export const useProductsDataStore = defineStore('productsData', () => {
     else products.value[idx] = product
 
     if (currentProduct.value?.id === product.id) currentProduct.value = product
+
+    const statusIdx = statusProductExpiry.value.findIndex((p) => p.id === product.id)
+    if (statusIdx !== -1) statusProductExpiry.value[statusIdx] = product
   }
 
   const removeProductLocal = (id: number) => {
     products.value = products.value.filter((p) => p.id !== id)
     if (currentProduct.value?.id === id) currentProduct.value = undefined
+
+    statusProductExpiry.value = statusProductExpiry.value.filter((p) => p.id !== id)
   }
 
   const resetStore = () => {
@@ -809,5 +838,9 @@ export const useProductsDataStore = defineStore('productsData', () => {
     // Local helpers (optional)
     upsertProductLocal,
     removeProductLocal,
+
+    // Product expiry status
+    statusProductExpiry,
+    fetchStatusProductExpiry,
   }
 })

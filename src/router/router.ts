@@ -37,6 +37,7 @@ import ExpensesView from '@/pages/finance/ExpensesView.vue'
 import SupplierPaymentsView from '@/pages/finance/SupplierPaymentsView.vue'
 import DiscrepanciesView from '@/pages/finance/DiscrepanciesView.vue'
 import AccountsReceivableView from '@/pages/finance/AccountsReceivableView.vue'
+import StatementOfAccountsView from '@/pages/finance/StatementOfAccountsView.vue'
 import CashAccountsView from '@/pages/finance/CashAccountsView.vue'
 import ExpenseReportView from '@/pages/finance/ExpenseReportView.vue'
 import IncomeStatementView from '@/pages/finance/IncomeStatementView.vue'
@@ -47,7 +48,7 @@ import ChartOfAccountsView from '@/pages/finance/ChartOfAccountsView.vue'
 import SuppliersView from '@/pages/suppliers/SuppliersView.vue'
 import LogsView from '@/pages/logs/LogsView.vue'
 import WarehouseProductsListView from '@/pages/warehouse/ProductsListView.vue'
-
+import WarehousesListView from '@/pages/warehouse/WareHouseListView.vue'
 /**
  * Route definitions for the application
  */
@@ -91,7 +92,7 @@ const routes = setupLayouts([
     component: ExecutiveView,
     meta: { requiresAuth: true },
   },
-    {
+  {
     path: '/executive/purchase-requisition-dashboard',
     component: ExecutivePurchaseRequisitionDashboardView,
     meta: { requiresAuth: true },
@@ -229,6 +230,11 @@ const routes = setupLayouts([
     meta: { requiresAuth: true },
   },
   {
+    path: '/finance/statement-of-accounts',
+    component: StatementOfAccountsView,
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/finance/cash-accounts',
     component: CashAccountsView,
     meta: { requiresAuth: true },
@@ -276,6 +282,11 @@ const routes = setupLayouts([
   {
     path: '/logs',
     component: LogsView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/warehouse/warehouses-list',
+    component: WarehousesListView,
     meta: { requiresAuth: true },
   },
   {

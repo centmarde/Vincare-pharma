@@ -4,6 +4,7 @@ import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
+import { parseProposedChanges } from '@/utils/changeRequests'
 
 const toast = useToast()
 
@@ -49,7 +50,10 @@ function mapRequestRow(row: any): PRChangeRequestType {
     created_at: row.created_at,
     transaction_id: row.transaction_id,
     request_type: row.request_type,
-    proposed_changes: (row.proposed_changes ?? {}) as PRProposedChange,
+    // proposed_changes is a TEXT column, so it comes back as a JSON string —
+    // parse it rather than casting (see parseProposedChanges' note). The PR
+    // undo flow doesn't currently write or read it, but the cast was wrong.
+    proposed_changes: parseProposedChanges(row.proposed_changes) as PRProposedChange,
     summary: row.summary ?? null,
     reason: row.reason ?? null,
     status: row.status,
@@ -103,6 +107,7 @@ export const useChangeRequestPRStore = defineStore('changeRequestPR', () => {
       requests.value = (data || []).map((row) => ({
         ...mapRequestRow(row),
         created_by_email: authStore.users.find((u: any) => u.id === row.created_by)?.email ?? null,
+        requester_name: authStore.users.find((u: any) => u.id === row.created_by)?.full_name ?? null
       }))
       return requests.value
     } catch (err) {

@@ -111,10 +111,11 @@ export type ExpenseType = {
   created_by: string | null
   cash_account_id: number | null
   cash_account_name: string | null
-  // Soft void: non-null = reversed. The row stays in document lists, flagged,
-  // but is excluded from every financial aggregate.
-  voided_at: string | null
-  void_reason: string | null
+  // Soft void: status='voided' = reversed. The row stays in document lists,
+  // flagged, but is excluded from every financial aggregate. (transactions.
+  // voided_at/voided_by/void_reason were dropped from the schema — status is
+  // now the only signal; collections/pos_sale_details still have those columns.)
+  status: string
 }
 
 export type SupplierPaymentType = {
@@ -128,8 +129,7 @@ export type SupplierPaymentType = {
   paid_at: string | null
   remarks: string | null
   created_by: string | null
-  voided_at: string | null
-  void_reason: string | null
+  status: string
 }
 
 export type SupplierAPRow = {
@@ -171,7 +171,11 @@ export type RemittanceDiscrepancyRow = {
   receivable_status: 'outstanding' | 'paid' | null
 }
 
-export type ARAgingTerm = 'current' | '1-30' | '31-60' | '61-90' | '90+' | 'no-term'
+// Buckets match the accountant's Statement of Accounts sheet: 1-30 / 31-60 /
+// 61-90 / 91-180 / over 6 months. `current` (not yet due) and `no-term` (no due
+// date convention exists — every in-house order today) are app-side additions
+// the sheet has no column for; they are never overdue, so they never age.
+export type ARAgingTerm = 'current' | '1-30' | '31-60' | '61-90' | '91-180' | '180+' | 'no-term'
 
 export type ARAgingRow = {
   id: number
@@ -396,8 +400,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       created_by: row.created_by,
       cash_account_id: row.cash_account_id ?? details.cash_account_id ?? null,
       cash_account_name: row.cash_account?.name ?? null,
-      voided_at: row.voided_at ?? null,
-      void_reason: row.void_reason ?? null,
+      status: row.status,
     }
   }
 
@@ -665,7 +668,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         .select('expense_no, total_amount, paid_at, finance_details(category, paid_to, or_si_no)')
         .eq('transaction_type', 'expense')
         .eq('cash_account_id', cashAccountId)
-        // .is('voided_at', null)   // a voided expense had its cash restored
+        .neq('status', 'voided')   // a voided expense had its cash restored
       if (lastApproved?.approved_at) q = q.gt('created_at', lastApproved.approved_at)
       q = q.order('paid_at', { ascending: true })
 
@@ -879,23 +882,26 @@ export const useFinanceDataStore = defineStore('financeData', () => {
 
     const { data: expense, error: fetchError } = await supabase
       .from('transactions')
-      .select('expense_no, total_amount, cash_account_id, paid_at, voided_at')
+      .select('expense_no, total_amount, cash_account_id, paid_at, status')
       .eq('id', id).eq('transaction_type', 'expense')
       .maybeSingle()
     if (fetchError || !expense) {
       toast.error(`Expense ${id} not found.`); loading.value = false; return { success: false }
     }
-    if (expense.voided_at) {
+    if (expense.status === 'voided') {
       toast.warning('This expense is already voided.'); loading.value = false; return { success: false }
     }
 
-    // Stamp the void first, guarded on voided_at — it is what removes the
+    // Stamp the void first, guarded on status — it is what removes the
     // expense from every financial aggregate, so it must land before the
     // compensating cash restore. Doing the restore first (as the old delete
     // path once did) credited money back for an expense still on the books.
+    // (transactions.voided_at/voided_by/void_reason were dropped from the
+    // schema — status='voided' is the only signal now; the who/when/why now
+    // lives on the linked change_requests row instead.)
     const { data: voided, error: voidError } = await supabase.from('transactions')
-      .update({ status: 'voided', voided_at: new Date().toISOString(), voided_by: user.id, void_reason: reason })
-      .eq('id', id).eq('transaction_type', 'expense')
+      .update({ status: 'voided' })
+      .eq('id', id).eq('transaction_type', 'expense').neq('status', 'voided')
       .select('id')
     if (voidError) {
       handleError(voidError, 'Failed to void expense.')
@@ -951,8 +957,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       paid_at: row.paid_at,
       remarks: row.remarks,
       created_by: row.created_by,
-      voided_at: row.voided_at ?? null,
-      void_reason: row.void_reason ?? null,
+      status: row.status,
     }
   }
 
@@ -1006,8 +1011,8 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     }
 
     const [receivedRes, paidRes] = await Promise.all([
-      supabase.from('transactions').select('total_amount').eq('transaction_type', 'stock_in').eq('supplier_id', payload.supplierId),
-      supabase.from('transactions').select('total_amount').eq('transaction_type', 'supplier_payment').eq('supplier_id', payload.supplierId),
+      supabase.from('transactions').select('total_amount').eq('transaction_type', 'stock_in').eq('supplier_id', payload.supplierId).neq('status', 'voided'),
+      supabase.from('transactions').select('total_amount').eq('transaction_type', 'supplier_payment').eq('supplier_id', payload.supplierId).neq('status', 'voided'),
     ])
     const received = (receivedRes.data ?? []).reduce((sum, r) => sum + (r.total_amount ?? 0), 0)
     const paid = (paidRes.data ?? []).reduce((sum, r) => sum + (r.total_amount ?? 0), 0)
@@ -1069,8 +1074,8 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     clearError()
     try {
       const [receivedRes, paidRes, suppliersRes] = await Promise.all([
-        supabase.from('transactions').select('supplier_id, total_amount').eq('transaction_type', 'stock_in'),
-        supabase.from('transactions').select('supplier_id, total_amount').eq('transaction_type', 'supplier_payment'),
+        supabase.from('transactions').select('supplier_id, total_amount').eq('transaction_type', 'stock_in').neq('status', 'voided'),
+        supabase.from('transactions').select('supplier_id, total_amount').eq('transaction_type', 'supplier_payment').neq('status', 'voided'),
         supabase.from('suppliers').select('id, name, balance'),
       ])
       if (receivedRes.error) throw receivedRes.error
@@ -1148,9 +1153,11 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         .gte('created_at', dayStart).lte('created_at', dayEnd),
       supabase.from('transactions').select('total_amount')
         .eq('transaction_type', 'stock_in')
+        .neq('status', 'voided')
         .gte('updated_at', dayStart).lte('updated_at', dayEnd),
       supabase.from('transactions').select('total_amount')
         .eq('transaction_type', 'expense')
+        .neq('status', 'voided')
         .gte('paid_at', dayStart).lte('paid_at', dayEnd),
     ])
     if (saleRes.error) throw saleRes.error
@@ -1227,6 +1234,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         .gte('updated_at', fromTs).lte('updated_at', toTs),
       supabase.from('transactions').select('paid_at')
         .eq('transaction_type', 'expense')
+        .neq('status', 'voided')
         .gte('paid_at', fromTs).lte('paid_at', toTs),
       supabase.from('finance_daily_summary').select('summary_date'),
     ])
@@ -1366,7 +1374,8 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     if (daysOverdue <= 30) return '1-30'
     if (daysOverdue <= 60) return '31-60'
     if (daysOverdue <= 90) return '61-90'
-    return '90+'
+    if (daysOverdue <= 180) return '91-180'
+    return '180+'
   }
 
   const fetchARAging = async () => {
@@ -1688,20 +1697,29 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       // Line values now live directly on transaction_items: inbound qty is
       // qty_stock_in, outbound qty is qty_stock_out, and the actual moved-out
       // count (transfer received / inhouse delivered) is actual_count_stock_out.
-      const [stockInRes, transferRes, saleRes, ethicalRes, inhouseRes, warehouseRes, outletRes, voidedPsdRes] = await Promise.all([
+      const [stockInRes, transferRes, saleRes, ethicalRes, inhouseRes, warehouseRes, outletRes, voidedPsdRes, outletsRes] = await Promise.all([
         supabase.from('transaction_items').select('product_id, qty_stock_in, transaction:transaction_id!inner(transaction_type)').eq('transaction.transaction_type', 'stock_in'),
-        supabase.from('transaction_items').select('product_id, qty_stock_out, actual_count_stock_out, transaction:transaction_id!inner(transaction_type, status, outlet)').eq('transaction.transaction_type', 'stock_transfer'),
-        supabase.from('transaction_items').select('product_id, transaction_id, qty_stock_out, transaction:transaction_id!inner(transaction_type, status, outlet)').eq('transaction.transaction_type', 'sale'),
+        supabase.from('transaction_items').select('product_id, qty_stock_out, actual_count_stock_out, transaction:transaction_id!inner(transaction_type, status, outlet_id)').eq('transaction.transaction_type', 'stock_transfer'),
+        supabase.from('transaction_items').select('product_id, transaction_id, qty_stock_out, transaction:transaction_id!inner(transaction_type, status, outlet_id)').eq('transaction.transaction_type', 'sale'),
         supabase.from('transaction_items').select('product_id, stock_sources, transaction:transaction_id!inner(transaction_type, status)').eq('transaction.transaction_type', 'ethical_order'),
         supabase.from('transaction_items').select('product_id, actual_count_stock_out, transaction:transaction_id!inner(transaction_type)').eq('transaction.transaction_type', 'inhouse_order'),
         supabase.from('products').select('id, product_name, current_stock'),
         supabase.from('outlet_stock').select('product_id, outlet, quantity, product:product_id(product_name)'),
         supabase.from('pos_sale_details').select('transaction_id').not('voided_at', 'is', null),
+        supabase.from('outlets').select('id, code'),
       ])
-      for (const res of [stockInRes, transferRes, saleRes, ethicalRes, inhouseRes, warehouseRes, outletRes, voidedPsdRes]) {
+      for (const res of [stockInRes, transferRes, saleRes, ethicalRes, inhouseRes, warehouseRes, outletRes, voidedPsdRes, outletsRes]) {
         if (res.error) throw res.error
       }
       const voidedByPsd = new Set<number>(((voidedPsdRes.data || []) as any[]).map((v) => v.transaction_id))
+      // transactions.outlet (the bare text code) was dropped from the schema —
+      // only outlet_id remains there now. Resolve it back to a code via the
+      // outlets table instead of hardcoding an id, matching the "no logic
+      // matches a code string without going through outlet_id" rule as
+      // closely as this pre-existing EXELMED/ETHICAL two-bucket shape allows.
+      const outletCodeById = new Map<number, string>(
+        ((outletsRes.data || []) as any[]).map((o) => [o.id, o.code]),
+      )
 
       const expectedWarehouse = new Map<number, number>()
       const expectedOutlet = { EXELMED: new Map<number, number>(), ETHICAL: new Map<number, number>() }
@@ -1714,15 +1732,16 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         const t = r.transaction
         if (!t || !['approved', 'completed'].includes(t.status)) continue
         if (r.product_id != null) bump(expectedWarehouse, r.product_id, -(r.qty_stock_out ?? 0))
-        if (t.status === 'completed' && r.product_id != null && (t.outlet === 'EXELMED' || t.outlet === 'ETHICAL')) {
-          bump(expectedOutlet[t.outlet as 'EXELMED' | 'ETHICAL'], r.product_id, r.actual_count_stock_out ?? 0)
+        const code = outletCodeById.get(t.outlet_id)
+        if (t.status === 'completed' && r.product_id != null && (code === 'EXELMED' || code === 'ETHICAL')) {
+          bump(expectedOutlet[code as 'EXELMED' | 'ETHICAL'], r.product_id, r.actual_count_stock_out ?? 0)
         }
       }
       for (const r of (saleRes.data || []) as any[]) {
         const t = r.transaction
         if (!t || t.status !== 'completed') continue
         if (voidedByPsd.has(r.transaction_id)) continue
-        if (r.product_id != null && t.outlet === 'EXELMED') bump(expectedOutlet.EXELMED, r.product_id, -(r.qty_stock_out ?? 0))
+        if (r.product_id != null && outletCodeById.get(t.outlet_id) === 'EXELMED') bump(expectedOutlet.EXELMED, r.product_id, -(r.qty_stock_out ?? 0))
       }
       for (const r of (ethicalRes.data || []) as any[]) {
         const t = r.transaction

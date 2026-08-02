@@ -11,7 +11,17 @@ import { useLogsDataStore } from '@/stores/logsData'
 import type { ReorderPrefillItem } from '@/pages/purchasing/composables/usePurchaseRequisition'
 import { useAuthUserStore } from '@/stores/authUser'
 import { isPurchasingRole, isProductEditRestricted } from '@/utils/roleHelpers'
-import { useProductIgnore, IGNORE_DURATIONS } from '@/components/products/composables/useProductIgnore'
+import {
+  useProductIgnore,
+  IGNORE_DURATIONS,
+} from '@/components/products/composables/useProductIgnore'
+import { useWarehouseProductsDataStore } from '@/stores/warehouseProductsData'
+import {
+  useReservedProductsDataStore,
+  type ReservedProductType,
+} from '@/stores/reservedProductsData'
+import { useCustomersDataStore } from '@/stores/customersData'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
 interface StockStatusCardDef {
   type: 'out-of-stock' | 'low-stock' | 'no-reorder-level' | 'expiring-soon' | 'expired'
@@ -21,12 +31,15 @@ interface StockStatusCardDef {
   filter: (p: ProductType) => boolean
 }
 
-  export const reorderReasonMap: Record<string, 'reorder_outofstock' | 'reorder_lowstock' | 'reorder_expiring' | 'reorder_expired'> = {
-    'out-of-stock':  'reorder_outofstock',
-    'low-stock':     'reorder_lowstock',
-    'expiring-soon': 'reorder_expiring',
-    'expired':       'reorder_expired',
-  }
+export const reorderReasonMap: Record<
+  string,
+  'reorder_outofstock' | 'reorder_lowstock' | 'reorder_expiring' | 'reorder_expired'
+> = {
+  'out-of-stock': 'reorder_outofstock',
+  'low-stock': 'reorder_lowstock',
+  'expiring-soon': 'reorder_expiring',
+  expired: 'reorder_expired',
+}
 
 export function useProductsWidget() {
   const toast = useToast()
@@ -34,14 +47,18 @@ export function useProductsWidget() {
   const authStore = useAuthUserStore()
   const logsStore = useLogsDataStore()
   const productIgnore = useProductIgnore()
+  const confirmDialog = useConfirmDialog()
 
   // Dialog states
   const showDialog = ref(false)
   const showDeleteDialog = ref(false)
   const dialogMode = ref<'create' | 'edit'>('create')
-  const EXPIRY_WARNING_DAYS = 30
+  const showStockDialog = ref(false)
+  const EXPIRY_WARNING_DAYS = 540 // 18 months
   const isPurchaser = computed(() => isPurchasingRole(authStore.userRole))
   const isEditRestricted = computed(() => isProductEditRestricted(authStore.userRole))
+  const expiryFilterValue = ref<string>('')
+
 
   // Form state
   const form = ref<any>(null)
@@ -79,8 +96,23 @@ export function useProductsWidget() {
   // Expanded rows
   const expanded = ref<string[]>([])
 
-  // Stock status dialog
-  const showStockDialog = ref(false)
+  // Warehouse filter
+  const selectedWarehouseId = ref<number | null>(null)
+  const warehouseProductIds = ref<number[]>([])
+  const warehouseStockMap = ref<Map<number, number>>(new Map())
+  const warehouseProductDetails = ref<Map<number, { total_qty: number }>>(new Map())
+
+  // Reserved products — maps product_id -> list of reservations with customer name and reservation id
+  const reservedProductsMap = ref<Map<number, { id: number; customer_name: string; reserved_qty: number }[]>>(
+    new Map(),
+  )
+  const warehouseProductsIdToProductId = ref<Map<number, number>>(new Map())
+
+  // Add reservation dialog
+  const showAddReservationDialog = ref(false)
+  const selectedProductForReservation = ref<ProductType | null>(null)
+  const reservationCustomerId = ref<number | null>(null)
+  const reservationQuantity = ref<number>(0)
 
   // Eligible product IDs (those in stock_in transactions)
   const eligibleProductIds = ref<Set<number>>(new Set())
@@ -101,9 +133,18 @@ export function useProductsWidget() {
 
   // Computed
   const products = computed(() =>
-    productsStore.products.filter(
-      p => p.sku != null && p.sku !== 'null' && eligibleProductIds.value.has(p.id)
-    )
+    productsStore.products.filter((p) => {
+      // Must have a valid SKU
+      if (p.sku == null || p.sku === 'null') return false
+
+      // When a warehouse filter is active, only show products that exist in that warehouse
+      if (selectedWarehouseId.value) {
+        return warehouseProductIds.value.includes(p.id)
+      }
+
+      // Main warehouse: only show eligible products (those with stock_in transactions)
+      return eligibleProductIds.value.has(p.id)
+    }),
   )
 
   const loading = computed(() => productsStore.loading)
@@ -112,90 +153,118 @@ export function useProductsWidget() {
   // All-products stock status counts (not paginated, from the full store)
   // Filters out products that have been ignored/dismissed by the user
   const allEligibleProducts = computed(() =>
-    productsStore.products.filter(
-      p => p.sku != null && p.sku !== 'null' && eligibleProductIds.value.has(p.id) && !productIgnore.activeIgnoredIds.value.has(p.id)
-    )
+    productsStore.statusProductExpiry.filter(
+      (p) =>
+        p.sku != null &&
+        p.sku !== 'null' &&
+        // eligibleProductIds.value.has(p.id) &&
+        !productIgnore.activeIgnoredIds.value.has(p.id),
+    ),
   )
 
   function daysUntilExpiry(expiryDate: string | null | undefined): number | null {
-  if (!expiryDate) return null
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const expiry = new Date(expiryDate)
-  expiry.setHours(0, 0, 0, 0)
-  return Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-}
+    if (!expiryDate) return null
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const expiry = new Date(expiryDate)
+    expiry.setHours(0, 0, 0, 0)
+    return Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+  }
 
-const stockStatusCardDefs: StockStatusCardDef[] = [
-  {
-    type: 'out-of-stock',
-    label: 'Out of Stock',
-    icon: 'mdi-close-circle-outline',
-    color: 'error',
-    filter: p => (p.current_stock ?? 0) <= 0,
-  },
-  {
-    type: 'low-stock',
-    label: 'Low Stock',
-    icon: 'mdi-alert-outline',
-    color: 'warning',
-    filter: p => {
-      const stock = p.current_stock ?? 0
-      return stock > 0 && !!p.reorder_level && stock <= p.reorder_level
+  const stockStatusCardDefs: StockStatusCardDef[] = [
+    {
+      type: 'out-of-stock',
+      label: 'Out of Stock',
+      icon: 'mdi-close-circle-outline',
+      color: 'error',
+      filter: (p) => (p.current_stock ?? 0) <= 0,
     },
-  },
-  {
-    type: 'no-reorder-level',
-    label: 'No Reorder Level',
-    icon: 'mdi-information-outline',
-    color: 'info',
-    filter: p => p.reorder_level === null,
-  },
-  {
-    type: 'expiring-soon',
-    label: 'Expiring Soon',
-    icon: 'mdi-clock-alert-outline',
-    color: 'orange',
-    filter: p => {
-      const days = daysUntilExpiry(p.expiry_date)
-      return days !== null && days >= 0 && days <= EXPIRY_WARNING_DAYS
+    {
+      type: 'low-stock',
+      label: 'Low Stock',
+      icon: 'mdi-alert-outline',
+      color: 'warning',
+      filter: (p) => {
+        const stock = p.current_stock ?? 0
+        return stock > 0 && !!p.reorder_level && stock <= p.reorder_level
+      },
     },
-  },
-  {
-    type: 'expired',
-    label: 'Expired',
-    icon: 'mdi-calendar-remove',
-    color: 'error',
-    filter: p => {
-      const days = daysUntilExpiry(p.expiry_date)
-      return days !== null && days < 0
+    {
+      type: 'no-reorder-level',
+      label: 'No Reorder Level',
+      icon: 'mdi-information-outline',
+      color: 'info',
+      filter: (p) => p.reorder_level === null,
     },
-  },
-]
+    {
+      type: 'expiring-soon',
+      label: 'Expiring Soon',
+      icon: 'mdi-clock-alert-outline',
+      color: 'orange',
+      filter: (p) => {
+        const ref = expiryFilterParsed.value
 
-// Cards for the StockStatusCards row (label/icon/color/count)
-const stockStatusCards = computed(() =>
-  stockStatusCardDefs.map(def => ({
-    type: def.type,
-    label: def.label,
-    icon: def.icon,
-    color: def.color,
-    count: allEligibleProducts.value.filter(def.filter).length,
-  }))
-)
+        if (!ref) {
+          // Default: rolling 18-month window from today
+          const days = daysUntilExpiry(p.expiry_date)
+          return days !== null && days >= 0 && days <= EXPIRY_WARNING_DAYS
+        }
 
-const stockDialogType = ref<StockStatusCardDef['type']>('out-of-stock')
+        // Filtered: flag if the selected month falls within 18 calendar months
+        // before the product's expiry date (inclusive on both ends)
+        const monthsDiff = monthsUntilExpiryFrom(p.expiry_date, ref)
+        return monthsDiff !== null && monthsDiff >= 0 && monthsDiff <= 18
+      },
+    },
+    {
+      type: 'expired',
+      label: 'Expired',
+      icon: 'mdi-calendar-remove',
+      color: 'error',
+      filter: (p) => {
+        const days = daysUntilExpiry(p.expiry_date)
+        return days !== null && days < 0
+      },
+    },
+  ]
 
-// The active card's metadata (for dialog title/icon/color)
-const activeStockCard = computed(() =>
-  stockStatusCards.value.find(c => c.type === stockDialogType.value)
-)
+  // Cards for the StockStatusCards row (label/icon/color/count)
+  const stockStatusCards = computed(() =>
+    stockStatusCardDefs.map((def) => ({
+      type: def.type,
+      label: def.label,
+      icon: def.icon,
+      color: def.color,
+      count: allEligibleProducts.value.filter(def.filter).length,
+    })),
+  )
 
-// The active card's filtered product list (for dialog body)
-const stockDialogProducts = computed<ProductType[]>(() => {
-  const def = stockStatusCardDefs.find(d => d.type === stockDialogType.value)
-  return def ? allEligibleProducts.value.filter(def.filter) : []
-})
+  const stockDialogType = ref<StockStatusCardDef['type']>('out-of-stock')
+
+  // The active card's metadata (for dialog title/icon/color)
+  const activeStockCard = computed(() =>
+    stockStatusCards.value.find((c) => c.type === stockDialogType.value),
+  )
+
+  // The active card's filtered product list (for dialog body)
+  const stockDialogProducts = computed<ProductType[]>(() => {
+    const def = stockStatusCardDefs.find((d) => d.type === stockDialogType.value)
+    if (!def) return []
+
+    const filtered = allEligibleProducts.value.filter(def.filter)
+
+    // arrange by FEFO First Expire, First Out (soonest expiry first) for expiring/expired products to get actions first than other products
+    if (stockDialogType.value === 'expiring-soon' || stockDialogType.value === 'expired') {
+      return [...filtered].sort((a, b) => {
+        if (!a.expiry_date && !b.expiry_date) return 0
+        if (!a.expiry_date) return 1 // no date sinks to the bottom
+        if (!b.expiry_date) return -1
+        return new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime()
+      })
+    }
+
+    return filtered
+  })
 
   // Validation rules
   const rules = {
@@ -206,25 +275,232 @@ const stockDialogProducts = computed<ProductType[]>(() => {
 
   // Methods
   async function fetchEligibleProductIds() {
-    try {
-      const ids = await productsStore.fetchEligibleProductIds()
-      eligibleProductIds.value = new Set(ids)
-      console.log('[ProductsWidget] Eligible product IDs from stock_in transactions:', ids)
-    } catch (err) {
-      console.error('[ProductsWidget] Failed to fetch eligible product IDs:', err)
-      eligibleProductIds.value = new Set()
+      try {
+        const ids = await productsStore.fetchEligibleProductIds()
+        eligibleProductIds.value = new Set(ids)
+        //console.log('[ProductsWidget] Eligible product IDs from stock_in transactions:', ids)
+      } catch (err) {
+        console.error('[ProductsWidget] Failed to fetch eligible product IDs:', err)
+        eligibleProductIds.value = new Set()
+      }
+    }
+  async function fetchProducts() {
+    const range = expiryFilterRange.value
+
+    const ids = selectedWarehouseId.value
+      ? warehouseProductIds.value.length > 0
+        ? [...warehouseProductIds.value]
+        : [-1]
+      : [...eligibleProductIds.value]
+
+    await productsStore.fetchProducts({
+      search: searchQuery.value,
+      orderBy: range ? 'expiry_date' : (sortBy.value[0]?.key as any) || 'created_at',
+      ascending: range ? true : sortBy.value[0]?.order === 'asc',
+      limit: itemsPerPage.value,
+      offset: (page.value - 1) * itemsPerPage.value,
+      eligibleIds: ids,
+      expiryStart: range?.start,
+      expiryEnd: range?.end,
+    })
+  }
+
+  function setWarehouseFilter(warehouseId: number | null) {
+    selectedWarehouseId.value = warehouseId
+    if (warehouseId) {
+      const warehouseProductsStore = useWarehouseProductsDataStore()
+      const reservedProductsStore = useReservedProductsDataStore()
+
+      warehouseProductsStore
+        .fetchWarehouseProducts({ warehouse_id: warehouseId })
+        .then(async () => {
+          const fetchedProductIds = warehouseProductsStore.warehouseProducts
+            .map((wp) => wp.product_id)
+            .filter((id): id is number => id != null)
+
+          warehouseProductIds.value = fetchedProductIds
+
+          // If the selected warehouse has no products, show empty table
+          if (fetchedProductIds.length === 0) {
+            warehouseStockMap.value = new Map()
+            warehouseProductDetails.value = new Map()
+            reservedProductsMap.value = new Map()
+            warehouseProductsIdToProductId.value = new Map()
+            fetchProducts()
+            return
+          }
+
+          // Build warehouse product ID -> product ID map
+          const wpToProductMap = new Map<number, number>()
+          for (const wp of warehouseProductsStore.warehouseProducts) {
+            if (wp.id != null && wp.product_id != null) {
+              wpToProductMap.set(wp.id, wp.product_id)
+            }
+          }
+          warehouseProductsIdToProductId.value = wpToProductMap
+
+          // Use RPC to get stock + reservations in a single query
+          const rpcRows =
+            await reservedProductsStore.fetchWarehouseStockWithReservations(warehouseId)
+
+          const stockMap = new Map<number, number>()
+          const detailsMap = new Map<number, { total_qty: number }>()
+          const reservationsByProduct = new Map<
+            number,
+            { id: number; customer_name: string; reserved_qty: number }[]
+          >()
+
+          // Track which warehouse_product_ids have reservations to fetch their IDs
+          const warehouseProductIdsWithReservations = new Set<number>()
+
+          // Group individual RPC rows by product_id to build the reservations array
+          for (const row of rpcRows) {
+            if (row.product_id == null) continue
+            const productId = row.product_id
+
+            // Set stock and total_qty from the first occurrence (same for all rows of this product)
+            if (!stockMap.has(productId)) {
+              stockMap.set(productId, row.available_stock)
+            }
+            if (!detailsMap.has(productId)) {
+              detailsMap.set(productId, { total_qty: row.total_qty })
+            }
+
+            // Build reservations array from individual rows (skip rows with no reservation)
+            if (row.customer_name != null && row.reserved_qty != null) {
+              const existing = reservationsByProduct.get(productId) || []
+
+              // Track warehouse_product_id for later ID fetch
+              if (row.warehouse_product_id != null) {
+                warehouseProductIdsWithReservations.add(row.warehouse_product_id)
+              }
+
+              // Use a placeholder ID - we'll update it after fetching actual reservation IDs
+              existing.push({
+                id: row.warehouse_product_id, // temporarily use warehouse_product_id as key
+                customer_name: row.customer_name,
+                reserved_qty: row.reserved_qty,
+              })
+              reservationsByProduct.set(productId, existing)
+            } else {
+              // Ensure every product has at least an empty array
+              if (!reservationsByProduct.has(productId)) {
+                reservationsByProduct.set(productId, [])
+              }
+            }
+          }
+
+          // Fetch actual reservation IDs from the reserved_products table
+          const reservationIdMap = new Map<number, number>() // warehouse_product_id -> reservation id
+          if (warehouseProductIdsWithReservations.size > 0) {
+            const reservationRows = await reservedProductsStore.fetchReservedProductsByWarehouseProductIds(
+              Array.from(warehouseProductIdsWithReservations)
+            )
+
+            for (const rp of reservationRows) {
+              if (rp.warehouse_products_id != null && rp.id != null) {
+                reservationIdMap.set(rp.warehouse_products_id, rp.id)
+              }
+            }
+          }
+
+          // Update reservation entries with actual reservation IDs
+          const finalReservationsByProduct = new Map<
+            number,
+            { id: number; customer_name: string; reserved_qty: number }[]
+          >()
+
+          for (const [productId, reservations] of reservationsByProduct) {
+            const updatedReservations = reservations.map(res => ({
+              id: reservationIdMap.get(res.id) || 0,
+              customer_name: res.customer_name,
+              reserved_qty: res.reserved_qty,
+            }))
+            finalReservationsByProduct.set(productId, updatedReservations)
+          }
+
+          warehouseStockMap.value = stockMap
+          warehouseProductDetails.value = detailsMap
+          reservedProductsMap.value = finalReservationsByProduct
+
+          fetchProducts()
+        })
+    } else {
+      warehouseProductIds.value = []
+      warehouseStockMap.value = new Map()
+      warehouseProductDetails.value = new Map()
+      reservedProductsMap.value = new Map()
+      warehouseProductsIdToProductId.value = new Map()
+      fetchProducts()
     }
   }
 
-  async function fetchProducts() {
-    await productsStore.fetchProducts({
-      search: searchQuery.value,
-      orderBy: (sortBy.value[0]?.key as any) || 'created_at',
-      ascending: sortBy.value[0]?.order === 'asc',
-      limit: itemsPerPage.value,
-      offset: (page.value - 1) * itemsPerPage.value,
-      eligibleIds: [...eligibleProductIds.value],
-    })
+  /**
+   * Get the warehouse-specific available stock (total_qty - sum of reserved_qty) for a product.
+   * Returns null if no warehouse filter is active or product not found in warehouse.
+   */
+  function getWarehouseStock(productId: number): number | null {
+    return warehouseStockMap.value.get(productId) ?? null
+  }
+
+  /**
+   * Get detailed warehouse product info for display.
+   */
+  function getWarehouseProductDetail(productId: number): { total_qty: number } | null {
+    return warehouseProductDetails.value.get(productId) ?? null
+  }
+
+  /**
+   * Get the list of reservations (customer name + qty) for a product.
+   */
+  function getProductReservations(
+    productId: number,
+  ): { id: number; customer_name: string; reserved_qty: number }[] {
+    return reservedProductsMap.value.get(productId) || []
+  }
+
+
+  /**
+   * Remove a customer reservation by its ID and refresh warehouse stock data.
+   */
+  async function removeReservation(reservationId: number) {
+    console.log('[ProductsWidget] Attempting to remove reservation with ID:', reservationId)
+
+    const confirmed = await confirmDialog.confirmDialog(
+      'Are you sure you want to remove this reservation? This action cannot be undone.',
+      {
+        title: 'Remove Reservation',
+        confirmText: 'Remove',
+        cancelText: 'Cancel',
+      },
+    )
+
+    if (!confirmed) {
+      console.log('[ProductsWidget] Reservation removal cancelled by user')
+      return
+    }
+
+    console.log('[ProductsWidget] User confirmed, proceeding with deletion...')
+
+    const reservedProductsStore = useReservedProductsDataStore()
+    console.log('[ProductsWidget] Reserved products store error:', reservedProductsStore.error)
+
+    const result = await reservedProductsStore.deleteReservedProduct(reservationId)
+
+    console.log('[ProductsWidget] Delete result:', result)
+    console.log('[ProductsWidget] Reserved products store error after delete:', reservedProductsStore.error)
+
+    if (result) {
+      toast.success('Reservation removed successfully')
+      // Refresh warehouse stock and reservations
+      if (selectedWarehouseId.value) {
+        console.log('[ProductsWidget] Refreshing warehouse filter:', selectedWarehouseId.value)
+        await setWarehouseFilter(selectedWarehouseId.value)
+      }
+    } else {
+      toast.error('Failed to remove reservation')
+      console.error('[ProductsWidget] Failed to delete reservation. Store error:', reservedProductsStore.error)
+    }
   }
 
   function openCreateDialog() {
@@ -287,29 +563,72 @@ const stockDialogProducts = computed<ProductType[]>(() => {
       }
     } else if (dialogMode.value === 'edit' && currentProduct.value) {
       const oldData = currentProduct.value
-      const result = await productsStore.updateProduct(currentProduct.value.id, cleaned as UpdateProductData)
+      const result = await productsStore.updateProduct(
+        currentProduct.value.id,
+        cleaned as UpdateProductData,
+      )
       if (result) {
         toast.success('Product updated successfully')
         try {
           const changes: string[] = []
-          if (oldData.current_stock !== result.current_stock) changes.push(`stock=${oldData.current_stock ?? 'N/A'} → ${result.current_stock ?? 'N/A'}`)
-          if (oldData.cost_price !== result.cost_price) changes.push(`cost_price=${oldData.cost_price ?? 'N/A'} → ${result.cost_price ?? 'N/A'}`)
-          if (oldData.selling_price !== result.selling_price) changes.push(`selling_price=${oldData.selling_price ?? 'N/A'} → ${result.selling_price ?? 'N/A'}`)
-          if (oldData.reorder_level !== result.reorder_level) changes.push(`reorder_level=${oldData.reorder_level ?? 'N/A'} → ${result.reorder_level ?? 'N/A'}`)
-          if (oldData.offer_per_unit !== result.offer_per_unit) changes.push(`offer_per_unit=${oldData.offer_per_unit ?? 'N/A'} → ${result.offer_per_unit ?? 'N/A'}`)
-          if (oldData.cost_per_unit !== result.cost_per_unit) changes.push(`cost_per_unit=${oldData.cost_per_unit ?? 'N/A'} → ${result.cost_per_unit ?? 'N/A'}`)
-          if (oldData.supplier_id !== result.supplier_id) changes.push(`supplier_id=${oldData.supplier_id ?? 'N/A'} → ${result.supplier_id ?? 'N/A'}`)
-          if (oldData.batch_no !== result.batch_no) changes.push(`batch_no=${oldData.batch_no ?? 'N/A'} → ${result.batch_no ?? 'N/A'}`)
-          if (oldData.expiry_date !== result.expiry_date) changes.push(`expiry_date=${oldData.expiry_date ?? 'N/A'} → ${result.expiry_date ?? 'N/A'}`)
-          if (oldData.status !== result.status) changes.push(`status=${oldData.status ?? 'N/A'} → ${result.status ?? 'N/A'}`)
-          if (oldData.item_decription !== result.item_decription) changes.push(`item_description=${oldData.item_decription ?? 'N/A'} → ${result.item_decription ?? 'N/A'}`)
-          if (oldData.unit !== result.unit) changes.push(`unit=${oldData.unit ?? 'N/A'} → ${result.unit ?? 'N/A'}`)
-          if (oldData.no !== result.no) changes.push(`no=${oldData.no ?? 'N/A'} → ${result.no ?? 'N/A'}`)
-          if (oldData.barcode !== result.barcode) changes.push(`barcode=${oldData.barcode ?? 'N/A'} → ${result.barcode ?? 'N/A'}`)
-          if (oldData.product_name !== result.product_name) changes.push(`product_name="${oldData.product_name ?? 'N/A'}" → "${result.product_name ?? 'N/A'}"`)
-          if (oldData.generic_name !== result.generic_name) changes.push(`generic_name="${oldData.generic_name ?? 'N/A'}" → "${result.generic_name ?? 'N/A'}"`)
-          if (oldData.category !== result.category) changes.push(`category="${oldData.category ?? 'N/A'}" → "${result.category ?? 'N/A'}"`)
-          if (oldData.sku !== result.sku) changes.push(`sku="${oldData.sku ?? 'N/A'}" → "${result.sku ?? 'N/A'}"`)
+          if (oldData.current_stock !== result.current_stock)
+            changes.push(
+              `stock=${oldData.current_stock ?? 'N/A'} → ${result.current_stock ?? 'N/A'}`,
+            )
+          if (oldData.cost_price !== result.cost_price)
+            changes.push(
+              `cost_price=${oldData.cost_price ?? 'N/A'} → ${result.cost_price ?? 'N/A'}`,
+            )
+          if (oldData.selling_price !== result.selling_price)
+            changes.push(
+              `selling_price=${oldData.selling_price ?? 'N/A'} → ${result.selling_price ?? 'N/A'}`,
+            )
+          if (oldData.reorder_level !== result.reorder_level)
+            changes.push(
+              `reorder_level=${oldData.reorder_level ?? 'N/A'} → ${result.reorder_level ?? 'N/A'}`,
+            )
+          if (oldData.offer_per_unit !== result.offer_per_unit)
+            changes.push(
+              `offer_per_unit=${oldData.offer_per_unit ?? 'N/A'} → ${result.offer_per_unit ?? 'N/A'}`,
+            )
+          if (oldData.cost_per_unit !== result.cost_per_unit)
+            changes.push(
+              `cost_per_unit=${oldData.cost_per_unit ?? 'N/A'} → ${result.cost_per_unit ?? 'N/A'}`,
+            )
+          if (oldData.supplier_id !== result.supplier_id)
+            changes.push(
+              `supplier_id=${oldData.supplier_id ?? 'N/A'} → ${result.supplier_id ?? 'N/A'}`,
+            )
+          if (oldData.batch_no !== result.batch_no)
+            changes.push(`batch_no=${oldData.batch_no ?? 'N/A'} → ${result.batch_no ?? 'N/A'}`)
+          if (oldData.expiry_date !== result.expiry_date)
+            changes.push(
+              `expiry_date=${oldData.expiry_date ?? 'N/A'} → ${result.expiry_date ?? 'N/A'}`,
+            )
+          if (oldData.status !== result.status)
+            changes.push(`status=${oldData.status ?? 'N/A'} → ${result.status ?? 'N/A'}`)
+          if (oldData.item_decription !== result.item_decription)
+            changes.push(
+              `item_description=${oldData.item_decription ?? 'N/A'} → ${result.item_decription ?? 'N/A'}`,
+            )
+          if (oldData.unit !== result.unit)
+            changes.push(`unit=${oldData.unit ?? 'N/A'} → ${result.unit ?? 'N/A'}`)
+          if (oldData.no !== result.no)
+            changes.push(`no=${oldData.no ?? 'N/A'} → ${result.no ?? 'N/A'}`)
+          if (oldData.barcode !== result.barcode)
+            changes.push(`barcode=${oldData.barcode ?? 'N/A'} → ${result.barcode ?? 'N/A'}`)
+          if (oldData.product_name !== result.product_name)
+            changes.push(
+              `product_name="${oldData.product_name ?? 'N/A'}" → "${result.product_name ?? 'N/A'}"`,
+            )
+          if (oldData.generic_name !== result.generic_name)
+            changes.push(
+              `generic_name="${oldData.generic_name ?? 'N/A'}" → "${result.generic_name ?? 'N/A'}"`,
+            )
+          if (oldData.category !== result.category)
+            changes.push(`category="${oldData.category ?? 'N/A'}" → "${result.category ?? 'N/A'}"`)
+          if (oldData.sku !== result.sku)
+            changes.push(`sku="${oldData.sku ?? 'N/A'}" → "${result.sku ?? 'N/A'}"`)
 
           await logsStore.createLog({
             action: 'update',
@@ -350,7 +669,11 @@ const stockDialogProducts = computed<ProductType[]>(() => {
   }
 
   function handleSearch() {
-    fetchProducts()
+    if (selectedWarehouseId.value && warehouseProductIds.value.length > 0) {
+      fetchProducts()
+    } else {
+      fetchProducts()
+    }
   }
 
   const reorderRequestInfo = computed(() => {
@@ -380,41 +703,69 @@ const stockDialogProducts = computed<ProductType[]>(() => {
   const selectedReorderProductIds = ref<number[]>([])
   const showPurchaseRequisitionDialog = ref(false)
   const prefillItemsForDialog = ref<ReorderPrefillItem[]>([])
-  const showReorderPRConfirm = ref(false)
 
   function toggleReorderSelection(productId: number, checked: boolean) {
     if (checked) selectedReorderProductIds.value.push(productId)
-    else selectedReorderProductIds.value = selectedReorderProductIds.value.filter(id => id !== productId)
+    else
+      selectedReorderProductIds.value = selectedReorderProductIds.value.filter(
+        (id) => id !== productId,
+      )
   }
 
-    function confirmCreatePRFromSelection() {
-      if (!selectedReorderProductIds.value.length) return
-      showReorderPRConfirm.value = true
-    }
+  function proceedCreatePRFromSelection() {
+    const reason = reorderReasonMap[stockDialogType.value]
+    if (!reason || !selectedReorderProductIds.value.length) return
 
-    function proceedCreatePRFromSelection() {
-      const reason = reorderReasonMap[stockDialogType.value]
-      if (!reason || !selectedReorderProductIds.value.length) return
+    prefillItemsForDialog.value = stockDialogProducts.value
+      .filter((p) => selectedReorderProductIds.value.includes(p.id))
+      .map((p) => ({
+        reorder_request_id: null, // no row exists yet
+        reorder_reason: reason, // tells the PR composable to create one on submit
+        product_id: p.id,
+        item_description: p.product_name ?? '',
+        unit: p.unit ?? 'Box',
+        supplier_id: p.supplier_id ?? null,
+        cost_per_unit: p.cost_price ?? 0,
+        offer_per_unit: p.selling_price ?? 0,
+      }))
 
-      prefillItemsForDialog.value = stockDialogProducts.value
-        .filter(p => selectedReorderProductIds.value.includes(p.id))
-        .map(p => ({
-          reorder_request_id: null,     // no row exists yet
-          reorder_reason:     reason,   // tells the PR composable to create one on submit
-          product_id:         p.id,
-          item_description:   p.product_name ?? '',
-          unit:               p.unit ?? 'Box',
-          supplier_id:        p.supplier_id ?? null,
-          cost_per_unit:      p.cost_price ?? 0,
-          offer_per_unit:     p.selling_price ?? 0,
-        }))
+    showStockDialog.value = false
+    showPurchaseRequisitionDialog.value = true
+  }
 
-      showReorderPRConfirm.value = false
-      showStockDialog.value = false
-      showPurchaseRequisitionDialog.value = true
-    }
+  function clearExpiryFilter() {
+    expiryFilterValue.value = ''
+  }
 
+  const expiryFilterParsed = computed<{ year: number; month: number } | null>(() => {
+    if (!expiryFilterValue.value) return null
+    const [y, m] = expiryFilterValue.value.split('-').map(Number)
+    if (!y || !m) return null
+    return { year: y, month: m } // month is 1-indexed, matches <input type="month"> output
+  })
 
+  const expiryFilterLabel = computed<string | null>(() => {
+    const ref = expiryFilterParsed.value
+    if (!ref) return null
+    const date = new Date(ref.year, ref.month - 1, 1)
+    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) // "Apr 2025"
+  })
+
+  const expiryFilterRange = computed<{ start: string; end: string } | null>(() => {
+    const ref = expiryFilterParsed.value
+    if (!ref) return null
+
+    const start = new Date(ref.year, ref.month - 1, 1)
+    const end = new Date(ref.year, ref.month - 1 + 18 + 1, 0) // last day of ref+18 months
+
+    const toLocalISODate = (d: Date) => {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+    return { start: toLocalISODate(start), end: toLocalISODate(end) }
+  })
 
   async function handleTableOptions(options: any) {
     page.value = options.page
@@ -423,19 +774,110 @@ const stockDialogProducts = computed<ProductType[]>(() => {
     await fetchProducts()
   }
 
+  function monthsUntilExpiryFrom(
+  expiryDate: string | null | undefined,
+  ref: { year: number; month: number },
+): number | null {
+  if (!expiryDate) return null
+
+  const expiry = new Date(expiryDate)
+  const expiryMonthsTotal = expiry.getFullYear() * 12 + expiry.getMonth()
+  const refMonthsTotal = ref.year * 12 + (ref.month - 1)
+
+  return expiryMonthsTotal - refMonthsTotal
+}
+
+/**
+ * Open add reservation dialog for a product
+ */
+function openAddReservationDialog(product: ProductType) {
+  selectedProductForReservation.value = product
+  reservationCustomerId.value = null
+  reservationQuantity.value = 0
+  showAddReservationDialog.value = true
+}
+
+/**
+ * Add a new customer reservation for a product in the selected warehouse
+ */
+async function addReservation() {
+  if (
+    !selectedProductForReservation.value ||
+    !reservationCustomerId.value ||
+    reservationQuantity.value <= 0
+  ) {
+    toast.error('Please fill in all reservation details')
+    return
+  }
+
+  if (!selectedWarehouseId.value) {
+    toast.error('Please select a warehouse first')
+    return
+  }
+
+  const reservedProductsStore = useReservedProductsDataStore()
+  const warehouseProductsStore = useWarehouseProductsDataStore()
+
+  const warehouseProduct = warehouseProductsStore.warehouseProducts.find(
+    wp =>
+      wp.product_id === selectedProductForReservation.value?.id &&
+      wp.warehouse_id === selectedWarehouseId.value,
+  )
+
+  if (!warehouseProduct || warehouseProduct.id == null) {
+    toast.error('Product not found in selected warehouse')
+    return
+  }
+
+  const result = await reservedProductsStore.createReservedProduct({
+    warehouse_products_id: warehouseProduct.id,
+    customer_id: reservationCustomerId.value,
+    reserved_qty: reservationQuantity.value,
+  })
+
+  if (result) {
+    toast.success('Reservation added successfully')
+    showAddReservationDialog.value = false
+
+    // Refresh warehouse stock and reservations
+    await setWarehouseFilter(selectedWarehouseId.value)
+  } else {
+    toast.error('Failed to add reservation')
+  }
+}
+
   // Lifecycle
   onMounted(async () => {
     await fetchEligibleProductIds()
+    await productsStore.fetchStatusProductExpiry([...eligibleProductIds.value])
     await fetchProducts()
     productsStore.startRealtime()
   })
 
   // Clear stale selection state when dialogs close
   watch(showStockDialog, (open) => {
-    if (!open) selectedReorderProductIds.value = []
+    if (!open) {
+      selectedReorderProductIds.value = []
+    }
   })
   watch(showPurchaseRequisitionDialog, (open) => {
-    if (!open) prefillItemsForDialog.value = []
+    if (!open) {
+      prefillItemsForDialog.value = []
+    }
+  })
+  watch(showAddReservationDialog, (open) => {
+    if (!open) {
+      selectedProductForReservation.value = null
+      reservationCustomerId.value = null
+      reservationQuantity.value = 0
+    }
+  })
+    watch(expiryFilterValue, (val) => {
+    // Only refetch on a real clear ('') or a fully-formed 'YYYY-MM' value —
+    // ignore any transient partial state the native month picker might emit.
+    if (val !== '' && !/^\d{4}-\d{2}$/.test(val)) return
+    page.value = 1
+    fetchProducts()
   })
 
   return {
@@ -453,6 +895,11 @@ const stockDialogProducts = computed<ProductType[]>(() => {
     expanded,
     showStockDialog,
     stockDialogType,
+    selectedWarehouseId,
+    showAddReservationDialog,
+    selectedProductForReservation,
+    reservationCustomerId,
+    reservationQuantity,
     // Computed
     headers,
     products,
@@ -472,22 +919,32 @@ const stockDialogProducts = computed<ProductType[]>(() => {
     handleSubmit,
     handleDelete,
     handleSearch,
+    setWarehouseFilter,
+    getWarehouseStock,
+    getWarehouseProductDetail,
+    getProductReservations,
+    removeReservation,
+    addReservation,
+    openAddReservationDialog,
     handleTableOptions,
     //Stock order for Purchaser
     isEditRestricted,
     isPurchaser,
     reorderRequestInfo,
-    canRequestReorder,   // NEW
+    canRequestReorder, // NEW
     selectedReorderProductIds,
     toggleReorderSelection,
     showPurchaseRequisitionDialog,
     prefillItemsForDialog,
     reorderReasonMap,
-    confirmCreatePRFromSelection,
     proceedCreatePRFromSelection,
-    showReorderPRConfirm,
     // Product Ignore / Dismiss
     productIgnore,
     IGNORE_DURATIONS,
+    // expiring card by filter
+    expiryFilterValue,
+    expiryFilterLabel,
+    clearExpiryFilter,
+
   }
 }

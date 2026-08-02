@@ -7,6 +7,7 @@ import EthicalInvoiceDialog from './EthicalInvoiceDialog.vue'
 import DeliveryReceiptDialog from '@/components/deliveryReceipts/DeliveryReceiptDialog.vue'
 import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
+import { useChangeRequestsDataStore } from '@/stores/changeRequestsData'
 import { expensePaymentMethods } from '@/stores/financeData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
@@ -37,21 +38,26 @@ watch(issuedReceipt, (dr) => { if (dr) showReceipt.value = true })
 
 // Undoing a recorded collection now needs executive approval (void-only).
 const { showDialog: crDialog, config: crConfig, isPending: crPending, loadPending: crLoad, open: crOpen, submit: crSubmit, submitting: crSubmitting } =
-  useChangeRequestFiling('ethical', 'ethical_collection')
+  useChangeRequestFiling(useChangeRequestsDataStore())
 watch(collections, () => { void crLoad() }, { immediate: true })
 
 function requestUndoCollection(c: CollectionType) {
+  if (!order.value) return
   crOpen({
-    id: c.id,
-    ref: order.value?.order_no ?? null,
+    // Must be the ORDER's transaction id — change_requests.transaction_id is
+    // FK'd to transactions.id, and a collection is a `collections` row, not a
+    // transactions row. Which collection this targets travels via meta below.
+    id: order.value.id,
+    ref: order.value.order_no ?? null,
     fields: [
       { key: 'amount', label: 'Amount', value: c.amount ?? 0, type: 'number' },
       { key: 'payment_method', label: 'Payment Method', value: c.payment_method, type: 'select', items: expensePaymentMethods.map((m) => ({ title: m.title, value: m.value })) },
       { key: 'reference_no', label: 'Reference / OR #', value: c.reference_no, type: 'text' },
     ],
-    voidSummary: `Void this ${formatCurrency(c.amount ?? 0)} collection on ${order.value?.order_no ?? 'the order'} — reverses it in the ledger (DR AR / CR cash) and rolls the order's paid amount + status back.`,
+    voidSummary: `Void this ${formatCurrency(c.amount ?? 0)} collection on ${order.value.order_no ?? 'the order'} — reverses it in the ledger (DR AR / CR cash) and rolls the order's paid amount + status back.`,
     allowEdit: true,
     allowVoid: true,
+    meta: { __collection_id: { from: c.id, to: c.id } },
   })
 }
 
@@ -242,8 +248,10 @@ watch(
                   Mark Paid
                 </v-btn>
                 <v-chip v-if="crPending(c.id)" size="x-small" color="warning" variant="tonal" label>undo pending</v-chip>
-                <v-btn v-else icon="mdi-pencil-box-outline" size="x-small" variant="text" color="primary"
-                  title="Request edit or undo of this collection (needs executive approval)" @click="requestUndoCollection(c)" />
+                <v-btn v-else prepend-icon="mdi-pencil-box-outline" size="small" variant="tonal" color="primary" class="text-none"
+                  title="Request edit or undo of this collection (needs executive approval)" @click="requestUndoCollection(c)">
+                  Request Change
+                </v-btn>
               </td>
             </tr>
           </tbody>

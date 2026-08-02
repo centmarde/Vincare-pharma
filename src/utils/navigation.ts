@@ -92,7 +92,7 @@ export const navigationConfig: NavigationGroup[] = [
       },
     ],
   },
-    {
+  {
     title: 'Executive Controls',
     icon: 'mdi-account-tie',
     permission: 'executive.access',
@@ -147,7 +147,7 @@ export const navigationConfig: NavigationGroup[] = [
     permission: 'warehouse.access',
     children: [
       {
-        title: 'Warehouse Dashboard',
+        title: 'Warehouse Monitoring',
         icon: 'mdi-view-dashboard',
         route: '/warehouse/dashboard',
         permission: 'warehouse.dashboard.view',
@@ -165,6 +165,11 @@ export const navigationConfig: NavigationGroup[] = [
         icon: 'mdi-truck-fast',
         route: '/warehouse/stock-transfers',
         permission: 'warehouse.transfers.manage',
+      },
+      {
+        title: 'Warehouse List',
+        icon: 'mdi mdi-format-list-checks',
+        route: '/warehouse/warehouses-list',
       },
     ],
   },
@@ -348,6 +353,12 @@ export const navigationConfig: NavigationGroup[] = [
             icon: 'mdi-cash-clock',
             route: '/finance/accounts-receivable',
             permission: 'finance.ar.view',
+          },
+          {
+            title: 'Statement of Accounts',
+            icon: 'mdi-file-table-outline',
+            route: '/finance/statement-of-accounts',
+            permission: 'finance.soa.view',
           },
           {
             title: 'Supplier Payments',
