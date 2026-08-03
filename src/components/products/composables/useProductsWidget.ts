@@ -287,6 +287,9 @@ export function useProductsWidget() {
   async function fetchProducts() {
     const range = expiryFilterRange.value
 
+    // When a warehouse is selected, pass warehouseProductIds as eligibleIds so
+    // the database query itself filters by warehouse products. This ensures
+    // pagination and totalCount reflect only warehouse products, not all products.
     const ids = selectedWarehouseId.value
       ? warehouseProductIds.value.length > 0
         ? [...warehouseProductIds.value]
@@ -299,7 +302,7 @@ export function useProductsWidget() {
       ascending: range ? true : sortBy.value[0]?.order === 'asc',
       limit: itemsPerPage.value,
       offset: (page.value - 1) * itemsPerPage.value,
-      eligibleIds: ids,
+      eligibleIds: ids.length > 0 ? ids : undefined,
       expiryStart: range?.start,
       expiryEnd: range?.end,
     })
