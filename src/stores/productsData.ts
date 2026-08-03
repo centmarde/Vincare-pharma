@@ -196,30 +196,26 @@ export const useProductsDataStore = defineStore('productsData', () => {
     }
   }
 
-  const fetchStatusProductExpiry = async (eligibleIds: number[]) => {
-    if (!eligibleIds.length) {
-      statusProductExpiry.value = []
-      return []
-    }
-
-    try{
+  const fetchStatusProductExpiry = async () => {
+    try {
       const { data, error: fetchError } = await supabase
-      .from('products')
-      .select('*, suppliers(*)')
-      .in('id', eligibleIds)
+        .from('products')
+        .select('*, suppliers(*)')
+        .not('sku', 'is', null)
+        .neq('sku', 'null')
 
       if (fetchError) throw fetchError
-      
+
       statusProductExpiry.value = (data || []) as ProductType[]
-      // I want to display statusProductExpiry in the console for debugging purposes, so I will log it here
-      console.log('Products with expiry status:', statusProductExpiry.value)
+      // I want to display total count of products with expiry status in the console log
+      console.log('Total products with expiry status:', statusProductExpiry.value.length)
+      // console.log('Products with expiry status:', statusProductExpiry.value)
       return statusProductExpiry.value
-    }catch(err){
+    } catch (err) {
       handleError(err, 'Failed to fetch products with expiry status')
       console.error('Error fetching products with expiry status:', err)
       return []
     }
-
   }
 
   // Actions
@@ -238,12 +234,15 @@ export const useProductsDataStore = defineStore('productsData', () => {
 
       let q = supabase.from('products').select('*, suppliers(*)', { count: 'exact' })
 
+      q = q.not('sku', 'is', null).neq('sku', 'null')
+
       if (category) q = q.eq('category', category)
       if (typeof supplier_id === 'number') q = q.eq('supplier_id', supplier_id)
       if (search && search.trim()) {
         const s = search.trim().replace(/,/g, '')
         q = q.or(`product_name.ilike.%${s}%,generic_name.ilike.%${s}%,barcode.ilike.%${s}%,sku.ilike.%${s}%`)
       }
+      // eligibleIds is now warehouse-scoped only (see useProductsWidget.fetchProducts)
       if (eligibleIds && eligibleIds.length > 0) q = q.in('id', eligibleIds)
       if (expiryStart && expiryEnd) q = q.gte('expiry_date', expiryStart).lte('expiry_date', expiryEnd)
 

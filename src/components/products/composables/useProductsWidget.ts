@@ -115,7 +115,7 @@ export function useProductsWidget() {
   const reservationQuantity = ref<number>(0)
 
   // Eligible product IDs (those in stock_in transactions)
-  const eligibleProductIds = ref<Set<number>>(new Set())
+  // const eligibleProductIds = ref<Set<number>>(new Set())
 
   // Table headers
   const headers = computed(() => [
@@ -135,7 +135,7 @@ export function useProductsWidget() {
   const products = computed(() =>
     productsStore.products.filter((p) => {
       // Must have a valid SKU
-      if (p.sku == null || p.sku === 'null') return false
+      // if (p.sku == null || p.sku === 'null') return false
 
       // When a warehouse filter is active, only show products that exist in that warehouse
       if (selectedWarehouseId.value) {
@@ -143,7 +143,8 @@ export function useProductsWidget() {
       }
 
       // Main warehouse: only show eligible products (those with stock_in transactions)
-      return eligibleProductIds.value.has(p.id)
+      return true
+      // return eligibleProductIds.value.has(p.id)
     }),
   )
 
@@ -274,27 +275,36 @@ export function useProductsWidget() {
   }
 
   // Methods
-  async function fetchEligibleProductIds() {
-      try {
-        const ids = await productsStore.fetchEligibleProductIds()
-        eligibleProductIds.value = new Set(ids)
-        //console.log('[ProductsWidget] Eligible product IDs from stock_in transactions:', ids)
-      } catch (err) {
-        console.error('[ProductsWidget] Failed to fetch eligible product IDs:', err)
-        eligibleProductIds.value = new Set()
-      }
-    }
+  // async function fetchEligibleProductIds() {
+  //     try {
+  //       const ids = await productsStore.fetchEligibleProductIds()
+  //       eligibleProductIds.value = new Set(ids)
+  //       //console.log('[ProductsWidget] Eligible product IDs from stock_in transactions:', ids)
+  //     } catch (err) {
+  //       console.error('[ProductsWidget] Failed to fetch eligible product IDs:', err)
+  //       eligibleProductIds.value = new Set()
+  //     }
+  //   }
   async function fetchProducts() {
     const range = expiryFilterRange.value
 
     // When a warehouse is selected, pass warehouseProductIds as eligibleIds so
     // the database query itself filters by warehouse products. This ensures
     // pagination and totalCount reflect only warehouse products, not all products.
+
+    // const ids = selectedWarehouseId.value
+    //   ? warehouseProductIds.value.length > 0
+    //     ? [...warehouseProductIds.value]
+    //     : [-1]
+    //   : [...eligibleProductIds.value]
+
+    // eligibleIds is now warehouse-scoped only; SKU eligibility is enforced
+    // server-side in productsStore.fetchProducts.
     const ids = selectedWarehouseId.value
       ? warehouseProductIds.value.length > 0
         ? [...warehouseProductIds.value]
         : [-1]
-      : [...eligibleProductIds.value]
+      : undefined
 
     await productsStore.fetchProducts({
       search: searchQuery.value,
@@ -302,7 +312,8 @@ export function useProductsWidget() {
       ascending: range ? true : sortBy.value[0]?.order === 'asc',
       limit: itemsPerPage.value,
       offset: (page.value - 1) * itemsPerPage.value,
-      eligibleIds: ids.length > 0 ? ids : undefined,
+      // eligibleIds: ids.length > 0 ? ids : undefined,
+      eligibleIds: ids && ids.length > 0 ? ids : undefined,
       expiryStart: range?.start,
       expiryEnd: range?.end,
     })
@@ -851,8 +862,9 @@ async function addReservation() {
 
   // Lifecycle
   onMounted(async () => {
-    await fetchEligibleProductIds()
-    await productsStore.fetchStatusProductExpiry([...eligibleProductIds.value])
+    // await fetchEligibleProductIds()
+    // await productsStore.fetchStatusProductExpiry([...eligibleProductIds.value])
+    await productsStore.fetchStatusProductExpiry()
     await fetchProducts()
     productsStore.startRealtime()
   })
