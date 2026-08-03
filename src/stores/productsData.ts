@@ -99,6 +99,13 @@ export type ReceiveStockUpdate ={
   actual_count_stock_in: number
 }
 
+export type StockStatusBucket =
+  | 'out-of-stock' | 'low-stock' | 'no-reorder-level' | 'expiring-soon' | 'expired'
+
+export type StockStatusCounts = Record<StockStatusBucket, number>
+
+export type StockStatusRef = { year: number; month: number } | null
+
 export const useProductsDataStore = defineStore('productsData', () => {
   const authStore = useAuthUserStore()
   // State
@@ -111,7 +118,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
   const pickerTotalCount = ref(0)
   const reorderRequests: Ref<any[]> = ref([])
   const reorderCount:    Ref<number> = ref(0)
-  const statusProductExpiry: Ref<ProductType[]> = ref([])
+  // const statusProductExpiry: Ref<ProductType[]> = ref([])
   const REORDER_TYPES = ['reorder_outofstock', 'reorder_lowstock', 'reorder_expiring', 'reorder_expired']
   
   
@@ -138,6 +145,24 @@ export const useProductsDataStore = defineStore('productsData', () => {
   }
   const totalCount = ref(0)
 
+  // RPC for fetchStockStatusCounts
+  const STOCK_STATUS_BUCKETS: StockStatusBucket[] = [
+    'out-of-stock', 'low-stock', 'no-reorder-level', 'expiring-soon', 'expired',
+  ]
+
+  const stockStatusCounts: Ref<StockStatusCounts> = ref({
+    'out-of-stock': 0, 'low-stock': 0, 'no-reorder-level': 0, 'expiring-soon': 0, 'expired': 0,
+  })
+  const stockStatusProducts: Ref<ProductType[]> = ref([])
+  const stockStatusProductsTotal = ref(0)
+  const stockStatusLoading = ref(false)
+
+  // cached so realtime changes can silently re-sync counts with the same params
+  const lastStockStatusParams: Ref<{ ref: StockStatusRef; excludedIds: number[] }> = ref({
+    ref: null,
+    excludedIds: [],
+  })
+
   const startRealtime = () => {
     // Avoid double subscriptions
     if (realtimeChannel.value) return realtimeChannel.value
@@ -162,6 +187,8 @@ export const useProductsDataStore = defineStore('productsData', () => {
           const id = row?.id
           if (typeof id === 'number') removeProductLocal(id)
         }
+
+        fetchAllStockStatusCounts(lastStockStatusParams.value.ref, lastStockStatusParams.value.excludedIds)
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') realtimeStatus.value = 'subscribed'
@@ -196,30 +223,82 @@ export const useProductsDataStore = defineStore('productsData', () => {
     }
   }
 
-  const fetchStatusProductExpiry = async (eligibleIds: number[]) => {
-    if (!eligibleIds.length) {
-      statusProductExpiry.value = []
-      return []
+  // Fetches just total_count for one bucket (page_limit: 1 keeps it cheap)
+  const fetchStockStatusCount = async (
+    bucketType: StockStatusBucket,
+    ref: StockStatusRef,
+    excludedIds: number[],
+  ): Promise<number> => {
+    try {
+      const { data, error: rpcError } = await supabase.rpc('get_stock_status_products', {
+        bucket_type: bucketType,
+        ref_year: ref?.year ?? null,
+        ref_month: ref?.month ?? null,
+        excluded_ids: excludedIds,
+        page_limit: 1,
+        page_offset: 0,
+      })
+      if (rpcError) throw rpcError
+      return data?.[0]?.total_count ?? 0
+    } catch (err) {
+      console.error(`Failed to fetch count for ${bucketType}:`, err)
+      return 0
     }
+  }
 
-    try{
-      const { data, error: fetchError } = await supabase
-      .from('products')
-      .select('*, suppliers(*)')
-      .in('id', eligibleIds)
-
-      if (fetchError) throw fetchError
-      
-      statusProductExpiry.value = (data || []) as ProductType[]
-      // I want to display statusProductExpiry in the console for debugging purposes, so I will log it here
-      console.log('Products with expiry status:', statusProductExpiry.value)
-      return statusProductExpiry.value
-    }catch(err){
-      handleError(err, 'Failed to fetch products with expiry status')
-      console.error('Error fetching products with expiry status:', err)
-      return []
+  // Fetches all 5 bucket counts in parallel — powers StockStatusCards
+  const fetchAllStockStatusCounts = async (
+    ref: StockStatusRef = null,
+    excludedIds: number[] = [],
+  ) => {
+    lastStockStatusParams.value = { ref, excludedIds }
+    try {
+      const results = await Promise.all(
+        STOCK_STATUS_BUCKETS.map((bucket) => fetchStockStatusCount(bucket, ref, excludedIds)),
+      )
+      const counts = {} as StockStatusCounts
+      STOCK_STATUS_BUCKETS.forEach((bucket, i) => {
+        counts[bucket] = results[i]
+      })
+      stockStatusCounts.value = counts
+      return counts
+    } catch (err) {
+      handleError(err, 'Failed to fetch stock status counts')
+      return stockStatusCounts.value
     }
+  }
 
+  // Fetches the full row list for one bucket — powers StockStatusDialog
+  const fetchStockStatusProducts = async (
+    bucketType: StockStatusBucket,
+    ref: StockStatusRef = null,
+    excludedIds: number[] = [],
+    limit = 200,
+    offset = 0,
+  ) => {
+    stockStatusLoading.value = true
+    try {
+      const { data, error: rpcError } = await supabase.rpc('get_stock_status_products', {
+        bucket_type: bucketType,
+        ref_year: ref?.year ?? null,
+        ref_month: ref?.month ?? null,
+        excluded_ids: excludedIds,
+        page_limit: limit,
+        page_offset: offset,
+      })
+      if (rpcError) throw rpcError
+
+      stockStatusProducts.value = (data || []) as ProductType[]
+      stockStatusProductsTotal.value = data?.[0]?.total_count ?? 0
+      return stockStatusProducts.value
+    } catch (err) {
+      handleError(err, `Failed to fetch products for ${bucketType}`)
+      stockStatusProducts.value = []
+      stockStatusProductsTotal.value = 0
+      return []
+    } finally {
+      stockStatusLoading.value = false
+    }
   }
 
   // Actions
@@ -238,12 +317,15 @@ export const useProductsDataStore = defineStore('productsData', () => {
 
       let q = supabase.from('products').select('*, suppliers(*)', { count: 'exact' })
 
+      q = q.not('sku', 'is', null).neq('sku', 'null')
+
       if (category) q = q.eq('category', category)
       if (typeof supplier_id === 'number') q = q.eq('supplier_id', supplier_id)
       if (search && search.trim()) {
         const s = search.trim().replace(/,/g, '')
         q = q.or(`product_name.ilike.%${s}%,generic_name.ilike.%${s}%,barcode.ilike.%${s}%,sku.ilike.%${s}%`)
       }
+      // eligibleIds is now warehouse-scoped only (see useProductsWidget.fetchProducts)
       if (eligibleIds && eligibleIds.length > 0) q = q.in('id', eligibleIds)
       if (expiryStart && expiryEnd) q = q.gte('expiry_date', expiryStart).lte('expiry_date', expiryEnd)
 
@@ -772,16 +854,13 @@ export const useProductsDataStore = defineStore('productsData', () => {
     else products.value[idx] = product
 
     if (currentProduct.value?.id === product.id) currentProduct.value = product
-
-    const statusIdx = statusProductExpiry.value.findIndex((p) => p.id === product.id)
-    if (statusIdx !== -1) statusProductExpiry.value[statusIdx] = product
   }
 
   const removeProductLocal = (id: number) => {
     products.value = products.value.filter((p) => p.id !== id)
     if (currentProduct.value?.id === id) currentProduct.value = undefined
 
-    statusProductExpiry.value = statusProductExpiry.value.filter((p) => p.id !== id)
+    // statusProductExpiry.value = statusProductExpiry.value.filter((p) => p.id !== id)
   }
 
   const resetStore = () => {
@@ -840,7 +919,11 @@ export const useProductsDataStore = defineStore('productsData', () => {
     removeProductLocal,
 
     // Product expiry status
-    statusProductExpiry,
-    fetchStatusProductExpiry,
+    stockStatusCounts,
+    stockStatusProducts,
+    stockStatusProductsTotal,
+    stockStatusLoading,
+    fetchAllStockStatusCounts,
+    fetchStockStatusProducts,
   }
 })
