@@ -28,7 +28,6 @@ interface StockStatusCardDef {
   label: string
   icon: string
   color: string
-  filter: (p: ProductType) => boolean
 }
 
 export const reorderReasonMap: Record<
@@ -115,7 +114,6 @@ export function useProductsWidget() {
   const reservationQuantity = ref<number>(0)
 
   // Eligible product IDs (those in stock_in transactions)
-  // const eligibleProductIds = ref<Set<number>>(new Set())
 
   // Table headers
   const headers = computed(() => [
@@ -135,7 +133,6 @@ export function useProductsWidget() {
   const products = computed(() =>
     productsStore.products.filter((p) => {
       // Must have a valid SKU
-      // if (p.sku == null || p.sku === 'null') return false
 
       // When a warehouse filter is active, only show products that exist in that warehouse
       if (selectedWarehouseId.value) {
@@ -144,90 +141,19 @@ export function useProductsWidget() {
 
       // Main warehouse: only show eligible products (those with stock_in transactions)
       return true
-      // return eligibleProductIds.value.has(p.id)
     }),
   )
 
   const loading = computed(() => productsStore.loading)
   const totalProducts = computed(() => productsStore.totalCount)
 
-  // All-products stock status counts (not paginated, from the full store)
-  // Filters out products that have been ignored/dismissed by the user
-  const allEligibleProducts = computed(() =>
-    productsStore.statusProductExpiry.filter(
-      (p) =>
-        p.sku != null &&
-        p.sku !== 'null' &&
-        // eligibleProductIds.value.has(p.id) &&
-        !productIgnore.activeIgnoredIds.value.has(p.id),
-    ),
-  )
-
-  function daysUntilExpiry(expiryDate: string | null | undefined): number | null {
-    if (!expiryDate) return null
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const expiry = new Date(expiryDate)
-    expiry.setHours(0, 0, 0, 0)
-    return Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-  }
-
   const stockStatusCardDefs: StockStatusCardDef[] = [
-    {
-      type: 'out-of-stock',
-      label: 'Out of Stock',
-      icon: 'mdi-close-circle-outline',
-      color: 'error',
-      filter: (p) => (p.current_stock ?? 0) <= 0,
-    },
-    {
-      type: 'low-stock',
-      label: 'Low Stock',
-      icon: 'mdi-alert-outline',
-      color: 'warning',
-      filter: (p) => {
-        const stock = p.current_stock ?? 0
-        return stock > 0 && !!p.reorder_level && stock <= p.reorder_level
-      },
-    },
-    {
-      type: 'no-reorder-level',
-      label: 'No Reorder Level',
-      icon: 'mdi-information-outline',
-      color: 'info',
-      filter: (p) => p.reorder_level === null,
-    },
-    {
-      type: 'expiring-soon',
-      label: 'Expiring Soon',
-      icon: 'mdi-clock-alert-outline',
-      color: 'orange',
-      filter: (p) => {
-        const ref = expiryFilterParsed.value
-
-        if (!ref) {
-          // Default: rolling 18-month window from today
-          const days = daysUntilExpiry(p.expiry_date)
-          return days !== null && days >= 0 && days <= EXPIRY_WARNING_DAYS
-        }
-
-        // Filtered: flag if the selected month falls within 18 calendar months
-        // before the product's expiry date (inclusive on both ends)
-        const monthsDiff = monthsUntilExpiryFrom(p.expiry_date, ref)
-        return monthsDiff !== null && monthsDiff >= 0 && monthsDiff <= 18
-      },
-    },
-    {
-      type: 'expired',
-      label: 'Expired',
-      icon: 'mdi-calendar-remove',
-      color: 'error',
-      filter: (p) => {
-        const days = daysUntilExpiry(p.expiry_date)
-        return days !== null && days < 0
-      },
-    },
-  ]
+  { type: 'out-of-stock', label: 'Out of Stock', icon: 'mdi-close-circle-outline', color: 'error' },
+  { type: 'low-stock', label: 'Low Stock', icon: 'mdi-alert-outline', color: 'warning' },
+  { type: 'no-reorder-level', label: 'No Reorder Level', icon: 'mdi-information-outline', color: 'info' },
+  { type: 'expiring-soon', label: 'Expiring Soon', icon: 'mdi-clock-alert-outline', color: 'orange' },
+  { type: 'expired', label: 'Expired', icon: 'mdi-calendar-remove', color: 'error' },
+]
 
   // Cards for the StockStatusCards row (label/icon/color/count)
   const stockStatusCards = computed(() =>
@@ -236,7 +162,7 @@ export function useProductsWidget() {
       label: def.label,
       icon: def.icon,
       color: def.color,
-      count: allEligibleProducts.value.filter(def.filter).length,
+      count: productsStore.stockStatusCounts[def.type] ?? 0,
     })),
   )
 
@@ -248,24 +174,7 @@ export function useProductsWidget() {
   )
 
   // The active card's filtered product list (for dialog body)
-  const stockDialogProducts = computed<ProductType[]>(() => {
-    const def = stockStatusCardDefs.find((d) => d.type === stockDialogType.value)
-    if (!def) return []
-
-    const filtered = allEligibleProducts.value.filter(def.filter)
-
-    // arrange by FEFO First Expire, First Out (soonest expiry first) for expiring/expired products to get actions first than other products
-    if (stockDialogType.value === 'expiring-soon' || stockDialogType.value === 'expired') {
-      return [...filtered].sort((a, b) => {
-        if (!a.expiry_date && !b.expiry_date) return 0
-        if (!a.expiry_date) return 1 // no date sinks to the bottom
-        if (!b.expiry_date) return -1
-        return new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime()
-      })
-    }
-
-    return filtered
-  })
+  const stockDialogProducts = computed<ProductType[]>(() => productsStore.stockStatusProducts)
 
   // Validation rules
   const rules = {
@@ -274,32 +183,9 @@ export function useProductsWidget() {
       value === null || value >= 0 || 'Must be a positive number',
   }
 
-  // Methods
-  // async function fetchEligibleProductIds() {
-  //     try {
-  //       const ids = await productsStore.fetchEligibleProductIds()
-  //       eligibleProductIds.value = new Set(ids)
-  //       //console.log('[ProductsWidget] Eligible product IDs from stock_in transactions:', ids)
-  //     } catch (err) {
-  //       console.error('[ProductsWidget] Failed to fetch eligible product IDs:', err)
-  //       eligibleProductIds.value = new Set()
-  //     }
-  //   }
   async function fetchProducts() {
     const range = expiryFilterRange.value
 
-    // When a warehouse is selected, pass warehouseProductIds as eligibleIds so
-    // the database query itself filters by warehouse products. This ensures
-    // pagination and totalCount reflect only warehouse products, not all products.
-
-    // const ids = selectedWarehouseId.value
-    //   ? warehouseProductIds.value.length > 0
-    //     ? [...warehouseProductIds.value]
-    //     : [-1]
-    //   : [...eligibleProductIds.value]
-
-    // eligibleIds is now warehouse-scoped only; SKU eligibility is enforced
-    // server-side in productsStore.fetchProducts.
     const ids = selectedWarehouseId.value
       ? warehouseProductIds.value.length > 0
         ? [...warehouseProductIds.value]
@@ -788,18 +674,26 @@ export function useProductsWidget() {
     await fetchProducts()
   }
 
-  function monthsUntilExpiryFrom(
-  expiryDate: string | null | undefined,
-  ref: { year: number; month: number },
-): number | null {
-  if (!expiryDate) return null
+  function currentStatusRef(): { year: number; month: number } | null {
+    return expiryFilterParsed.value
+      ? { year: expiryFilterParsed.value.year, month: expiryFilterParsed.value.month }
+      : null
+  }
 
-  const expiry = new Date(expiryDate)
-  const expiryMonthsTotal = expiry.getFullYear() * 12 + expiry.getMonth()
-  const refMonthsTotal = ref.year * 12 + (ref.month - 1)
+  async function refreshStockStatusCounts() {
+    await productsStore.fetchAllStockStatusCounts(
+      currentStatusRef(),
+      productIgnore.activeIgnoredIdsArray.value,
+    )
+  }
 
-  return expiryMonthsTotal - refMonthsTotal
-}
+  async function refreshStockDialogProducts() {
+    await productsStore.fetchStockStatusProducts(
+      stockDialogType.value,
+      currentStatusRef(),
+      productIgnore.activeIgnoredIdsArray.value,
+    )
+  }
 
 /**
  * Open add reservation dialog for a product
@@ -862,9 +756,7 @@ async function addReservation() {
 
   // Lifecycle
   onMounted(async () => {
-    // await fetchEligibleProductIds()
-    // await productsStore.fetchStatusProductExpiry([...eligibleProductIds.value])
-    await productsStore.fetchStatusProductExpiry()
+    await refreshStockStatusCounts()
     await fetchProducts()
     productsStore.startRealtime()
   })
@@ -893,6 +785,16 @@ async function addReservation() {
     if (val !== '' && !/^\d{4}-\d{2}$/.test(val)) return
     page.value = 1
     fetchProducts()
+  })
+
+  // Re-fetch card counts when the reference month or ignore list changes
+  watch([expiryFilterValue, () => productIgnore.activeIgnoredIdsArray.value], () => {
+    refreshStockStatusCounts()
+  })
+
+  // Fetch the dialog's row list the moment it opens, or when the bucket changes while open
+  watch([showStockDialog, stockDialogType], ([open]) => {
+    if (open) refreshStockDialogProducts()
   })
 
   return {
@@ -960,6 +862,8 @@ async function addReservation() {
     expiryFilterValue,
     expiryFilterLabel,
     clearExpiryFilter,
+    refreshStockStatusCounts,
+    refreshStockDialogProducts,
 
   }
 }
