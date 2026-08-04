@@ -4,7 +4,8 @@ create or replace function public.get_stock_status_products(
   ref_month int default null,
   excluded_ids bigint[] default '{}',
   page_limit int default 200,
-  page_offset int default 0
+  page_offset int default 0,
+  search_term text default ''
 )
 returns table (
   id bigint,
@@ -42,6 +43,7 @@ as $$
   where p.sku is not null
     and p.sku != 'null'
     and not (p.id = any(excluded_ids))
+    and (search_term = '' or p.product_name ilike '%' || search_term || '%')
     and case bucket_type
       when 'out-of-stock' then coalesce(p.current_stock, 0) <= 0
       when 'low-stock' then coalesce(p.current_stock, 0) > 0

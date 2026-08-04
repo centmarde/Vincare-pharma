@@ -54,6 +54,14 @@ const {
   stockStatusCards,
   stockDialogProducts,
   activeStockCard,
+  stockDialogSearchQuery,
+  stockDialogPage,
+  stockDialogItemsPerPage,
+  stockDialogTotal,
+  stockDialogLoading,
+  stockDialogTotalPages,
+  searchStockDialogProducts,
+  handleStockDialogPageChange,
   openCreateDialog,
   openEditDialog,
   openDeleteDialog,
@@ -584,6 +592,15 @@ function stockColor(item: any) {
     :reorder-request-info="reorderRequestInfo"
     :can-request-reorder="canRequestReorder"
     :reorder-reason-map="reorderReasonMap"
+    :search-query="stockDialogSearchQuery"
+    :page="stockDialogPage"
+    :items-per-page="stockDialogItemsPerPage"
+    :total="stockDialogTotal"
+    :loading="stockDialogLoading"
+    :total-pages="stockDialogTotalPages"
+    @update:search-query="stockDialogSearchQuery = $event"
+    @update:page="handleStockDialogPageChange"
+    @search="searchStockDialogProducts"
     @edit-product="
       (p) => {
         openEditDialog(p)
