@@ -60,6 +60,7 @@ declare module 'vue-router/auto-routes' {
     '/executive/components/TopProducts': RouteRecordInfo<'/executive/components/TopProducts', '/executive/components/TopProducts', Record<never, never>, Record<never, never>>,
     '/executive/dialogs/ActionRequiredDialog': RouteRecordInfo<'/executive/dialogs/ActionRequiredDialog', '/executive/dialogs/ActionRequiredDialog', Record<never, never>, Record<never, never>>,
     '/executive/dialogs/PRDetailModal': RouteRecordInfo<'/executive/dialogs/PRDetailModal', '/executive/dialogs/PRDetailModal', Record<never, never>, Record<never, never>>,
+    '/executive/dialogs/PRHistoryDialog': RouteRecordInfo<'/executive/dialogs/PRHistoryDialog', '/executive/dialogs/PRHistoryDialog', Record<never, never>, Record<never, never>>,
     '/executive/dialogs/RequestHistoryDetailedDialog': RouteRecordInfo<'/executive/dialogs/RequestHistoryDetailedDialog', '/executive/dialogs/RequestHistoryDetailedDialog', Record<never, never>, Record<never, never>>,
     '/executive/dialogs/RequestHistoryDialog': RouteRecordInfo<'/executive/dialogs/RequestHistoryDialog', '/executive/dialogs/RequestHistoryDialog', Record<never, never>, Record<never, never>>,
     '/executive/dialogs/RequestHistoryListDialog': RouteRecordInfo<'/executive/dialogs/RequestHistoryListDialog', '/executive/dialogs/RequestHistoryListDialog', Record<never, never>, Record<never, never>>,

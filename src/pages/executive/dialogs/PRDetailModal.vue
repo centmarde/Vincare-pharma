@@ -101,7 +101,11 @@ async function onUnapprove() {
               <th class="table-header text-caption">#</th>
               <th class="table-header text-caption">UNIT</th>
               <th class="table-header text-caption">ITEM DESCRIPTION</th>
-              <th class="table-header text-caption">QTY</th>
+              <template v-if="pr.status === 'complete'">
+                <th class="table-header text-caption">QTY REQUESTED</th>
+                <th class="table-header text-caption">QTY RECEIVED</th>
+              </template>
+              <th v-else class="table-header text-caption">QTY</th>
               <th class="table-header text-caption">SUPPLIER</th>
               <th class="table-header text-caption">OFFER/UNIT</th>
               <th class="table-header text-caption">OFFER TOTAL</th>
@@ -114,7 +118,11 @@ async function onUnapprove() {
               <td class="text-body-2">{{ item.no ?? 0 }}</td>
               <td class="text-body-2">{{ item.unit }}</td>
               <td class="text-body-2">{{ item.item_description }}</td>
-              <td class="text-body-2">{{ item.qty.toLocaleString() }}</td>
+              <template v-if="pr.status === 'complete'">
+                <td class="text-body-2">{{ item.qty.toLocaleString() }}</td>
+                <td class="text-body-2">{{ (item.actual_count_stock_in ?? 0).toLocaleString() }}</td>
+              </template>
+              <td v-else class="text-body-2">{{ item.qty.toLocaleString() }}</td>
               <td class="text-body-2">{{ item.supplier_name ?? '—' }}</td>
               <td class="text-body-2">{{ formatCurrency(item.offer_per_unit ?? 0) }}</td>
               <td class="text-body-2">{{ formatCurrency(item.qty * (item.offer_per_unit ?? 0)) }}</td>
