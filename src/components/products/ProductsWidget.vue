@@ -54,6 +54,14 @@ const {
   stockStatusCards,
   stockDialogProducts,
   activeStockCard,
+  stockDialogSearchQuery,
+  stockDialogPage,
+  stockDialogItemsPerPage,
+  stockDialogTotal,
+  stockDialogLoading,
+  stockDialogTotalPages,
+  searchStockDialogProducts,
+  handleStockDialogPageChange,
   openCreateDialog,
   openEditDialog,
   openDeleteDialog,
@@ -336,7 +344,7 @@ function stockColor(item: any) {
             size="small"
             variant="outlined"
           >
-            {{ item.current_stock ?? 0 }}
+            {{ Math.max(0, item.current_stock ?? 0) }}
           </v-chip>
           <v-chip
             v-else
@@ -344,7 +352,7 @@ function stockColor(item: any) {
             size="small"
             variant="outlined"
           >
-            {{ getWarehouseStock(item.id) ?? 0 }}
+            {{ Math.max(0, getWarehouseStock(item.id) ?? 0) }}
           </v-chip>
         </template>
         <template #[`item.expiry_date`]="{ value }">
@@ -411,7 +419,7 @@ function stockColor(item: any) {
                       <div>
                         <div class="text-caption text-grey-darken-1">Total Qty</div>
                         <div class="text-body-1 font-weight-medium">
-                          {{ getWarehouseProductDetail(item.id)?.total_qty ?? 0 }}
+                          {{ Math.max(0, getWarehouseProductDetail(item.id)?.total_qty ?? 0) }}
                         </div>
                       </div>
                     </v-col>
@@ -420,7 +428,7 @@ function stockColor(item: any) {
                       <div>
                         <div class="text-caption text-grey-darken-1">Available Stock</div>
                         <div class="text-body-1 font-weight-medium">
-                          {{ getWarehouseStock(item.id) ?? 0 }}
+                          {{ Math.max(0, getWarehouseStock(item.id) ?? 0) }}
                         </div>
                       </div>
                     </v-col>
@@ -584,6 +592,15 @@ function stockColor(item: any) {
     :reorder-request-info="reorderRequestInfo"
     :can-request-reorder="canRequestReorder"
     :reorder-reason-map="reorderReasonMap"
+    :search-query="stockDialogSearchQuery"
+    :page="stockDialogPage"
+    :items-per-page="stockDialogItemsPerPage"
+    :total="stockDialogTotal"
+    :loading="stockDialogLoading"
+    :total-pages="stockDialogTotalPages"
+    @update:search-query="stockDialogSearchQuery = $event"
+    @update:page="handleStockDialogPageChange"
+    @search="searchStockDialogProducts"
     @edit-product="
       (p) => {
         openEditDialog(p)

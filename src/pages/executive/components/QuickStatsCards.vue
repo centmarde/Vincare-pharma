@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
 import SuppliersDialog from '../dialogs/SuppliersDialog.vue'
+import PRHistoryDialog from '../dialogs/PRHistoryDialog.vue'
 
 defineProps<{
   totalOrders: number
@@ -11,6 +12,7 @@ defineProps<{
 
 const suppliersStore = useSuppliersDataStore()
 const showSuppliersDialog = ref(false)
+const showPRHistoryDialog = ref(false)
 
 const activeSuppliersCount = computed(() => suppliersStore.activeSuppliers.length)
 
@@ -22,6 +24,9 @@ onMounted(() => {
 
 function openSuppliers() {
   showSuppliersDialog.value = true
+}
+function openPRHistory() {
+  showPRHistoryDialog.value = true
 }
 </script>
 
@@ -50,15 +55,17 @@ function openSuppliers() {
         <template #activator="{ props }">
           <v-icon
             v-bind="props"
-            icon="mdi-clock-alert-outline"
+            icon="mdi-history"
             color="warning"
             size="22"
             class="quick-stat-icon"
+            style="cursor: pointer"
+            @click="openPRHistory"
           />
         </template>
         <div class="text-center pa-2">
-          <div class="text-h6 font-weight-bold">{{ pendingOrders }}</div>
-          <div class="text-caption text-medium-emphasis">Pending Orders</div>
+          <div class="text-h6 font-weight-bold">PR History</div>
+          <div class="text-caption text-medium-emphasis">View PR History</div>
         </div>
       </v-tooltip>
     </v-col>
@@ -103,4 +110,5 @@ function openSuppliers() {
   </v-row>
 
   <SuppliersDialog v-model="showSuppliersDialog" />
+  <PRHistoryDialog v-model="showPRHistoryDialog" />
 </template>

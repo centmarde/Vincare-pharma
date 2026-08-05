@@ -15,10 +15,19 @@ const props = defineProps<{
   reorderRequestInfo: Map<number, { id: number; status: string }>
   canRequestReorder: (productId: number) => boolean
   reorderReasonMap: Record<string, string>
+  searchQuery: string
+  page: number
+  itemsPerPage: number
+  total: number
+  loading: boolean
+  totalPages: number
 }>()
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
+  'update:searchQuery': [value: string]
+  'update:page': [value: number]
+  'search': []
   'edit-product': [product: ProductType]
   'toggle-reorder': [productId: number, checked: boolean]
   'request-reorder': [product: ProductType]
@@ -27,6 +36,8 @@ const emit = defineEmits<{
 
 const productIgnore = useProductIgnore()
 const { confirmDialog } = useConfirmDialog()
+
+const hasSearch = computed(() => props.searchQuery.trim().length > 0)
 
 async function confirmCreatePRFromSelection() {
   if (!props.selectedReorderProductIds.length) return
@@ -69,6 +80,30 @@ async function confirmCreatePRFromSelection() {
       </v-card-title>
       <v-divider></v-divider>
       <v-card-text class="pa-0" style="max-height: 400px; overflow-y: auto;">
+        <div class="d-flex align-center ga-2 pa-3 pb-0">
+          <v-text-field
+            :model-value="searchQuery"
+            density="compact"
+            variant="outlined"
+            placeholder="Search product name..."
+            prepend-inner-icon="mdi-magnify"
+            clearable
+            hide-details
+            single-line
+            @update:model-value="emit('update:searchQuery', $event)"
+            @keyup.enter="emit('search')"
+            @click:clear="emit('search')"
+          ></v-text-field>
+          <v-btn
+            color="primary"
+            variant="tonal"
+            class="text-none"
+            prepend-icon="mdi-magnify"
+            @click="emit('search')"
+          >
+            Search
+          </v-btn>
+        </div>
         <v-list v-if="products.length > 0" density="comfortable">
           <v-list-item
             v-for="p in products"
@@ -211,9 +246,17 @@ async function confirmCreatePRFromSelection() {
             </template>
           </v-list-item>
         </v-list>
-        <div v-else class="text-center py-8">
+        <div v-else-if="!loading && total === 0" class="text-center py-8">
           <v-icon icon="mdi-check-circle-outline" size="40" color="success"></v-icon>
           <p class="text-grey mt-2">No products in this category</p>
+        </div>
+        <div v-else-if="!loading && hasSearch" class="text-center py-8">
+          <v-icon icon="mdi-magnify-close" size="40" color="grey"></v-icon>
+          <p class="text-grey mt-2">No products match your search</p>
+        </div>
+        <div v-else class="text-center py-8">
+          <v-progress-circular indeterminate color="primary" size="40"></v-progress-circular>
+          <p class="text-grey mt-2">Loading products...</p>
         </div>
         <v-divider v-if="isPurchaser && selectedReorderProductIds.length" />
         <v-card-actions
@@ -229,6 +272,20 @@ async function confirmCreatePRFromSelection() {
             Create Purchase Requisition ({{ selectedReorderProductIds.length }})
           </v-btn>
         </v-card-actions>
+        <v-divider v-if="total > 0" />
+        <div v-if="total > 0" class="d-flex align-center justify-space-between pa-3">
+          <span class="text-caption text-grey">
+            {{ total }} product{{ total !== 1 ? 's' : '' }}
+          </span>
+          <v-pagination
+            :model-value="page"
+            :length="totalPages"
+            :total-visible="5"
+            density="compact"
+            size="small"
+            @update:model-value="(val) => emit('update:page', val)"
+          ></v-pagination>
+        </div>
       </v-card-text>
     </v-card>
   </v-dialog>
