@@ -176,6 +176,16 @@ export function useProductsWidget() {
   // The active card's filtered product list (for dialog body)
   const stockDialogProducts = computed<ProductType[]>(() => productsStore.stockStatusProducts)
 
+  // Stock dialog search + pagination state
+  const stockDialogSearchQuery = ref('')
+  const stockDialogPage = ref(1)
+  const stockDialogItemsPerPage = ref(10)
+  const stockDialogTotal = computed(() => productsStore.stockStatusProductsTotal)
+  const stockDialogLoading = computed(() => productsStore.stockStatusLoading)
+  const stockDialogTotalPages = computed(() =>
+    Math.max(1, Math.ceil(stockDialogTotal.value / stockDialogItemsPerPage.value)),
+  )
+
   // Validation rules
   const rules = {
     required: (value: any) => !!value || 'Field is required',
@@ -692,7 +702,20 @@ export function useProductsWidget() {
       stockDialogType.value,
       currentStatusRef(),
       productIgnore.activeIgnoredIdsArray.value,
+      stockDialogItemsPerPage.value,
+      (stockDialogPage.value - 1) * stockDialogItemsPerPage.value,
+      stockDialogSearchQuery.value.trim(),
     )
+  }
+
+  function searchStockDialogProducts() {
+    stockDialogPage.value = 1
+    refreshStockDialogProducts()
+  }
+
+  function handleStockDialogPageChange(page: number) {
+    stockDialogPage.value = page
+    refreshStockDialogProducts()
   }
 
 /**
@@ -792,9 +815,13 @@ async function addReservation() {
     refreshStockStatusCounts()
   })
 
-  // Fetch the dialog's row list the moment it opens, or when the bucket changes while open
+    // Fetch the dialog's row list the moment it opens, or when the bucket changes while open
   watch([showStockDialog, stockDialogType], ([open]) => {
-    if (open) refreshStockDialogProducts()
+    if (open) {
+      stockDialogPage.value = 1
+      stockDialogSearchQuery.value = ''
+      refreshStockDialogProducts()
+    }
   })
 
   return {
@@ -825,6 +852,14 @@ async function addReservation() {
     stockStatusCards,
     activeStockCard,
     stockDialogProducts,
+    stockDialogSearchQuery,
+    stockDialogPage,
+    stockDialogItemsPerPage,
+    stockDialogTotal,
+    stockDialogLoading,
+    stockDialogTotalPages,
+    searchStockDialogProducts,
+    handleStockDialogPageChange,
     // Validation
     rules,
     // Methods

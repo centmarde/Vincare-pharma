@@ -275,6 +275,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     excludedIds: number[] = [],
     limit = 200,
     offset = 0,
+    searchTerm = '',
   ) => {
     stockStatusLoading.value = true
     try {
@@ -285,6 +286,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
         excluded_ids: excludedIds,
         page_limit: limit,
         page_offset: offset,
+        search_term: searchTerm,
       })
       if (rpcError) throw rpcError
 
