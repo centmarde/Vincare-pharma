@@ -33,7 +33,10 @@ export type CustomerType = {
   rebate_payment_mode: RebatePaymentMode | null
   rebate_payment_account_no: string | null
   scheme: SchemeType[] | null
-  term_days: number | null
+  // FREE TEXT in the live data ('60 Days', 'COD', 'Consignment ') — the real
+  // customer import records payment arrangements, not day counts. Read it
+  // through parseTermDays(); never do arithmetic on it directly.
+  term_days: string | null
   product_sales_list: string | null
   owner_name: string | null
   owner_contact_no: string | null
@@ -66,7 +69,7 @@ export type CreateCustomerData = {
   rebate_payment_mode?: RebatePaymentMode | null
   rebate_payment_account_no?: string | null
   scheme?: SchemeType[] | null
-  term_days?: number | null
+  term_days?: string | null
   product_sales_list?: string | null
   owner_name?: string | null
   owner_contact_no?: string | null
