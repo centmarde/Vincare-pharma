@@ -94,11 +94,10 @@ onMounted(init)
               class="mb-2"
             />
             <v-text-field
-              v-model.number="form.term_days"
-              label="Term (days)"
-              type="number"
-              min="0"
-              hint="Payment terms from delivery. Without this, receivables for this customer have no due date and cannot be aged."
+              v-model="form.term_days"
+              label="Payment terms"
+              placeholder="e.g. 60 Days, COD, Consignment"
+              hint="Payment terms from delivery. A leading number sets the due date; without one the receivable cannot be aged."
               persistent-hint
               variant="outlined"
               density="compact"

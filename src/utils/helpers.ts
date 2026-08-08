@@ -448,6 +448,34 @@ export const formatCurrency = (value: number): string =>
     maximumFractionDigits: 2,
   }).format(value).replace('PHP', '₱')
 
+/**
+ * Payment terms as a number of days, parsed from `customers.term_days`.
+ *
+ * That column is FREE TEXT in the live data, not an integer — the real customer
+ * import records payment ARRANGEMENTS, only some of which are day counts:
+ *   '60 Days' -> 60   '30 Days PDC' -> 30   'COD' -> 0
+ *   'Consignment ' -> null   'COD / Discount' -> 0   null/'' -> null
+ *
+ * `null` means "no due-date convention for this customer" — the caller should
+ * treat the receivable as un-aged rather than assuming 0 (due immediately),
+ * which would wrongly report it as overdue. Anything unrecognised also returns
+ * null: a receivable that visibly cannot be aged is safer than one silently
+ * aged against a made-up term.
+ */
+export function parseTermDays(value: string | number | null | undefined): number | null {
+  if (value == null) return null
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+
+  const text = value.trim()
+  if (!text) return null
+  // COD is payment on delivery — a real term of zero days, not "no term".
+  if (/^cod\b/i.test(text)) return 0
+  const match = text.match(/(\d+)/)
+  if (!match) return null // 'Consignment', 'Doctor's deal', ...
+  const days = parseInt(match[1], 10)
+  return Number.isFinite(days) ? days : null
+}
+
 // ── Generative / document-number helpers ────────────────────────────────────
 // These were extracted to a dedicated module so stores don't duplicate logic.
 // Re-export everything for backward compatibility.

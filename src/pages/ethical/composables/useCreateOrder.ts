@@ -6,6 +6,7 @@ import { useCustomersDataStore } from '@/stores/customersData'
 import { useProductsDataStore } from '@/stores/productsData'
 import { useAgentsDataStore } from '@/stores/agentsData'
 import { useOutletsDataStore } from '@/stores/outletsData'
+import { parseTermDays } from '@/utils/helpers'
 import { useFormDraft } from '@/composables/useFormDraft'
 
 const toast = useToast()
@@ -110,7 +111,11 @@ export function useCreateOrder(onCreated: () => void) {
   const rebateRate = computed(() => selectedCustomer.value?.rebate_rate ?? 0)
   const discountAmount = computed(() => round2(subtotal.value * discountRate.value / 100))
   const rebateAmount = computed(() => round2(subtotal.value * rebateRate.value / 100))
-  const termsDays = computed(() => selectedCustomer.value?.term_days ?? 0)
+  // term_days is free text in the live data ('60 Days', 'COD', 'Consignment ').
+  // Falls back to 0 (due on invoice) when the customer's arrangement carries no
+  // day count — the order still needs a concrete due date, unlike AR aging,
+  // which deliberately leaves such rows un-aged.
+  const termsDays = computed(() => parseTermDays(selectedCustomer.value?.term_days) ?? 0)
   const total = computed(() => subtotal.value - discountAmount.value)
   const dueDatePreview = computed(() => {
     const d = new Date()

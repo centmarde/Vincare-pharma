@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import type { Ref } from 'vue'
 import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
-import { getErrorMessage } from '@/utils/helpers'
+import { getErrorMessage, parseTermDays } from '@/utils/helpers'
 import type { ARAgingTerm } from '@/stores/financeData'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -262,7 +262,10 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
         // customer's standard terms counted from the delivery date. In-House
         // orders have no due-date convention of their own — without
         // customers.term_days they cannot age at all.
-        const termDays = customer?.term_days ?? null
+        // term_days is free text ('60 Days', 'COD', 'Consignment ') — parsing
+        // returns null for arrangements that carry no day count, which keeps
+        // the row un-aged instead of feeding NaN into the date arithmetic.
+        const termDays = parseTermDays(customer?.term_days)
         const dueDate: string | null =
           ed?.due_date ?? (termDays != null ? addDays(dr.created_at, termDays) : null)
 
