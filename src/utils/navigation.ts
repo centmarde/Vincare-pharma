@@ -198,6 +198,12 @@ export const navigationConfig: NavigationGroup[] = [
         permission: 'sales.inventory.view',
       },
       {
+        title: 'Customers',
+        icon: 'mdi-account-group',
+        route: '/sales/customers',
+        permission: 'sales.customers.manage',
+      },
+      {
         title: 'Sales History',
         icon: 'mdi-history',
         route: '/sales/history',

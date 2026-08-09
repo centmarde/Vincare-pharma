@@ -2,11 +2,11 @@ import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useEthicalDataStore } from '@/stores/ethicalData'
-import { useCustomersDataStore } from '@/stores/customersData'
 import { useProductsDataStore } from '@/stores/productsData'
 import { useAgentsDataStore } from '@/stores/agentsData'
 import { useOutletsDataStore } from '@/stores/outletsData'
 import { parseTermDays } from '@/utils/helpers'
+import { useCustomerPicker } from '@/composables/useCustomerPicker'
 import { useFormDraft } from '@/composables/useFormDraft'
 
 const toast = useToast()
@@ -21,12 +21,10 @@ type FormLine = {
 
 export function useCreateOrder(onCreated: () => void) {
   const ethical = useEthicalDataStore()
-  const customersStore = useCustomersDataStore()
   const productsStore = useProductsDataStore()
   const agentsStore = useAgentsDataStore()
   const outletsStore = useOutletsDataStore()
 
-  const { customers } = storeToRefs(customersStore)
   const { products } = storeToRefs(productsStore)
   const { agents } = storeToRefs(agentsStore)
   const { outlets } = storeToRefs(outletsStore)
@@ -52,10 +50,9 @@ export function useCreateOrder(onCreated: () => void) {
       && !lines.value.some((l) => l.product_id != null || l.unit_price > 0),
   })
 
-  const customerOptions = computed(() =>
-    customers.value
-      .filter(c => c.department === 'ethical')
-      .map(c => ({ title: `${c.name}${c.agency_type ? ` (${c.agency_type})` : ''}`, value: c.id, agent: c.agent_id })))
+  // Searches ALL customers, not just department='ethical' — see useCustomerPicker.
+  const { search: customerSearch, customerOptions, selectedCustomer, init: initCustomerPicker } =
+    useCustomerPicker(customerId)
 
   const agentOptions = computed(() =>
     agents.value.map(a => ({ title: a.name, value: a.id })))
@@ -77,9 +74,6 @@ export function useCreateOrder(onCreated: () => void) {
   function unitFor(productId: number | null): string {
     return productOptions.value.find(o => o.value === productId)?.unit ?? '—'
   }
-
-  const selectedCustomer = computed(() =>
-    customers.value.find(c => c.id === customerId.value))
 
   // PRICE = SYSTEM PRICE / DIVISOR, DIVISOR = (100 - MARKUP)% — the client's
   // trade-profile pricing formula (customersData.ts markup_percent). Falls
@@ -219,7 +213,7 @@ export function useCreateOrder(onCreated: () => void) {
   }
 
   async function init() {
-    await customersStore.fetchCustomers({ department: 'ethical', activeOnly: true })
+    await initCustomerPicker()
     if (!agents.value.length) await agentsStore.fetchAgents({ activeOnly: true })
     if (!products.value.length) await productsStore.fetchProducts()
     if (!outlets.value.length) await outletsStore.fetchOutlets()
@@ -231,7 +225,7 @@ export function useCreateOrder(onCreated: () => void) {
 
   return {
     loading, customerId, agentId, outletId, remarks, lines,
-    customerOptions, agentOptions, outletOptions, productOptions,
+    customerSearch, customerOptions, selectedCustomer, agentOptions, outletOptions, productOptions,
     subtotal, discountRate, discountAmount, rebateRate, rebateAmount, termsDays, total, dueDatePreview,
     markupDivisorLabel,
     giveawayRate, netRevenue, belowCostLines, hasBelowCostLine, lineBelowCost, erodesSystemPrice,

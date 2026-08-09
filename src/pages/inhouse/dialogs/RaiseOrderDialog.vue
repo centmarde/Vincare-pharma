@@ -11,7 +11,7 @@ defineProps<{ modelValue: boolean }>()
 
 const {
   loading, customerId, govtPoNo, poAmount, remarks, lines,
-  customerOptions, productOptions, isGovtCustomer,
+  customerSearch, customerOptions, productOptions, isGovtCustomer,
   offerTotal, costTotal, profit, marginPct,
   addLine, removeLine, onProductChange, unitFor, submit, init,
 } = useRaiseOrder(() => emit('created'))
@@ -29,8 +29,19 @@ onMounted(init)
         <v-row dense class="mb-2">
           <v-col cols="12" md="6">
             <label class="lbl">Customer (Government / LGU) *</label>
-            <v-select v-model="customerId" :items="customerOptions" placeholder="Select customer"
-              variant="outlined" density="compact" hide-details />
+            <!-- Server-side search: ~5.3k customers, no longer filtered by
+                 department (a customer may trade through more than one
+                 channel). Subtitle shows category · area · department. -->
+            <v-autocomplete
+              v-model="customerId"
+              v-model:search="customerSearch"
+              :items="customerOptions"
+              placeholder="Search customer by name or contact"
+              item-props
+              no-filter
+              variant="outlined" density="compact" hide-details
+              no-data-text="No customer matches that search"
+            />
           </v-col>
           <v-col v-if="isGovtCustomer" cols="12" md="6">
             <label class="lbl">Government PO # (documentation)</label>

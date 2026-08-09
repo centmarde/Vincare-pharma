@@ -470,6 +470,14 @@ export function parseTermDays(value: string | number | null | undefined): number
   if (!text) return null
   // COD is payment on delivery — a real term of zero days, not "no term".
   if (/^cod\b/i.test(text)) return 0
+  // A percentage is pricing that landed in the wrong column ('10% Discount',
+  // ~18 rows live). Taking its first number would silently invent a 10-day
+  // term, so refuse it outright rather than age the receivable against a
+  // number that was never a term.
+  if (text.includes('%')) return null
+  // Ranges ('30 - 60 Days') resolve to the EARLIER bound: the receivable starts
+  // ageing at the first date it could have been due, which is the conservative
+  // read for collections.
   const match = text.match(/(\d+)/)
   if (!match) return null // 'Consignment', 'Doctor's deal', ...
   const days = parseInt(match[1], 10)

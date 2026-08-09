@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useCustomersDataStore } from '@/stores/customersData'
@@ -76,8 +76,22 @@ export function useEthicalCustomers() {
   const agentOptions = computed(() =>
     agents.value.map(a => ({ title: a.name, value: a.id })))
 
+  // Unassigned customers show alongside Ethical ones: most of the real customer
+  // file has no department yet, and one is stamped only when it first
+  // transacts. `showAll` widens this to every department for when staff need a
+  // customer already stamped to another channel.
+  const showAll = ref(false)
+
+  async function reload() {
+    await customersStore.fetchCustomers(
+      showAll.value ? {} : { department: 'ethical', includeUnassigned: true },
+    )
+  }
+
+  watch(showAll, () => { void reload() })
+
   async function init() {
-    await customersStore.fetchCustomers({ department: 'ethical' })
+    await reload()
     if (!agents.value.length) await agentsStore.fetchAgents({ activeOnly: true })
   }
 
@@ -133,6 +147,8 @@ export function useEthicalCustomers() {
     customers: filteredCustomers,
     loading,
     searchText,
+    showAll,
+    reload,
     showCreateDialog,
     showEditDialog,
     editingCustomer,

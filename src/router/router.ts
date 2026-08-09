@@ -22,6 +22,7 @@ import StockTransfersView from '@/pages/sales/StockTransfersView.vue'
 import PosView from '@/pages/sales/PosView.vue'
 import RemittanceView from '@/pages/sales/RemittanceView.vue'
 import InventoryView from '@/pages/sales/InventoryView.vue'
+import SalesCustomersView from '@/pages/sales/CustomersView.vue'
 import SalesHistoryView from '@/pages/sales/SalesHistoryView.vue'
 import OutletsView from '@/pages/sales/OutletsView.vue'
 import InhouseOrdersView from '@/pages/inhouse/InhouseOrdersView.vue'
@@ -150,6 +151,11 @@ const routes = setupLayouts([
   {
     path: '/sales/inventory',
     component: InventoryView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/sales/customers',
+    component: SalesCustomersView,
     meta: { requiresAuth: true },
   },
   {
