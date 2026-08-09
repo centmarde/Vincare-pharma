@@ -1,87 +1,122 @@
 // src/pages/executive/composables/usePRHistory.ts
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import { useTransactionsDataStore } from '@/stores/transactionsData'
-import { useTransactionsData } from '@/composables/useTransactionsData'
 import { useAuthUserStore } from '@/stores/authUser'
-import type { PR } from '@/stores/purchaseRequisitionData'
-import { ref, watch } from 'vue'
+import type { PR, PRItem } from '@/stores/purchaseRequisitionData'
+import { ref, computed } from 'vue'
 
-// No STATUS column (always "Complete" here) and no approve/reject actions —
-// this table is read-only, just a "View" button.
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+// One row = one product purchased on one completed PR, with its price.
+export type ProductPurchaseRow = {
+  product_id: number | null
+  product_name: string
+  requisition_no: string
+  unit: string
+  qty: number
+  cost_per_unit: number
+  offer_per_unit: number
+  total_cost: number
+  supplier_name: string
+  created_at: string
+}
+
+// ─── Headers ──────────────────────────────────────────────────────────────────
+
 export const historyHeaders = [
-  { title: 'PR #',         key: 'requisition_no',  sortable: true,  align: 'center' as const },
-  { title: 'ITEMS',        key: 'items',          sortable: false, align: 'center' as const },
-  { title: 'TOTAL QTY',    key: 'total_qty',      sortable: false, align: 'center' as const },
-  { title: 'TOTAL COST',   key: 'total_amount',   sortable: true,  align: 'center' as const },
-  { title: 'REQUESTED BY', key: 'requester_name', sortable: true,  align: 'center' as const },
-  { title: 'DATE',         key: 'created_at',     sortable: true,  align: 'center' as const },
-  { title: 'REVIEWED BY',  key: 'reviewer_name',  sortable: true,  align: 'center' as const },
-  { title: 'ACTIONS',      key: 'actions',        sortable: false, align: 'center' as const },
+  { title: 'PRODUCT',     key: 'product_name',    sortable: true,  align: 'center' as const },
+  { title: 'PR #',        key: 'requisition_no',  sortable: true,  align: 'center' as const },
+  { title: 'UNIT',        key: 'unit',            sortable: false, align: 'center' as const },
+  { title: 'QTY',         key: 'qty',             sortable: true,  align: 'center' as const },
+  { title: 'COST/UNIT',   key: 'cost_per_unit',   sortable: true,  align: 'center' as const },
+  { title: 'OFFER/UNIT',  key: 'offer_per_unit',  sortable: true,  align: 'center' as const },
+  { title: 'TOTAL COST',  key: 'total_cost',      sortable: true,  align: 'center' as const },
+  { title: 'SUPPLIER',    key: 'supplier_name',   sortable: true,  align: 'center' as const },
+  { title: 'DATE',        key: 'created_at',      sortable: true,  align: 'center' as const },
 ]
+
+// ─── Composable ───────────────────────────────────────────────────────────────
 
 export function usePRHistory() {
   const txStore   = useTransactionsDataStore()
   const prStore   = usePurchaseRequisitionStore()
   const authStore = useAuthUserStore()
-  const { totalQty, totalCost, itemSummary, itemNames } = useTransactionsData()
 
   const loading      = ref(false)
   const search        = ref('')
   const searchInput   = ref('')
-  const showModal     = ref(false)
-  const selectedPR    = ref<PR | null>(null)
-  const serverItems   = ref<PR[]>([])
-  const totalItems    = ref(0)
-  const page          = ref(1)
-  const itemsPerPage  = ref(10)
+  const allRows       = ref<ProductPurchaseRow[]>([])
 
-  // Same RPC as the full PR list, but 'status' is locked to 'complete' —
-  // no filter menu, this view only ever shows finished PRs.
-  async function loadItems({ page: p, itemsPerPage: ipp, sortBy }: {
-    page: number
-    itemsPerPage: number
-    sortBy: { key: string; order: 'asc' | 'desc' }[]
-  }) {
+  // Flatten a PR's items into one product-purchase row per line item.
+  function flattenPR(pr: PR): ProductPurchaseRow[] {
+    return (pr.items || []).map((item: PRItem) => ({
+      product_id:     item.product_id ?? null,
+      product_name:   item.item_description,
+      requisition_no: pr.requisition_no,
+      unit:           item.unit,
+      qty:            item.qty,
+      cost_per_unit:  item.cost_per_unit,
+      offer_per_unit: item.offer_per_unit,
+      total_cost:     item.qty * item.cost_per_unit,
+      supplier_name:  item.supplier_name ?? '—',
+      created_at:     pr.created_at,
+    }))
+  }
+
+  // Fetch ALL completed PRs (paginated by PR via the RPC), then flatten
+  // every line item into a product-purchase row. Client-side filtering,
+  // sorting, and pagination happen in the dialog via v-data-table.
+  async function loadItems() {
     loading.value = true
-    const sort = sortBy[0]
 
     if (!authStore.users.length) await authStore.getAllUsers()
 
-    const { rows, totalCount } = await txStore.fetchPurchaseRequisitionsRPC({
-      search:    search.value.trim() || undefined,
-      status:    'complete',
-      orderBy:   (sort?.key as any) ?? 'created_at',
-      ascending: sort ? sort.order === 'asc' : false,
-      limit:     ipp,
-      offset:    (p - 1) * ipp,
-    })
+    const allPRs: PR[] = []
+    const pageSize = 100
+    let offset = 0
 
-    // Reuses the exact same mappers the main PR store already exposes —
-    // no duplicate mapping logic.
-    serverItems.value = rows.map(row => {
-      const names = prStore.resolveUserNames(row.created_by, row.approved_by)
-      return prStore.mapRPCRowToPR(row, names)
-    })
-    totalItems.value = totalCount
-    page.value = p
+    // Loop through RPC pages until we've collected every completed PR.
+    while (true) {
+      const { rows } = await txStore.fetchPurchaseRequisitionsRPC({
+        status:    'complete',
+        orderBy:   'created_at',
+        ascending: false,
+        limit:     pageSize,
+        offset,
+      })
+
+      if (!rows.length) break
+
+      const prs = rows.map(row => {
+        const names = prStore.resolveUserNames(row.created_by, row.approved_by)
+        return prStore.mapRPCRowToPR(row, names)
+      })
+      allPRs.push(...prs)
+
+      if (rows.length < pageSize) break
+      offset += pageSize
+    }
+
+    allRows.value = allPRs.flatMap(flattenPR)
     loading.value = false
   }
 
-  function openDetail(pr: PR) {
-    selectedPR.value = pr
-    showModal.value  = true
-  }
+  // Client-side search across product name, PR #, and supplier.
+  const filteredRows = computed(() => {
+    const s = search.value.trim().toLowerCase()
+    if (!s) return allRows.value
+    return allRows.value.filter(row =>
+      row.product_name.toLowerCase().includes(s) ||
+      row.requisition_no.toLowerCase().includes(s) ||
+      row.supplier_name.toLowerCase().includes(s)
+    )
+  })
 
   function commitSearch() { search.value = searchInput.value }
   function clearSearch()  { searchInput.value = ''; search.value = '' }
 
-  watch(search, () => loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] }))
-
   return {
     loading, searchInput, commitSearch, clearSearch,
-    page, itemsPerPage, serverItems, totalItems,
-    selectedPR, showModal, openDetail,
-    totalQty, totalCost, itemSummary, itemNames,
-    loadItems,
+    serverItems: filteredRows, loadItems,
   }
 }
