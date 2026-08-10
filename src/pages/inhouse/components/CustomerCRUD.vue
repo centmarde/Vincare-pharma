@@ -11,7 +11,11 @@ const {
 const formRef = ref()
 
 function structureLabel(value: string | null): string {
-  return businessStructures.find((s) => s.value === value)?.title ?? '—'
+  return businessStructures.find((s) => s.value === value)?.title ?? 'not set yet'
+}
+
+function label(value: string | null | undefined): string {
+  return value && value.trim() !== '' ? value : 'not set yet'
 }
 
 async function onSubmit() {
@@ -39,11 +43,22 @@ onMounted(init)
       <v-divider />
 
       <v-data-table :headers="headers" :items="filtered" :loading="loading" no-data-text="No customers yet." hover>
+        <template #item.name="{ item }">
+          <span class="text-body-2 font-weight-medium">{{ label(item.name) }}</span>
+        </template>
         <template #item.agency_type="{ item }">
-          <v-chip size="small" variant="tonal" class="text-uppercase">{{ item.agency_type }}</v-chip>
+          <v-chip size="small" variant="tonal" :class="{ 'text-lowercase': !item.agency_type }" class="text-uppercase">
+            {{ label(item.agency_type) }}
+          </v-chip>
+        </template>
+        <template #item.contact_person="{ item }">
+          <span class="text-body-2">{{ label(item.contact_person) }}</span>
+        </template>
+        <template #item.contact_no="{ item }">
+          <span class="text-body-2">{{ label(item.contact_no) }}</span>
         </template>
         <template #item.tin_number="{ item }">
-          <span class="text-body-2">{{ item.tin_number || '—' }}</span>
+          <span class="text-body-2">{{ label(item.tin_number) }}</span>
         </template>
         <template #item.is_vat_registered="{ item }">
           <v-chip size="small" :color="item.is_vat_registered ? 'primary' : 'grey'" variant="tonal">
@@ -51,11 +66,13 @@ onMounted(init)
           </v-chip>
         </template>
         <template #item.business_structure="{ item }">
-          <v-chip size="small" variant="tonal" class="text-uppercase">{{ structureLabel(item.business_structure) }}</v-chip>
+          <v-chip size="small" variant="tonal" :class="{ 'text-lowercase': !item.business_structure }" class="text-uppercase">
+            {{ structureLabel(item.business_structure) }}
+          </v-chip>
         </template>
         <template #item.reg_no="{ item }">
           <span class="text-body-2">
-            {{ item.business_structure === 'sole_proprietorship' ? (item.dti_registration_no || '—') : (item.sec_registration_no || '—') }}
+            {{ label(item.business_structure === 'sole_proprietorship' ? item.dti_registration_no : item.sec_registration_no) }}
           </span>
         </template>
         <template #item.is_active="{ item }">
