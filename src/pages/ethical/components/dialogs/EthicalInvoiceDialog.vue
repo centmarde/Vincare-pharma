@@ -4,7 +4,9 @@ import html2pdf from 'html2pdf.js'
 import { useToast } from 'vue-toastification'
 import type { EthicalOrderType } from '@/stores/ethicalData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import { useDisplay } from 'vuetify'
 
+const { mobile } = useDisplay()
 const props = defineProps<{
   modelValue: boolean
   order: EthicalOrderType | null
@@ -59,7 +61,7 @@ async function handlePrint() {
     @update:model-value="emit('update:modelValue', $event)"
   >
     <v-card rounded="lg" v-if="order">
-      <v-card-text class="pa-6">
+      <v-card-text class="pa-4 pa-sm-6">
         <div ref="printArea" class="invoice">
           <!-- Header -->
           <div class="text-center mb-4">
@@ -76,7 +78,7 @@ async function handlePrint() {
 
           <!-- Meta: invoice # + customer | date + agent + terms -->
           <v-row class="mb-2" no-gutters>
-            <v-col cols="7">
+            <v-col cols="12" sm="7">
               <div class="text-body-2"><span class="font-weight-bold">Invoice #</span> {{ order.order_no }}</div>
               <div class="text-caption font-weight-bold mt-2">Bill To:</div>
               <div class="text-body-2 font-weight-medium">{{ order.customer?.name || '—' }}</div>
@@ -94,7 +96,7 @@ async function handlePrint() {
                 {{ order.customer?.business_structure === 'sole_proprietorship' ? order.customer?.dti_registration_no : order.customer?.sec_registration_no }}
               </div>
             </v-col>
-            <v-col cols="5" class="text-right">
+            <v-col cols="12" sm="5" class="text-left text-sm-right mt-2 mt-sm-0">
               <div class="text-body-2">Date: {{ formatDatePR_ISO(order.created_at) }}</div>
               <div class="text-body-2" v-if="order.agent?.name">Medical Sales Representative: {{ order.agent.name }}</div>
               <div class="text-body-2" v-if="order.terms_days">Terms: Net {{ order.terms_days }} days</div>
@@ -109,8 +111,8 @@ async function handlePrint() {
             <thead>
               <tr>
                 <th class="text-left">Product</th>
-                <th class="text-right">Quantity</th>
-                <th class="text-right">Unit Price</th>
+                <th class="text-right">Qty</th>
+                <th class="text-right">Price</th>
                 <th class="text-right">Amount</th>
               </tr>
             </thead>
@@ -128,8 +130,8 @@ async function handlePrint() {
 
           <!-- Totals -->
           <v-row no-gutters>
-            <v-col cols="7" />
-            <v-col cols="5">
+            <v-col cols="12" sm="7" />
+            <v-col cols="12" sm="5">
               <div class="d-flex justify-space-between text-body-2 mb-1">
                 <span>Subtotal:</span><span>{{ formatCurrency(order.subtotal ?? 0) }}</span>
               </div>
@@ -153,7 +155,7 @@ async function handlePrint() {
 
           <!-- Signature -->
           <div class="mt-8">
-            <div style="border-bottom: 1px solid #000; width: 260px;" />
+            <div style="border-bottom: 1px solid #000; width: 100%; max-width: 260px;" />
             <div class="text-caption mt-1">Received by: Signature Over Printed Name</div>
           </div>
         </div>
@@ -161,14 +163,15 @@ async function handlePrint() {
 
       <v-divider />
 
-      <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end ga-2">
-        <v-btn variant="text" color="error" class="text-none" prepend-icon="mdi-printer" @click="handlePrint">
+      <v-card-actions class="px-4 px-sm-5 pb-4 pb-sm-5 pt-3 d-flex ga-2" :class="mobile ? 'flex-column-reverse' : 'justify-end'">
+        <v-btn variant="text" color="error" class="text-none" prepend-icon="mdi-printer" :block="mobile" @click="handlePrint">
           Print
         </v-btn>
         <v-btn
           color="primary"
           class="text-none font-weight-bold"
           elevation="0"
+          :block="mobile"
           @click="emit('update:modelValue', false)"
         >
           Close
