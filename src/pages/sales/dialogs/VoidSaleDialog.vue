@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type { SaleType } from '@/stores/salesData'
 import { formatCurrency } from '@/utils/helpers'
+import { useDisplay } from 'vuetify'
 
+const { mobile } = useDisplay()
 defineProps<{
   modelValue: boolean
   sale: SaleType | null
@@ -47,14 +49,15 @@ const emit = defineEmits<{
 
       <v-divider />
 
-      <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end ga-2">
-        <v-btn variant="outlined" class="text-none" @click="emit('update:modelValue', false)">
+      <v-card-actions class="px-4 px-sm-5 pb-4 pb-sm-5 pt-3 d-flex ga-2" :class="mobile ? 'flex-column-reverse' : 'justify-end'">
+        <v-btn variant="outlined" class="text-none" :block="mobile" @click="emit('update:modelValue', false)">
           Cancel
         </v-btn>
         <v-btn
           color="error"
           class="text-none font-weight-bold"
           elevation="0"
+          :block="mobile"
           :loading="loading"
           @click="emit('confirm')"
         >
