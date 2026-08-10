@@ -1,5 +1,6 @@
 import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useToast } from 'vue-toastification'
 import { useCustomersDataStore } from '@/stores/customersData'
 import type { CustomerType, CreateCustomerData } from '@/stores/customersData'
 
@@ -11,7 +12,8 @@ export const headers = [
   { title: 'TIN',      key: 'tin_number',     sortable: false, align: 'center' as const },
   { title: 'VAT',      key: 'is_vat_registered', sortable: false, align: 'center' as const },
   { title: 'STRUCTURE', key: 'business_structure', sortable: false, align: 'center' as const },
-  { title: 'SEC/DTI #', key: 'reg_no',         sortable: false, align: 'center' as const },
+  // How to make SEC/DTI to have a wrap in the header?
+  { title: 'SEC/DTI #', key: 'reg_no',         sortable: false, align: 'center' as const, width: 100 },
   { title: 'ACTIVE',   key: 'is_active',      sortable: false, align: 'center' as const },
   { title: '',         key: 'actions',        sortable: false, align: 'end' as const },
 ] as const
@@ -32,6 +34,8 @@ export const businessStructures = [
   { title: 'Other (govt. agency, cooperative, etc.)', value: 'other' },
 ]
 
+const PAGE_SIZE = 10
+
 const emptyForm = (): CreateCustomerData => ({
   name: '', agency_type: 'government', contact_person: '', contact_no: '', email: '', address: '', is_active: true,
   is_vat_registered: false, tin_number: '',
@@ -45,12 +49,54 @@ const emptyForm = (): CreateCustomerData => ({
 
 export function useCustomers() {
   const store = useCustomersDataStore()
-  const { customers, loading } = storeToRefs(store)
+  const { pagedCustomers, pagedTotalCount, pagedLoading } = storeToRefs(store)
+  const toast = useToast()
 
+  const searchInput = ref('')
   const search = ref('')
+  const page = ref(1)
+
   const showForm = ref(false)
   const editingId = ref<number | null>(null)
   const form = ref<CreateCustomerData>(emptyForm())
+
+  // Unassigned customers are shown alongside In-House ones: most of the real
+  // customer file has no department yet, and one gets stamped only when it
+  // first transacts. `showAll` widens this to every department for the times
+  // staff need to find a customer that already belongs to another channel.
+  const showAll = ref(false)
+
+  async function reload() {
+    await store.fetchCustomersRPC({
+      department: showAll.value ? null : 'inhouse',
+      includeUnassigned: !showAll.value,
+      search: search.value,
+      page: page.value,
+      pageSize: PAGE_SIZE,
+    })
+  }
+
+  function applySearch() {
+    search.value = searchInput.value.trim()
+    page.value = 1
+    void reload()
+  }
+
+  function clearSearch() {
+    searchInput.value = ''
+    search.value = ''
+    page.value = 1
+    void reload()
+  }
+
+  watch(showAll, () => {
+    page.value = 1
+    void reload()
+  })
+
+  watch(page, () => {
+    void reload()
+  })
 
   const rules = {
     required: (v: unknown) => (!!v && String(v).trim() !== '') || 'Required',
@@ -64,8 +110,8 @@ export function useCustomers() {
 
   const filtered = computed(() => {
     const s = search.value.trim().toLowerCase()
-    if (!s) return customers.value
-    return customers.value.filter((c) =>
+    if (!s) return pagedCustomers.value
+    return pagedCustomers.value.filter((c) =>
       (c.name?.toLowerCase().includes(s) ?? false) ||
       (c.contact_person?.toLowerCase().includes(s) ?? false),
     )
@@ -89,13 +135,26 @@ export function useCustomers() {
     showForm.value = true
   }
 
+  function cancelForm() {
+    showForm.value = false
+    editingId.value = null
+    form.value = emptyForm()
+  }
+
   async function submit(): Promise<boolean> {
     if (!form.value.name?.trim()) return false
-    const payload = { ...form.value, department: 'inhouse' }
+    // Only a NEW customer is stamped 'inhouse'. Editing never rewrites the
+    // channel: once a customer belongs to a department they belong there, and
+    // this page also lists unassigned and (optionally) other channels' customers.
+    const payload = editingId.value ? { ...form.value } : { ...form.value, department: 'inhouse' }
     const result = editingId.value
       ? await store.updateCustomer(editingId.value, payload)
       : await store.createCustomer(payload)
-    if (result) { showForm.value = false; return true }
+    if (result) {
+      toast.success(editingId.value ? 'Customer updated.' : 'Customer created.')
+      cancelForm()
+      return true
+    }
     return false
   }
 
@@ -107,23 +166,20 @@ export function useCustomers() {
     await reload()
   }
 
-  // Unassigned customers are shown alongside In-House ones: most of the real
-  // customer file has no department yet, and one gets stamped only when it
-  // first transacts. `showAll` widens this to every department for the times
-  // staff need to find a customer that already belongs to another channel.
-  const showAll = ref(false)
-
-  async function reload() {
-    await store.fetchCustomers(
-      showAll.value ? {} : { department: 'inhouse', includeUnassigned: true },
-    )
-  }
-
-  watch(showAll, () => { void reload() })
-
   return {
-    customers, loading, search, filtered, showAll, reload,
-    showForm, editingId, form, rules,
-    openCreate, openEdit, submit, remove, init,
+    // paginated data
+    customers: pagedCustomers,
+    totalCount: pagedTotalCount,
+    loading: pagedLoading,
+    page,
+    pageSize: PAGE_SIZE,
+    reload,
+    // search
+    searchInput, search, applySearch, clearSearch,
+    // filters
+    showAll,
+    // form
+    showForm, editingId, form, rules, headers,
+    openCreate, openEdit, cancelForm, submit, remove, init,
   }
 }
