@@ -2,6 +2,7 @@
 import { computed, reactive, ref } from 'vue'
 import type { CreateCustomerData } from '@/stores/customersData'
 import type { AgentType } from '@/stores/agentsData'
+import CustomerTermsCard from '@/components/customers/CustomerTermsCard.vue'
 
 interface Props {
   customer?: any
@@ -114,6 +115,12 @@ async function submit() {
 </script>
 
 <template>
+  <CustomerTermsCard
+    v-if="customer"
+    :customer="customer"
+    title="Recorded terms for this customer"
+    class="mb-4"
+  />
   <v-form ref="formRef" @submit.prevent="submit">
     <v-text-field v-model="form.name" label="Name" :rules="required" />
     <v-select

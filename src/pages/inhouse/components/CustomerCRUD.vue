@@ -1,12 +1,18 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useCustomers, headers, agencyTypes, businessStructures } from '../composables/useCustomers'
+import CustomerTermsCard from '@/components/customers/CustomerTermsCard.vue'
 
 const {
-  loading, search, filtered,
+  customers, loading, search, filtered, showAll,
   showForm, editingId, form, rules,
   openCreate, openEdit, submit, remove, init,
 } = useCustomers()
+
+// The terms card reads the stored row, not the edit form — these are the
+// recorded narrative (price_offered / receipt_details), not editable fields.
+const editingCustomer = computed(() =>
+  editingId.value == null ? null : customers.value.find((c) => c.id === editingId.value) ?? null)
 
 const formRef = ref()
 
@@ -31,6 +37,10 @@ onMounted(init)
         <div class="d-flex align-center flex-wrap" style="gap:12px">
           <v-text-field v-model="search" placeholder="Search..." prepend-inner-icon="mdi-magnify"
             variant="outlined" density="compact" hide-details style="min-width:220px" />
+          <!-- Unassigned customers already show here; this widens it to every
+               channel for when an account is stamped to POS or Ethical. -->
+          <v-switch v-model="showAll" label="Show every channel" color="primary"
+            density="compact" hide-details inset />
           <v-btn color="primary" class="text-none font-weight-bold" elevation="0" prepend-icon="mdi-plus" @click="openCreate">
             New Customer
           </v-btn>
@@ -78,6 +88,7 @@ onMounted(init)
         <v-divider />
         <v-card-text class="pa-4 pa-sm-5">
           <v-form ref="formRef">
+            <CustomerTermsCard v-if="editingCustomer" :customer="editingCustomer" class="mb-3" />
             <v-text-field v-model="form.name" label="Name *" :rules="[rules.required]" variant="outlined" density="compact" class="mb-2" />
             <v-select v-model="form.agency_type" :items="agencyTypes" label="Type" variant="outlined" density="compact" class="mb-2" hide-details />
             <v-text-field v-model="form.contact_person" label="Contact person" variant="outlined" density="compact" class="mb-2" hide-details />

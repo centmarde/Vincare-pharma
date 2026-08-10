@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import CustomerTermsCard from '@/components/customers/CustomerTermsCard.vue'
 import { useCreateOrder } from '../../composables/useCreateOrder'
 import { formatCurrency } from '@/utils/helpers'
 
@@ -13,8 +14,9 @@ const internalValue = computed({
 
 const {
   loading, customerId, agentId, outletId, remarks, lines,
-  customerSearch, customerOptions, agentOptions, outletOptions, productOptions,
-  subtotal, discountRate, discountAmount, rebateRate, rebateAmount, termsDays, total, dueDatePreview,
+  customerSearch, customerOptions, selectedCustomer, agentOptions, outletOptions, productOptions,
+  subtotal, discountRate, discountAmount, rebateRate, rebateAmount, adsRate, adsAmount,
+  termsDays, total, dueDatePreview, discountProfile, termsNeedReview,
   markupDivisorLabel,
   giveawayRate, netRevenue, belowCostLines, hasBelowCostLine, lineBelowCost, erodesSystemPrice,
   addLine, removeLine, onProductChange, onCustomerChange, unitFor, submit, reset, init,
@@ -63,19 +65,38 @@ watch(() => internalValue.value, (v) => {
           />
         </div>
 
+        <CustomerTermsCard
+          v-if="selectedCustomer"
+          :customer="selectedCustomer"
+          :profile="discountProfile"
+          class="mb-4"
+        />
+
+
         <div class="mb-4 d-flex gap-2">
           <v-select v-model="agentId" :items="agentOptions" label="Medical Sales Representative" item-title="title" item-value="value" class="flex-grow-1" />
         </div>
 
         <v-alert
-          v-if="customerId"
+          v-if="customerId && termsNeedReview"
+          type="warning"
+          variant="tonal"
+          density="compact"
+          class="mb-4"
+        >
+          This customer's agreed terms don't reconcile, so nothing is applied automatically —
+          discount and rebate are 0%. Check the recorded terms above and adjust the line
+          prices yourself.
+        </v-alert>
+        <v-alert
+          v-else-if="customerId"
           type="info"
           variant="tonal"
           density="compact"
           class="mb-4"
         >
-          Discount, rebate and terms are set from the customer's trade profile —
-          edit them on the customer, not per order.
+          Discount, rebate and ads come from the customer's agreed terms — edit them on the
+          customer, not per order.
         </v-alert>
 
         <!-- 🔴 Below cost: a real loss. Blocks creation. -->
@@ -154,6 +175,9 @@ watch(() => internalValue.value, (v) => {
           <div class="text-lg font-weight-bold">Total: {{ formatCurrency(total) }}</div>
           <div class="text-caption text-medium-emphasis mt-1">
             Rebate<span v-if="rebateRate"> ({{ rebateRate }}%)</span>: {{ formatCurrency(rebateAmount) }} — paid separately, not deducted
+          </div>
+          <div v-if="adsRate" class="text-caption text-medium-emphasis">
+            Ads &amp; promo ({{ adsRate }}%): {{ formatCurrency(adsAmount) }} — given in kind, not deducted
           </div>
           <div class="text-caption text-medium-emphasis">
             Terms: Net {{ termsDays }} days<span v-if="termsDays"> (Due {{ dueDatePreview }})</span>

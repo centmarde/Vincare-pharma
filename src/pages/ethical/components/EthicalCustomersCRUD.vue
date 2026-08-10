@@ -4,7 +4,7 @@ import { useEthicalCustomers } from '../composables/useEthicalCustomers'
 import CustomerForm from './CustomerForm.vue'
 
 const {
-  customers, loading, searchText, showCreateDialog, showEditDialog, editingCustomer, headers,
+  customers, loading, searchText, showAll, showCreateDialog, showEditDialog, editingCustomer, headers,
   agentOptions, businessStructureOptions, structureLabel, createCustomer, updateCustomer, deleteCustomer,
   openCreateDialog, cancelCreate, openEdit, cancelEdit, init,
 } = useEthicalCustomers()
@@ -24,7 +24,12 @@ onMounted(() => init())
       </v-card-title>
 
       <v-card-text>
-        <v-text-field v-model="searchText" density="compact" placeholder="Search..." prepend-icon="mdi-magnify" class="mb-4" />
+        <div class="d-flex align-center flex-wrap ga-2 mb-4">
+          <v-text-field v-model="searchText" density="compact" placeholder="Search..." prepend-icon="mdi-magnify" hide-details class="flex-grow-1" />
+          <!-- Unassigned customers already show here; this widens it to every
+               channel for when an account is stamped to POS or In-House. -->
+          <v-switch v-model="showAll" label="Show every channel" color="primary" density="compact" hide-details inset />
+        </div>
         <v-progress-linear v-if="loading" indeterminate />
         <v-data-table :headers="headers" :items="customers" :loading="loading">
           <template #item.tin_number="{ item }">

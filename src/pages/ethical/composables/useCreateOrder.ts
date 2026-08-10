@@ -51,7 +51,7 @@ export function useCreateOrder(onCreated: () => void) {
   })
 
   // Searches ALL customers, not just department='ethical' — see useCustomerPicker.
-  const { search: customerSearch, customerOptions, selectedCustomer, init: initCustomerPicker } =
+  const { search: customerSearch, customerOptions, selectedCustomer, discountProfile, init: initCustomerPicker } =
     useCustomerPicker(customerId)
 
   const agentOptions = computed(() =>
@@ -79,7 +79,7 @@ export function useCreateOrder(onCreated: () => void) {
   // trade-profile pricing formula (customersData.ts markup_percent). Falls
   // back to the plain system price when the customer has no markup set.
   function priceForCustomer(systemPrice: number): number {
-    const markup = selectedCustomer.value?.markup_percent
+    const markup = discountProfile.value.markupPercent ?? selectedCustomer.value?.markup_percent
     if (markup == null) return systemPrice
     const divisor = (100 - markup) / 100
     if (divisor <= 0) return systemPrice
@@ -87,7 +87,7 @@ export function useCreateOrder(onCreated: () => void) {
   }
 
   const markupDivisorLabel = computed(() => {
-    const markup = selectedCustomer.value?.markup_percent
+    const markup = discountProfile.value.markupPercent ?? selectedCustomer.value?.markup_percent
     if (markup == null) return null
     return `System Price / ${100 - markup}%`
   })
@@ -101,10 +101,27 @@ export function useCreateOrder(onCreated: () => void) {
   // deferred incentive PAID OUT SEPARATELY to the customer/MSR (cash/GCash per
   // the customer's rebate_payment_mode); it is accrued here for the eventual
   // payout but is intentionally NOT subtracted from what the customer owes.
-  const discountRate = computed(() => selectedCustomer.value?.discount_rate ?? 0)
-  const rebateRate = computed(() => selectedCustomer.value?.rebate_rate ?? 0)
+  // Rates come from the `discounts` table (one row per component of the deal),
+  // not from the customer's single-value columns — see discountsData.
+  //
+  // A profile that doesn't reconcile is NOT priced from: 126 of 1,142 customers
+  // have components that don't add up to the agreed total (mostly dropped parts
+  // of a multi-recipient split), and guessing there would misstate the invoice.
+  // Those fall back to 0% so staff enter the figure deliberately against the
+  // recorded terms.
+  const termsNeedReview = computed(() =>
+    discountProfile.value.rows.length > 0 && !discountProfile.value.reconciles)
+  const priceable = computed(() => !termsNeedReview.value)
+
+  const discountRate = computed(() => priceable.value ? discountProfile.value.discountRate : 0)
+  const rebateRate = computed(() => priceable.value ? discountProfile.value.rebateRate : 0)
+  // In-kind marketing give ("food and drinks instead of cash"). Economically the
+  // same erosion as a rebate and it must count against the markup, but it posts
+  // to 6010 Ads & Promo rather than 6030, so it is tracked as its own rate.
+  const adsRate = computed(() => priceable.value ? discountProfile.value.adsRate : 0)
   const discountAmount = computed(() => round2(subtotal.value * discountRate.value / 100))
   const rebateAmount = computed(() => round2(subtotal.value * rebateRate.value / 100))
+  const adsAmount = computed(() => round2(subtotal.value * adsRate.value / 100))
   // term_days is free text in the live data ('60 Days', 'COD', 'Consignment ').
   // Falls back to 0 (due on invoice) when the customer's arrangement carries no
   // day count — the order still needs a concrete due date, unlike AR aging,
@@ -123,7 +140,7 @@ export function useCreateOrder(onCreated: () => void) {
   //   net = unit_price * (1 - (discount + rebate)/100)
   // — the invoice alone overstates this, because the rebate is real cash paid
   // out later even though it never appears on the invoice.
-  const giveawayRate = computed(() => discountRate.value + rebateRate.value)
+  const giveawayRate = computed(() => discountRate.value + rebateRate.value + adsRate.value)
   const netUnitPrice = (unitPrice: number) => round2(unitPrice * (1 - giveawayRate.value / 100))
   const netRevenue = computed(() => round2(subtotal.value * (1 - giveawayRate.value / 100)))
 
@@ -148,7 +165,7 @@ export function useCreateOrder(onCreated: () => void) {
   // blocking (a deliberate promo is the business's call).
   const erodesSystemPrice = computed(() => {
     if (giveawayRate.value === 0) return false
-    const markup = selectedCustomer.value?.markup_percent
+    const markup = discountProfile.value.markupPercent ?? selectedCustomer.value?.markup_percent
     // No markup set -> price IS the system price, so any giveaway erodes it.
     return markup == null ? true : giveawayRate.value > markup
   })
@@ -191,6 +208,7 @@ export function useCreateOrder(onCreated: () => void) {
       outletId: outletId.value,
       discount: discountAmount.value || undefined,
       rebate: rebateAmount.value || undefined,
+      ads: adsAmount.value || undefined,
       termsDays: termsDays.value || undefined,
       remarks: remarks.value || undefined,
       lines: validLines.value.map(l => ({
@@ -226,7 +244,8 @@ export function useCreateOrder(onCreated: () => void) {
   return {
     loading, customerId, agentId, outletId, remarks, lines,
     customerSearch, customerOptions, selectedCustomer, agentOptions, outletOptions, productOptions,
-    subtotal, discountRate, discountAmount, rebateRate, rebateAmount, termsDays, total, dueDatePreview,
+    subtotal, discountRate, discountAmount, rebateRate, rebateAmount, adsRate, adsAmount,
+    termsDays, total, dueDatePreview, discountProfile, termsNeedReview,
     markupDivisorLabel,
     giveawayRate, netRevenue, belowCostLines, hasBelowCostLine, lineBelowCost, erodesSystemPrice,
     addLine, removeLine, onProductChange, onCustomerChange, unitFor, submit, reset, init,
