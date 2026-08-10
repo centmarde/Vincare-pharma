@@ -91,7 +91,7 @@ const hasAny = computed(() =>
     </div>
 
     <div v-if="!hasRates && !unreconciled" class="text-medium-emphasis mt-2" style="font-size: 11px">
-      Recorded terms, for reference — no parsed rates for this customer, so orders price at 0%.
+      Rates not set yet for this customer, so orders price at 0%. The recorded terms above are what was agreed.
     </div>
   </v-alert>
 </template>

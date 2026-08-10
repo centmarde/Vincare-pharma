@@ -195,9 +195,13 @@ export const useCustomersDataStore = defineStore('customersData', () => {
       }
       if (search?.trim()) {
         const s = search.trim().replace(/,/g, '')
-        q = q.or(`name.ilike.%${s}%,contact_person.ilike.%${s}%`)
+        q = q.or(`name.ilike.%${s}%,contact_person.ilike.%${s}%,contact_no.ilike.%${s}%`)
       }
-      q = q.order('created_at', { ascending: false })
+      // Ordered by NAME, not created_at. This is a directory people look
+      // customers up in, and newest-first also skewed what you see: the
+      // customers carrying agreed rates are mostly older rows, so a
+      // created_at-descending first page showed rates on only 8% of it.
+      q = q.order('name', { ascending: true })
 
       const { data, error: fetchError } = await q
       if (fetchError) throw fetchError

@@ -2,9 +2,12 @@
 import { computed, onMounted, ref } from 'vue'
 import { useCustomers, headers, agencyTypes, businessStructures } from '../composables/useCustomers'
 import CustomerTermsCard from '@/components/customers/CustomerTermsCard.vue'
+import CustomerTermsChips from '@/components/customers/CustomerTermsChips.vue'
+import FieldValue from '@/components/customers/FieldValue.vue'
+import { label } from '@/utils/helpers'
 
 const {
-  customers, loading, search, filtered, showAll,
+  customers, loading, search, filtered, showAll, profileFor,
   showForm, editingId, form, rules,
   openCreate, openEdit, submit, remove, init,
 } = useCustomers()
@@ -16,13 +19,7 @@ const editingCustomer = computed(() =>
 
 const formRef = ref()
 
-function structureLabel(value: string | null): string {
-  return businessStructures.find((s) => s.value === value)?.title ?? 'not set yet'
-}
 
-function label(value: string | null | undefined): string {
-  return value && value.trim() !== '' ? value : 'not set yet'
-}
 
 async function onSubmit() {
   const { valid } = await formRef.value.validate()
@@ -52,7 +49,11 @@ onMounted(init)
       </v-card-title>
       <v-divider />
 
-      <v-data-table :headers="headers" :items="filtered" :loading="loading" no-data-text="No customers yet." hover>
+      <v-data-table
+        :headers="headers" :items="filtered" :loading="loading"
+        no-data-text="No customers yet." hover
+        density="compact" :items-per-page="25" class="text-no-wrap"
+      >
         <template #item.name="{ item }">
           <span class="text-body-2 font-weight-medium">{{ label(item.name) }}</span>
         </template>
@@ -61,29 +62,17 @@ onMounted(init)
             {{ label(item.agency_type) }}
           </v-chip>
         </template>
-        <template #item.contact_person="{ item }">
-          <span class="text-body-2">{{ label(item.contact_person) }}</span>
-        </template>
         <template #item.contact_no="{ item }">
-          <span class="text-body-2">{{ label(item.contact_no) }}</span>
+          <FieldValue :value="item.contact_no" />
+        </template>
+        <template #item.area="{ item }">
+          <FieldValue :value="item.area" />
         </template>
         <template #item.tin_number="{ item }">
-          <span class="text-body-2">{{ label(item.tin_number) }}</span>
+          <FieldValue :value="item.tin_number" />
         </template>
-        <template #item.is_vat_registered="{ item }">
-          <v-chip size="small" :color="item.is_vat_registered ? 'primary' : 'grey'" variant="tonal">
-            {{ item.is_vat_registered ? 'VAT' : 'Non-VAT' }}
-          </v-chip>
-        </template>
-        <template #item.business_structure="{ item }">
-          <v-chip size="small" variant="tonal" :class="{ 'text-lowercase': !item.business_structure }" class="text-uppercase">
-            {{ structureLabel(item.business_structure) }}
-          </v-chip>
-        </template>
-        <template #item.reg_no="{ item }">
-          <span class="text-body-2">
-            {{ label(item.business_structure === 'sole_proprietorship' ? item.dti_registration_no : item.sec_registration_no) }}
-          </span>
+        <template #item.terms="{ item }">
+          <CustomerTermsChips :profile="profileFor(item.id)" />
         </template>
         <template #item.is_active="{ item }">
           <v-icon :color="item.is_active ? 'success' : 'grey'">
@@ -105,7 +94,12 @@ onMounted(init)
         <v-divider />
         <v-card-text class="pa-4 pa-sm-5">
           <v-form ref="formRef">
-            <CustomerTermsCard v-if="editingCustomer" :customer="editingCustomer" class="mb-3" />
+            <CustomerTermsCard
+              v-if="editingCustomer"
+              :customer="editingCustomer"
+              :profile="profileFor(editingCustomer.id)"
+              class="mb-3"
+            />
             <v-text-field v-model="form.name" label="Name *" :rules="[rules.required]" variant="outlined" density="compact" class="mb-2" />
             <v-select v-model="form.agency_type" :items="agencyTypes" label="Type" variant="outlined" density="compact" class="mb-2" hide-details />
             <v-text-field v-model="form.contact_person" label="Contact person" variant="outlined" density="compact" class="mb-2" hide-details />

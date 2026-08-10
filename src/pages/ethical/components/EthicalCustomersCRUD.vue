@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
+import CustomerTermsChips from '@/components/customers/CustomerTermsChips.vue'
+import FieldValue from '@/components/customers/FieldValue.vue'
 import { useEthicalCustomers } from '../composables/useEthicalCustomers'
 import CustomerForm from './CustomerForm.vue'
 
 const {
-  customers, loading, searchText, showAll, showCreateDialog, showEditDialog, editingCustomer, headers,
-  agentOptions, businessStructureOptions, structureLabel, createCustomer, updateCustomer, deleteCustomer,
+  customers, loading, searchText, showAll, profileFor, showCreateDialog, showEditDialog, editingCustomer, headers,
+  agentOptions, businessStructureOptions, createCustomer, updateCustomer, deleteCustomer,
   openCreateDialog, cancelCreate, openEdit, cancelEdit, init,
 } = useEthicalCustomers()
 
@@ -31,27 +33,36 @@ onMounted(() => init())
           <v-switch v-model="showAll" label="Show every channel" color="primary" density="compact" hide-details inset />
         </div>
         <v-progress-linear v-if="loading" indeterminate />
-        <v-data-table :headers="headers" :items="customers" :loading="loading">
-          <template #item.tin_number="{ item }">
-            <span class="text-body-2">{{ item.tin_number || '—' }}</span>
+        <v-data-table
+          :headers="headers"
+          :items="customers"
+          :loading="loading"
+          density="compact"
+          :items-per-page="25"
+          class="text-no-wrap"
+        >
+          <template #item.name="{ item }">
+            <FieldValue :value="item.name" />
           </template>
-          <template #item.is_vat_registered="{ item }">
-            <v-chip size="small" :color="item.is_vat_registered ? 'primary' : 'grey'" variant="tonal">
-              {{ item.is_vat_registered ? 'VAT' : 'Non-VAT' }}
-            </v-chip>
+          <template #item.agency_type="{ item }">
+            <FieldValue :value="item.agency_type" />
           </template>
-          <template #item.business_structure="{ item }">
-            <v-chip size="small" variant="tonal" class="text-uppercase">{{ structureLabel(item.business_structure) }}</v-chip>
+          <template #item.contact_no="{ item }">
+            <FieldValue :value="item.contact_no" />
           </template>
-          <template #item.reg_no="{ item }">
-            <span class="text-body-2">
-              {{ item.business_structure === 'sole_proprietorship' ? (item.dti_registration_no || '—') : (item.sec_registration_no || '—') }}
-            </span>
+          <template #item.area="{ item }">
+            <FieldValue :value="item.area" />
+          </template>
+          <template #item.agent_name="{ item }">
+            <FieldValue :value="item.agent_name" />
           </template>
           <template #item.is_active="{ item }">
             <v-chip :color="item.is_active ? 'success' : 'grey'" size="small">
               {{ item.is_active ? 'Active' : 'Inactive' }}
             </v-chip>
+          </template>
+          <template #item.terms="{ item }">
+            <CustomerTermsChips :profile="profileFor(item.id)" />
           </template>
           <template #item.actions="{ item }">
             <v-btn size="x-small" icon="mdi-pencil" @click="openEdit(item.id)" />
@@ -81,6 +92,7 @@ onMounted(() => init())
         <v-card-text>
           <CustomerForm
             :customer="editingCustomer"
+            :profile="editingCustomer ? profileFor(editingCustomer.id) : null"
             :agent-options="agentOptions"
             :business-structure-options="businessStructureOptions"
             @submit="updateCustomer"

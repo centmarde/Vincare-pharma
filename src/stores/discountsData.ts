@@ -183,5 +183,66 @@ export const useDiscountsDataStore = defineStore('discountsData', () => {
     return buildDiscountProfile(await fetchForCustomer(customerId))
   }
 
-  return { loading, error, fetchForCustomer, fetchProfile }
+  /**
+   * Every customer's profile, keyed by customer_id — for LIST views that need a
+   * rate against each row.
+   *
+   * Loads the whole table (~1.9k rows, two paged requests) once per session
+   * rather than issuing a request per row or stuffing 1000 ids into an
+   * `in.(…)` filter, which would blow the URL length. Cached: repeat calls are
+   * a no-op unless `force` is set.
+   */
+  const profilesByCustomer: Ref<Map<number, DiscountProfile>> = ref(new Map())
+  const profilesLoaded = ref(false)
+
+  async function ensureProfilesLoaded(force = false) {
+    if (profilesLoaded.value && !force) return profilesByCustomer.value
+    loading.value = true
+    error.value = ''
+    try {
+      const rows: DiscountType[] = []
+      // PostgREST caps a response at 1000 rows; page until short.
+      for (let from = 0; ; from += 1000) {
+        const { data, error: fetchError } = await supabase
+          .from('discounts')
+          .select('id, created_at, name, description, customer_id, discount_rate, discount_name, total_rebate_offered')
+          .order('id', { ascending: true })
+          .range(from, from + 999)
+        if (fetchError) throw fetchError
+        const page = (data || []) as DiscountType[]
+        rows.push(...page)
+        if (page.length < 1000) break
+      }
+
+      const byCustomer = new Map<number, DiscountType[]>()
+      for (const r of rows) {
+        if (r.customer_id == null) continue
+        const list = byCustomer.get(r.customer_id) ?? []
+        list.push(r)
+        byCustomer.set(r.customer_id, list)
+      }
+      const built = new Map<number, DiscountProfile>()
+      for (const [cid, list] of byCustomer) built.set(cid, buildDiscountProfile(list))
+      profilesByCustomer.value = built
+      profilesLoaded.value = true
+      return built
+    } catch (err) {
+      error.value = getErrorMessage(err)
+      console.error('ensureProfilesLoaded (discounts) failed:', err)
+      return profilesByCustomer.value
+    } finally {
+      loading.value = false
+    }
+  }
+
+  function profileFor(customerId: number | null | undefined): DiscountProfile | null {
+    if (customerId == null) return null
+    return profilesByCustomer.value.get(customerId) ?? null
+  }
+
+  return {
+    loading, error,
+    fetchForCustomer, fetchProfile,
+    profilesByCustomer, ensureProfilesLoaded, profileFor,
+  }
 })
