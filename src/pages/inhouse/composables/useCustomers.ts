@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useCustomersDataStore } from '@/stores/customersData'
 import type { CustomerType, CreateCustomerData } from '@/stores/customersData'
@@ -104,11 +104,25 @@ export function useCustomers() {
   }
 
   async function init() {
-    await store.fetchCustomers({ department: 'inhouse' })
+    await reload()
   }
 
+  // Unassigned customers are shown alongside In-House ones: most of the real
+  // customer file has no department yet, and one gets stamped only when it
+  // first transacts. `showAll` widens this to every department for the times
+  // staff need to find a customer that already belongs to another channel.
+  const showAll = ref(false)
+
+  async function reload() {
+    await store.fetchCustomers(
+      showAll.value ? {} : { department: 'inhouse', includeUnassigned: true },
+    )
+  }
+
+  watch(showAll, () => { void reload() })
+
   return {
-    customers, loading, search, filtered,
+    customers, loading, search, filtered, showAll, reload,
     showForm, editingId, form, rules,
     openCreate, openEdit, submit, remove, init,
   }

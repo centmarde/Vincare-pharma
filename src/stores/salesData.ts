@@ -279,10 +279,19 @@ export const useSalesDataStore = defineStore('salesData', () => {
       if (existingCustomer) customerId = existingCustomer.id
     }
     if (customerId) {
-      await supabase
-        .from('customers')
-        .update({ ...(name ? { name } : {}), ...(address ? { address } : {}) })
-        .eq('id', customerId)
+      // Fill blanks only — NEVER overwrite an existing name/address. Real
+      // customers now live in this table (the drugstore accounts carry
+      // department='pos'), so a typo at the till would otherwise silently
+      // rename a live business record and re-render its whole receipt history.
+      // Corrections belong in the customer CRUD pages, not the checkout.
+      const { data: existing } = await supabase
+        .from('customers').select('name, address').eq('id', customerId).maybeSingle()
+      const patch: Record<string, string> = {}
+      if (name && !existing?.name) patch.name = name
+      if (address && !existing?.address) patch.address = address
+      if (Object.keys(patch).length) {
+        await supabase.from('customers').update(patch).eq('id', customerId)
+      }
     } else if (name || mobile) {
       const { data: newCustomer, error: customerError } = await supabase
         .from('customers')

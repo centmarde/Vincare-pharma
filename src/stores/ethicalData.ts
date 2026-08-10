@@ -8,6 +8,7 @@ import { useAuthUserStore } from '@/stores/authUser'
 import { useCanvassDataStore } from '@/stores/canvassData'
 import { useDeliveryReceiptsDataStore } from '@/stores/deliveryReceiptsData'
 import { useGLDataStore } from '@/stores/glData'
+import { useCustomersDataStore } from '@/stores/customersData'
 import { generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
 import type { ProductType } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
@@ -169,6 +170,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
   const authStore = useAuthUserStore()
   const canvassStore = useCanvassDataStore()
   const drStore = useDeliveryReceiptsDataStore()
+  const customersStore = useCustomersDataStore()
   const glStore = useGLDataStore()
 
   const orders: Ref<EthicalOrderType[]> = ref([])
@@ -310,6 +312,13 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
       toast.error(insertError?.message || 'Failed to create order.')
       loading.value = false
       return { success: false }
+    }
+
+    // Record the customer's home channel on first transaction — only when blank,
+    // so a cross-channel order never relabels an already-stamped customer.
+    // Best-effort, never blocks the order. See customersData.stampDepartmentIfBlank.
+    if (payload.customerId != null) {
+      await customersStore.stampDepartmentIfBlank(payload.customerId, 'ethical')
     }
 
     let anyShort = false

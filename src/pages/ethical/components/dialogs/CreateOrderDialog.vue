@@ -13,7 +13,7 @@ const internalValue = computed({
 
 const {
   loading, customerId, agentId, outletId, remarks, lines,
-  customerOptions, agentOptions, outletOptions, productOptions,
+  customerSearch, customerOptions, agentOptions, outletOptions, productOptions,
   subtotal, discountRate, discountAmount, rebateRate, rebateAmount, termsDays, total, dueDatePreview,
   markupDivisorLabel,
   giveawayRate, netRevenue, belowCostLines, hasBelowCostLine, lineBelowCost, erodesSystemPrice,
@@ -34,15 +34,23 @@ watch(() => internalValue.value, (v) => {
       <v-card-title>Create Ethical Order</v-card-title>
       <v-card-text>
         <div class="mb-4 d-flex gap-2">
-          <v-select
+          <!-- Server-side search: there are ~5.3k customers, and the list is no
+               longer filtered by department (a customer may trade through more
+               than one channel). The subtitle shows category · area · department
+               so staff can tell apart the many same-named pharmacies. -->
+          <v-autocomplete
             v-model="customerId"
+            v-model:search="customerSearch"
             :items="customerOptions"
             label="Customer"
             item-title="title"
             item-value="value"
+            item-props
+            no-filter
             class="flex-grow-1"
             :hint="markupDivisorLabel ?? undefined"
             persistent-hint
+            no-data-text="No customer matches that search"
             @update:model-value="onCustomerChange"
           />
           <v-select
