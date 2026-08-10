@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { usePos } from '../composables/usePos'
 import { usePosCheckout } from '../composables/usePosCheckout'
 import PosPaymentDialog from '../dialogs/PosPaymentDialog.vue'
 import PosReceiptDialog from '../dialogs/PosReceiptDialog.vue'
 import { formatCurrency } from '@/utils/helpers'
+import { usePos } from '../composables/usePos'
+import { useDisplay } from 'vuetify'
 
+const { mobile } = useDisplay()
 const pos = usePos()
 const {
   search, cart, loading,
@@ -27,13 +29,13 @@ onMounted(init)
 
 <template>
   <v-container fluid class="pa-2 fill-height align-start">
-    <v-row >
+    <v-row>
       <!-- ── Product picker ─────────────────────────────────────── -->
-      <v-col cols="12" md="7" class="pa-2">
+      <v-col cols="12" lg="7" class="pa-2">
         <v-card rounded="lg" elevation="1">
           <v-card-title class="d-flex justify-space-between align-center pa-4 flex-wrap ga-3">
             <span class="text-h6 font-weight-bold">POS</span>
-            <div class="d-flex align-center flex-wrap ga-3">
+            <div class="d-flex align-center flex-wrap ga-3" :class="mobile ? 'w-100' : ''">
               <v-select
                 :model-value="selectedOutletId"
                 :items="posOutletOptions"
@@ -43,7 +45,7 @@ onMounted(init)
                 variant="outlined"
                 density="compact"
                 hide-details
-                style="min-width: 200px"
+                :style="mobile ? 'width: 100%' : 'min-width: 200px'"
                 @update:model-value="setOutlet"
               />
               <v-text-field
@@ -53,19 +55,19 @@ onMounted(init)
                 variant="outlined"
                 density="compact"
                 hide-details
-                style="min-width: 240px"
+                :style="mobile ? 'width: 100%' : 'min-width: 240px'"
               />
             </div>
           </v-card-title>
           <v-divider />
 
-          <v-card-text class="pa-3" style="max-height: 70vh; overflow-y: auto">
+          <v-card-text class="pa-3" :style="mobile ? 'max-height: 50vh; overflow-y: auto' : 'max-height: 70vh; overflow-y: auto'">
             <div v-if="loading" class="text-center pa-6 text-medium-emphasis">Loading stock…</div>
             <div v-else-if="!filteredProducts.length" class="text-center pa-6 text-medium-emphasis">
               No sellable stock. Transfer stock into this branch first.
             </div>
             <v-row v-else dense>
-              <v-col v-for="p in filteredProducts" :key="p.product_id" cols="6" sm="4">
+              <v-col v-for="p in filteredProducts" :key="p.product_id" cols="6" sm="4" lg="3">
                 <v-card
                   variant="outlined"
                   rounded="lg"
@@ -73,12 +75,12 @@ onMounted(init)
                   hover
                   @click="addToCart(p)"
                 >
-                  <div class="text-body-2 font-weight-medium">{{ p.product_name }}</div>
-                  <div class="text-caption text-medium-emphasis mb-2">{{ p.sku ?? '—' }}</div>
+                  <div class="text-body-2 font-weight-medium text-truncate">{{ p.product_name }}</div>
+                  <div class="text-caption text-medium-emphasis text-truncate mb-2">{{ p.sku ?? '—' }}</div>
                   <v-spacer />
-                  <div class="d-flex justify-space-between align-center">
-                    <span class="text-body-2 font-weight-bold text-primary">{{ formatCurrency(p.unit_price) }}</span>
-                    <span class="text-caption text-medium-emphasis">{{ p.available }} left</span>
+                  <div class="d-flex justify-space-between align-center ga-1">
+                    <span class="text-body-2 font-weight-bold text-primary text-truncate">{{ formatCurrency(p.unit_price) }}</span>
+                    <span class="text-caption text-medium-emphasis flex-shrink-0">{{ p.available }} left</span>
                   </div>
                 </v-card>
               </v-col>
@@ -88,7 +90,7 @@ onMounted(init)
       </v-col>
 
       <!-- ── Cart ───────────────────────────────────────────────── -->
-      <v-col cols="12" md="5" class="pa-2">
+      <v-col cols="12" lg="5" class="pa-2">
         <v-card rounded="lg" elevation="1">
           <v-card-title class="d-flex justify-space-between align-center pa-4">
             <span class="text-h6 font-weight-bold">Cart</span>
@@ -105,7 +107,7 @@ onMounted(init)
           </v-card-title>
           <v-divider />
 
-          <v-card-text class="pa-3" style="max-height: 50vh; overflow-y: auto">
+          <v-card-text class="pa-3" :style="mobile ? 'max-height: 40vh; overflow-y: auto' : 'max-height: 50vh; overflow-y: auto'">
             <div v-if="isEmpty" class="text-center pa-6 text-medium-emphasis">
               Tap a product to add it.
             </div>
@@ -114,8 +116,8 @@ onMounted(init)
               :key="line.product_id"
               class="d-flex align-center py-2 ga-2"
             >
-              <div class="flex-grow-1">
-                <div class="text-body-2 font-weight-medium">{{ line.product_name }}</div>
+              <div class="flex-grow-1" style="min-width: 0">
+                <div class="text-body-2 font-weight-medium text-truncate">{{ line.product_name }}</div>
                 <div class="text-caption text-medium-emphasis">{{ formatCurrency(line.unit_price) }} each</div>
               </div>
               <v-text-field
@@ -126,18 +128,30 @@ onMounted(init)
                 density="compact"
                 variant="outlined"
                 hide-details
-                class="input-number"
-                style="width: 90px"
+                class="input-number flex-shrink-0"
+                :style="mobile ? 'width: 70px' : 'width: 90px'"
                 @update:model-value="setQty(i, Number($event))"
               />
-              <div class="text-body-2 font-weight-bold" style="width: 80px; text-align: right">
+
+              <!-- Mobile: total below qty -->
+              <div
+                v-if="mobile"
+                class="text-body-2 font-weight-bold text-right"
+                style="width: 85px; min-width: 0"
+              >
+                <div class="text-truncate">{{ formatCurrency(line.quantity * line.unit_price) }}</div>
+              </div>
+              <!-- Desktop: total -->
+              <div v-else class="text-body-2 font-weight-bold flex-shrink-0" style="width: 80px; text-align: right">
                 {{ formatCurrency(line.quantity * line.unit_price) }}
               </div>
+
               <v-btn
                 variant="text"
                 size="small"
                 icon="mdi-close"
                 color="error"
+                class="flex-shrink-0"
                 @click="removeFromCart(i)"
               />
             </div>

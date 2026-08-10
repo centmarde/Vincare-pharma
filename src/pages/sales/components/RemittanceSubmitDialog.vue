@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type { ExpectedSummary } from '@/stores/remittancesData'
 import { formatCurrency } from '@/utils/helpers'
+import { useDisplay } from 'vuetify'
 
+const { mobile } = useDisplay()
 defineProps<{
   modelValue: boolean
   expected: ExpectedSummary
@@ -30,12 +32,19 @@ const noteRequiredRule = (v: string) => !!v?.trim() || 'A note is required for a
 <template>
   <v-dialog
     :model-value="modelValue"
-    max-width="480"
+    :fullscreen="mobile"
+    :max-width="mobile ? undefined : 480"
+    :transition="mobile ? 'dialog-bottom-transition' : undefined"
     persistent
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <v-card rounded="lg">
-      <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold">Close Day / Remit Cash</v-card-title>
+    <v-card :rounded="mobile ? '0' : 'lg'">
+      <v-toolbar v-if="mobile" color="surface" density="comfortable">
+        <v-btn icon="mdi-close" @click="emit('update:modelValue', false)" />
+        <v-toolbar-title class="text-body-1 font-weight-bold">Close Day / Remit Cash</v-toolbar-title>
+      </v-toolbar>
+
+      <v-card-title v-else class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold">Close Day / Remit Cash</v-card-title>
       <v-divider />
 
       <v-card-text class="pa-4 pa-sm-5">
@@ -123,7 +132,31 @@ const noteRequiredRule = (v: string) => !!v?.trim() || 'A note is required for a
 
       <v-divider />
 
-      <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end ga-2">
+      <!-- Mobile: stacked full-width actions -->
+      <v-card-actions v-if="mobile" class="px-4 py-4 d-flex flex-column ga-2">
+        <v-btn
+          variant="outlined"
+          class="text-none"
+          block
+          @click="emit('update:modelValue', false)"
+        >
+          Cancel
+        </v-btn>
+        <v-btn
+          color="primary"
+          class="text-none font-weight-bold"
+          elevation="0"
+          block
+          :loading="loading"
+          :disabled="!canSubmit"
+          @click="emit('submit')"
+        >
+          Submit Remittance
+        </v-btn>
+      </v-card-actions>
+
+      <!-- Desktop: side-by-side actions -->
+      <v-card-actions v-else class="px-5 pb-5 pt-3 d-flex justify-end ga-2">
         <v-btn variant="outlined" class="text-none" @click="emit('update:modelValue', false)">
           Cancel
         </v-btn>
