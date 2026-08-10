@@ -106,6 +106,19 @@ export type CreateCustomerData = {
   rebate_ratio_distribution?: string | null
 }
 
+export type FetchCustomersRPCOptions = {
+  department?: string | null
+  includeUnassigned?: boolean
+  search?: string | null
+  page?: number
+  pageSize?: number
+}
+
+export type CustomersRPCResult = {
+  rows: CustomerType[]
+  totalCount: number
+}
+
 export type UpdateCustomerData = CreateCustomerData
 
 type FetchCustomersOptions = {
@@ -129,6 +142,9 @@ export const useCustomersDataStore = defineStore('customersData', () => {
   // Kept apart from `customers` on purpose — see searchCustomers().
   const searchResults: Ref<CustomerType[]> = ref([])
   const currentCustomer: Ref<CustomerType | undefined> = ref(undefined)
+  const pagedCustomers: Ref<CustomerType[]> = ref([])
+  const pagedTotalCount: Ref<number> = ref(0)
+  const pagedLoading = ref(false)
   const loading = ref(false)
   const error: Ref<string> = ref('')
 
@@ -243,6 +259,46 @@ export const useCustomersDataStore = defineStore('customersData', () => {
     }
   }
 
+  async function fetchCustomersRPC(options: FetchCustomersRPCOptions = {}): Promise<CustomersRPCResult> {
+    pagedLoading.value = true
+    clearError()
+    try {
+      const {
+        department = null,
+        includeUnassigned = false,
+        search = null,
+        page = 1,
+        pageSize = 10,
+      } = options
+
+      const { data, error: rpcError } = await supabase.rpc('fetch_customers_rpc', {
+        p_department: department,
+        p_include_unassigned: includeUnassigned,
+        p_search: search?.trim() || null,
+        p_page: page,
+        p_page_size: pageSize,
+      })
+      if (rpcError) throw rpcError
+
+      const rows = (data || []) as (CustomerType & { total_count: number })[]
+      const totalCount = rows.length > 0 ? rows[0].total_count : 0
+
+      // Strip total_count before storing as CustomerType
+      const cleaned = rows.map(({ total_count, ...rest }) => rest) as CustomerType[]
+
+      pagedCustomers.value = cleaned
+      pagedTotalCount.value = totalCount
+      return { rows: cleaned, totalCount }
+    } catch (err) {
+      handleError(err, 'Failed to fetch customers')
+      pagedCustomers.value = []
+      pagedTotalCount.value = 0
+      return { rows: [], totalCount: 0 }
+    } finally {
+      pagedLoading.value = false
+    }
+  }
+
   /**
    * Record the home channel the FIRST time a customer transacts. Never
    * overwrites an existing stamp: once a customer is marked as belonging to a
@@ -324,7 +380,8 @@ export const useCustomersDataStore = defineStore('customersData', () => {
   return {
     customers, searchResults, currentCustomer, loading, error,
     isLoading, hasError,
-    fetchCustomers, searchCustomers, stampDepartmentIfBlank,
+    pagedCustomers, pagedTotalCount, pagedLoading,
+    fetchCustomers, searchCustomers, stampDepartmentIfBlank, fetchCustomersRPC,
     createCustomer, updateCustomer, deleteCustomer,
     startRealtime, stopRealtime, clearError, resetStore,
   }

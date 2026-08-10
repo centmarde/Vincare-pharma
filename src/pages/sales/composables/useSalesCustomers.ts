@@ -8,11 +8,14 @@ export const headers = [
   { title: 'NAME',     key: 'name',        sortable: true,  align: 'start' as const },
   { title: 'CATEGORY', key: 'category',    sortable: true,  align: 'center' as const },
   { title: 'AREA',     key: 'area',        sortable: true,  align: 'center' as const },
+  { title: 'ADDRESS',  key: 'address',     sortable: true,  align: 'center' as const },
   { title: 'CONTACT',  key: 'contact_no',  sortable: false, align: 'center' as const },
   { title: 'TERMS',    key: 'term_days',   sortable: false, align: 'center' as const },
   { title: 'CHANNEL',  key: 'department',  sortable: true,  align: 'center' as const },
   { title: '',         key: 'actions',     sortable: false, align: 'end' as const },
 ] as const
+
+const PAGE_SIZE = 10
 
 const emptyForm = (): CreateCustomerData => ({
   name: '', contact_person: '', contact_no: '', email: '', address: '',
@@ -30,10 +33,13 @@ const emptyForm = (): CreateCustomerData => ({
  */
 export function useSalesCustomers() {
   const store = useCustomersDataStore()
-  const { customers, loading } = storeToRefs(store)
+  const { pagedCustomers, pagedTotalCount, pagedLoading } = storeToRefs(store)
   const toast = useToast()
 
+  const searchInput = ref('')
   const search = ref('')
+  const page = ref(1)
+
   const showForm = ref(false)
   const editingId = ref<number | null>(null)
   const form = ref<CreateCustomerData>(emptyForm())
@@ -44,25 +50,52 @@ export function useSalesCustomers() {
   const showAll = ref(false)
 
   async function reload() {
-    await store.fetchCustomers(
-      showAll.value ? {} : { department: 'pos', includeUnassigned: true },
-    )
+    await store.fetchCustomersRPC({
+      department: showAll.value ? null : 'pos',
+      includeUnassigned: !showAll.value,
+      search: search.value,
+      page: page.value,
+      pageSize: PAGE_SIZE,
+    })
   }
-  watch(showAll, () => { void reload() })
+
+  function applySearch() {
+    search.value = searchInput.value.trim()
+    page.value = 1
+    void reload()
+  }
+
+  function clearSearch() {
+    searchInput.value = ''
+    search.value = ''
+    page.value = 1
+    void reload()
+  }
+
+  watch(showAll, () => { page.value = 1
+    void reload()
+  })
+
+  // watch(showAll, () => { void reload() })
+
+  watch(page, () => {
+    void reload()
+  })
+
+  const rules = {
+    required: (v: unknown) => (!!v && String(v).trim() !== '') || 'Required',
+  }
 
   const filtered = computed(() => {
     const s = search.value.trim().toLowerCase()
-    if (!s) return customers.value
-    return customers.value.filter((c) =>
+    if (!s) return pagedCustomers.value
+    return pagedCustomers.value.filter((c) =>
       (c.name?.toLowerCase().includes(s) ?? false) ||
       (c.contact_no?.toLowerCase().includes(s) ?? false) ||
       (c.area?.toLowerCase().includes(s) ?? false),
     )
   })
 
-  const rules = {
-    required: (v: unknown) => (!!v && String(v).trim() !== '') || 'Required',
-  }
 
   function openCreate() {
     editingId.value = null
@@ -108,7 +141,18 @@ export function useSalesCustomers() {
   }
 
   return {
-    customers, loading, search, filtered, showAll, reload,
+    // paginated data
+    customers: pagedCustomers,
+    totalCount: pagedTotalCount,
+    loading: pagedLoading,
+    page,
+    pageSize: PAGE_SIZE,
+    reload,
+    // search
+    searchInput, search, applySearch, clearSearch,
+    // filters
+    showAll,
+    // form
     showForm, editingId, form, rules, headers,
     openCreate, openEdit, cancelForm, submit, init,
   }
