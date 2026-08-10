@@ -154,6 +154,7 @@ declare module 'vue-router/auto-routes' {
     '/sales/dialogs/PosReceiptDialog': RouteRecordInfo<'/sales/dialogs/PosReceiptDialog', '/sales/dialogs/PosReceiptDialog', Record<never, never>, Record<never, never>>,
     '/sales/dialogs/VoidSaleDialog': RouteRecordInfo<'/sales/dialogs/VoidSaleDialog', '/sales/dialogs/VoidSaleDialog', Record<never, never>, Record<never, never>>,
     '/sales/InventoryView': RouteRecordInfo<'/sales/InventoryView', '/sales/InventoryView', Record<never, never>, Record<never, never>>,
+    '/sales/mobile/OutletInventoryMobile': RouteRecordInfo<'/sales/mobile/OutletInventoryMobile', '/sales/mobile/OutletInventoryMobile', Record<never, never>, Record<never, never>>,
     '/sales/OutletsView': RouteRecordInfo<'/sales/OutletsView', '/sales/OutletsView', Record<never, never>, Record<never, never>>,
     '/sales/PosView': RouteRecordInfo<'/sales/PosView', '/sales/PosView', Record<never, never>, Record<never, never>>,
     '/sales/RemittanceView': RouteRecordInfo<'/sales/RemittanceView', '/sales/RemittanceView', Record<never, never>, Record<never, never>>,

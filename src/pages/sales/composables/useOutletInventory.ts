@@ -31,7 +31,7 @@ export function useOutletInventory() {
   const search = ref('')
   const filterStatus = ref<'all' | StockStatus>('all')
   const selectedOutletId = ref<number | null>(null)
-  const statusOptions = [
+  const statusOptions: { title: string; value: StockStatus | 'all' }[] = [
     { title: 'All', value: 'all' },
     { title: 'Out of stock', value: 'out' },
     { title: 'Low stock', value: 'low' },

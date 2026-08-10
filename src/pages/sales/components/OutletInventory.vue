@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import { useOutletInventory, headers, rowStatus } from '../composables/useOutletInventory'
+import { useDisplay } from 'vuetify'
+import { useOutletInventory, headers, rowStatus, type StockStatus } from '../composables/useOutletInventory'
+import OutletInventoryMobile from '../mobile/OutletInventoryMobile.vue'
 import { formatCurrency } from '@/utils/helpers'
 
 const router = useRouter()
+const { mobile } = useDisplay()
 const {
   loading,
   search,
@@ -19,6 +22,10 @@ const {
   outCount,
 } = useOutletInventory()
 
+function onFilterStatus(value: StockStatus | 'all') {
+  filterStatus.value = value
+}
+
 const statusMeta = {
   out: { label: 'Out', color: 'error' },
   low: { label: 'Low', color: 'warning' },
@@ -28,9 +35,10 @@ const statusMeta = {
 
 <template>
   <v-container fluid class="pa-2 fill-height">
-    <v-row>
-      <v-col>
-        <!-- Summary cards — LogsCard design -->
+    <template v-if="!mobile">
+      <v-row>
+        <v-col>
+          <!-- Summary cards — LogsCard design -->
         <v-row class="ma-0 mb-4">
           <v-col cols="6" md="3" class="pa-2">
             <v-card class="rounded-xl quick-stat-card" elevation="0" variant="outlined">
@@ -181,6 +189,25 @@ const statusMeta = {
         </v-row>
       </v-col>
     </v-row>
+    </template>
+
+    <OutletInventoryMobile
+      v-else
+      :loading="loading"
+      :rows="filteredRows"
+      :total-skus="totalSkus"
+      :total-value="totalValue"
+      :low-count="lowCount"
+      :out-count="outCount"
+      :search="search"
+      :filter-status="filterStatus"
+      :status-options="statusOptions"
+      :selected-outlet-id="selectedOutletId"
+      :outlet-options="outletOptions"
+      @update:search="search = $event"
+      @update:filter-status="onFilterStatus"
+      @set-outlet="setOutlet"
+    />
   </v-container>
 </template>
 
