@@ -3,6 +3,7 @@ import { onMounted } from 'vue'
 import { useSalesCustomers } from '../composables/useSalesCustomers'
 import CustomerTermsChips from '@/components/customers/CustomerTermsChips.vue'
 import FieldValue from '@/components/customers/FieldValue.vue'
+import CustomerDetailPanel from '@/components/customers/CustomerDetailPanel.vue'
 
 const {
   loading, search, filtered, showAll,
@@ -61,6 +62,7 @@ const CHANNEL_COLOR: Record<string, string> = {
           density="compact"
           :items-per-page="25"
           class="text-no-wrap"
+          show-expand
         >
           <template #item.category="{ item }">
             <v-chip v-if="item.category" size="x-small" variant="tonal">{{ item.category }}</v-chip>
@@ -69,7 +71,7 @@ const CHANNEL_COLOR: Record<string, string> = {
           <template #item.area="{ item }"><FieldValue :value="item.area" /></template>
           <template #item.contact_no="{ item }"><FieldValue :value="item.contact_no" /></template>
           <template #item.term_days="{ item }"><FieldValue :value="item.term_days" /></template>
-          <template #item.terms="{ item }">
+          <template #item.rates="{ item }">
             <CustomerTermsChips :profile="profileFor(item.id)" />
           </template>
           <template #item.department="{ item }">
@@ -79,6 +81,13 @@ const CHANNEL_COLOR: Record<string, string> = {
             >
               {{ item.department ? item.department.toUpperCase() : 'Unassigned' }}
             </v-chip>
+          </template>
+          <template #expanded-row="{ columns, item }">
+            <tr>
+              <td :colspan="columns.length" class="pa-0">
+                <CustomerDetailPanel :customer="item" :profile="profileFor(item.id)" />
+              </td>
+            </tr>
           </template>
           <template #item.actions="{ item }">
             <v-btn size="small" variant="text" icon="mdi-pencil" @click="openEdit(item)" />

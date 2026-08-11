@@ -5,6 +5,9 @@ import type { DiscountProfile } from '@/stores/discountsData'
 /**
  * A customer's agreed rates, compact enough for a table cell.
  *
+ * Spelled out in full ("Discount 30%", not "D 30%") — staff read this column,
+ * not the developers who know the abbreviations.
+ *
  * Shows the components that actually price an order — discount, ads, rebate —
  * and warns when they don't reconcile to the agreed total, because those
  * customers are deliberately NOT priced automatically (see discountsData).
@@ -20,13 +23,13 @@ const unreconciled = computed(() => !!p.value && p.value.rows.length > 0 && !p.v
 <template>
   <div v-if="hasRates || unreconciled" class="d-flex align-center flex-wrap ga-1">
     <v-chip v-if="p && p.discountRate > 0" size="x-small" variant="flat" color="primary">
-      D {{ p.discountRate }}%
+      Discount {{ p.discountRate }}%
     </v-chip>
     <v-chip v-if="p && p.adsRate > 0" size="x-small" variant="flat" color="teal">
-      A {{ p.adsRate }}%
+      Ads {{ p.adsRate }}%
     </v-chip>
     <v-chip v-if="p && p.rebateRate > 0" size="x-small" variant="flat" color="deep-purple">
-      R {{ p.rebateRate }}%
+      Rebate {{ p.rebateRate }}%
     </v-chip>
     <v-tooltip v-if="unreconciled" :text="p?.mismatchReason ?? ''">
       <template #activator="{ props: tip }">

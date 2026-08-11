@@ -12,6 +12,7 @@ declare module 'vue' {
     BottomBar: typeof import('./components/common/BottomBar.vue')['default']
     ChangeRequestDialog: typeof import('./components/changeRequests/ChangeRequestDialog.vue')['default']
     ConfirmDialog: typeof import('./components/common/ConfirmDialog.vue')['default']
+    CustomerDetailPanel: typeof import('./components/customers/CustomerDetailPanel.vue')['default']
     CustomerTermsCard: typeof import('./components/customers/CustomerTermsCard.vue')['default']
     CustomerTermsChips: typeof import('./components/customers/CustomerTermsChips.vue')['default']
     DeliveryReceiptDialog: typeof import('./components/deliveryReceipts/DeliveryReceiptDialog.vue')['default']

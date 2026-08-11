@@ -41,12 +41,11 @@ const hasAny = computed(() =>
 
 <template>
   <v-alert
-    v-if="customer && hasAny"
-    :type="unreconciled ? 'warning' : undefined"
+    v-if="customer && hasAny && unreconciled"
+    type="warning"
     variant="tonal"
     density="compact"
     class="text-caption"
-    :icon="unreconciled ? '$warning' : 'mdi-handshake-outline'"
   >
     <div class="font-weight-medium mb-1">{{ title ?? 'Agreed terms' }}</div>
 
@@ -90,15 +89,57 @@ const hasAny = computed(() =>
       <span class="font-weight-medium terms-multiline">{{ rebates }}</span>
     </div>
 
-    <div v-if="!hasRates && !unreconciled" class="text-medium-emphasis mt-2" style="font-size: 11px">
+  </v-alert>
+
+  <!-- Neutral block for the normal case: a v-alert with no type picks up the
+       theme's brand colour, which the dynamic theme sets to red. -->
+  <div v-if="customer && hasAny && !unreconciled" class="text-caption terms-block pa-3 rounded">
+    <div class="d-flex align-center ga-2 font-weight-medium mb-2">
+      <v-icon icon="mdi-handshake-outline" size="16" />
+      {{ title ?? 'Agreed terms' }}
+    </div>
+
+    <div v-if="hasRates" class="d-flex flex-wrap ga-2 mb-2">
+      <v-chip v-if="p && p.discountRate > 0" size="x-small" variant="flat" color="primary">
+        Discount {{ p.discountRate }}%
+      </v-chip>
+      <v-chip v-if="p && p.rebateRate > 0" size="x-small" variant="flat" color="deep-purple">
+        Rebate {{ p.rebateRate }}%
+      </v-chip>
+      <v-chip v-if="p && p.adsRate > 0" size="x-small" variant="flat" color="teal">
+        Ads {{ p.adsRate }}%
+      </v-chip>
+      <v-chip v-if="p && p.markupPercent != null" size="x-small" variant="tonal">
+        Markup {{ p.markupPercent }}%
+      </v-chip>
+    </div>
+
+    <div v-if="pricing" class="d-flex ga-2 mb-1">
+      <span class="text-medium-emphasis flex-shrink-0" style="min-width: 68px">Pricing</span>
+      <span class="font-weight-medium">{{ pricing }}</span>
+    </div>
+    <div v-if="terms" class="d-flex ga-2 mb-1">
+      <span class="text-medium-emphasis flex-shrink-0" style="min-width: 68px">Terms</span>
+      <span class="font-weight-medium">{{ terms }}</span>
+    </div>
+    <div v-if="rebates" class="d-flex ga-2">
+      <span class="text-medium-emphasis flex-shrink-0" style="min-width: 68px">Rebates</span>
+      <span class="font-weight-medium terms-multiline">{{ rebates }}</span>
+    </div>
+
+    <div v-if="!hasRates" class="text-medium-emphasis mt-2" style="font-size: 11px">
       Rates not set yet for this customer, so orders price at 0%. The recorded terms above are what was agreed.
     </div>
-  </v-alert>
+  </div>
 </template>
 
 <style scoped>
 /* Multi-recipient rebates are stored across several lines; keep them readable. */
 .terms-multiline {
   white-space: pre-line;
+}
+.terms-block {
+  background: rgba(var(--v-theme-on-surface), 0.06);
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
 }
 </style>

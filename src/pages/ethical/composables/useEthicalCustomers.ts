@@ -26,13 +26,14 @@ export function useEthicalCustomers() {
   // compliance fields that are blank for almost every row and already live on
   // the edit form — carrying them here only pushed Status off the screen.
   const headers = [
-    { title: 'Name', key: 'name' },
+    { title: 'Customer', key: 'name' },
     { title: 'Type', key: 'agency_type', width: 110 },
-    { title: 'Phone', key: 'contact_no', width: 140 },
+    { title: 'Contact No.', key: 'contact_no', width: 150 },
     { title: 'Area', key: 'area', width: 120 },
-    { title: 'MSR', key: 'agent_name', width: 140 },
-    { title: 'Terms', key: 'terms', sortable: false, width: 150 },
-    { title: 'Status', key: 'is_active', width: 100 },
+    { title: 'Sales Rep', key: 'agent_name', width: 150 },
+    { title: 'Payment Terms', key: 'term_days', sortable: false, width: 140 },
+    { title: 'Agreed Rates', key: 'rates', sortable: false, width: 210 },
+    { title: 'Active', key: 'is_active', width: 90 },
     { title: '', key: 'actions', sortable: false, align: 'end' as const, width: 90 },
   ]
 

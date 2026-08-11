@@ -6,14 +6,14 @@ import { useDiscountsDataStore } from '@/stores/discountsData'
 import type { CustomerType, CreateCustomerData } from '@/stores/customersData'
 
 export const headers = [
-  { title: 'NAME',     key: 'name',        sortable: true,  align: 'start' as const },
-  { title: 'CATEGORY', key: 'category',    sortable: true,  align: 'center' as const },
-  { title: 'AREA',     key: 'area',        sortable: true,  align: 'center' as const },
-  { title: 'CONTACT',  key: 'contact_no',  sortable: false, align: 'center' as const },
-  { title: 'TERMS',    key: 'term_days',   sortable: false, align: 'center' as const },
-  { title: 'RATES',    key: 'terms',       sortable: false, align: 'center' as const },
-  { title: 'CHANNEL',  key: 'department',  sortable: true,  align: 'center' as const },
-  { title: '',         key: 'actions',     sortable: false, align: 'end' as const },
+  { title: 'Customer',      key: 'name',       sortable: true,  align: 'start' as const },
+  { title: 'Category',      key: 'category',   sortable: true,  align: 'center' as const },
+  { title: 'Area',          key: 'area',       sortable: true,  align: 'center' as const },
+  { title: 'Contact No.',   key: 'contact_no', sortable: false, align: 'center' as const },
+  { title: 'Payment Terms', key: 'term_days',  sortable: false, align: 'center' as const },
+  { title: 'Agreed Rates',  key: 'rates',      sortable: false, align: 'center' as const },
+  { title: 'Channel',       key: 'department', sortable: true,  align: 'center' as const },
+  { title: '',              key: 'actions',    sortable: false, align: 'end' as const },
 ] as const
 
 const emptyForm = (): CreateCustomerData => ({

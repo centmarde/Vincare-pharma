@@ -4,6 +4,7 @@ import { useCustomers, headers, agencyTypes, businessStructures } from '../compo
 import CustomerTermsCard from '@/components/customers/CustomerTermsCard.vue'
 import CustomerTermsChips from '@/components/customers/CustomerTermsChips.vue'
 import FieldValue from '@/components/customers/FieldValue.vue'
+import CustomerDetailPanel from '@/components/customers/CustomerDetailPanel.vue'
 import { label } from '@/utils/helpers'
 
 const {
@@ -53,6 +54,7 @@ onMounted(init)
         :headers="headers" :items="filtered" :loading="loading"
         no-data-text="No customers yet." hover
         density="compact" :items-per-page="25" class="text-no-wrap"
+        show-expand item-value="id"
       >
         <template #item.name="{ item }">
           <span class="text-body-2 font-weight-medium">{{ label(item.name) }}</span>
@@ -68,16 +70,24 @@ onMounted(init)
         <template #item.area="{ item }">
           <FieldValue :value="item.area" />
         </template>
-        <template #item.tin_number="{ item }">
-          <FieldValue :value="item.tin_number" />
+        <template #item.term_days="{ item }">
+          <FieldValue :value="item.term_days" />
         </template>
-        <template #item.terms="{ item }">
+        <template #item.rates="{ item }">
           <CustomerTermsChips :profile="profileFor(item.id)" />
         </template>
         <template #item.is_active="{ item }">
           <v-icon :color="item.is_active ? 'success' : 'grey'">
             {{ item.is_active ? 'mdi-check-circle' : 'mdi-minus-circle' }}
           </v-icon>
+        </template>
+        <!-- Everything that doesn't earn a column lives one click away. -->
+        <template #expanded-row="{ columns, item }">
+          <tr>
+            <td :colspan="columns.length" class="pa-0">
+              <CustomerDetailPanel :customer="item" :profile="profileFor(item.id)" />
+            </td>
+          </tr>
         </template>
         <template #item.actions="{ item }">
           <v-btn variant="text" size="small" color="primary" class="text-none" @click="openEdit(item)">Edit</v-btn>

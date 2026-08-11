@@ -9,14 +9,14 @@ import type { CustomerType, CreateCustomerData } from '@/stores/customersData'
 // the useful columns off the screen. TIN stays — government contracts need it
 // visible ("avoid ghost transactions").
 export const headers = [
-  { title: 'NAME',     key: 'name',           sortable: true,  align: 'start' as const },
-  { title: 'TYPE',     key: 'agency_type',    sortable: true,  align: 'center' as const },
-  { title: 'NO.',      key: 'contact_no',     sortable: false, align: 'center' as const },
-  { title: 'AREA',     key: 'area',           sortable: false, align: 'center' as const },
-  { title: 'TIN',      key: 'tin_number',     sortable: false, align: 'center' as const },
-  { title: 'TERMS',    key: 'terms',          sortable: false, align: 'center' as const },
-  { title: 'ACTIVE',   key: 'is_active',      sortable: false, align: 'center' as const },
-  { title: '',         key: 'actions',        sortable: false, align: 'end' as const },
+  { title: 'Customer',       key: 'name',        sortable: true,  align: 'start' as const },
+  { title: 'Type',           key: 'agency_type', sortable: true,  align: 'center' as const },
+  { title: 'Contact No.',    key: 'contact_no',  sortable: false, align: 'center' as const },
+  { title: 'Area',           key: 'area',        sortable: false, align: 'center' as const },
+  { title: 'Payment Terms',  key: 'term_days',   sortable: false, align: 'center' as const },
+  { title: 'Agreed Rates',   key: 'rates',       sortable: false, align: 'center' as const },
+  { title: 'Active',         key: 'is_active',   sortable: false, align: 'center' as const },
+  { title: '',               key: 'actions',     sortable: false, align: 'end' as const },
 ] as const
 
 export const agencyTypes = [

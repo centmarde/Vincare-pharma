@@ -2,6 +2,7 @@
 import { onMounted } from 'vue'
 import CustomerTermsChips from '@/components/customers/CustomerTermsChips.vue'
 import FieldValue from '@/components/customers/FieldValue.vue'
+import CustomerDetailPanel from '@/components/customers/CustomerDetailPanel.vue'
 import { useEthicalCustomers } from '../composables/useEthicalCustomers'
 import CustomerForm from './CustomerForm.vue'
 
@@ -40,6 +41,8 @@ onMounted(() => init())
           density="compact"
           :items-per-page="25"
           class="text-no-wrap"
+          show-expand
+          item-value="id"
         >
           <template #item.name="{ item }">
             <FieldValue :value="item.name" />
@@ -61,8 +64,18 @@ onMounted(() => init())
               {{ item.is_active ? 'Active' : 'Inactive' }}
             </v-chip>
           </template>
-          <template #item.terms="{ item }">
+          <template #item.term_days="{ item }">
+            <FieldValue :value="item.term_days" />
+          </template>
+          <template #item.rates="{ item }">
             <CustomerTermsChips :profile="profileFor(item.id)" />
+          </template>
+          <template #expanded-row="{ columns, item }">
+            <tr>
+              <td :colspan="columns.length" class="pa-0">
+                <CustomerDetailPanel :customer="item" :profile="profileFor(item.id)" />
+              </td>
+            </tr>
           </template>
           <template #item.actions="{ item }">
             <v-btn size="x-small" icon="mdi-pencil" @click="openEdit(item.id)" />
