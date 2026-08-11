@@ -90,7 +90,7 @@ watch(
         <v-btn
           icon="mdi-close"
           @click="
-            reset()
+            reset();
             internalValue = false
           "
         />
@@ -423,7 +423,7 @@ watch(
 
           <v-btn
             @click="
-              reset()
+              reset();
               internalValue = false
             "
           >
