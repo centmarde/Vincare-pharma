@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useSalesCustomers } from '../composables/useSalesCustomers'
 import CustomerTermsChips from '@/components/customers/CustomerTermsChips.vue'
 import FieldValue from '@/components/customers/FieldValue.vue'
 import CustomerDetailPanel from '@/components/customers/CustomerDetailPanel.vue'
+import SalesCustomersMobile from '@/pages/sales/mobile/SalesCustomersMobile.vue'
+import CustomerFormDialog from '@/pages/sales/dialogs/CustomerFormDialog.vue'
 
 const { mobile } = useDisplay()
-
 const {
   loading,
   customers,
@@ -20,14 +21,12 @@ const {
   clearSearch,
   filtered,
   profileFor,
-
   showAll,
   showForm,
   editingId,
   form,
   rules,
   headers,
-
   openCreate,
   openEdit,
   cancelForm,
@@ -45,7 +44,7 @@ const CHANNEL_COLOR: Record<string, string> = {
 
 const notSet = (label: string) => `No ${label} set`
 
-const displayedCustomers = customers ?? filtered
+const displayedCustomers = computed(() => customers.value ?? filtered.value)
 </script>
 
 <template>
@@ -175,111 +174,16 @@ const displayedCustomers = customers ?? filtered
           </v-btn>
         </div>
 
-        <template v-else-if="mobile">
-          <v-progress-linear v-if="loading" indeterminate color="primary" />
-
-          <v-list class="pa-2" lines="two">
-            <v-card
-              v-for="item in displayedCustomers"
-              :key="item.id"
-              variant="outlined"
-              rounded="lg"
-              class="mb-2 pa-3"
-              @click="openEdit(item)"
-            >
-              <div class="d-flex align-start ga-3">
-                <v-avatar size="36" color="primary" variant="tonal">
-                  <span class="text-body-2 font-weight-bold">
-                    {{ (item.name || '?').charAt(0).toUpperCase() }}
-                  </span>
-                </v-avatar>
-
-                <div class="flex-grow-1" style="min-width: 0">
-                  <div class="d-flex align-center justify-space-between ga-2">
-                    <span class="font-weight-medium text-body-2 text-truncate">
-                      {{ item.name || notSet('name') }}
-                    </span>
-
-                    <v-btn
-                      size="x-small"
-                      variant="text"
-                      color="primary"
-                      icon="mdi-pencil-outline"
-                      @click.stop="openEdit(item)"
-                    />
-                  </div>
-
-                  <div class="d-flex flex-wrap ga-1 mt-1">
-                    <v-chip
-                      size="x-small"
-                      variant="tonal"
-                      :color="item.department ? (CHANNEL_COLOR[item.department] ?? 'grey') : 'grey'"
-                    >
-                      {{ item.department ? item.department.toUpperCase() : 'Unassigned' }}
-                    </v-chip>
-
-                    <v-chip v-if="item.category" size="x-small" variant="tonal">
-                      {{ item.category }}
-                    </v-chip>
-                  </div>
-
-                  <div v-if="profileFor" class="mt-2">
-                    <CustomerTermsChips :profile="profileFor(item.id)" />
-                  </div>
-
-                  <div class="text-caption text-medium-emphasis mt-2">
-                    <div class="d-flex align-center ga-1">
-                      <v-icon size="12" icon="mdi-phone-outline" />
-
-                      <span
-                        :class="{
-                          'font-italic': !item.contact_no,
-                        }"
-                      >
-                        {{ item.contact_no || notSet('contact number') }}
-                      </span>
-                    </div>
-
-                    <div class="d-flex align-center ga-1 mt-1">
-                      <v-icon size="12" icon="mdi-map-marker-outline" />
-
-                      <span
-                        :class="{
-                          'font-italic': !item.area,
-                        }"
-                      >
-                        {{ item.area || notSet('area') }}
-                      </span>
-                    </div>
-
-                    <div class="d-flex align-center ga-1 mt-1">
-                      <v-icon size="12" icon="mdi-calendar-clock-outline" />
-
-                      <span
-                        :class="{
-                          'font-italic': !item.term_days,
-                        }"
-                      >
-                        {{ item.term_days || notSet('payment terms') }}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </v-card>
-          </v-list>
-
-          <v-divider />
-
-          <div class="d-flex justify-center pa-3">
-            <v-pagination
-              v-model="page"
-              :length="Math.ceil(totalCount / pageSize) || 1"
-              density="comfortable"
-              :total-visible="5"
-            />
-          </div>
-        </template>
+        <SalesCustomersMobile
+          v-else-if="mobile"
+          :customers="displayedCustomers"
+          :total-count="totalCount"
+          v-model:page="page"
+          :page-size="pageSize"
+          :loading="loading"
+          :profile-for="profileFor"
+          @edit="openEdit"
+        />
 
         <v-data-table-server
           v-else
@@ -359,7 +263,11 @@ const displayedCustomers = customers ?? filtered
           </template>
 
           <template #item.rates="{ item }">
-            <CustomerTermsChips :profile="profileFor(item.id)" />
+            <!-- How to make this wrap? and make this centered ?-->
+
+            <div class="d-flex flex-wrap ga-1">
+              <CustomerTermsChips :profile="profileFor(item.id)" />
+            </div>
           </template>
 
           <template #item.department="{ item }">
@@ -405,163 +313,16 @@ const displayedCustomers = customers ?? filtered
         </div>
       </v-card>
 
-      <v-dialog
-        :model-value="showForm"
-        :fullscreen="mobile"
-        :max-width="mobile ? undefined : 640"
-        :transition="mobile ? 'dialog-bottom-transition' : undefined"
-        persistent
-      >
-        <v-card :rounded="mobile ? '0' : 'lg'">
-          <v-toolbar v-if="mobile" color="surface" density="comfortable">
-            <v-btn icon="mdi-close" @click="cancelForm" />
-
-            <v-toolbar-title class="text-body-1 font-weight-bold">
-              {{ editingId ? 'Edit Customer' : 'Add Customer' }}
-            </v-toolbar-title>
-
-            <v-btn
-              variant="flat"
-              color="primary"
-              class="text-none mr-2"
-              :loading="loading"
-              @click="submit"
-            >
-              {{ editingId ? 'Save' : 'Create' }}
-            </v-btn>
-          </v-toolbar>
-
-          <v-card-title v-else class="pa-4 pa-sm-5 d-flex align-center ga-2">
-            <v-icon
-              :icon="editingId ? 'mdi-account-edit-outline' : 'mdi-account-plus-outline'"
-              color="primary"
-            />
-
-            <span class="text-h6 font-weight-bold">
-              {{ editingId ? 'Edit Customer' : 'Add Customer' }}
-            </span>
-          </v-card-title>
-
-          <v-divider />
-
-          <v-card-text class="pa-4 pa-sm-5">
-            <v-text-field
-              v-model="form.name"
-              label="Name *"
-              :rules="[rules.required]"
-              variant="outlined"
-              density="compact"
-              class="mb-3"
-              prepend-inner-icon="mdi-account-outline"
-            />
-
-            <v-row dense>
-              <v-col cols="12" sm="6">
-                <v-text-field
-                  v-model="form.contact_person"
-                  label="Contact person"
-                  variant="outlined"
-                  density="compact"
-                  class="mb-3"
-                  hide-details
-                  prepend-inner-icon="mdi-account-tie-outline"
-                />
-              </v-col>
-
-              <v-col cols="12" sm="6">
-                <v-text-field
-                  v-model="form.contact_no"
-                  label="Contact no."
-                  variant="outlined"
-                  density="compact"
-                  class="mb-3"
-                  hide-details
-                  prepend-inner-icon="mdi-phone-outline"
-                />
-              </v-col>
-            </v-row>
-
-            <v-row dense>
-              <v-col cols="12" sm="6">
-                <v-text-field
-                  v-model="form.email"
-                  label="Email"
-                  variant="outlined"
-                  density="compact"
-                  class="mb-3"
-                  hide-details
-                  prepend-inner-icon="mdi-email-outline"
-                />
-              </v-col>
-
-              <v-col cols="12" sm="6">
-                <v-text-field
-                  v-model="form.area"
-                  label="Area"
-                  variant="outlined"
-                  density="compact"
-                  class="mb-3"
-                  hide-details
-                  prepend-inner-icon="mdi-map-marker-outline"
-                />
-              </v-col>
-            </v-row>
-
-            <v-textarea
-              v-model="form.address"
-              label="Address"
-              variant="outlined"
-              density="compact"
-              rows="2"
-              class="mb-3"
-              hide-details
-              prepend-inner-icon="mdi-home-outline"
-            />
-
-            <v-text-field
-              v-model="form.category"
-              label="Category"
-              placeholder="e.g. DRUGSTORE, PRIVATE HOSPITAL"
-              variant="outlined"
-              density="compact"
-              class="mb-3"
-              hide-details
-              prepend-inner-icon="mdi-shape-outline"
-            />
-
-            <v-text-field
-              v-model="form.term_days"
-              label="Payment terms"
-              placeholder="e.g. 60 Days, COD, Consignment"
-              hint="A leading number sets the due date; without one the receivable cannot be aged."
-              persistent-hint
-              variant="outlined"
-              density="compact"
-              prepend-inner-icon="mdi-calendar-clock-outline"
-            />
-          </v-card-text>
-
-          <template v-if="!mobile">
-            <v-divider />
-
-            <v-card-actions class="pa-4">
-              <v-spacer />
-
-              <v-btn variant="text" class="text-none" @click="cancelForm"> Cancel </v-btn>
-
-              <v-btn
-                color="primary"
-                variant="flat"
-                class="text-none px-6"
-                :loading="loading"
-                @click="submit"
-              >
-                {{ editingId ? 'Save changes' : 'Create customer' }}
-              </v-btn>
-            </v-card-actions>
-          </template>
-        </v-card>
-      </v-dialog>
+      <CustomerFormDialog
+        v-model="showForm"
+        :mobile="mobile"
+        :editing-id="editingId"
+        v-model:form="form"
+        :rules="rules"
+        :loading="loading"
+        @cancel="cancelForm"
+        @submit="submit"
+      />
     </div>
   </v-container>
 </template>

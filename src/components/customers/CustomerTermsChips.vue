@@ -37,5 +37,5 @@ const unreconciled = computed(() => !!p.value && p.value.rows.length > 0 && !p.v
       </template>
     </v-tooltip>
   </div>
-  <span v-else class="text-medium-emphasis">not set yet</span>
+  <span v-else class="text-medium-emphasis font-italic">not set yet</span>
 </template>

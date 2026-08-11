@@ -12,7 +12,7 @@ export const headers = [
   {title: 'Address',key: 'address',sortable: true,align: 'center' as const,},
   {title: 'Contact No.',key: 'contact_no',sortable: false,align: 'center' as const,},
   {title: 'Payment Terms',key: 'term_days',sortable: false,align: 'center' as const,},
-  {title: 'Agreed Rates',key: 'rates',sortable: false,align: 'center' as const,},
+  {title: 'Agreed Rates',key: 'rates',sortable: false,align: 'center' as const, width: 240,},
   {title: 'Channel',key: 'department',sortable: true,align: 'center' as const,},
   {title: '',key: 'actions',sortable: false,align: 'end' as const,},
 ] as const
