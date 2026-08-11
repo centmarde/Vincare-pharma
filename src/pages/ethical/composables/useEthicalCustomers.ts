@@ -3,6 +3,7 @@ import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useCustomersDataStore } from '@/stores/customersData'
 import { useAgentsDataStore } from '@/stores/agentsData'
+import { useDiscountsDataStore } from '@/stores/discountsData'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import type { CreateCustomerData } from '@/stores/customersData'
 
@@ -12,6 +13,7 @@ const { confirmDialog } = useConfirmDialog()
 export function useEthicalCustomers() {
   const customersStore = useCustomersDataStore()
   const agentsStore = useAgentsDataStore()
+  const discountsStore = useDiscountsDataStore()
   const { customers, loading } = storeToRefs(customersStore)
   const { agents } = storeToRefs(agentsStore)
 
@@ -20,18 +22,19 @@ export function useEthicalCustomers() {
   const showEditDialog = ref(false)
   const editingId = ref<number | null>(null)
 
+  // Deliberately narrow. TIN, VAT, business structure and SEC/DTI are
+  // compliance fields that are blank for almost every row and already live on
+  // the edit form — carrying them here only pushed Status off the screen.
   const headers = [
-    { title: 'Name', key: 'name' },
-    { title: 'Type', key: 'agency_type' },
-    { title: 'Contact', key: 'contact_person' },
-    { title: 'Phone', key: 'contact_no' },
-    { title: 'TIN', key: 'tin_number' },
-    { title: 'VAT', key: 'is_vat_registered' },
-    { title: 'Structure', key: 'business_structure' },
-    { title: 'SEC/DTI #', key: 'reg_no' },
-    { title: 'MSR', key: 'agent_name' },
-    { title: 'Status', key: 'is_active' },
-    { title: '', key: 'actions', sortable: false, align: 'end' as const },
+    { title: 'Customer', key: 'name' },
+    { title: 'Type', key: 'agency_type', width: 110 },
+    { title: 'Contact No.', key: 'contact_no', width: 150 },
+    { title: 'Area', key: 'area', width: 120 },
+    { title: 'Sales Rep', key: 'agent_name', width: 150 },
+    { title: 'Payment Terms', key: 'term_days', sortable: false, width: 140 },
+    { title: 'Agreed Rates', key: 'rates', sortable: false, width: 210 },
+    { title: 'Active', key: 'is_active', width: 90 },
+    { title: '', key: 'actions', sortable: false, align: 'end' as const, width: 90 },
   ]
 
   const agencyTypeOptions = [
@@ -54,10 +57,14 @@ export function useEthicalCustomers() {
     businessStructureOptions.find((s) => s.value === value)?.title ?? '—'
 
   const agentName = (agentId: number | null): string =>
-    agents.value.find(a => a.id === agentId)?.name ?? '—'
+    agents.value.find(a => a.id === agentId)?.name ?? ''
 
   const filteredCustomers = computed(() => {
-    let result = customers.value.filter(c => c.department === 'ethical')
+    // NO department filter here — `reload()` already scopes the query to
+    // ethical + unassigned (or every channel when showAll is on). Filtering
+    // again for department === 'ethical' emptied the page completely, since
+    // every customer in the real file is still unassigned.
+    let result = customers.value
     if (searchText.value) {
       const s = searchText.value.toLowerCase()
       result = result.filter(c =>
@@ -83,15 +90,30 @@ export function useEthicalCustomers() {
   const showAll = ref(false)
 
   async function reload() {
-    await customersStore.fetchCustomers(
-      showAll.value ? {} : { department: 'ethical', includeUnassigned: true },
-    )
+    await customersStore.fetchCustomers({
+      ...(showAll.value ? {} : { department: 'ethical', includeUnassigned: true }),
+      search: searchText.value || undefined,
+    })
   }
 
   watch(showAll, () => { void reload() })
 
+  // Search SERVER-SIDE. PostgREST caps a response at 1000 rows and there are
+  // ~5.3k customers, so filtering the loaded array client-side silently hides
+  // anyone outside the first page.
+  let searchDebounce: ReturnType<typeof setTimeout> | undefined
+  watch(searchText, () => {
+    if (searchDebounce) clearTimeout(searchDebounce)
+    searchDebounce = setTimeout(() => { void reload() }, 300)
+  })
+
+  // Agreed rates for every customer, so the list can show them per row.
+  function profileFor(customerId: number | null | undefined) {
+    return discountsStore.profileFor(customerId)
+  }
+
   async function init() {
-    await reload()
+    await Promise.all([reload(), discountsStore.ensureProfilesLoaded()])
     if (!agents.value.length) await agentsStore.fetchAgents({ activeOnly: true })
   }
 
@@ -149,6 +171,7 @@ export function useEthicalCustomers() {
     searchText,
     showAll,
     reload,
+    profileFor,
     showCreateDialog,
     showEditDialog,
     editingCustomer,

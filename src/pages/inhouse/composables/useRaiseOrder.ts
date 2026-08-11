@@ -39,7 +39,10 @@ export function useRaiseOrder(onCreated: () => void) {
   })
 
   // Searches ALL customers, not just department='inhouse' — see useCustomerPicker.
-  const { search: customerSearch, customerOptions, selectedCustomer, init: initCustomerPicker } =
+  // In-House prices are negotiated per line, so the profile is DISPLAY-ONLY
+  // here — it never adjusts a price. It matters because 54 of 81 government
+  // accounts carry an agreed basis the negotiator otherwise cannot see.
+  const { search: customerSearch, customerOptions, selectedCustomer, discountProfile, init: initCustomerPicker } =
     useCustomerPicker(customerId)
 
   // The govt PO # field is documentation for actual government/LGU accounts only —
@@ -114,7 +117,7 @@ export function useRaiseOrder(onCreated: () => void) {
 
   return {
     loading, customerId, govtPoNo, poAmount, remarks, lines,
-    customerSearch, customerOptions, selectedCustomer, productOptions, isGovtCustomer,
+    customerSearch, customerOptions, selectedCustomer, discountProfile, productOptions, isGovtCustomer,
     offerTotal, costTotal, profit, marginPct,
     addLine, removeLine, onProductChange, unitFor, submit, reset, init,
   }
