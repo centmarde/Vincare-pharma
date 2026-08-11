@@ -1,19 +1,22 @@
 import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useCustomersDataStore } from '@/stores/customersData'
+import { useDiscountsDataStore } from '@/stores/discountsData'
 import type { CustomerType, CreateCustomerData } from '@/stores/customersData'
 
+// Deliberately narrow: business structure and SEC/DTI are blank for almost
+// every row and already live on the edit form, and carrying them here pushed
+// the useful columns off the screen. TIN stays — government contracts need it
+// visible ("avoid ghost transactions").
 export const headers = [
-  { title: 'NAME',     key: 'name',           sortable: true,  align: 'start' as const },
-  { title: 'TYPE',     key: 'agency_type',    sortable: true,  align: 'center' as const },
-  { title: 'CONTACT',  key: 'contact_person', sortable: false, align: 'start' as const },
-  { title: 'NO.',      key: 'contact_no',     sortable: false, align: 'center' as const },
-  { title: 'TIN',      key: 'tin_number',     sortable: false, align: 'center' as const },
-  { title: 'VAT',      key: 'is_vat_registered', sortable: false, align: 'center' as const },
-  { title: 'STRUCTURE', key: 'business_structure', sortable: false, align: 'center' as const },
-  { title: 'SEC/DTI #', key: 'reg_no',         sortable: false, align: 'center' as const },
-  { title: 'ACTIVE',   key: 'is_active',      sortable: false, align: 'center' as const },
-  { title: '',         key: 'actions',        sortable: false, align: 'end' as const },
+  { title: 'Customer',       key: 'name',        sortable: true,  align: 'start' as const },
+  { title: 'Type',           key: 'agency_type', sortable: true,  align: 'center' as const },
+  { title: 'Contact No.',    key: 'contact_no',  sortable: false, align: 'center' as const },
+  { title: 'Area',           key: 'area',        sortable: false, align: 'center' as const },
+  { title: 'Payment Terms',  key: 'term_days',   sortable: false, align: 'center' as const },
+  { title: 'Agreed Rates',   key: 'rates',       sortable: false, align: 'center' as const },
+  { title: 'Active',         key: 'is_active',   sortable: false, align: 'center' as const },
+  { title: '',               key: 'actions',     sortable: false, align: 'end' as const },
 ] as const
 
 export const agencyTypes = [
@@ -45,6 +48,7 @@ const emptyForm = (): CreateCustomerData => ({
 
 export function useCustomers() {
   const store = useCustomersDataStore()
+  const discountsStore = useDiscountsDataStore()
   const { customers, loading } = storeToRefs(store)
 
   const search = ref('')
@@ -103,8 +107,12 @@ export function useCustomers() {
     await store.deleteCustomer(c.id)
   }
 
+  function profileFor(customerId: number | null | undefined) {
+    return discountsStore.profileFor(customerId)
+  }
+
   async function init() {
-    await reload()
+    await Promise.all([reload(), discountsStore.ensureProfilesLoaded()])
   }
 
   // Unassigned customers are shown alongside In-House ones: most of the real
@@ -114,15 +122,24 @@ export function useCustomers() {
   const showAll = ref(false)
 
   async function reload() {
-    await store.fetchCustomers(
-      showAll.value ? {} : { department: 'inhouse', includeUnassigned: true },
-    )
+    await store.fetchCustomers({
+      ...(showAll.value ? {} : { department: 'inhouse', includeUnassigned: true }),
+      search: search.value || undefined,
+    })
   }
 
   watch(showAll, () => { void reload() })
 
+  // Search SERVER-SIDE — a 1000-row response cap over ~5.3k customers means a
+  // client-side filter would hide anyone outside the first page.
+  let searchDebounce: ReturnType<typeof setTimeout> | undefined
+  watch(search, () => {
+    if (searchDebounce) clearTimeout(searchDebounce)
+    searchDebounce = setTimeout(() => { void reload() }, 300)
+  })
+
   return {
-    customers, loading, search, filtered, showAll, reload,
+    customers, loading, search, filtered, showAll, reload, profileFor,
     showForm, editingId, form, rules,
     openCreate, openEdit, submit, remove, init,
   }

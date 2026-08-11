@@ -3,6 +3,8 @@ import type { Ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useCustomersDataStore } from '@/stores/customersData'
 import type { CustomerType } from '@/stores/customersData'
+import { useDiscountsDataStore, buildDiscountProfile, EMPTY_DISCOUNT_PROFILE } from '@/stores/discountsData'
+import type { DiscountProfile } from '@/stores/discountsData'
 
 /**
  * Customer typeahead for the order dialogs, shared by In-House and Ethical.
@@ -69,6 +71,33 @@ export function useCustomerPicker(customerId: Ref<number | null>) {
     }))
   })
 
+  // The agreed rates for whoever is selected. Fetched here so both order
+  // dialogs and the terms card read one source instead of each querying.
+  const discountsStore = useDiscountsDataStore()
+  const discountProfile = ref<DiscountProfile>({ ...EMPTY_DISCOUNT_PROFILE })
+
+  watch(customerId, async (id) => {
+    if (id == null) {
+      discountProfile.value = { ...EMPTY_DISCOUNT_PROFILE }
+      return
+    }
+    discountProfile.value = await discountsStore.fetchProfile(id)
+    // Fall back to the older single-value columns on the customer when there
+    // are no component rows — they're empty across the live file today, but a
+    // customer edited by hand would otherwise silently price at 0%.
+    if (!discountProfile.value.rows.length) {
+      const c = seen.value[id]
+      if (c && (c.discount_rate != null || c.rebate_rate != null || c.markup_percent != null)) {
+        discountProfile.value = {
+          ...buildDiscountProfile([]),
+          discountRate: c.discount_rate ?? 0,
+          rebateRate: c.rebate_rate ?? 0,
+          markupPercent: c.markup_percent ?? null,
+        }
+      }
+    }
+  })
+
   async function init() {
     // Blank term → first page by name, so the dropdown is never empty on open.
     await store.searchCustomers('')
@@ -79,5 +108,5 @@ export function useCustomerPicker(customerId: Ref<number | null>) {
     search.value = ''
   }
 
-  return { search, customerOptions, selectedCustomer, loading, init, reset }
+  return { search, customerOptions, selectedCustomer, discountProfile, loading, init, reset }
 }

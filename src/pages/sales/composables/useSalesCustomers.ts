@@ -2,16 +2,18 @@ import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useCustomersDataStore } from '@/stores/customersData'
+import { useDiscountsDataStore } from '@/stores/discountsData'
 import type { CustomerType, CreateCustomerData } from '@/stores/customersData'
 
 export const headers = [
-  { title: 'NAME',     key: 'name',        sortable: true,  align: 'start' as const },
-  { title: 'CATEGORY', key: 'category',    sortable: true,  align: 'center' as const },
-  { title: 'AREA',     key: 'area',        sortable: true,  align: 'center' as const },
-  { title: 'CONTACT',  key: 'contact_no',  sortable: false, align: 'center' as const },
-  { title: 'TERMS',    key: 'term_days',   sortable: false, align: 'center' as const },
-  { title: 'CHANNEL',  key: 'department',  sortable: true,  align: 'center' as const },
-  { title: '',         key: 'actions',     sortable: false, align: 'end' as const },
+  { title: 'Customer',      key: 'name',       sortable: true,  align: 'start' as const },
+  { title: 'Category',      key: 'category',   sortable: true,  align: 'center' as const },
+  { title: 'Area',          key: 'area',       sortable: true,  align: 'center' as const },
+  { title: 'Contact No.',   key: 'contact_no', sortable: false, align: 'center' as const },
+  { title: 'Payment Terms', key: 'term_days',  sortable: false, align: 'center' as const },
+  { title: 'Agreed Rates',  key: 'rates',      sortable: false, align: 'center' as const },
+  { title: 'Channel',       key: 'department', sortable: true,  align: 'center' as const },
+  { title: '',              key: 'actions',    sortable: false, align: 'end' as const },
 ] as const
 
 const emptyForm = (): CreateCustomerData => ({
@@ -30,6 +32,7 @@ const emptyForm = (): CreateCustomerData => ({
  */
 export function useSalesCustomers() {
   const store = useCustomersDataStore()
+  const discountsStore = useDiscountsDataStore()
   const { customers, loading } = storeToRefs(store)
   const toast = useToast()
 
@@ -44,11 +47,20 @@ export function useSalesCustomers() {
   const showAll = ref(false)
 
   async function reload() {
-    await store.fetchCustomers(
-      showAll.value ? {} : { department: 'pos', includeUnassigned: true },
-    )
+    await store.fetchCustomers({
+      ...(showAll.value ? {} : { department: 'pos', includeUnassigned: true }),
+      search: search.value || undefined,
+    })
   }
   watch(showAll, () => { void reload() })
+
+  // Search SERVER-SIDE — a 1000-row response cap over ~5.3k customers means a
+  // client-side filter would hide anyone outside the first page.
+  let searchDebounce: ReturnType<typeof setTimeout> | undefined
+  watch(search, () => {
+    if (searchDebounce) clearTimeout(searchDebounce)
+    searchDebounce = setTimeout(() => { void reload() }, 300)
+  })
 
   const filtered = computed(() => {
     const s = search.value.trim().toLowerCase()
@@ -103,12 +115,16 @@ export function useSalesCustomers() {
     return false
   }
 
+  function profileFor(customerId: number | null | undefined) {
+    return discountsStore.profileFor(customerId)
+  }
+
   async function init() {
-    await reload()
+    await Promise.all([reload(), discountsStore.ensureProfilesLoaded()])
   }
 
   return {
-    customers, loading, search, filtered, showAll, reload,
+    customers, loading, search, filtered, showAll, reload, profileFor,
     showForm, editingId, form, rules, headers,
     openCreate, openEdit, cancelForm, submit, init,
   }

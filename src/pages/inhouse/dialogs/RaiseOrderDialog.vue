@@ -2,6 +2,7 @@
 import { onMounted } from 'vue'
 import { useRaiseOrder } from '../composables/useRaiseOrder'
 import { formatCurrency } from '@/utils/helpers'
+import CustomerTermsCard from '@/components/customers/CustomerTermsCard.vue'
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
@@ -11,7 +12,7 @@ defineProps<{ modelValue: boolean }>()
 
 const {
   loading, customerId, govtPoNo, poAmount, remarks, lines,
-  customerSearch, customerOptions, productOptions, isGovtCustomer,
+  customerSearch, customerOptions, selectedCustomer, discountProfile, productOptions, isGovtCustomer,
   offerTotal, costTotal, profit, marginPct,
   addLine, removeLine, onProductChange, unitFor, submit, init,
 } = useRaiseOrder(() => emit('created'))
@@ -42,6 +43,12 @@ onMounted(init)
               variant="outlined" density="compact" hide-details
               no-data-text="No customer matches that search"
             />
+          </v-col>
+          <v-col v-if="selectedCustomer" cols="12">
+            <!-- What was agreed with this account. 54 of 81 government
+                 customers carry a pricing basis ('AS PER PR', 'PLUS 15%') that
+                 the negotiator could not see here before. -->
+            <CustomerTermsCard :customer="selectedCustomer" :profile="discountProfile" />
           </v-col>
           <v-col v-if="isGovtCustomer" cols="12" md="6">
             <label class="lbl">Government PO # (documentation)</label>

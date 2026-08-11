@@ -449,6 +449,27 @@ export const formatCurrency = (value: number): string =>
   }).format(value).replace('PHP', '₱')
 
 /**
+ * Display text for a field that may not have been filled in yet.
+ *
+ * Returns the value when it has content, otherwise "not set yet".
+ *
+ * Preferred over an em dash on the customer screens: most of the real customer
+ * file is genuinely incomplete — only ~21% carry agreed rates, and most have no
+ * area or payment terms — and "not set yet" reads as outstanding data-entry
+ * rather than as a field that doesn't apply.
+ */
+export const NOT_SET = 'not set yet'
+
+export function label(value: string | number | null | undefined): string {
+  return isBlank(value) ? NOT_SET : String(value).trim()
+}
+
+/** True when a field has never been filled in. */
+export function isBlank(value: string | number | null | undefined): boolean {
+  return value == null || String(value).trim() === ''
+}
+
+/**
  * Payment terms as a number of days, parsed from `customers.term_days`.
  *
  * That column is FREE TEXT in the live data, not an integer — the real customer
