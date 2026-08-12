@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref, nextTick } from 'vue'
-import html2pdf from 'html2pdf.js'
-import { useToast } from 'vue-toastification'
 import type { Receipt } from '../composables/usePosCheckout'
 import { formatCurrency } from '@/utils/helpers'
+import { useToast } from 'vue-toastification'
+import { useDisplay } from 'vuetify'
+import { ref, nextTick } from 'vue'
+import html2pdf from 'html2pdf.js'
 
+const { mobile } = useDisplay()
 const props = defineProps<{
   modelValue: boolean
   receipt: Receipt | null
@@ -64,7 +66,7 @@ async function handlePrint() {
     @update:model-value="emit('update:modelValue', $event)"
   >
     <v-card rounded="lg" v-if="receipt">
-      <v-card-text class="pa-6">
+      <v-card-text class="pa-4 pa-sm-6">
         <div ref="printArea" class="receipt">
           <!-- Header -->
           <div class="text-center mb-4">
@@ -81,7 +83,7 @@ async function handlePrint() {
 
           <!-- Meta: SI # + customer | date + prepared by -->
           <v-row class="mb-2" no-gutters>
-            <v-col cols="7">
+            <v-col cols="12" sm="7">
               <div class="text-body-2"><span class="font-weight-bold">SI #</span> {{ receipt.sale_no }}</div>
               <div class="text-caption font-weight-bold mt-2">Customer:</div>
               <div class="text-body-2 font-weight-medium">{{ receipt.customer.name || '—' }}</div>
@@ -91,7 +93,7 @@ async function handlePrint() {
                 <span class="font-weight-bold">Prepared By:</span> {{ receipt.cashier }}
               </div>
             </v-col>
-            <v-col cols="5" class="text-right">
+            <v-col cols="12" sm="5" class="text-left text-sm-right mt-2 mt-sm-0">
               <div class="text-body-2">Date {{ formatReceiptDate(receipt.date) }}</div>
             </v-col>
           </v-row>
@@ -103,8 +105,8 @@ async function handlePrint() {
             <thead>
               <tr>
                 <th class="text-left">Product</th>
-                <th class="text-right">Quantity</th>
-                <th class="text-right">Unit Price</th>
+                <th class="text-right">Qty</th>
+                <th class="text-right">Price</th>
                 <th class="text-right">Subtotal</th>
               </tr>
             </thead>
@@ -129,8 +131,8 @@ async function handlePrint() {
 
           <!-- Totals -->
           <v-row no-gutters>
-            <v-col cols="7" />
-            <v-col cols="5">
+            <v-col cols="12" sm="7" />
+            <v-col cols="12" sm="5">
               <div class="d-flex justify-space-between text-body-2 mb-1">
                 <span>Subtotal:</span><span>Php {{ formatCurrency(receipt.subtotal).replace('₱', '') }}</span>
               </div>
@@ -148,7 +150,7 @@ async function handlePrint() {
 
           <!-- Received by -->
           <div class="mt-8">
-            <div style="border-bottom: 1px solid #000; width: 260px;" />
+            <div style="border-bottom: 1px solid #000; width: 100%; max-width: 260px;" />
             <div class="text-caption mt-1">Received by: Signature Over Printed Name</div>
           </div>
         </div>
@@ -156,14 +158,15 @@ async function handlePrint() {
 
       <v-divider />
 
-      <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end ga-2">
-        <v-btn variant="text" color="error" class="text-none" prepend-icon="mdi-printer" @click="handlePrint">
+      <v-card-actions class="px-4 px-sm-5 pb-4 pb-sm-5 pt-3 d-flex ga-2" :class="mobile ? 'flex-column-reverse' : 'justify-end'">
+        <v-btn variant="text" color="error" class="text-none" prepend-icon="mdi-printer" :block="mobile" @click="handlePrint">
           Print
         </v-btn>
         <v-btn
           color="primary"
           class="text-none font-weight-bold"
           elevation="0"
+          :block="mobile"
           @click="emit('update:modelValue', false)"
         >
           New Sale

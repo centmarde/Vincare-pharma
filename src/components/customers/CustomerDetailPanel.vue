@@ -79,8 +79,12 @@ const groups = computed(() => [
         <div class="text-caption font-weight-bold text-medium-emphasis mb-2 text-uppercase">
           {{ group.title }}
         </div>
-        <div v-for="[fieldLabel, value] in group.items" :key="fieldLabel" class="d-flex ga-2 mb-1">
-          <span class="text-caption text-medium-emphasis flex-shrink-0" style="min-width: 130px">
+        <div
+          v-for="[fieldLabel, value] in group.items"
+          :key="fieldLabel"
+          class="detail-row d-flex ga-2 mb-1"
+        >
+          <span class="text-caption text-medium-emphasis flex-shrink-0 detail-label">
             {{ fieldLabel }}
           </span>
           <FieldValue :value="value" />
@@ -99,5 +103,22 @@ const groups = computed(() => [
   background: rgba(var(--v-theme-on-surface), 0.04);
   border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+/* On narrow screens the label and value stack so long values (addresses,
+   product lists) wrap instead of overflowing horizontally. */
+.detail-label {
+  min-width: 130px;
+}
+
+@media (max-width: 600px) {
+  .detail-row {
+    flex-direction: column;
+    gap: 0 !important;
+  }
+
+  .detail-label {
+    min-width: 0;
+  }
 }
 </style>

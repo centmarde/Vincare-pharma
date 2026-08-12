@@ -16,5 +16,5 @@ const text = computed(() => label(props.value))
 </script>
 
 <template>
-  <span :class="blank ? 'text-disabled text-caption' : 'text-body-2'">{{ text }}</span>
+  <span :class="blank ? 'text-medium-emphasis font-italic' : 'text-body-2'">{{ text }}</span>
 </template>

@@ -10,7 +10,9 @@ import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
 import { useChangeRequestsDataStore } from '@/stores/changeRequestsData'
 import { expensePaymentMethods } from '@/stores/financeData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import { useDisplay } from 'vuetify'
 
+const { mobile } = useDisplay()
 const props = defineProps<{ modelValue: boolean; orderId: number | null }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
 
@@ -86,35 +88,85 @@ watch(
 </script>
 
 <template>
-  <v-dialog v-model="internalValue" persistent max-width="1000px">
-    <v-card v-if="order">
-      <v-card-title>
-        Order {{ order.order_no }}
+  <v-dialog
+    v-model="internalValue"
+    :fullscreen="mobile"
+    :max-width="mobile ? undefined : 1000"
+    :transition="mobile ? 'dialog-bottom-transition' : undefined"
+    persistent
+  >
+    <v-card v-if="order" :rounded="mobile ? '0' : 'lg'">
+      <v-toolbar v-if="mobile" color="surface" density="comfortable">
+        <v-btn icon="mdi-close" @click="internalValue = false" />
+        <v-toolbar-title class="text-body-1 font-weight-bold">
+          Order {{ order.order_no }}
+        </v-toolbar-title>
+        <v-chip :color="statusMeta(order.status).color" label size="small" class="mr-2">
+          {{ statusMeta(order.status).label }}
+        </v-chip>
+      </v-toolbar>
+
+      <v-card-title v-else class="pa-4 pa-sm-5 d-flex align-center ga-2">
+        <v-icon icon="mdi-clipboard-text-outline" color="primary" />
+        <span class="text-h6 font-weight-bold">Order {{ order.order_no }}</span>
         <v-spacer />
         <v-chip :color="statusMeta(order.status).color" label>{{ statusMeta(order.status).label }}</v-chip>
         <v-btn icon="mdi-close" @click="internalValue = false" />
       </v-card-title>
+      <v-divider />
 
-      <v-card-text>
-        <v-row class="mb-2">
-          <v-col>Customer: <strong>{{ order.customer?.name }}</strong></v-col>
-          <v-col>Medical Sales Representative: <strong>{{ order.agent?.name }}</strong></v-col>
-          <v-col>Due Date: <strong :class="{ 'text-error': isOverdue }">{{ order.due_date ? new Date(order.due_date).toLocaleDateString() : '—' }}</strong></v-col>
-        </v-row>
-        <v-row class="mb-4">
-          <v-col>TIN: <strong>{{ order.customer?.tin_number || '—' }}</strong></v-col>
-          <v-col>
+      <v-card-text class="pa-4 pa-sm-5">
+        <!-- Meta -->
+        <v-row dense class="mb-2">
+          <v-col cols="12" sm="6" md="4">
+            <div class="text-body-2">Customer: <strong>{{ order.customer?.name }}</strong></div>
+          </v-col>
+          <v-col cols="12" sm="6" md="4">
+            <div class="text-body-2">Medical Sales Representative: <strong>{{ order.agent?.name }}</strong></div>
+          </v-col>
+          <v-col cols="12" sm="6" md="4">
+            <div class="text-body-2">Due Date: <strong :class="{ 'text-error': isOverdue }">{{ order.due_date ? new Date(order.due_date).toLocaleDateString() : '—' }}</strong></div>
+          </v-col>
+          <v-col cols="12" sm="6" md="4">
+            <div class="text-body-2">TIN: <strong>{{ order.customer?.tin_number || '—' }}</strong></div>
+          </v-col>
+          <v-col cols="12" sm="6" md="4">
             <v-chip size="small" :color="order.customer?.is_vat_registered ? 'primary' : 'grey'" variant="tonal">
               {{ order.customer?.is_vat_registered ? 'VAT-Registered' : 'Non-VAT' }}
             </v-chip>
           </v-col>
-          <v-col />
         </v-row>
 
         <v-divider class="my-4" />
 
         <h4 class="mb-2">Line Items</h4>
-        <v-table dense>
+
+        <!-- MOBILE: line items cards -->
+        <template v-if="mobile">
+          <v-card
+            v-for="item in order.items" :key="item.id"
+            variant="outlined" rounded="lg" class="mb-2 pa-3"
+          >
+            <div class="font-weight-medium text-body-2">{{ item.product?.product_name }}</div>
+            <div class="text-caption text-medium-emphasis mt-2">
+              <div class="d-flex justify-space-between mb-1">
+                <span>Qty</span>
+                <span>{{ item.quantity }}</span>
+              </div>
+              <div class="d-flex justify-space-between mb-1">
+                <span>Unit Price</span>
+                <span>{{ formatCurrency(item.unit_price) }}</span>
+              </div>
+              <div class="d-flex justify-space-between">
+                <span class="font-weight-bold">Total</span>
+                <span class="font-weight-bold">{{ formatCurrency(item.line_total) }}</span>
+              </div>
+            </div>
+          </v-card>
+        </template>
+
+        <!-- DESKTOP: line items table -->
+        <v-table v-else dense class="detail-table">
           <thead>
             <tr>
               <th>Product</th>
@@ -127,20 +179,20 @@ watch(
             <tr v-for="item in order.items" :key="item.id">
               <td>{{ item.product?.product_name }}</td>
               <td class="text-right">{{ item.quantity }}</td>
-              <td class="text-right">{{ item.unit_price.toFixed(2) }}</td>
-              <td class="text-right">{{ item.line_total.toFixed(2) }}</td>
+              <td class="text-right">{{ formatCurrency(item.unit_price) }}</td>
+              <td class="text-right">{{ formatCurrency(item.line_total) }}</td>
             </tr>
           </tbody>
         </v-table>
 
         <div class="text-right mt-4 space-y-1">
-          <div>Subtotal: {{ order.subtotal?.toFixed(2) }}</div>
-          <div v-if="order.discount_amount">Discount: −{{ order.discount_amount.toFixed(2) }}</div>
-          <div><strong>Invoice Total: {{ order.total_amount?.toFixed(2) }}</strong></div>
-          <div>Amount Paid: {{ order.amount_paid?.toFixed(2) }}</div>
-          <div class="text-lg font-weight-bold">Balance: {{ balance.toFixed(2) }}</div>
+          <div>Subtotal: {{ formatCurrency(order.subtotal ?? 0) }}</div>
+          <div v-if="order.discount_amount">Discount: −{{ formatCurrency(order.discount_amount) }}</div>
+          <div><strong>Invoice Total: {{ formatCurrency(order.total_amount ?? 0) }}</strong></div>
+          <div>Amount Paid: {{ formatCurrency(order.amount_paid ?? 0) }}</div>
+          <div class="text-lg font-weight-bold">Balance: {{ formatCurrency(balance) }}</div>
           <div v-if="order.rebate_amount" class="text-caption text-medium-emphasis mt-1">
-            Rebate: {{ order.rebate_amount.toFixed(2) }} — paid separately, not part of the invoice
+            Rebate: {{ formatCurrency(order.rebate_amount) }} — paid separately, not part of the invoice
           </div>
         </div>
 
@@ -186,8 +238,8 @@ watch(
         <v-divider class="my-4" />
 
         <h4 class="mb-2">Record Collection</h4>
-        <v-row>
-          <v-col>
+        <v-row dense>
+          <v-col cols="12" sm="6" md="4">
             <v-text-field
               v-model.number="collectionAmount"
               label="Amount"
@@ -196,15 +248,16 @@ watch(
               :disabled="isPaid"
             />
           </v-col>
-          <v-col>
+          <v-col cols="12" sm="6" md="4">
             <v-text-field v-model="collectionMethod" label="Payment Method" :disabled="isPaid" />
           </v-col>
-          <v-col>
+          <v-col cols="12" sm="6" md="4">
             <v-text-field v-model="collectionReference" label="Ref No" :disabled="isPaid" />
           </v-col>
-          <v-col class="d-flex align-center">
+          <v-col cols="12" class="d-flex align-center mt-1">
             <v-btn
               color="success"
+              :block="mobile"
               :disabled="isPaid || collectionAmount <= 0"
               :loading="loading"
               @click="recordCollection"
@@ -217,7 +270,59 @@ watch(
         <v-divider class="my-4" />
 
         <h4 class="mb-2">Collections History</h4>
-        <v-table dense>
+
+        <!-- MOBILE: collection cards -->
+        <template v-if="mobile">
+          <v-card
+            v-for="c in collections" :key="c.id"
+            variant="outlined" rounded="lg" class="mb-2 pa-3"
+          >
+            <div class="d-flex align-center justify-space-between ga-2">
+              <span class="font-weight-medium text-body-2">
+                {{ c.created_at ? new Date(c.created_at).toLocaleDateString() : '—' }}
+              </span>
+              <v-chip size="x-small" :color="c.commission_status === 'paid' ? 'success' : 'warning'" variant="tonal">
+                {{ c.commission_status }}
+              </v-chip>
+            </div>
+
+            <div class="text-caption text-medium-emphasis mt-2">
+              <div class="d-flex justify-space-between mb-1">
+                <span>Amount</span>
+                <span class="font-weight-medium">{{ formatCurrency(c.amount ?? 0) }}</span>
+              </div>
+              <div class="d-flex justify-space-between mb-1">
+                <span>Method</span>
+                <span>{{ c.payment_method || '—' }}</span>
+              </div>
+              <div class="d-flex justify-space-between">
+                <span>Commission</span>
+                <span class="font-weight-medium">{{ formatCurrency(c.commission_amount ?? 0) }}</span>
+              </div>
+            </div>
+
+            <div class="d-flex flex-wrap ga-2 mt-2">
+              <v-btn
+                v-if="c.commission_status === 'unpaid'"
+                size="small" variant="flat" color="primary" class="text-none"
+                @click="markCommissionPaid(c)"
+              >
+                Mark Paid
+              </v-btn>
+              <v-chip v-if="crPending(c.id)" size="x-small" color="warning" variant="tonal" label>undo pending</v-chip>
+              <v-btn
+                v-else
+                prepend-icon="mdi-pencil-box-outline" size="small" variant="tonal" color="primary" class="text-none"
+                title="Request edit or undo of this collection (needs executive approval)" @click="requestUndoCollection(c)"
+              >
+                Request Change
+              </v-btn>
+            </div>
+          </v-card>
+        </template>
+
+        <!-- DESKTOP: collections table -->
+        <v-table v-else dense class="detail-table">
           <thead>
             <tr>
               <th>Date</th>
@@ -231,9 +336,9 @@ watch(
           <tbody>
             <tr v-for="c in collections" :key="c.id">
               <td>{{ c.created_at ? new Date(c.created_at).toLocaleDateString() : '—' }}</td>
-              <td class="text-right">{{ c.amount?.toFixed(2) }}</td>
+              <td class="text-right">{{ formatCurrency(c.amount ?? 0) }}</td>
               <td>{{ c.payment_method || '—' }}</td>
-              <td class="text-right">{{ c.commission_amount?.toFixed(2) }}</td>
+              <td class="text-right">{{ formatCurrency(c.commission_amount ?? 0) }}</td>
               <td>
                 <v-chip size="x-small" :color="c.commission_status === 'paid' ? 'success' : 'warning'">
                   {{ c.commission_status }}
@@ -263,33 +368,36 @@ watch(
         <div class="text-caption text-medium-emphasis mb-2">
           Issue a signed proof-of-delivery for the fulfilled quantities. Re-issue for a reprint or second copy.
         </div>
-        <v-row>
+        <v-row dense>
           <v-col cols="12" sm="6">
             <v-text-field v-model="receivedBy" label="Received by (consignee)" placeholder="Printed name on the DR"
               variant="outlined" density="compact" hide-details />
           </v-col>
-          <v-col cols="12" sm="auto" class="d-flex align-center">
+          <v-col cols="12" sm="auto" class="d-flex align-center mt-2 mt-sm-0">
             <v-btn color="teal" class="text-none font-weight-bold" elevation="0" prepend-icon="mdi-truck-check"
-              :disabled="!canIssueDR" :loading="loading" @click="issueDR">
+              :block="mobile" :disabled="!canIssueDR" :loading="loading" @click="issueDR">
               Issue Delivery Receipt
             </v-btn>
           </v-col>
         </v-row>
       </v-card-text>
 
-      <v-card-actions>
-        <v-btn
-          v-if="isCancellable"
-          color="error"
-          :loading="loading"
-          @click="cancelOrder"
-        >
-          Cancel Order
-        </v-btn>
-        <v-spacer />
-        <v-btn variant="text" prepend-icon="mdi-printer" @click="showInvoice = true">Print Invoice</v-btn>
-        <v-btn @click="internalValue = false">Close</v-btn>
-      </v-card-actions>
+      <template v-if="!mobile">
+        <v-divider />
+        <v-card-actions>
+          <v-btn
+            v-if="isCancellable"
+            color="error"
+            :loading="loading"
+            @click="cancelOrder"
+          >
+            Cancel Order
+          </v-btn>
+          <v-spacer />
+          <v-btn variant="text" prepend-icon="mdi-printer" @click="showInvoice = true">Print Invoice</v-btn>
+          <v-btn @click="internalValue = false">Close</v-btn>
+        </v-card-actions>
+      </template>
     </v-card>
   </v-dialog>
 
@@ -307,3 +415,9 @@ watch(
     :loading="crSubmitting"
     @submit="crSubmit" />
 </template>
+
+<style scoped>
+.detail-table :deep(tbody tr:hover) {
+  background: rgba(var(--v-theme-primary), 0.04);
+}
+</style>

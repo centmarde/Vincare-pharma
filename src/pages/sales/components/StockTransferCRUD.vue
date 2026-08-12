@@ -4,9 +4,10 @@ import { useStockTransfers, headers } from '../composables/useStockTransfers'
 import StockTransferRequestDialog from './StockTransferRequestDialog.vue'
 import StockTransferDetailDialog from './StockTransferDetailDialog.vue'
 import { formatDatePR_ISO } from '@/utils/helpers'
+import { useDisplay } from 'vuetify'
 
-// 'outlet' = requesting side (create + confirm receipt);
-// 'warehouse' = reviewing side (approve/reject).
+const { mobile } = useDisplay()
+
 withDefaults(defineProps<{ mode?: 'warehouse' | 'outlet' }>(), { mode: 'outlet' })
 
 const {
@@ -29,7 +30,7 @@ onMounted(init)
       <!-- Header -->
       <v-card-title class="d-flex justify-space-between align-center pa-5 flex-wrap ga-3">
         <span class="text-h6 font-weight-bold">Stock Transfers</span>
-        <div class="d-flex align-center flex-wrap ga-3">
+        <div class="d-flex align-center flex-wrap ga-3" :class="mobile ? 'w-100' : ''">
           <v-text-field
             v-model="search"
             placeholder="Search transfer #..."
@@ -37,7 +38,7 @@ onMounted(init)
             variant="outlined"
             density="compact"
             hide-details
-            style="min-width: 220px"
+            :style="mobile ? 'width: 100%' : 'min-width: 220px'"
           />
           <v-select
             v-model="filterOutletId"
@@ -45,7 +46,7 @@ onMounted(init)
             variant="outlined"
             density="compact"
             hide-details
-            style="min-width: 180px"
+            :style="mobile ? 'width: 100%' : 'min-width: 180px'"
           />
           <v-select
             v-model="filterStatus"
@@ -53,7 +54,7 @@ onMounted(init)
             variant="outlined"
             density="compact"
             hide-details
-            style="min-width: 180px"
+            :style="mobile ? 'width: 100%' : 'min-width: 180px'"
           />
           <v-btn
             v-if="mode === 'outlet'"
@@ -61,6 +62,7 @@ onMounted(init)
             class="text-none font-weight-bold"
             elevation="0"
             prepend-icon="mdi-plus"
+            :block="mobile"
             @click="openRequestDialog"
           >
             New Request
@@ -70,8 +72,34 @@ onMounted(init)
 
       <v-divider />
 
-      <!-- Table -->
+      <!-- Mobile: card list -->
+      <v-list v-if="mobile" lines="two" :loading="loading">
+        <v-list-item v-for="t in filteredTransfers" :key="t.id" @click="openDetailDialog(t)">
+          <template #prepend>
+            <v-avatar color="primary" variant="tonal" size="40" class="text-caption font-weight-bold">
+              {{ t.transfer_no?.slice(-4) }}
+            </v-avatar>
+          </template>
+          <v-list-item-title class="text-body-2 font-weight-medium">
+            {{ t.transfer_no }}
+          </v-list-item-title>
+          <v-list-item-subtitle class="text-caption">
+            {{ t.outlet?.name ?? '—' }} · {{ formatDatePR_ISO(t.created_at) }}
+          </v-list-item-subtitle>
+          <template #append>
+            <v-chip :color="statusColor(t.status)" size="x-small" variant="tonal" class="font-weight-bold">
+              {{ statusLabel(t.status) }}
+            </v-chip>
+          </template>
+        </v-list-item>
+        <v-list-item v-if="!filteredTransfers.length && !loading">
+          <v-list-item-title class="text-medium-emphasis text-body-2">No stock transfers yet.</v-list-item-title>
+        </v-list-item>
+      </v-list>
+
+      <!-- Desktop: table -->
       <v-data-table
+        v-else
         :headers="headers"
         :items="filteredTransfers"
         :loading="loading"

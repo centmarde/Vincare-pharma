@@ -1,4 +1,4 @@
-import { ref, computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useCustomersDataStore } from '@/stores/customersData'
@@ -10,14 +10,19 @@ import type { CreateCustomerData } from '@/stores/customersData'
 const toast = useToast()
 const { confirmDialog } = useConfirmDialog()
 
+// Server-side pagination size — the same 25 rows per page the list already
+// showed when the per-page dropdown was used.
+const PAGE_SIZE = 10
+
 export function useEthicalCustomers() {
   const customersStore = useCustomersDataStore()
   const agentsStore = useAgentsDataStore()
   const discountsStore = useDiscountsDataStore()
-  const { customers, loading } = storeToRefs(customersStore)
+  const { pagedCustomers, pagedTotalCount, pagedLoading } = storeToRefs(customersStore)
   const { agents } = storeToRefs(agentsStore)
 
   const searchText = ref('')
+  const page = ref(1)
   const showCreateDialog = ref(false)
   const showEditDialog = ref(false)
   const editingId = ref<number | null>(null)
@@ -27,12 +32,12 @@ export function useEthicalCustomers() {
   // the edit form — carrying them here only pushed Status off the screen.
   const headers = [
     { title: 'Customer', key: 'name' },
-    { title: 'Type', key: 'agency_type', width: 110 },
-    { title: 'Contact No.', key: 'contact_no', width: 150 },
+    { title: 'Type', key: 'agency_type', width: 90 },
+    { title: 'Contact No.', key: 'contact_no', width: 160 },
     { title: 'Area', key: 'area', width: 120 },
-    { title: 'Sales Rep', key: 'agent_name', width: 150 },
+    { title: 'Sales Rep', key: 'agent_name', width: 160 },
     { title: 'Payment Terms', key: 'term_days', sortable: false, width: 140 },
-    { title: 'Agreed Rates', key: 'rates', sortable: false, width: 210 },
+    { title: 'Agreed Rates', key: 'rates', sortable: false, width: 250 },
     { title: 'Active', key: 'is_active', width: 90 },
     { title: '', key: 'actions', sortable: false, align: 'end' as const, width: 90 },
   ]
@@ -59,55 +64,55 @@ export function useEthicalCustomers() {
   const agentName = (agentId: number | null): string =>
     agents.value.find(a => a.id === agentId)?.name ?? ''
 
-  const filteredCustomers = computed(() => {
-    // NO department filter here — `reload()` already scopes the query to
-    // ethical + unassigned (or every channel when showAll is on). Filtering
-    // again for department === 'ethical' emptied the page completely, since
-    // every customer in the real file is still unassigned.
-    let result = customers.value
-    if (searchText.value) {
-      const s = searchText.value.toLowerCase()
-      result = result.filter(c =>
-        (c.name?.toLowerCase().includes(s)) ||
-        (c.contact_person?.toLowerCase().includes(s))
-      )
-    }
-    return result.map(c => ({ ...c, agent_name: agentName(c.agent_id) }))
-  })
+  // The RPC returns exactly the page the server resolved — department scope,
+  // search and pagination all happen in SQL. The only enrichment needed here
+  // is the agent name for the Sales Rep column.
+  const customers = computed(() =>
+    pagedCustomers.value.map(c => ({ ...c, agent_name: agentName(c.agent_id) })))
 
   const editingCustomer = computed(() => {
     if (editingId.value === null) return null
-    return filteredCustomers.value.find(c => c.id === editingId.value)
+    return customers.value.find(c => c.id === editingId.value)
   })
 
   const agentOptions = computed(() =>
     agents.value.map(a => ({ title: a.name, value: a.id })))
 
-  // Unassigned customers show alongside Ethical ones: most of the real customer
-  // file has no department yet, and one is stamped only when it first
-  // transacts. `showAll` widens this to every department for when staff need a
-  // customer already stamped to another channel.
+
   const showAll = ref(false)
 
   async function reload() {
-    await customersStore.fetchCustomers({
-      ...(showAll.value ? {} : { department: 'ethical', includeUnassigned: true }),
-      search: searchText.value || undefined,
+    await customersStore.fetchCustomersRPC({
+      department: showAll.value ? null : 'ethical',
+      includeUnassigned: !showAll.value,
+      search: searchText.value.trim() || null,
+      page: page.value,
+      pageSize: PAGE_SIZE,
     })
   }
 
-  watch(showAll, () => { void reload() })
+  function resetAndReload() {
+    if (page.value === 1) {
+      void reload()
+    } else {
+      page.value = 1
+    }
+  }
 
-  // Search SERVER-SIDE. PostgREST caps a response at 1000 rows and there are
-  // ~5.3k customers, so filtering the loaded array client-side silently hides
-  // anyone outside the first page.
+  watch(showAll, resetAndReload)
+
   let searchDebounce: ReturnType<typeof setTimeout> | undefined
   watch(searchText, () => {
     if (searchDebounce) clearTimeout(searchDebounce)
-    searchDebounce = setTimeout(() => { void reload() }, 300)
+    searchDebounce = setTimeout(() => { void resetAndReload() }, 300)
   })
 
-  // Agreed rates for every customer, so the list can show them per row.
+  
+  watch(page, (newPage, oldPage) => {
+    if (newPage === oldPage) return
+    void reload()
+  })
+
   function profileFor(customerId: number | null | undefined) {
     return discountsStore.profileFor(customerId)
   }
@@ -125,6 +130,7 @@ export function useEthicalCustomers() {
     if (result) {
       showCreateDialog.value = false
       toast.success('Customer created.')
+      await reload()
     }
   }
 
@@ -138,13 +144,21 @@ export function useEthicalCustomers() {
       showEditDialog.value = false
       editingId.value = null
       toast.success('Customer updated.')
+      await reload()
     }
   }
 
   async function deleteCustomer(id: number) {
     if (!(await confirmDialog('Delete this customer?', { title: 'Confirm Delete', confirmText: 'Delete' }))) return
     const result = await customersStore.deleteCustomer(id)
-    if (result) toast.success('Customer deleted.')
+    if (result) {
+      toast.success('Customer deleted.')
+      if (page.value > 1 && pagedCustomers.value.length === 1) {
+        page.value -= 1
+      } else {
+        await reload()
+      }
+    }
   }
 
   function openCreateDialog() {
@@ -166,8 +180,11 @@ export function useEthicalCustomers() {
   }
 
   return {
-    customers: filteredCustomers,
-    loading,
+    customers,
+    loading: pagedLoading,
+    totalCount: pagedTotalCount,
+    page,
+    pageSize: PAGE_SIZE,
     searchText,
     showAll,
     reload,
