@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useDisplay } from 'vuetify'
 import ActionRequiredDialog from '../dialogs/ActionRequiredDialog.vue'
 import RequestHistoryListDialog from '../dialogs/RequestHistoryListDialog.vue'
 import { useChangeRequestsPR } from '@/pages/purchasing/stores/composables/useChangeRequestsPR'
@@ -10,16 +11,12 @@ import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
 import { formatDatePR_ISO } from '@/utils/helpers'
 import { useRequestHistory } from '../composables/useRequestHistory'
 
-// Change requests come from FOUR module-scoped queues; each request is tagged
-// with its `source` so ActionRequiredDialog knows which composable owns the
-// approve/reject. Without all four, a module's requests are filed but never
-// surface to an approver (in-house/ethical, finance and sales were invisible
-// this way).
 const { requests: undoRequests, loading: undoLoading } = useChangeRequestsPR()
 const { requests: financeRequests, loading: financeLoading } = useFinanceChangeRequests()
 const { requests: salesRequests, loading: salesLoading } = useSalesChangeRequests()
 const { requests: sharedRequests, loading: sharedLoading } = useSharedChangeRequests()
 const { requests: pendingPRs, loading: prLoading } = useExecutiveApprovePR()
+const { mobile } = useDisplay()
 
 type MergedActionItem =
   | { kind: 'undo'; id: number; created_at: string; raw: any }
@@ -75,9 +72,12 @@ const paginatedRequests = computed(() => {
   return mergedItems.value.slice(start, start + perPage)
 })
 
-watch(() => mergedItems.value.length, () => {
-  page.value = 1
-})
+watch(
+  () => mergedItems.value.length,
+  () => {
+    page.value = 1
+  },
+)
 
 function openRequest(item: MergedActionItem) {
   selectedReq.value = item
@@ -108,7 +108,9 @@ watch(historyDialog, (val) => {
           <v-icon icon="mdi-bell-ring-outline" color="error" size="20" />
         </v-col>
         <v-col>
-          <span class="text-h6 font-weight-bold">Action Required</span>
+          <span :class="mobile ? 'text-subtitle-1' : 'text-h6'" class="font-weight-bold">
+            Action Required
+          </span>
         </v-col>
         <v-col v-if="count" cols="auto">
           <v-chip size="small" color="error" variant="flat">{{ count }}</v-chip>
@@ -140,13 +142,20 @@ watch(historyDialog, (val) => {
 
             <!-- Undo request row -->
             <template v-if="item.kind === 'undo'">
-              <v-list-item-title class="d-flex align-center ga-2 mb-1">
-                <v-chip size="x-small" color="red" variant="tonal" label>Undo</v-chip>
-                <span class="text-body-2 font-weight-medium">
-                  {{ item.raw.from_transaction_no ?? `#${item.raw.transaction_id}` }}
-                </span>
-                <v-spacer />
-                <span class="text-caption text-medium-emphasis flex-shrink-0">
+              <v-list-item-title
+                :class="
+                  mobile
+                    ? 'd-flex flex-column align-start ga-1 mb-1'
+                    : 'd-flex align-center ga-2 mb-1'
+                "
+              >
+                <div class="d-flex align-center ga-2 w-100">
+                  <v-chip size="x-small" color="red" variant="tonal" label>Undo</v-chip>
+                  <span class="text-body-2 font-weight-medium action-item-number">
+                    {{ item.raw.from_transaction_no ?? `#${item.raw.transaction_id}` }}
+                  </span>
+                </div>
+                <span class="text-caption text-medium-emphasis">
                   {{ formatDatePR_ISO(item.raw.created_at) }}
                 </span>
               </v-list-item-title>
@@ -154,30 +163,45 @@ watch(historyDialog, (val) => {
               <v-list-item-subtitle
                 v-if="item.raw.reason"
                 class="text-caption text-medium-emphasis"
+                :class="mobile ? 'reason-clamp' : ''"
                 style="white-space: normal; line-height: 1.4"
               >
                 <v-icon icon="mdi-account-outline" size="12" class="mr-1" style="opacity: 0.7" />
-                <span style="text-transform: uppercase">{{ item.raw.requester_name ?? '—' }}</span> ·
-                <v-icon icon="mdi-comment-text-outline" size="12" class="mr-1" style="opacity: 0.7" />
+                <span style="text-transform: uppercase">{{ item.raw.requester_name ?? '—' }}</span>
+                ·
+                <v-icon
+                  icon="mdi-comment-text-outline"
+                  size="12"
+                  class="mr-1"
+                  style="opacity: 0.7"
+                />
                 {{ item.raw.reason }}
               </v-list-item-subtitle>
             </template>
 
             <!-- PR approval row -->
             <template v-else>
-              <v-list-item-title class="d-flex align-center ga-2 mb-1">
-                <v-chip size="x-small" color="info" variant="tonal" label>New</v-chip>
-                <span class="text-body-2 font-weight-medium">
-                  {{ item.raw.reference_no ?? item.raw.requisition_no ?? `#${item.raw.id}` }}
-                </span>
-                <v-spacer />
-                <span class="text-caption text-medium-emphasis flex-shrink-0">
+              <v-list-item-title
+                :class="
+                  mobile
+                    ? 'd-flex flex-column align-start ga-1 mb-1'
+                    : 'd-flex align-center ga-2 mb-1'
+                "
+              >
+                <div class="d-flex align-center ga-2 w-100">
+                  <v-chip size="x-small" color="info" variant="tonal" label>New</v-chip>
+                  <span class="text-body-2 font-weight-medium action-item-number">
+                    {{ item.raw.reference_no ?? item.raw.requisition_no ?? `#${item.raw.id}` }}
+                  </span>
+                </div>
+                <span class="text-caption text-medium-emphasis">
                   {{ formatDatePR_ISO(item.raw.created_at) }}
                 </span>
               </v-list-item-title>
 
               <v-list-item-subtitle
                 class="text-caption text-medium-emphasis"
+                :class="mobile ? 'reason-clamp' : ''"
                 style="white-space: normal; line-height: 1.4"
               >
                 <v-icon icon="mdi-account-outline" size="12" class="mr-1" style="opacity: 0.7" />
@@ -198,7 +222,7 @@ watch(historyDialog, (val) => {
           v-model="page"
           :length="totalPages"
           density="compact"
-          class="mt-4"
+          :class="mobile ? 'mt-3' : 'mt-4'"
         />
       </v-list>
 
@@ -208,7 +232,13 @@ watch(historyDialog, (val) => {
       </div>
 
       <div class="text-center mt-4">
-        <v-btn size="small" variant="text" class="text-none" color="primary" @click="historyDialog = true">
+        <v-btn
+          size="small"
+          variant="text"
+          class="text-none"
+          color="primary"
+          @click="historyDialog = true"
+        >
           <v-icon start size="16">mdi-history</v-icon>
           View Request History
         </v-btn>
@@ -227,5 +257,20 @@ watch(historyDialog, (val) => {
 }
 .action-item:hover {
   background-color: rgba(var(--v-theme-error), 0.05);
+}
+/* Truncate long transaction/reference numbers with ellipsis */
+.action-item-number {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Clamp long reason text to 2 lines on mobile */
+.reason-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 </style>

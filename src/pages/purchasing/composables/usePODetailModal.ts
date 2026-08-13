@@ -78,10 +78,28 @@ export function usePODetailModal(
       ;(el as HTMLElement).style.color = '#1565c0'
     })
 
-    el.querySelectorAll('img').forEach(img => {
-      img.src        = img.src
-      img.crossOrigin = 'anonymous'
-    })
+    const images = Array.from(el.querySelectorAll('img'))
+    await Promise.all(
+      images.map(img => new Promise<void>((resolve) => {
+        // If the image is already loaded and complete, no need to reload it —
+        // just ensure crossOrigin is set and move on.
+        if (img.complete && img.naturalWidth > 0) {
+          resolve()
+          return
+        }
+
+        const onDone = () => {
+          img.removeEventListener('load', onDone)
+          img.removeEventListener('error', onDone)
+          resolve()
+        }
+
+        img.addEventListener('load', onDone)
+        img.addEventListener('error', onDone) // don't hang the whole PDF if one image 404s
+        img.crossOrigin = 'anonymous'
+        img.src = img.src // trigger reload only after listeners + crossOrigin are set
+      }))
+    )
 
     await html2pdf()
       .set({

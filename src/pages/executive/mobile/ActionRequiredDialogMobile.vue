@@ -8,10 +8,6 @@ import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
 import type { PRItem } from '@/stores/purchaseRequisitionData'
 import { formatDatePR_ISO } from '@/utils/helpers'
 import { computed, ref, watch } from 'vue'
-import { useDisplay } from 'vuetify'
-import ActionRequiredDialogMobile from '../mobile/ActionRequiredDialogMobile.vue'
-
-const { mobile } = useDisplay()
 
 const prChangeRequests = useChangeRequestsPR()
 const financeChangeRequests = useFinanceChangeRequests()
@@ -20,7 +16,9 @@ const sharedChangeRequests = useSharedChangeRequests()
 const { approve: approvePR, reject: rejectPR } = useExecutiveApprovePR()
 const prStore = usePurchaseRequisitionStore()
 
-
+// A change request must be approved through the store that owns it — each one
+// applies the change via its own module's reversal path. Dispatch on the
+// `source` tag ActionRequired stamped onto the row.
 function changeRequestOwner(source: string | undefined) {
   if (source === 'finance') return financeChangeRequests
   if (source === 'sales') return salesChangeRequests
@@ -40,6 +38,10 @@ const isRejecting = ref(false)
 const showRejectInput = ref(false)
 const rejectReason = ref('')
 
+// A change request can come from four modules and be three different types, so
+// the copy below must follow the request — describing a payment void as
+// "revert this purchase requisition to Pending Approval" tells the approver
+// they're doing something entirely different from what will actually happen.
 const source = computed(() => raw.value?.source as string | undefined)
 const isPRUndo = computed(() => source.value === 'pr')
 
@@ -71,12 +73,16 @@ const undoFallbackSummary = computed(() =>
     : 'Apply this change request.',
 )
 
-
+// Undo-request rows only carry transaction_id/reason — fetch the underlying
+// PR (with items) on demand so the same items can render for both branches.
 const undoItems = ref<PRItem[]>([])
 const undoItemsLoading = ref(false)
 
 watch(() => [selected.value, kind.value, raw.value?.transaction_id] as const,
 async ([open, k, txId]) => {
+  // Only PR undo requests have a purchase requisition behind them — a
+  // finance/sales/in-house request's transaction_id is an expense, sale or
+  // order, so looking it up as a PR would return nothing useful.
   if (!open || k !== 'undo' || !txId || raw.value?.source !== 'pr') {
     undoItems.value = []
     return
@@ -123,23 +129,23 @@ async function confirmReject() {
     isRejecting.value = false
   }
 }
+
+// Format currency for item display
+function formatMoney(value: number | string | undefined) {
+  if (value === undefined || value === null || value === '') return '—'
+  const num = typeof value === 'string' ? parseFloat(value) : value
+  if (isNaN(num)) return String(value)
+  return num.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })
+}
 </script>
 
 <template>
-  <!-- ── MOBILE: dedicated mobile dialog component ─────────────────── -->
-  <ActionRequiredDialogMobile
-    v-if="mobile"
-    v-model="selected"
-    :request="request"
-  />
-
-  <!-- ── DESKTOP ───────────────────────────────────────────────────── -->
-  <template v-else>
-  <v-dialog v-model="selected" max-width="720" persistent>
-    <v-card class="rounded-xl" elevation="0">
-      <div class="d-flex align-center pa-4 pa-md-6 pb-2">
+  <v-dialog v-model="selected" fullscreen persistent>
+    <v-card class="rounded-0" elevation="0">
+      <!-- Header -->
+      <div class="d-flex align-center pa-4 pb-2">
         <v-icon icon="mdi-shield-alert-outline" color="error" size="22" class="mr-2" />
-        <span class="text-h6 font-weight-bold">Approval Required</span>
+        <span class="text-subtitle-1 font-weight-bold">Approval Required</span>
         <v-spacer />
         <v-btn icon size="small" variant="text" @click="selected = false">
           <v-icon icon="mdi-close" />
@@ -150,7 +156,7 @@ async function confirmReject() {
         No request selected.
       </div>
 
-      <v-card-text v-else class="px-4 px-md-6 pb-4 pb-md-6 pt-0">
+      <v-card-text v-else class="px-4 pb-4 pt-0">
         <!-- ═══ PR APPROVAL BRANCH ═══ -->
         <template v-if="kind === 'pr_approval'">
           <v-sheet rounded="lg" variant="tonal" color="surface-variant" class="pa-3 mb-4">
@@ -174,7 +180,8 @@ async function confirmReject() {
 
             <v-divider class="my-3" />
 
-            <div class="d-flex ga-6 flex-wrap">
+            <!-- Stacked info on mobile -->
+            <div class="d-flex flex-column" style="gap: 10px">
               <div>
                 <div class="text-caption text-medium-emphasis">Requested by</div>
                 <div class="text-body-2 text-high-emphasis">{{ raw.requester_name ?? '—' }}</div>
@@ -192,34 +199,45 @@ async function confirmReject() {
             </div>
           </v-sheet>
 
+          <!-- Items as cards (mobile-friendly) -->
           <div class="mb-4">
             <div class="text-caption font-weight-bold text-medium-emphasis mb-2">
               ITEMS ({{ raw.items?.length ?? 0 }})
             </div>
-            <v-table density="compact" class="rounded-lg border">
-              <thead>
-                <tr>
-                  <th class="text-caption">No.</th>
-                  <th class="text-caption">Description</th>
-                  <th class="text-caption">Unit</th>
-                  <th class="text-caption">Supplier</th>
-                  <th class="text-caption text-right">Qty</th>
-                  <th class="text-caption text-right">Cost/Unit</th>
-                  <th class="text-caption text-right">Offer/Unit</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="it in raw.items" :key="it.id">
-                  <td class="text-caption">{{ it.no }}</td>
-                  <td class="text-caption">{{ it.item_description }}</td>
-                  <td class="text-caption">{{ it.unit }}</td>
-                  <td class="text-caption">{{ it.supplier_name }}</td>
-                  <td class="text-caption text-right">{{ it.qty }}</td>
-                  <td class="text-caption text-right">{{ it.cost_per_unit }}</td>
-                  <td class="text-caption text-right">{{ it.offer_per_unit }}</td>
-                </tr>
-              </tbody>
-            </v-table>
+            <div v-if="raw.items?.length" class="d-flex flex-column" style="gap: 8px">
+              <v-sheet
+                v-for="it in raw.items"
+                :key="it.id"
+                rounded="lg"
+                variant="tonal"
+                color="surface-variant"
+                class="pa-3"
+              >
+                <div class="d-flex align-start justify-space-between ga-2 mb-1">
+                  <span class="text-body-2 font-weight-bold">#{{ it.no }}</span>
+                  <span class="text-caption text-medium-emphasis text-right">{{ it.unit }}</span>
+                </div>
+                <div class="text-body-2 mb-2">{{ it.item_description }}</div>
+                <div class="text-caption text-medium-emphasis mb-1">
+                  Supplier: {{ it.supplier_name }}
+                </div>
+                <div class="d-flex flex-wrap" style="gap: 8px 16px">
+                  <div class="text-caption">
+                    <span class="text-medium-emphasis">Qty:</span>
+                    <span class="font-weight-medium ms-1">{{ it.qty }}</span>
+                  </div>
+                  <div class="text-caption">
+                    <span class="text-medium-emphasis">Cost/Unit:</span>
+                    <span class="font-weight-medium ms-1">{{ formatMoney(it.cost_per_unit) }}</span>
+                  </div>
+                  <div class="text-caption">
+                    <span class="text-medium-emphasis">Offer/Unit:</span>
+                    <span class="font-weight-medium ms-1">{{ formatMoney(it.offer_per_unit) }}</span>
+                  </div>
+                </div>
+              </v-sheet>
+            </div>
+            <div v-else class="text-caption text-medium-emphasis pa-2">No items found.</div>
           </div>
 
           <v-alert
@@ -234,7 +252,7 @@ async function confirmReject() {
           </v-alert>
         </template>
 
-        <!-- ═══ UNDO REQUEST BRANCH (unchanged) ═══ -->
+        <!-- ═══ UNDO REQUEST BRANCH ═══ -->
         <template v-else>
           <v-sheet rounded="lg" variant="tonal" color="surface-variant" class="pa-3 mb-4">
             <div class="d-flex align-center ga-3">
@@ -257,7 +275,8 @@ async function confirmReject() {
 
             <v-divider class="my-3" />
 
-            <div class="d-flex ga-6">
+            <!-- Stacked info on mobile -->
+            <div class="d-flex flex-column" style="gap: 10px">
               <div>
                 <div class="text-caption text-medium-emphasis">Requested by</div>
                 <div class="text-body-2 text-high-emphasis">{{ raw.created_by_email ?? '—' }}</div>
@@ -282,39 +301,49 @@ async function confirmReject() {
               {{ raw.reason ?? '—' }}
             </v-sheet>
           </div>
-         <div v-if="isPRUndo" class="mb-4">
-          <div class="text-caption font-weight-bold text-medium-emphasis mb-2">
-            ITEMS ON THIS REQUISITION ({{ undoItems.length }})
+
+          <div v-if="isPRUndo" class="mb-4">
+            <div class="text-caption font-weight-bold text-medium-emphasis mb-2">
+              ITEMS ON THIS REQUISITION ({{ undoItems.length }})
+            </div>
+            <div v-if="undoItemsLoading" class="text-center pa-4">
+              <v-progress-circular indeterminate size="20" width="2" />
+            </div>
+            <div v-else-if="undoItems.length" class="d-flex flex-column" style="gap: 8px">
+              <v-sheet
+                v-for="it in undoItems"
+                :key="it.id"
+                rounded="lg"
+                variant="tonal"
+                color="surface-variant"
+                class="pa-3"
+              >
+                <div class="d-flex align-start justify-space-between ga-2 mb-1">
+                  <span class="text-body-2 font-weight-bold">#{{ it.no }}</span>
+                  <span class="text-caption text-medium-emphasis text-right">{{ it.unit }}</span>
+                </div>
+                <div class="text-body-2 mb-2">{{ it.item_description }}</div>
+                <div class="text-caption text-medium-emphasis mb-1">
+                  Supplier: {{ it.supplier_name }}
+                </div>
+                <div class="d-flex flex-wrap" style="gap: 8px 16px">
+                  <div class="text-caption">
+                    <span class="text-medium-emphasis">Qty:</span>
+                    <span class="font-weight-medium ms-1">{{ it.qty }}</span>
+                  </div>
+                  <div class="text-caption">
+                    <span class="text-medium-emphasis">Cost/Unit:</span>
+                    <span class="font-weight-medium ms-1">{{ formatMoney(it.cost_per_unit) }}</span>
+                  </div>
+                  <div class="text-caption">
+                    <span class="text-medium-emphasis">Offer/Unit:</span>
+                    <span class="font-weight-medium ms-1">{{ formatMoney(it.offer_per_unit) }}</span>
+                  </div>
+                </div>
+              </v-sheet>
+            </div>
+            <div v-else class="text-caption text-medium-emphasis pa-2">No items found.</div>
           </div>
-          <div v-if="undoItemsLoading" class="text-center pa-4">
-            <v-progress-circular indeterminate size="20" width="2" />
-          </div>
-          <v-table v-else-if="undoItems.length" density="compact" class="rounded-lg border">
-            <thead>
-              <tr>
-                <th class="text-caption">No.</th>
-                <th class="text-caption">Description</th>
-                <th class="text-caption">Unit</th>
-                <th class="text-caption">Supplier</th>
-                <th class="text-caption text-right">Qty</th>
-                <th class="text-caption text-right">Cost/Unit</th>
-                <th class="text-caption text-right">Offer/Unit</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="it in undoItems" :key="it.id">
-                <td class="text-caption">{{ it.no }}</td>
-                <td class="text-caption">{{ it.item_description }}</td>
-                <td class="text-caption">{{ it.unit }}</td>
-                <td class="text-caption">{{ it.supplier_name }}</td>
-                <td class="text-caption text-right">{{ it.qty }}</td>
-                <td class="text-caption text-right">{{ it.cost_per_unit }}</td>
-                <td class="text-caption text-right">{{ it.offer_per_unit }}</td>
-              </tr>
-            </tbody>
-          </v-table>
-          <div v-else class="text-caption text-medium-emphasis pa-2">No items found.</div>
-        </div>
 
           <v-alert
             type="warning"
@@ -345,13 +374,26 @@ async function confirmReject() {
           </div>
         </v-expand-transition>
 
-        <!-- Actions (shared) -->
-        <div class="d-flex justify-end ga-2">
+        <!-- Actions (stacked full-width on mobile) -->
+        <div class="d-flex flex-column" style="gap: 8px">
           <template v-if="!showRejectInput">
-            <v-btn size="small" variant="outlined" class="text-none" @click="selected = false">
+            <v-btn
+              size="small"
+              variant="outlined"
+              class="text-none"
+              block
+              @click="selected = false"
+            >
               Cancel
             </v-btn>
-            <v-btn size="small" variant="outlined" color="error" class="text-none" @click="startReject">
+            <v-btn
+              size="small"
+              variant="outlined"
+              color="error"
+              class="text-none"
+              block
+              @click="startReject"
+            >
               Reject
             </v-btn>
             <v-btn
@@ -359,6 +401,7 @@ async function confirmReject() {
               color="success"
               class="text-none font-weight-bold"
               elevation="0"
+              block
               :loading="isApproving"
               @click="onApprove"
             >
@@ -367,7 +410,13 @@ async function confirmReject() {
           </template>
 
           <template v-else>
-            <v-btn size="small" variant="outlined" class="text-none" @click="showRejectInput = false">
+            <v-btn
+              size="small"
+              variant="outlined"
+              class="text-none"
+              block
+              @click="showRejectInput = false"
+            >
               Back
             </v-btn>
             <v-btn
@@ -375,6 +424,7 @@ async function confirmReject() {
               color="error"
               class="text-none font-weight-bold"
               elevation="0"
+              block
               :loading="isRejecting"
               @click="confirmReject"
             >
@@ -385,5 +435,4 @@ async function confirmReject() {
       </v-card-text>
     </v-card>
   </v-dialog>
-  </template>
 </template>
