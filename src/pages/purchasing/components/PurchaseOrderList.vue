@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { usePurchaseOrderList, headers } from '../composables/usePurchaseOrderList'
+import PODetailPrintTarget from './dialogs/PODetailPrintTarget.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import ViewPODetailModal from './dialogs/PODetailModal.vue'
-import { onMounted, computed } from 'vue'
+import { onMounted, computed, ref } from 'vue'
 import { useDisplay } from 'vuetify'
 
 const {
@@ -27,6 +28,8 @@ const {
   init,
 } = usePurchaseOrderList()
 const { mobile } = useDisplay()
+const printTargetRef = ref<InstanceType<typeof PODetailPrintTarget> | null>(null)
+  
 onMounted(() => {
   init()
   if (mobile.value) {
@@ -40,6 +43,9 @@ function goToPage(p: number) {
   if (p < 1 || p > totalPages.value || p === page.value) return
   page.value = p
   loadItems({ page: p, itemsPerPage: itemsPerPage.value, sortBy: [] })
+}
+function handlePrintRequested() {
+  printTargetRef.value?.handlePrint()
 }
 </script>
 <template>
@@ -424,7 +430,9 @@ function goToPage(p: number) {
     </v-card>
 
     <!-- Opened when clicking 'View' or 'Print' inside your table rows -->
-    <ViewPODetailModal v-model="showDetailModal" :po="selectedPO" :pr="selectedPR" />
+    <ViewPODetailModal v-model="showDetailModal" :po="selectedPO" :pr="selectedPR" @print-requested="handlePrintRequested" />
+    <!-- <ViewPODetailModal v-model="showDetailModal" :po="selectedPO" :pr="selectedPR" /> -->
+    <PODetailPrintTarget ref="printTargetRef" :po="selectedPO" :pr="selectedPR" />
   </v-container>
 </template>
 
