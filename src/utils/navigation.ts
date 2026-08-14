@@ -329,6 +329,12 @@ export const navigationConfig: NavigationGroup[] = [
             permission: 'finance.dashboard.view',
           },
           {
+            title: 'Disbursement Vouchers',
+            icon: 'mdi-file-document-outline',
+            route: '/finance/disbursement-vouchers',
+            permission: 'finance.vouchers.manage',
+          },
+          {
             title: 'Expenses',
             icon: 'mdi-cash-minus',
             route: '/finance/expenses',
