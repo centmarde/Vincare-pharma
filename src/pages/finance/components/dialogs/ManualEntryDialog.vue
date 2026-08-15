@@ -34,10 +34,10 @@ const emit = defineEmits<{
         </div>
 
         <v-row dense>
-          <v-col cols="6">
+          <v-col cols="12" sm="6">
             <v-text-field v-model="entryDate" type="date" label="Entry date" variant="outlined" density="compact" />
           </v-col>
-          <v-col cols="6">
+          <v-col cols="12" sm="6">
             <v-text-field v-model="description" label="Description" variant="outlined" density="compact" />
           </v-col>
         </v-row>

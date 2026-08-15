@@ -78,6 +78,7 @@ onMounted(init)
 
         <template v-else>
           <v-data-table
+            mobile-breakpoint="md"
             :headers="headers"
             :items="filteredAccounts"
             :loading="loading"

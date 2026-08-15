@@ -9,9 +9,9 @@ onMounted(load)
 </script>
 
 <template>
-  <v-container fluid pa-0>
+  <v-container fluid class="pa-0">
     <v-card class="elevation-0">
-      <v-card-title class="d-flex align-center gap-2 pb-2 flex-wrap">
+      <v-card-title class="d-flex align-center ga-2 pb-2 flex-wrap">
         <span>Trial Balance</span>
         <v-chip :color="isBalanced ? 'success' : 'error'" size="small" label class="ml-2">
           {{ isBalanced ? 'Balanced ✓' : 'OUT OF BALANCE' }}

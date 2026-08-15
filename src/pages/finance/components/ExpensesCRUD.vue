@@ -46,6 +46,7 @@ onMounted(init)
       <v-divider />
 
       <v-data-table
+        mobile-breakpoint="md"
         :headers="headers"
         :items="expenses"
         :loading="loading"

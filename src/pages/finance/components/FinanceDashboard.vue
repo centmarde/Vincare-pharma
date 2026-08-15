@@ -9,7 +9,7 @@ const { pnl, loading, dateFrom, dateTo, applyFilter, clearFilter } = useFinanceD
   <v-container fluid class="pa-2 fill-height align-start">
     <div class="mx-auto w-100">
 
-      <div class="d-flex align-center gap-2 mb-2">
+      <div class="d-flex align-center ga-2 mb-2">
         <span class="text-h6 font-weight-bold">Cash Flow (management view)</span>
         <v-chip color="grey" size="x-small" label>Cash basis — not the authoritative GL</v-chip>
       </div>

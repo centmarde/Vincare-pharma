@@ -9,9 +9,9 @@ onMounted(load)
 </script>
 
 <template>
-  <v-container fluid pa-0>
+  <v-container fluid class="pa-0">
     <v-card class="elevation-0">
-      <v-card-title class="d-flex align-center gap-2 pb-2 flex-wrap">
+      <v-card-title class="d-flex align-center ga-2 pb-2 flex-wrap">
         <span>Income Statement</span>
         <v-chip color="primary" size="x-small" label class="ml-2">Accrual, GL-derived — authoritative</v-chip>
         <v-spacer />
@@ -37,7 +37,7 @@ onMounted(load)
                 </tr>
               </tbody>
               <tfoot>
-                <tr class="font-weight-medium" style="border-top: 1px solid #ccc">
+                <tr class="font-weight-medium border-t">
                   <td>Total {{ section.subsection }}</td>
                   <td class="text-right">{{ formatCurrency(section.subtotal) }}</td>
                 </tr>

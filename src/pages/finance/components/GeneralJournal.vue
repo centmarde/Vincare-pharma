@@ -25,9 +25,9 @@ function statusColor(status: string): string {
 </script>
 
 <template>
-  <v-container fluid pa-0>
+  <v-container fluid class="pa-0">
     <v-card class="elevation-0">
-      <v-card-title class="d-flex align-center gap-2 pb-2 flex-wrap">
+      <v-card-title class="d-flex align-center ga-2 pb-2 flex-wrap">
         <span>General Journal</span>
         <v-spacer />
         <v-btn size="small" variant="text" color="info" prepend-icon="mdi-sync" @click="resyncLedger">
@@ -39,7 +39,7 @@ function statusColor(status: string): string {
       </v-card-title>
 
       <v-card-text>
-        <div class="mb-4 d-flex gap-2 flex-wrap">
+        <div class="mb-4 d-flex ga-2 flex-wrap">
           <v-text-field
             v-model="filterFrom" type="date" label="From" density="compact" variant="outlined"
             hide-details style="max-width: 160px" @update:model-value="fetchJournal" />

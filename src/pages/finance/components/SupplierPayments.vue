@@ -45,6 +45,7 @@ onMounted(async () => { await init(); await loadPending() })
         <v-divider />
 
         <v-data-table
+          mobile-breakpoint="md"
           :headers="apHeaders"
           :items="supplierAP"
           :loading="loading"
@@ -94,6 +95,7 @@ onMounted(async () => { await init(); await loadPending() })
         <v-divider />
 
         <v-data-table
+          mobile-breakpoint="md"
           :headers="paymentHistoryHeaders"
           :items="supplierPayments"
           :loading="loading"

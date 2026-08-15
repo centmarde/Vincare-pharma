@@ -41,6 +41,7 @@ const {
             />
           </div>
           <v-data-table
+            mobile-breakpoint="md"
             :headers="remittanceHeaders"
             :items="remittanceDiscrepancies"
             :loading="loading"
@@ -81,6 +82,7 @@ const {
 
         <v-window-item value="employeeReceivables">
           <v-data-table
+            mobile-breakpoint="md"
             :headers="employeeReceivableHeaders"
             :items="receivables"
             :loading="receivablesLoading"
@@ -119,6 +121,7 @@ const {
 
         <v-window-item value="ar">
           <v-data-table
+            mobile-breakpoint="md"
             :headers="arAgingHeaders"
             :items="arAging"
             :loading="loading"
@@ -152,6 +155,7 @@ const {
 
         <v-window-item value="commission">
           <v-data-table
+            mobile-breakpoint="md"
             :headers="commissionHeaders"
             :items="commissionLiability"
             :loading="loading"
@@ -180,6 +184,7 @@ const {
             Read-only check. Flags drift between recomputed expected stock and live on-hand quantities — it never auto-corrects.
           </v-alert>
           <v-data-table
+            mobile-breakpoint="md"
             :headers="stockReconHeaders"
             :items="stockReconciliation"
             :loading="loading"

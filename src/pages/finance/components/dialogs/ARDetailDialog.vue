@@ -89,6 +89,7 @@ const paymentHeaders = [
           <!-- Line items -->
           <div class="section-label mb-1">Line Items</div>
           <v-data-table
+            mobile-breakpoint="md"
             :headers="lineHeaders"
             :items="detail.lines"
             hide-default-footer
@@ -106,6 +107,7 @@ const paymentHeaders = [
           <!-- Payment history -->
           <div class="section-label mb-1">Payment History</div>
           <v-data-table
+            mobile-breakpoint="md"
             :headers="paymentHeaders"
             :items="detail.payments"
             hide-default-footer

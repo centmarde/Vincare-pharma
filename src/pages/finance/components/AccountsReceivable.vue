@@ -106,6 +106,7 @@ const termLabels: Record<string, string> = {
             </v-expansion-panel-title>
             <v-expansion-panel-text class="pa-0">
               <v-data-table
+                mobile-breakpoint="md"
                 :headers="arHeaders"
                 :items="jacket.rows"
                 hide-default-footer

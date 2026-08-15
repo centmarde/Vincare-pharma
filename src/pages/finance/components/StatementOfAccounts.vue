@@ -156,6 +156,7 @@ const TOTAL_KEYS: Record<string, keyof typeof totals.value> = {
         </div>
 
         <v-data-table
+          mobile-breakpoint="md"
           v-else
           :headers="SOA_HEADERS"
           :items="register"
