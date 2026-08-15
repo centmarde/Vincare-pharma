@@ -62,16 +62,23 @@ export const useExecutiveStore = defineStore('executive', () => {
 
   // Builds a 12-value array (one per month, scaled 0–1) for the current
   // year's revenue, used to draw the small sparkline chart on KPI cards.
+  //
+  // Reads the General Ledger (revenue account 4010), same as the KPI figures
+  // it sits behind — it used to sum the finance_daily_summary cache, which is
+  // no longer written now that the P&L is GL-derived.
   async function fetchSparkline() {
     try {
       const year = new Date().getFullYear().toString()
 
       const { data } = await supabase
-        .from('finance_daily_summary')
-        .select('summary_date, revenue_pos, revenue_ethical, revenue_inhouse')
-        .gte('summary_date', `${year}-01-01`)
-        .lte('summary_date', `${year}-12-31`)
-        .order('summary_date', { ascending: true })
+        .from('journal_entry_lines')
+        .select('credit, journal_entry:journal_entry_id!inner(entry_date, status)')
+        .eq('account_code', '4010')
+        // A reversal leaves the original as 'reversed' AND posts an offsetting
+        // entry, so both statuses must count for the pair to net to zero.
+        .in('journal_entry.status', ['posted', 'reversed'])
+        .gte('journal_entry.entry_date', `${year}-01-01`)
+        .lte('journal_entry.entry_date', `${year}-12-31`)
 
       if (!data?.length) {
         sparkline.value = []
@@ -81,8 +88,8 @@ export const useExecutiveStore = defineStore('executive', () => {
       // Add up revenue for each month (0 = January, 11 = December)
       const monthlyTotals = new Array(12).fill(0)
       for (const row of data as any[]) {
-        const monthIndex = parseInt(row.summary_date.slice(5, 7), 10) - 1
-        monthlyTotals[monthIndex] += (row.revenue_pos ?? 0) + (row.revenue_ethical ?? 0) + (row.revenue_inhouse ?? 0)
+        const monthIndex = parseInt(row.journal_entry.entry_date.slice(5, 7), 10) - 1
+        monthlyTotals[monthIndex] += Number(row.credit ?? 0)
       }
 
       // Scale everything down to a 0–1 range so it's easy to draw as a chart
