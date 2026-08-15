@@ -172,6 +172,7 @@ declare module 'vue-router/auto-routes' {
     '/suppliers/components/dialogs/SupplierFormDialog': RouteRecordInfo<'/suppliers/components/dialogs/SupplierFormDialog', '/suppliers/components/dialogs/SupplierFormDialog', Record<never, never>, Record<never, never>>,
     '/suppliers/components/SuppliersCRUD': RouteRecordInfo<'/suppliers/components/SuppliersCRUD', '/suppliers/components/SuppliersCRUD', Record<never, never>, Record<never, never>>,
     '/suppliers/SuppliersView': RouteRecordInfo<'/suppliers/SuppliersView', '/suppliers/SuppliersView', Record<never, never>, Record<never, never>>,
+    '/warehouse/components/PODetailViewBody': RouteRecordInfo<'/warehouse/components/PODetailViewBody', '/warehouse/components/PODetailViewBody', Record<never, never>, Record<never, never>>,
     '/warehouse/components/POlistWidget': RouteRecordInfo<'/warehouse/components/POlistWidget', '/warehouse/components/POlistWidget', Record<never, never>, Record<never, never>>,
     '/warehouse/components/WareHouseFormDialog': RouteRecordInfo<'/warehouse/components/WareHouseFormDialog', '/warehouse/components/WareHouseFormDialog', Record<never, never>, Record<never, never>>,
     '/warehouse/components/WareHouseListWidget': RouteRecordInfo<'/warehouse/components/WareHouseListWidget', '/warehouse/components/WareHouseListWidget', Record<never, never>, Record<never, never>>,

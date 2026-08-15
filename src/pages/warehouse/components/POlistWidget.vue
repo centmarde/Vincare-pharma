@@ -9,8 +9,11 @@ import PODetailSkuModal from '../dialogs/PODetailViewModal.vue'
 import PODetailViewModal from '../dialogs/PODetailModal.vue'
 import { ref, computed, onMounted } from 'vue'
 import { useDisplay } from 'vuetify'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
 const { mobile } = useDisplay()
+
+const { confirmDialog: openConfirmDialog } = useConfirmDialog()
 
 const {
   search,
@@ -18,7 +21,6 @@ const {
   showDetailModal,
   selectedPO,
   selectedPR,
-  confirmDialog,
   showSkuEditModal,
   serverItems,
   itemsPerPage,
@@ -65,10 +67,20 @@ function openMarkReceivedDialog(item: any) {
   openDetailForSku(item)
 }
 
-function onMarkReceived(poId: number) {
+async function onMarkReceived(poId: number) {
   showSkuEditModal.value = false
   const po = serverItems.value.find((item) => item.id === poId)
-  if (po) openConfirm(po)
+  if (!po) return
+
+  // Populate the mark-received context (poId / referenceNo) used by handleMarkReceived.
+  openConfirm(po)
+
+  const poNumber = po.po_no ?? po.reference_no
+  const confirmed = await openConfirmDialog(
+    `Confirm that ${poNumber} has been received and delivered? This will update the status to "Received".`,
+    { title: 'Mark as Received', confirmText: 'Yes, Mark Received' },
+  )
+  if (confirmed) await handleMarkReceived()
 }
 
 function goToPage(p: number) {
@@ -327,39 +339,6 @@ function goToPage(p: number) {
       :sku-edit-mode="true"
       @mark-received="onMarkReceived"
     />
-
-    <!-- Confirm Mark as Received -->
-    <v-dialog v-model="confirmDialog.show" max-width="420" persistent>
-      <v-card rounded="lg">
-        <v-card-title class="d-flex align-center ga-2 pt-5 px-5">
-          <v-icon color="success" size="22">mdi-check-circle-outline</v-icon>
-          <span class="text-body-1 font-weight-bold">Mark as Received</span>
-        </v-card-title>
-        <v-card-text class="px-5 pb-2 text-body-2 text-medium-emphasis">
-          Confirm that <strong>{{ confirmDialog.poNumber }}</strong> has been received and
-          delivered? This will update the status to <strong>Received</strong>.
-        </v-card-text>
-        <v-card-actions class="px-5 pb-5 pt-3 justify-end ga-2">
-          <v-btn
-            variant="outlined"
-            class="text-none"
-            :disabled="loading"
-            @click="confirmDialog.show = false"
-          >
-            Cancel
-          </v-btn>
-          <v-btn
-            variant="flat"
-            color="success"
-            class="text-none"
-            :loading="loading"
-            @click="handleMarkReceived"
-          >
-            Yes, Mark Received
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
   </div>
 </template>
 
