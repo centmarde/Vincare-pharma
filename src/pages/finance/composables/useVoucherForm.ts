@@ -2,7 +2,7 @@ import { ref, computed } from 'vue'
 import { expenseCategories, expenseDepartments } from '@/stores/financeData'
 import type { ExpenseCategory, ExpenseDepartment } from '@/stores/financeData'
 import type { VoucherType, VoucherInput } from '@/stores/disbursementVouchersData'
-import { CASH_CLASSIFICATIONS, classificationMeta } from '@/utils/cashAccountTypes'
+import { cashClassifications, classificationMeta } from '@/utils/cashAccountTypes'
 import type { CashClassificationMeta, ClassifiedCashAccount } from '@/utils/cashAccountTypes'
 import { formatCurrency } from '@/utils/helpers'
 import { useFormDraft } from '@/composables/useFormDraft'
@@ -88,7 +88,7 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
   // the option's id — Volar only types the slot item as a wrapper when it can
   // infer Vuetify's generic item parameter, so resolve it here instead.
   const metaForAccount = (id: number): CashClassificationMeta =>
-    accountOptions.value.find((o) => o.value === id)?.meta ?? CASH_CLASSIFICATIONS[0]
+    accountOptions.value.find((o) => o.value === id)?.meta ?? cashClassifications[0]
 
   const selectedAccount = computed(() =>
     accounts().find((a) => a.id === cashAccountId.value) ?? null,

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { watch } from 'vue'
+import { useDisplay } from 'vuetify'
 import { useVoucherForm } from '../../composables/useVoucherForm'
-import { VOUCHER_SIGNATORIES } from '@/stores/disbursementVouchersData'
+import { voucherSignatories } from '@/stores/disbursementVouchersData'
 import type { VoucherType, VoucherInput } from '@/stores/disbursementVouchersData'
 import type { ClassifiedCashAccount } from '@/utils/cashAccountTypes'
 import { formatCurrency } from '@/utils/helpers'
@@ -30,7 +31,20 @@ const {
 // The form deliberately mirrors the printed voucher cell-for-cell, so what the
 // user fills in is laid out exactly where it lands on the paper they sign.
 // Signature blocks are shown but not editable — they're signed by hand.
-const signatories = VOUCHER_SIGNATORIES
+
+// The ruled cells divide vertically on a wide screen and stack on a narrow one,
+// so the divider that separates a pair has to switch edges with the breakpoint.
+const { smAndUp } = useDisplay()
+
+// Signature blocks sit 4-across on a wide screen and 2-across on a narrow one.
+// Only rule the edges that fall *between* blocks — the outer frame draws the rest.
+function signatoryBorder(index: number) {
+  const perRow = smAndUp.value ? 4 : 2
+  const classes: string[] = []
+  if ((index + 1) % perRow !== 0) classes.push('border-e')
+  if (index < voucherSignatories.length - perRow) classes.push('border-b')
+  return classes
+}
 
 // Prefill on open: an existing draft loads its own values, a new voucher picks
 // up any autosaved draft instead.
@@ -64,22 +78,36 @@ function handleSubmit() {
           recorded — and cash only moves — after the printed voucher is recorded.
         </v-alert>
 
-        <div class="fv">
+        <!-- Ruled like the paper voucher it produces: each v-row is a ruled band,
+             each v-col a cell. The divider between a pair sits on the inline edge
+             when they're side by side and on the block edge once they stack. -->
+        <div class="border">
           <!-- Title + DV No. -->
-          <div class="fv-row">
-            <div class="fv-cell fv-title">DISBURSEMENT VOUCHER</div>
-            <div class="fv-cell fv-side">
-              <div class="fv-label">DV No.</div>
-              <div class="fv-static">
+          <v-row no-gutters class="border-b">
+            <v-col
+              cols="12"
+              sm="8"
+              class="pa-2 d-flex align-center justify-center text-h6 font-weight-bold"
+              :class="smAndUp ? 'border-e' : 'border-b'"
+            >
+              DISBURSEMENT VOUCHER
+            </v-col>
+            <v-col cols="12" sm="4" class="pa-2">
+              <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis">
+                DV No.
+              </div>
+              <div class="text-body-2 font-weight-bold py-1">
                 {{ editing?.dv_no ?? 'Assigned on save' }}
               </div>
-            </div>
-          </div>
+            </v-col>
+          </v-row>
 
           <!-- Payee block -->
-          <div class="fv-row">
-            <div class="fv-cell fv-grow">
-              <div class="fv-label">Payee <span class="fv-req">*</span></div>
+          <v-row no-gutters class="border-b">
+            <v-col cols="12" sm="8" class="pa-2" :class="smAndUp ? 'border-e' : 'border-b'">
+              <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis">
+                Payee <span class="text-error">*</span>
+              </div>
               <v-text-field
                 v-model="payee"
                 placeholder="Who is being paid"
@@ -87,9 +115,11 @@ function handleSubmit() {
                 density="compact"
                 hide-details
               />
-            </div>
-            <div class="fv-cell fv-side">
-              <div class="fv-label">Date <span class="fv-req">*</span></div>
+            </v-col>
+            <v-col cols="12" sm="4" class="pa-2">
+              <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis">
+                Date <span class="text-error">*</span>
+              </div>
               <v-text-field
                 v-model="voucherDate"
                 type="date"
@@ -97,12 +127,14 @@ function handleSubmit() {
                 density="compact"
                 hide-details
               />
-            </div>
-          </div>
+            </v-col>
+          </v-row>
 
-          <div class="fv-row">
-            <div class="fv-cell fv-grow">
-              <div class="fv-label">Address</div>
+          <v-row no-gutters class="border-b">
+            <v-col cols="12" sm="8" class="pa-2" :class="smAndUp ? 'border-e' : 'border-b'">
+              <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis">
+                Address
+              </div>
               <v-text-field
                 v-model="payeeAddress"
                 placeholder="Payee address"
@@ -110,12 +142,14 @@ function handleSubmit() {
                 density="compact"
                 hide-details
               />
-            </div>
-            <div class="fv-cell fv-side">
+            </v-col>
+            <v-col cols="12" sm="4" class="pa-2">
               <!-- Not "Fund" (an LGU fund-cluster term from the source form) and
                    not "Bank/Checking Account" — this can be a bank account, the
                    petty cash box, or a placement. "Paid From" is true for all. -->
-              <div class="fv-label">Payment Mode <span class="fv-req">*</span></div>
+              <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis">
+                Payment Mode <span class="text-error">*</span>
+              </div>
               <v-select
                 v-model="cashAccountId"
                 :items="accountOptions"
@@ -136,12 +170,14 @@ function handleSubmit() {
                   </v-list-item>
                 </template>
               </v-select>
-            </div>
-          </div>
+            </v-col>
+          </v-row>
 
-          <div class="fv-row">
-            <div class="fv-cell fv-grow">
-              <div class="fv-label">TIN</div>
+          <v-row no-gutters class="border-b">
+            <v-col cols="12" sm="8" class="pa-2" :class="smAndUp ? 'border-e' : 'border-b'">
+              <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis">
+                TIN
+              </div>
               <v-text-field
                 v-model="payeeTin"
                 placeholder="Taxpayer identification number"
@@ -149,9 +185,11 @@ function handleSubmit() {
                 density="compact"
                 hide-details
               />
-            </div>
-            <div class="fv-cell fv-side">
-              <div class="fv-label">Check No.</div>
+            </v-col>
+            <v-col cols="12" sm="4" class="pa-2">
+              <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis">
+                Check No.
+              </div>
               <v-text-field
                 v-model="checkNo"
                 placeholder="The check we issue"
@@ -159,12 +197,14 @@ function handleSubmit() {
                 density="compact"
                 hide-details
               />
-            </div>
-          </div>
+            </v-col>
+          </v-row>
 
-          <div class="fv-row">
-            <div class="fv-cell fv-grow">
-              <div class="fv-label">Reference / Remarks</div>
+          <v-row no-gutters class="border-b">
+            <v-col cols="12" sm="8" class="pa-2" :class="smAndUp ? 'border-e' : 'border-b'">
+              <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis">
+                Reference / Remarks
+              </div>
               <v-text-field
                 v-model="remarks"
                 placeholder="Optional note carried onto the voucher"
@@ -172,9 +212,11 @@ function handleSubmit() {
                 density="compact"
                 hide-details
               />
-            </div>
-            <div class="fv-cell fv-side">
-              <div class="fv-label">OR/SI No.</div>
+            </v-col>
+            <v-col cols="12" sm="4" class="pa-2">
+              <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis">
+                OR/SI No.
+              </div>
               <v-text-field
                 v-model="orSiNo"
                 placeholder="Official receipt / sales invoice"
@@ -182,45 +224,58 @@ function handleSubmit() {
                 density="compact"
                 hide-details
               />
-            </div>
-          </div>
+            </v-col>
+          </v-row>
 
           <!-- Particulars: every field the expense form asks for lives on the line -->
-          <div class="fv-row fv-head">
-            <div class="fv-cell fv-grow text-center font-weight-bold">PARTICULARS</div>
-            <div class="fv-cell fv-side text-center font-weight-bold">AMOUNT</div>
-          </div>
+          <v-row no-gutters class="border-b bg-surface-light">
+            <v-col
+              cols="12"
+              sm="8"
+              class="pa-2 text-center font-weight-bold"
+              :class="smAndUp ? 'border-e' : 'border-b'"
+            >
+              PARTICULARS
+            </v-col>
+            <v-col cols="12" sm="4" class="pa-2 text-center font-weight-bold">
+              AMOUNT
+            </v-col>
+          </v-row>
 
-          <div v-for="(line, index) in items" :key="index" class="fv-row">
-            <div class="fv-cell fv-grow">
+          <v-row v-for="(line, index) in items" :key="index" no-gutters class="border-b">
+            <v-col cols="12" sm="8" class="pa-2" :class="smAndUp ? 'border-e' : 'border-b'">
               <!-- No per-line description: the purpose is written once in
                    Reference / Remarks above. A line is only what the spend is
                    charged to. -->
-              <div class="fv-sub">
-                <v-select
-                  v-model="line.category"
-                  :items="categoryOptions"
-                  item-title="title"
-                  item-value="value"
-                  label="Category"
-                  variant="outlined"
-                  density="compact"
-                  hide-details
-                />
-                <v-select
-                  v-model="line.department"
-                  :items="departmentOptions"
-                  item-title="title"
-                  item-value="value"
-                  label="Department"
-                  variant="outlined"
-                  density="compact"
-                  clearable
-                  hide-details
-                />
-              </div>
-            </div>
-            <div class="fv-cell fv-side d-flex align-start ga-1">
+              <v-row dense>
+                <v-col cols="12" sm="6">
+                  <v-select
+                    v-model="line.category"
+                    :items="categoryOptions"
+                    item-title="title"
+                    item-value="value"
+                    label="Category"
+                    variant="outlined"
+                    density="compact"
+                    hide-details
+                  />
+                </v-col>
+                <v-col cols="12" sm="6">
+                  <v-select
+                    v-model="line.department"
+                    :items="departmentOptions"
+                    item-title="title"
+                    item-value="value"
+                    label="Department"
+                    variant="outlined"
+                    density="compact"
+                    clearable
+                    hide-details
+                  />
+                </v-col>
+              </v-row>
+            </v-col>
+            <v-col cols="12" sm="4" class="pa-2 d-flex align-start ga-1">
               <v-text-field
                 v-model.number="line.amount"
                 type="number"
@@ -239,11 +294,11 @@ function handleSubmit() {
                 title="Remove this particular"
                 @click="removeItem(index)"
               />
-            </div>
-          </div>
+            </v-col>
+          </v-row>
 
-          <div class="fv-row">
-            <div class="fv-cell fv-grow">
+          <v-row no-gutters class="border-b">
+            <v-col cols="12" sm="8" class="pa-2" :class="smAndUp ? 'border-e' : 'border-b'">
               <v-btn
                 size="small"
                 variant="text"
@@ -254,25 +309,40 @@ function handleSubmit() {
               >
                 Add Particular
               </v-btn>
-            </div>
-            <div class="fv-cell fv-side"></div>
-          </div>
+            </v-col>
+            <v-col cols="12" sm="4" class="pa-2" />
+          </v-row>
 
-          <div class="fv-row fv-total">
-            <div class="fv-cell fv-grow text-right font-weight-bold">TOTAL</div>
-            <div class="fv-cell fv-side text-right font-weight-bold">
+          <v-row no-gutters class="border-b bg-surface-light">
+            <v-col
+              cols="12"
+              sm="8"
+              class="pa-2 text-right font-weight-bold"
+              :class="smAndUp ? 'border-e' : 'border-b'"
+            >
+              TOTAL
+            </v-col>
+            <v-col cols="12" sm="4" class="pa-2 text-right font-weight-bold">
               {{ formatCurrency(voucherTotal) }}
-            </div>
-          </div>
+            </v-col>
+          </v-row>
 
           <!-- Signed by hand on the printed copy, not captured here -->
-          <div class="fv-row fv-certs">
-            <div v-for="role in signatories" :key="role" class="fv-cell fv-quarter">
-              <div class="fv-fine font-weight-bold">{{ role }}:</div>
-              <div class="fv-signline"></div>
-              <div class="fv-fine text-center"><em>(Signature Over Printed Name)</em></div>
-            </div>
-          </div>
+          <v-row no-gutters>
+            <v-col
+              v-for="(role, index) in voucherSignatories"
+              :key="role"
+              cols="6"
+              sm="3"
+              class="pa-2"
+              :class="signatoryBorder(index)"
+            >
+              <div class="text-caption font-weight-bold">{{ role }}:</div>
+              <!-- The hand-signature rule: blank space to sign on, then the line. -->
+              <div class="border-b mt-8 mb-1" />
+              <div class="text-caption text-center"><em>(Signature Over Printed Name)</em></div>
+            </v-col>
+          </v-row>
 
         </div>
 
@@ -322,118 +392,3 @@ function handleSubmit() {
     </v-card>
   </v-dialog>
 </template>
-
-<style scoped>
-/* Mirrors VoucherPrintDialog's ruled layout so the form reads as the document
-   it produces. Uses currentColor for borders so it works in both themes. */
-.fv {
-  border: 1px solid;
-  border-color: rgba(var(--v-theme-on-surface), 0.38);
-}
-
-.fv-row {
-  display: flex;
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.38);
-}
-
-.fv-row:last-child {
-  border-bottom: none;
-}
-
-.fv-cell {
-  padding: 6px 10px;
-  border-right: 1px solid rgba(var(--v-theme-on-surface), 0.38);
-  min-width: 0;
-}
-
-.fv-cell:last-child {
-  border-right: none;
-}
-
-.fv-grow {
-  flex: 1 1 auto;
-}
-
-.fv-side {
-  flex: 0 0 260px;
-}
-
-.fv-quarter {
-  flex: 1 1 25%;
-}
-
-.fv-title {
-  flex: 1 1 auto;
-  text-align: center;
-  font-size: 1.15rem;
-  font-weight: 700;
-  letter-spacing: 1px;
-  align-self: center;
-}
-
-.fv-label {
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  opacity: 0.75;
-}
-
-.fv-req {
-  color: rgb(var(--v-theme-error));
-}
-
-.fv-static {
-  font-size: 0.9rem;
-  font-weight: 700;
-  padding: 6px 0;
-}
-
-.fv-head,
-.fv-total {
-  background: rgba(var(--v-theme-on-surface), 0.06);
-}
-
-/* The per-line expense detail fields (category / department / OR-SI) that the
-   old Add Expense form asked for, kept on the particular they belong to. */
-.fv-sub {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  padding: 2px 0;
-  max-width: 560px;
-}
-
-.fv-certs {
-  min-height: 130px;
-}
-
-.fv-fine {
-  font-size: 0.68rem;
-  line-height: 1.35;
-}
-
-.fv-signline {
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.6);
-  margin: 28px 0 3px;
-}
-
-@media (max-width: 720px) {
-  .fv-row {
-    flex-direction: column;
-  }
-
-  .fv-cell {
-    border-right: none;
-    border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.2);
-  }
-
-  .fv-side {
-    flex: 1 1 auto;
-  }
-
-  .fv-sub {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

@@ -7,38 +7,17 @@ import { useAuthUserStore } from '@/stores/authUser'
 import { generateNextNumber, insertWithDocRetry, getErrorMessage } from '@/utils/helpers'
 import type { ExpenseCategory, ExpenseDepartment } from '@/stores/financeData'
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Disbursement Vouchers (transaction_type = 'disbursement_voucher')
-//
-// A voucher is a PRE-PAYMENT authorization: one payee, many particulars,
-// printed and signed BEFORE the expenses are recorded. Lifecycle:
-//
-//   draft ──print──> printed ──record──> recorded        (or ──> cancelled)
-//
-// THE INVARIANT THAT KEEPS EVERY EXISTING FINANCE QUERY SAFE: a voucher row
-// never moves money and never posts a journal entry. Only its particulars do,
-// and only at the record step, as ordinary `expense` transactions — identical
-// in shape to one recorded through the Record Expense dialog. Every existing
-// aggregate (opex, finance_daily_summary, gl_project_events' expense loop)
-// filters transaction_type = 'expense', so a draft or printed voucher is
-// invisible to all of them. Nothing downstream needed changing.
-//
-// A particular is deliberately NOT written as an expense row up front, even a
-// 'draft'-status one: that is the premature-state-marker bug class this
-// codebase has already swept once. An expense row existing at all must mean
-// the money left.
-//
-// Not atomic (JS-over-RPC convention). recordVoucherExpenses rolls back the
-// expense rows it created if a later one fails, so a retry can't double-record.
-// ─────────────────────────────────────────────────────────────────────────────
+// Disbursement Vouchers: draft ──print──> printed ──record──> recorded (or cancelled).
+// A voucher never moves money or posts to the GL — only its particulars do, at the
+// record step, as ordinary `expense` transactions. Writing them as expenses any
+// earlier would be the premature-state-marker bug class. Not atomic (JS-over-RPC):
+// recordVoucherExpenses rolls back its own rows so a retry can't double-record.
 
 export type VoucherStatus = 'draft' | 'printed' | 'recorded' | 'cancelled'
 
-// The voucher's signature blocks. Signed by hand on the printed copy — nothing
-// here is captured in the app, so these are labels only. Exported from the
-// store (same convention as expenseCategories in financeData) so the form and
-// the printed voucher can never drift out of sync.
-export const VOUCHER_SIGNATORIES = [
+// Labels only — signed by hand on the printed copy. Shared by the form and the
+// printed voucher so the two can't drift.
+export const voucherSignatories = [
   'Prepared by',
   'Checked by',
   'Approved by',
@@ -103,7 +82,7 @@ export type VoucherInput = {
 // disbursement_voucher_items has TWO FKs back to transactions (voucher_id and
 // expense_transaction_id), so a bare `disbursement_voucher_items(*)` embed is
 // ambiguous and PostgREST rejects it with PGRST201. The FK must be named.
-const VOUCHER_SELECT = `
+const voucherSelect = `
   *,
   cash_account:cash_account_id(name, institution, classification),
   finance_details(*),
@@ -162,7 +141,7 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
       printed_at: details.printed_at ?? null,
       print_count: details.print_count ?? 0,
       created_by: row.created_by,
-      // Aliased to `items` in VOUCHER_SELECT; sorted by id so the printed
+      // Aliased to `items` in voucherSelect; sorted by id so the printed
       // particulars keep the order they were entered in.
       items: (row.items ?? []).map(mapItem).sort((a: VoucherItemType, b: VoucherItemType) => a.id - b.id),
     }
@@ -174,7 +153,7 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
     try {
       const { data, error: fetchError } = await supabase
         .from('transactions')
-        .select(VOUCHER_SELECT)
+        .select(voucherSelect)
         .eq('transaction_type', 'disbursement_voucher')
         .order('created_at', { ascending: false })
       if (fetchError) throw fetchError
@@ -193,7 +172,7 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
     try {
       const { data, error: fetchError } = await supabase
         .from('transactions')
-        .select(VOUCHER_SELECT)
+        .select(voucherSelect)
         .eq('id', id)
         .maybeSingle()
       if (fetchError) throw fetchError

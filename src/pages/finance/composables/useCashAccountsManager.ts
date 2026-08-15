@@ -1,12 +1,12 @@
 import { ref, computed } from 'vue'
-import { CASH_CLASSIFICATIONS, classificationMeta } from '@/utils/cashAccountTypes'
+import { cashClassifications, classificationMeta } from '@/utils/cashAccountTypes'
 import type { CashClassification, ClassifiedCashAccount, CreateCashAccountPayload } from '@/utils/cashAccountTypes'
 
 // Grouping/display derivations + add-account form state for CashAccountsManager.
 // Component stays markup-only (binds v-models, emits the built payload).
 export function useCashAccountsManager(accounts: () => ClassifiedCashAccount[]) {
   const groupedAccounts = computed(() =>
-    CASH_CLASSIFICATIONS.map((meta) => {
+    cashClassifications.map((meta) => {
       const groupAccounts = accounts().filter((a) => a.classification === meta.value)
       return {
         meta,

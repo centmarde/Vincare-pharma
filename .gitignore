@@ -39,8 +39,3 @@ SALES_FINANCE_COLUMN_ATTRIBUTES.md
 # supabase/migrations/. Schema changes are pasted into the Supabase SQL editor
 # and kept here for reference only.
 supabase/schema/
-
-# DB dumps, snapshots and the bulk prod deploy script — local reference only,
-# same rule as supabase/schema/ above.
-supabase/backups/
-supabase/prod_deploy_all_migrations.sql

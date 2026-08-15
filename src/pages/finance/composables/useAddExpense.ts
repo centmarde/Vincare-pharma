@@ -1,5 +1,5 @@
 import { ref, computed, watch } from 'vue'
-import { CASH_CLASSIFICATIONS, classificationMeta } from '@/utils/cashAccountTypes'
+import { cashClassifications, classificationMeta } from '@/utils/cashAccountTypes'
 import type { AddExpensePayload, CashClassificationMeta, ClassifiedCashAccount } from '@/utils/cashAccountTypes'
 import type { ExpenseCategory, ExpenseDepartment } from '@/stores/financeData'
 import { formatCurrency } from '@/utils/helpers'
@@ -62,7 +62,7 @@ export function useAddExpense(
   // the option's id. The slot's item is only typed as a wrapper (with .raw) when
   // Volar infers Vuetify's generic item parameter, so resolve it here instead.
   const metaForAccount = (id: number): CashClassificationMeta =>
-    accountOptions.value.find((o) => o.value === id)?.meta ?? CASH_CLASSIFICATIONS[0]
+    accountOptions.value.find((o) => o.value === id)?.meta ?? cashClassifications[0]
 
   const selectedAccount = computed(() =>
     accounts().find((a) => a.id === cashAccountId.value) ?? null,

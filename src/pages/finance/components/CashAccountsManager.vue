@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CASH_CLASSIFICATIONS, classificationMeta } from '@/utils/cashAccountTypes'
+import { cashClassifications, classificationMeta } from '@/utils/cashAccountTypes'
 import type { ClassifiedCashAccount, CreateCashAccountPayload } from '@/utils/cashAccountTypes'
 import { formatCurrency } from '@/utils/helpers'
 import { useCashAccountsManager } from '../composables/useCashAccountsManager'
@@ -107,7 +107,7 @@ const submitNewAccount = () => {
           <label class="field-label">Classification <span class="text-error">*</span></label>
           <v-select
             v-model="classification"
-            :items="CASH_CLASSIFICATIONS"
+            :items="cashClassifications"
             item-title="title"
             item-value="value"
             placeholder="Select classification"

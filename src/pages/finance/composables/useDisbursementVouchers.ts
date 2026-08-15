@@ -19,7 +19,7 @@ export const headers = [
   { title: 'ACTIONS',     key: 'actions',           sortable: false, align: 'center' as const },
 ] as const
 
-const STATUS_META: Record<string, { color: string; label: string; hint: string }> = {
+const voucherStatusMeta: Record<string, { color: string; label: string; hint: string }> = {
   draft:     { color: 'grey',    label: 'DRAFT',     hint: 'Not yet printed. Editable; nothing has been recorded and no cash has moved.' },
   printed:   { color: 'info',    label: 'PRINTED',   hint: 'Printed and locked, out for signature. Ready to record.' },
   recorded:  { color: 'success', label: 'RECORDED',  hint: 'Expenses recorded and cash disbursed.' },
@@ -47,7 +47,7 @@ export function useDisbursementVouchers() {
   const cancelReason = ref('')
 
   function statusMeta(status: string) {
-    return STATUS_META[status] ?? STATUS_META.draft
+    return voucherStatusMeta[status] ?? voucherStatusMeta.draft
   }
 
   // The gate the accountant asked for. Everything the row renders keys off these.

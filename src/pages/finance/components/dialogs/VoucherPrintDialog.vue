@@ -2,7 +2,7 @@
 import { computed, nextTick, ref } from 'vue'
 import html2pdf from 'html2pdf.js'
 import { useToast } from 'vue-toastification'
-import { VOUCHER_SIGNATORIES } from '@/stores/disbursementVouchersData'
+import { voucherSignatories } from '@/stores/disbursementVouchersData'
 import type { VoucherType } from '@/stores/disbursementVouchersData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
@@ -37,13 +37,10 @@ const isReprint = computed(() => props.copyNo > 1)
 
 // Blank rows so a short voucher still prints a full-height particulars box,
 // matching the ruled form the accountant is used to signing.
-const MIN_ROWS = 8
+const minRows = 8
 const fillerRows = computed(() =>
-  Math.max(0, MIN_ROWS - (props.voucher?.items.length ?? 0)),
+  Math.max(0, minRows - (props.voucher?.items.length ?? 0)),
 )
-
-// Prepared by / Verified by / Approved by / Received by — signed by hand.
-const signatories = VOUCHER_SIGNATORIES
 
 async function handlePrint() {
   await nextTick()
@@ -172,7 +169,7 @@ async function handlePrint() {
               <!-- Prepared by / Verified by / Approved by / Received by -->
               <div class="dv-row">
                 <div
-                  v-for="role in signatories"
+                  v-for="role in voucherSignatories"
                   :key="role"
                   class="dv-cell dv-quarter"
                 >
