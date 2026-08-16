@@ -26,6 +26,7 @@ const {
   openDetail,
   getSupplierSummary,
   init,
+  refresh,
 } = usePurchaseOrderList()
 const { mobile } = useDisplay()
 const printTargetRef = ref<InstanceType<typeof PODetailPrintTarget> | null>(null)
@@ -158,6 +159,15 @@ function handlePrintRequested() {
                 />
               </v-list>
             </v-menu>
+            <v-btn
+              icon="mdi-refresh"
+              variant="text"
+              class="text-none"
+              color="primary"
+              :disabled="loading"
+              :loading="loading"
+              @click="refresh"
+            />
           </div>
         </div>
 
@@ -197,6 +207,16 @@ function handlePrintRequested() {
               />
             </v-list>
           </v-menu>
+          <v-btn
+            variant="outlined"
+            icon="mdi-refresh"
+            density="compact"
+            color="primary"
+            size="40"
+            :disabled="loading"
+            :loading="loading"
+            @click="refresh"
+          />
         </div>
       </v-card-title>
 

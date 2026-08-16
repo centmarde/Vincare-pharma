@@ -2,14 +2,13 @@
 import { usePurchaseRequisitionList, headers } from '../composables/usePurchaseRequisitionList'
 import type { ReorderPrefillItem } from '../composables/usePurchaseRequisition'
 import PurchaseRequisitionDialog from './dialogs/PurchaseRequisitionDialog.vue'
-import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
-import ConfirmDialog from './dialogs/ConfirmDialog.vue'
+import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import ReorderRequestsDialog from './dialogs/ReorderRequestsDialog.vue'
+import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import PRDetailModal from './dialogs/PRDetailModal.vue'
 import IssuePOModal from './dialogs/IssuePOModal.vue'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useDisplay } from 'vuetify'
-import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 
 const prStore = usePurchaseRequisitionStore()
 
@@ -48,6 +47,7 @@ const {
   showReorderDialog,
   reorderCount,
   loadStats,
+  refresh,
   // proposeEditPR,
 } = usePurchaseRequisitionList()
 const { mobile } = useDisplay()
@@ -223,7 +223,17 @@ async function onPOIssued() {
           </div>
 
           <!-- Desktop: search + filter -->
+           
           <div v-if="!mobile" class="d-flex align-center" style="gap: 12px">
+            <v-btn
+              color="primary"
+              class="text-none font-weight-bold"
+              prepend-icon="mdi-plus"
+              elevation="0"
+              @click="showNewPRDialog = true"
+            >
+              New Requisition
+            </v-btn>
             <v-text-field
               v-model="searchInput"
               placeholder="Search... (press Enter)"
@@ -259,14 +269,14 @@ async function onPOIssued() {
               </v-list>
             </v-menu>
             <v-btn
+              icon="mdi-refresh"
+              variant="text"
+              class="text-none"
               color="primary"
-              class="text-none font-weight-bold"
-              prepend-icon="mdi-plus"
-              elevation="0"
-              @click="showNewPRDialog = true"
-            >
-              New Requisition
-            </v-btn>
+              :disabled="loading"
+              :loading="loading"
+              @click="refresh"
+            />
           </div>
         </div>
 
@@ -307,6 +317,16 @@ async function onPOIssued() {
               />
             </v-list>
           </v-menu>
+          <v-btn
+            variant="outlined"
+            icon="mdi-refresh"
+            density="compact"
+            color="primary"
+            size="40"
+            :disabled="loading"
+            :loading="loading"
+            @click="refresh"
+          />
           <v-btn
             variant="flat"
             icon="mdi-plus"

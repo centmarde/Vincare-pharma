@@ -124,6 +124,12 @@ export function usePurchaseRequisitionList() {
     await loadStats()
   }
 
+  // I want to have refresh functions
+  async function refresh() {
+    await loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
+    await loadStats()
+  }
+
   function openDetail(pr: PR) {
     selectedPR.value = pr
     showModal.value = true
@@ -196,5 +202,6 @@ export function usePurchaseRequisitionList() {
     loadStats,
     init,
     stats,
+    refresh,
   }
 }
