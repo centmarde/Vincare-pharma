@@ -193,6 +193,7 @@ export function usePurchaseRequisitionList() {
     handleUnapprove,
     openPurchaseOrder,
     loadItems,
+    loadStats,
     init,
     stats,
   }

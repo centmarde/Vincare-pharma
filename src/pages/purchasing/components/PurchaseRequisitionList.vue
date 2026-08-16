@@ -36,20 +36,18 @@ const {
   itemNames,
   showPOModal,
   selectedPRForPO,
-  confirmDialog,
-  confirmLoading,
   searchInput,
   commitSearch,
   clearSearch,
   openDetail,
   openConfirm,
-  closeConfirm,
   handleUnapprove,
   openPurchaseOrder,
   openReorderDialog,
   reorderRequests,
   showReorderDialog,
   reorderCount,
+  loadStats,
   // proposeEditPR,
 } = usePurchaseRequisitionList()
 const { mobile } = useDisplay()
@@ -108,9 +106,6 @@ function createPRFromReorder() {
 function onPRSubmitted() {
   page.value = 1
   loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
-  // CHANGED — resolving reorder requests no longer happens at PR-submission
-  // time; it now happens when the PR is approved/rejected (see
-  // purchaseRequisitionData.approvePR/rejectPR).
   selectedReorderIds.value = []
   prefillItemsForDialog.value = []
 }
@@ -127,6 +122,14 @@ async function onPRUpdate(data: { items: any[]; remarks: string }) {
     showModal.value = false
     loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
   }
+}
+
+async function onPOIssued() {
+  // Refresh the table + stat cards after a purchase order is issued
+  await Promise.all([
+    loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] }),
+    loadStats(),
+  ])
 }
 </script>
 
@@ -564,7 +567,7 @@ async function onPRUpdate(data: { items: any[]; remarks: string }) {
     <PurchaseRequisitionDialog v-model="showNewPRDialog" :prefill-items="prefillItemsForDialog" @submitted="onPRSubmitted" />
 
     <!-- 3. Add the Modal Component -->
-    <IssuePOModal v-model="showPOModal" :pr="selectedPRForPO" />
+    <IssuePOModal v-model="showPOModal" :pr="selectedPRForPO" @issued="onPOIssued" />
 
     <!-- Detail Modal -->
     <PRDetailModal v-if="selectedPR" v-model="showModal" :pr="selectedPR"
