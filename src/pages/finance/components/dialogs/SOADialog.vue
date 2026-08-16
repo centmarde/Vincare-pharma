@@ -163,7 +163,7 @@ async function handlePrint() {
 .soa-table th {
   font-size: 0.8rem !important;
   font-weight: 700 !important;
-  border-bottom: 1px solid #ccc;
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.38);
 }
 .soa-table td {
   vertical-align: top;

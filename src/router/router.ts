@@ -35,6 +35,7 @@ import EthicalCommissionsView from '@/pages/ethical/CommissionsView.vue'
 import EthicalRebatePayoutsView from '@/pages/ethical/RebatePayoutsView.vue'
 import FinanceView from '@/pages/finance/FinanceView.vue'
 import ExpensesView from '@/pages/finance/ExpensesView.vue'
+import DisbursementVouchersView from '@/pages/finance/DisbursementVouchersView.vue'
 import SupplierPaymentsView from '@/pages/finance/SupplierPaymentsView.vue'
 import DiscrepanciesView from '@/pages/finance/DiscrepanciesView.vue'
 import AccountsReceivableView from '@/pages/finance/AccountsReceivableView.vue'
@@ -218,6 +219,11 @@ const routes = setupLayouts([
   {
     path: '/finance/dashboard',
     component: FinanceView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/finance/disbursement-vouchers',
+    component: DisbursementVouchersView,
     meta: { requiresAuth: true },
   },
   {

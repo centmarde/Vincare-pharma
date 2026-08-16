@@ -24,14 +24,14 @@ export type CashClassificationMeta = {
   icon: string
 }
 
-export const CASH_CLASSIFICATIONS: CashClassificationMeta[] = [
+export const cashClassifications: CashClassificationMeta[] = [
   { value: 'CASA', title: 'CASA', description: 'Current Account / Savings Account', color: 'blue', icon: 'mdi-bank' },
   { value: 'TIME_INVESTMENT', title: 'Time Investment', description: 'Time deposit / money market', color: 'purple', icon: 'mdi-chart-timeline-variant' },
   { value: 'PETTY_CASH', title: 'Petty Cash', description: 'Physical cash on hand', color: 'orange', icon: 'mdi-cash-multiple' },
 ]
 
 export const classificationMeta = (value: CashClassification): CashClassificationMeta =>
-  CASH_CLASSIFICATIONS.find((c) => c.value === value) ?? CASH_CLASSIFICATIONS[0]
+  cashClassifications.find((c) => c.value === value) ?? cashClassifications[0]
 
 export const DEFAULT_REPLENISH_THRESHOLD = 1000
 
