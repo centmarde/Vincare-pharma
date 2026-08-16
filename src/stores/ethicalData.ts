@@ -8,6 +8,7 @@ import { useAuthUserStore } from '@/stores/authUser'
 import { useCanvassDataStore } from '@/stores/canvassData'
 import { useDeliveryReceiptsDataStore } from '@/stores/deliveryReceiptsData'
 import { useGLDataStore } from '@/stores/glData'
+import { useCustomersDataStore } from '@/stores/customersData'
 import { generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
 import type { ProductType } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
@@ -67,6 +68,8 @@ export type EthicalOrderType = {
   total_amount: number | null
   discount_amount: number | null
   rebate_amount: number | null
+  /** In-kind marketing give applied to this order. Posts to 6010, not 6030. */
+  ads_amount: number | null
   terms_days: number | null
   due_date: string | null
   amount_paid: number | null
@@ -120,6 +123,7 @@ function mapRow(row: any): EthicalOrderType {
   const details = row.ethical_details ?? {}
   const discountAmount = details.discount_amount ?? 0
   const rebateAmount = details.rebate_amount ?? 0
+  const adsAmount = details.ads_amount ?? 0
   return {
     id:             row.id,
     created_at:     row.created_at,
@@ -136,6 +140,7 @@ function mapRow(row: any): EthicalOrderType {
     total_amount:   row.total_amount,
     discount_amount: discountAmount,
     rebate_amount:  rebateAmount,
+    ads_amount:     adsAmount,
     terms_days:     details.terms_days ?? null,
     due_date:       details.due_date ?? null,
     amount_paid:    details.amount_paid ?? 0,
@@ -169,6 +174,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
   const authStore = useAuthUserStore()
   const canvassStore = useCanvassDataStore()
   const drStore = useDeliveryReceiptsDataStore()
+  const customersStore = useCustomersDataStore()
   const glStore = useGLDataStore()
 
   const orders: Ref<EthicalOrderType[]> = ref([])
@@ -244,6 +250,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     outletId: number
     discount?: number
     rebate?: number
+    ads?: number        // in-kind marketing give — posts to 6010, not 6030
     termsDays?: number
     remarks?: string
     lines: EthicalLineInput[]
@@ -271,6 +278,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     const subtotal = payload.lines.reduce((sum, l) => sum + l.quantity * l.unit_price, 0)
     const discount = payload.discount ?? 0
     const rebate = payload.rebate ?? 0
+    const ads = payload.ads ?? 0
     // Discount is an on-invoice price reduction, so it lowers the total. The
     // rebate is a deferred incentive PAID OUT SEPARATELY (cash/GCash per the
     // customer's rebate_payment_mode) — it's recorded on the order for the
@@ -310,6 +318,13 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
       toast.error(insertError?.message || 'Failed to create order.')
       loading.value = false
       return { success: false }
+    }
+
+    // Record the customer's home channel on first transaction — only when blank,
+    // so a cross-channel order never relabels an already-stamped customer.
+    // Best-effort, never blocks the order. See customersData.stampDepartmentIfBlank.
+    if (payload.customerId != null) {
+      await customersStore.stampDepartmentIfBlank(payload.customerId, 'ethical')
     }
 
     let anyShort = false
@@ -367,7 +382,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
 
     const { error: detailsError } = await supabase.from('ethical_details').insert({
       transaction_id: created.id, terms_days: termsDays, due_date: dueDate.toISOString().slice(0, 10),
-      discount_amount: discount, rebate_amount: rebate,
+      discount_amount: discount, rebate_amount: rebate, ads_amount: ads,
       fulfillment_status: anyShort ? 'awaiting_stock' : 'fulfilled', amount_paid: 0, paid_at: null,
     })
     if (detailsError) {

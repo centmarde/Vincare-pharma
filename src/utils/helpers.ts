@@ -448,6 +448,63 @@ export const formatCurrency = (value: number): string =>
     maximumFractionDigits: 2,
   }).format(value).replace('PHP', '₱')
 
+/**
+ * Display text for a field that may not have been filled in yet.
+ *
+ * Returns the value when it has content, otherwise "not set yet".
+ *
+ * Preferred over an em dash on the customer screens: most of the real customer
+ * file is genuinely incomplete — only ~21% carry agreed rates, and most have no
+ * area or payment terms — and "not set yet" reads as outstanding data-entry
+ * rather than as a field that doesn't apply.
+ */
+export const NOT_SET = 'not set yet'
+
+export function label(value: string | number | null | undefined): string {
+  return isBlank(value) ? NOT_SET : String(value).trim()
+}
+
+/** True when a field has never been filled in. */
+export function isBlank(value: string | number | null | undefined): boolean {
+  return value == null || String(value).trim() === ''
+}
+
+/**
+ * Payment terms as a number of days, parsed from `customers.term_days`.
+ *
+ * That column is FREE TEXT in the live data, not an integer — the real customer
+ * import records payment ARRANGEMENTS, only some of which are day counts:
+ *   '60 Days' -> 60   '30 Days PDC' -> 30   'COD' -> 0
+ *   'Consignment ' -> null   'COD / Discount' -> 0   null/'' -> null
+ *
+ * `null` means "no due-date convention for this customer" — the caller should
+ * treat the receivable as un-aged rather than assuming 0 (due immediately),
+ * which would wrongly report it as overdue. Anything unrecognised also returns
+ * null: a receivable that visibly cannot be aged is safer than one silently
+ * aged against a made-up term.
+ */
+export function parseTermDays(value: string | number | null | undefined): number | null {
+  if (value == null) return null
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+
+  const text = value.trim()
+  if (!text) return null
+  // COD is payment on delivery — a real term of zero days, not "no term".
+  if (/^cod\b/i.test(text)) return 0
+  // A percentage is pricing that landed in the wrong column ('10% Discount',
+  // ~18 rows live). Taking its first number would silently invent a 10-day
+  // term, so refuse it outright rather than age the receivable against a
+  // number that was never a term.
+  if (text.includes('%')) return null
+  // Ranges ('30 - 60 Days') resolve to the EARLIER bound: the receivable starts
+  // ageing at the first date it could have been due, which is the conservative
+  // read for collections.
+  const match = text.match(/(\d+)/)
+  if (!match) return null // 'Consignment', 'Doctor's deal', ...
+  const days = parseInt(match[1], 10)
+  return Number.isFinite(days) ? days : null
+}
+
 // ── Generative / document-number helpers ────────────────────────────────────
 // These were extracted to a dedicated module so stores don't duplicate logic.
 // Re-export everything for backward compatibility.

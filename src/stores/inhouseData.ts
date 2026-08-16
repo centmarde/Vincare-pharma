@@ -9,6 +9,7 @@ import { useCanvassDataStore } from '@/stores/canvassData'
 import { generateIHNumber, generateDocNumber, getLatestReferenceNo, insertWithDocRetry } from '@/utils/generativeHelpers'
 import { useDeliveryReceiptsDataStore } from '@/stores/deliveryReceiptsData'
 import type { ProductType } from '@/stores/productsData'
+import { useCustomersDataStore } from '@/stores/customersData'
 import type { CustomerType } from '@/stores/customersData'
 import type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult } from '@/utils/canvassTypes'
 import type { CollectionType } from '@/stores/ethicalData'
@@ -114,6 +115,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
   const authStore = useAuthUserStore()
   const canvassStore = useCanvassDataStore()
   const drStore = useDeliveryReceiptsDataStore()
+  const customersStore = useCustomersDataStore()
 
   const orders: Ref<InhouseOrderType[]> = ref([])
   const loading = ref(false)
@@ -226,6 +228,13 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       handleError(insertError, 'Failed to create order.'); toast.error(insertError?.message || 'Failed to create order.')
       loading.value = false; return { success: false }
     }
+
+    // Record the customer's home channel the first time they transact. The
+    // picker no longer filters by department, so this is what eventually
+    // classifies the customer file — but only when it is still blank: once a
+    // customer is stamped they belong to that department, and a cross-channel
+    // order must never relabel them. Best-effort, never blocks the order.
+    await customersStore.stampDepartmentIfBlank(payload.customerId, 'inhouse')
 
     const { error: detailsError } = await supabase.from('inhouse_details').insert({
       transaction_id: created.id, govt_po_no: payload.govtPoNo || null,

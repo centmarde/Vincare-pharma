@@ -41,6 +41,7 @@ const {
         <v-divider />
 
         <v-data-table
+          mobile-breakpoint="md"
           :headers="requestHeaders"
           :items="replenishmentRequests"
           :loading="loading"

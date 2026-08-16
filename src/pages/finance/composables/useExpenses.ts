@@ -7,6 +7,7 @@ import {
 } from '@/stores/financeData'
 import type { ExpenseType } from '@/stores/financeData'
 import { useFinanceChangeRequestStore } from '../stores/financeChangeRequest'
+import { useDisbursementVouchersStore } from '@/stores/disbursementVouchersData'
 import type { ChangeRequestField, ProposedChange, AppliedEdit } from '@/stores/changeRequestsData'
 import { formatCurrency } from '@/utils/helpers'
 import type { AddExpensePayload } from '@/utils/cashAccountTypes'
@@ -19,6 +20,7 @@ export const headers = [
   { title: 'DESCRIPTION', key: 'remarks',           sortable: false, align: 'center' as const },
   { title: 'OR/SI NO.',   key: 'or_si_no',          sortable: false, align: 'center' as const },
   { title: 'PAID TO',     key: 'paid_to',           sortable: false, align: 'center' as const },
+  { title: 'VOUCHER',     key: 'voucher',           sortable: false, align: 'center' as const },
   { title: 'ACCOUNT',     key: 'cash_account_name', sortable: false, align: 'center' as const },
   { title: 'AMOUNT',      key: 'amount',            sortable: false, align: 'center' as const },
   { title: 'ACTIONS',     key: 'actions',           sortable: false, align: 'center' as const },
@@ -27,6 +29,7 @@ export const headers = [
 export function useExpenses() {
   const financeStore = useFinanceDataStore()
   const changeStore = useFinanceChangeRequestStore()
+  const voucherStore = useDisbursementVouchersStore()
   const toast = useToast()
   const { expenses, cashAccounts, loading } = storeToRefs(financeStore)
 
@@ -39,10 +42,24 @@ export function useExpenses() {
   const pendingIds = ref<Set<number>>(new Set())
   const appliedEdits = ref<Map<number, AppliedEdit>>(new Map())
 
+  // Expense id -> the DV number it was recorded from. Expenses entered directly
+  // through Record Expense have no voucher, which is a valid state.
+  const voucherRefs = ref<Map<number, string>>(new Map())
+
   // ─── Actions ──────────────────────────────────────────────────────
   async function init() {
     await Promise.all([financeStore.fetchExpenses(), financeStore.fetchCashAccounts()])
-    await loadPending()
+    await Promise.all([loadPending(), loadVoucherRefs()])
+  }
+
+  async function loadVoucherRefs() {
+    voucherRefs.value = await voucherStore.fetchVoucherRefsForExpenses(
+      expenses.value.map((e) => e.id),
+    )
+  }
+
+  function voucherFor(id: number): string | null {
+    return voucherRefs.value.get(id) ?? null
   }
 
   async function loadPending() {
@@ -167,6 +184,7 @@ export function useExpenses() {
     expenses, cashAccounts, loading,
     showFormDialog,
     showChangeDialog, changeTarget, changeFields, voidSummary, isPending, isEdited, editTooltip,
+    voucherFor,
     init, openFormDialog, handleSubmit, openChangeDialog, submitChangeRequest,
   }
 }

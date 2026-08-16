@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { useRemittance, headers } from '../composables/useRemittance'
-import RemittanceSubmitDialog from './RemittanceSubmitDialog.vue'
 import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
 import { useSalesChangeRequestStore } from '../stores/salesChangeRequest'
-import type { RemittanceType } from '@/stores/remittancesData'
+import { useRemittance, headers } from '../composables/useRemittance'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import RemittanceSubmitDialog from './RemittanceSubmitDialog.vue'
+import type { RemittanceType } from '@/stores/remittancesData'
+import { useDisplay } from 'vuetify'
 
+const { mobile } = useDisplay()
 const {
   remittances, loading,
   selectedOutletId, outletOptions, setOutlet,
@@ -39,12 +41,12 @@ onMounted(async () => { await init(); await loadPending() })
 </script>
 
 <template>
-
+  <v-container fluid class="pa-2 fill-height align-start">
     <v-card class="mx-auto w-100" rounded="lg" elevation="1">
 
       <v-card-title class="d-flex justify-space-between align-center pa-5 flex-wrap ga-3">
         <span class="text-h6 font-weight-bold">Cash Remittances</span>
-        <div class="d-flex align-center ga-3">
+        <div class="d-flex align-center ga-3" :class="mobile ? 'w-100 flex-column align-stretch' : ''">
           <v-select
             :model-value="selectedOutletId"
             :items="outletOptions"
@@ -54,7 +56,7 @@ onMounted(async () => { await init(); await loadPending() })
             variant="outlined"
             density="compact"
             hide-details
-            style="min-width: 200px"
+            :style="mobile ? 'width: 100%' : 'min-width: 200px'"
             @update:model-value="setOutlet"
           />
           <v-btn
@@ -62,6 +64,7 @@ onMounted(async () => { await init(); await loadPending() })
             class="text-none font-weight-bold"
             elevation="0"
             prepend-icon="mdi-cash-multiple"
+            :block="mobile"
             @click="openSubmitDialog"
           >
             Close Day / Remit
@@ -71,7 +74,81 @@ onMounted(async () => { await init(); await loadPending() })
 
       <v-divider />
 
+      <!-- Mobile: card list -->
+      <v-list v-if="mobile" lines="two" :loading="loading">
+        <v-list-item v-for="r in remittances" :key="r.id">
+          <template #prepend>
+            <v-avatar color="primary" variant="tonal" size="40" class="text-caption font-weight-bold">
+              {{ r.remittance_no?.slice(-4) }}
+            </v-avatar>
+          </template>
+          <template #title>
+            <div class="text-body-2 font-weight-medium">{{ r.remittance_no }}</div>
+          </template>
+          <template #subtitle>
+            <div class="text-caption">{{ formatDatePR_ISO(r.remittance_date ?? r.created_at) }}</div>
+          </template>
+          <template #append>
+            <div class="text-right">
+              <div class="text-caption text-medium-emphasis">Actual</div>
+              <div class="font-weight-bold text-body-2">{{ formatCurrency(r.actual_amount ?? 0) }}</div>
+              <v-chip
+                :color="(r.discrepancy ?? 0) === 0 ? 'success' : 'error'"
+                size="x-small"
+                variant="tonal"
+                class="font-weight-bold mt-1"
+              >
+                {{ formatCurrency(r.discrepancy ?? 0) }}
+              </v-chip>
+            </div>
+          </template>
+          <template #default>
+            <div class="text-caption text-medium-emphasis mt-1">
+              <div>{{ r.outlet?.name ?? '—' }}</div>
+              <div>
+                <template v-if="r.resolution === 'paid_on_spot'">
+                  <v-chip size="x-small" variant="tonal" color="success" class="mt-1">Paid on spot — Balanced</v-chip>
+                </template>
+                <template v-else-if="r.resolution === 'employee_receivable'">
+                  <v-chip
+                    size="x-small" variant="tonal"
+                    :color="r.receivable_status === 'paid' ? 'success' : 'warning'"
+                    class="mt-1"
+                  >
+                    {{ r.receivable_status === 'paid' ? 'Employee Receivable — Paid, Balanced' : 'Employee Receivable — Outstanding' }}
+                  </v-chip>
+                </template>
+                <template v-else>—</template>
+              </div>
+              <div v-if="r.notes" class="mt-1">{{ r.notes }}</div>
+            </div>
+            <div class="mt-2">
+              <v-chip v-if="isPending(r.id)" size="x-small" color="warning" variant="tonal" label>Change pending</v-chip>
+              <v-btn
+                v-else
+                prepend-icon="mdi-pencil-box-outline"
+                size="small"
+                variant="tonal"
+                color="primary"
+                class="text-none"
+                title="Request a correction (needs executive approval)"
+                @click="openChange(r)"
+              >
+                Request Correction
+              </v-btn>
+            </div>
+          </template>
+        </v-list-item>
+        <v-list-item v-if="!remittances.length && !loading">
+          <template #title>
+            <div class="text-medium-emphasis text-body-2">No remittances yet.</div>
+          </template>
+        </v-list-item>
+      </v-list>
+
+      <!-- Desktop: table -->
       <v-data-table
+        v-else
         :headers="headers"
         :items="remittances"
         :loading="loading"
@@ -172,7 +249,7 @@ onMounted(async () => { await init(); await loadPending() })
       @submit="handleSubmit"
     />
 
-
+  </v-container>
 </template>
 
 <style scoped>

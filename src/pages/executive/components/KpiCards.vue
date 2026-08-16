@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 import { ref, watch } from 'vue'
+import { useDisplay } from 'vuetify'
 import type { KpiCard } from '../composables/useExecutiveDashboard'
 import { formatCurrency } from '@/utils/helpers'
 import QuickStatsCards from './QuickStatsCards.vue'
+import KpiCardsMobile from '../mobile/KpiCardsMobile.vue'
 import { useExecutiveStatic } from '../composables/executiveStatic'
 
 const staticData = useExecutiveStatic()
+const { mobile } = useDisplay()
 
 const props = defineProps<{
   cards: KpiCard[]
@@ -117,6 +120,21 @@ function goToRoute(kpi: KpiCard) {
 </script>
 
 <template>
+  <!-- ── MOBILE: dedicated mobile component ─────────────────────────── -->
+  <KpiCardsMobile
+    v-if="mobile"
+    :cards="cards"
+    :loading="loading"
+    :error="error"
+    :date-from="dateFrom"
+    :date-to="dateTo"
+    :revenue-growth="revenueGrowth"
+    @apply="(from, to) => emit('apply', from, to)"
+    @refresh="emit('refresh')"
+  />
+
+  <!-- ── DESKTOP ───────────────────────────────────────────────────── -->
+  <template v-else>
   <!-- Error Banner -->
   <v-alert
     v-if="error"
@@ -295,6 +313,7 @@ function goToRoute(kpi: KpiCard) {
       </v-card>
     </v-col>
   </v-row>
+  </template>
 </template>
 
 <style>

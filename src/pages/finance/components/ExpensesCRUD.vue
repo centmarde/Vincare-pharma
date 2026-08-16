@@ -1,16 +1,27 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useExpenses, headers } from '../composables/useExpenses'
-import AddExpenseDialog from './dialogs/AddExpenseDialog.vue'
 import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
-  expenses, cashAccounts, loading,
-  showFormDialog,
+  expenses, loading,
   showChangeDialog, changeTarget, changeFields, voidSummary, isPending, isEdited, editTooltip,
-  init, openFormDialog, handleSubmit, openChangeDialog, submitChangeRequest,
+  voucherFor,
+  init, openChangeDialog, submitChangeRequest,
 } = useExpenses()
+
+const router = useRouter()
+
+// Recording an expense now starts as a disbursement voucher: the accountant's
+// rule is that the voucher is printed and signed BEFORE anything is expensed,
+// so this page is the register of what has already been recorded, not the
+// entry point. (The old direct-entry dialog is still in the repo — see
+// AddExpenseDialog.vue — if the bypass is ever wanted back.)
+function startVoucher() {
+  router.push('/finance/disbursement-vouchers?new=1')
+}
 
 onMounted(init)
 </script>
@@ -25,8 +36,8 @@ onMounted(init)
           color="primary"
           class="text-none font-weight-bold"
           elevation="0"
-          prepend-icon="mdi-cash-minus"
-          @click="openFormDialog"
+          prepend-icon="mdi-file-document-plus-outline"
+          @click="startVoucher"
         >
           Record Expense
         </v-btn>
@@ -35,6 +46,7 @@ onMounted(init)
       <v-divider />
 
       <v-data-table
+        mobile-breakpoint="md"
         :headers="headers"
         :items="expenses"
         :loading="loading"
@@ -88,6 +100,22 @@ onMounted(init)
           <span class="text-truncate d-inline-block" style="max-width: 200px">{{ item.remarks ?? '—' }}</span>
         </template>
 
+        <!-- Blank is a valid state: an expense entered directly here has no
+             voucher behind it. -->
+        <template #item.voucher="{ item }">
+          <v-chip
+            v-if="voucherFor(item.id)"
+            size="x-small"
+            variant="tonal"
+            color="info"
+            label
+            title="Recorded from this disbursement voucher"
+          >
+            {{ voucherFor(item.id) }}
+          </v-chip>
+          <span v-else class="text-medium-emphasis">—</span>
+        </template>
+
         <template #item.or_si_no="{ item }">
           {{ item.or_si_no ?? '—' }}
         </template>
@@ -125,13 +153,6 @@ onMounted(init)
       </v-data-table>
 
     </v-card>
-
-    <AddExpenseDialog
-      v-model="showFormDialog"
-      :accounts="cashAccounts"
-      :loading="loading"
-      @submit="handleSubmit"
-    />
 
     <ChangeRequestDialog
       v-model="showChangeDialog"

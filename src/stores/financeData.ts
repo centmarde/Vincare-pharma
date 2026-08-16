@@ -143,7 +143,10 @@ export type SupplierAPRow = {
 }
 
 export type PnLByOutletRow = {
-  outlet: 'EXELMED' | 'ETHICAL' | 'INHOUSE'
+  // 'OTHER' catches GL revenue whose source document isn't one of the three
+  // known channels. Kept visible on purpose: dropping it would let the split
+  // silently stop summing to the statement's netSales.
+  outlet: 'EXELMED' | 'ETHICAL' | 'INHOUSE' | 'OTHER'
   revenue: number
 }
 
@@ -930,12 +933,8 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     })
     if (logError) console.warn('voidExpense: activity log insert failed:', logError.message)
 
-    // A void changes a PAST day's opex, and past days are served from the
-    // finance_daily_summary cache — refresh that day or the P&L stays stale.
-    const day = (expense.paid_at ?? '').slice(0, 10)
-    if (day && day < todayStr()) {
-      try { await refreshDailySummary(day) } catch (e) { console.warn('voidExpense: P&L cache refresh failed:', e) }
-    }
+    // No P&L cache to refresh: the dashboards read the General Ledger now, and
+    // the void's reversing entry is picked up by the ledger projection.
 
     toast.success('Expense voided.')
     await Promise.all([fetchExpenses(), fetchCashAccounts()])
@@ -1121,198 +1120,102 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     }
   }
 
-  // ─── P&L: revenue actually received, COGS from stock_in, opex from expenses ─
-  // Past days are cached in finance_daily_summary (computed once, immutable
-  // after the day ends); only "today" is ever recomputed live, against a
-  // 24h-bounded query instead of the full transaction history.
+  // ─── P&L, derived from the General Ledger ───────────────────────────────
+  // The finance_daily_summary cache and its backfill/day-slice machinery were
+  // removed with this: they existed only to make an operational-table P&L
+  // cheap, and nothing reads that cache any more. The table itself is left in
+  // place (dropping it is a schema change) but is no longer written to.
 
-  const todayStr = () => new Date().toISOString().slice(0, 10)
-  const addDaysStr = (dateStr: string, days: number) => {
-    const d = new Date(`${dateStr}T00:00:00Z`)
-    d.setUTCDate(d.getUTCDate() + days)
-    return d.toISOString().slice(0, 10)
-  }
-  const minDateStr = (a: string, b: string) => (a < b ? a : b)
+  // Revenue split by channel, derived from the GL so it ties to the same
+  // netSales the Income Statement reports. The projector books every revenue
+  // channel (POS sale, ethical order, in-house order) identically — account
+  // 4010, reference_type 'sales_invoice', reference_id = the source
+  // transactions.id — so the channel is recovered by looking the source
+  // document back up rather than by re-reading operational tables.
+  //
+  // Gross of sales returns: 4020 is a separate contra account netted at
+  // statement level, not attributable to a channel here.
+  const fetchRevenueByChannel = async (from?: string, to?: string): Promise<PnLByOutletRow[]> => {
+    let linesQ = supabase.from('journal_entry_lines')
+      .select('credit, journal_entry:journal_entry_id!inner(reference_id, reference_type, entry_date, status)')
+      .eq('account_code', '4010')
+      .eq('journal_entry.reference_type', 'sales_invoice')
+      // Both statuses count: a reversal leaves the original in the ledger as
+      // 'reversed' AND posts an offsetting entry, so the pair nets to zero.
+      .in('journal_entry.status', ['posted', 'reversed'])
+    if (from) linesQ = linesQ.gte('journal_entry.entry_date', from)
+    if (to) linesQ = linesQ.lte('journal_entry.entry_date', to)
 
-  // One day's revenue/cogs/opex slice — was finance_refresh_daily_summary's
-  // SELECT logic. Shared by refreshDailySummary (persists to the cache) and
-  // fetchTodayPnLSlice (today only, deliberately never cached — see below).
-  const computeDaySlice = async (date: string) => {
-    const dayStart = date + 'T00:00:00'
-    const dayEnd   = date + 'T23:59:59.999'
+    const { data: lines, error: linesErr } = await linesQ
+    if (linesErr) throw linesErr
 
-    const [saleRes, collectionRes, stockInRes, expenseRes] = await Promise.all([
-      supabase.from('transactions')
-        .select('total_amount, pos_sale_details(voided_at)')
-        .eq('transaction_type', 'sale').eq('status', 'completed')
-        .gte('created_at', dayStart).lte('created_at', dayEnd),
-      // All that day's collections — we'll split by transaction_type in JS
-      supabase.from('collections')
-        .select('amount, transaction:transaction_id!inner(transaction_type)')
-        .is('voided_at', null)
-        .gte('created_at', dayStart).lte('created_at', dayEnd),
-      supabase.from('transactions').select('total_amount')
-        .eq('transaction_type', 'stock_in')
-        .neq('status', 'voided')
-        .gte('updated_at', dayStart).lte('updated_at', dayEnd),
-      supabase.from('transactions').select('total_amount')
-        .eq('transaction_type', 'expense')
-        .neq('status', 'voided')
-        .gte('paid_at', dayStart).lte('paid_at', dayEnd),
-    ])
-    if (saleRes.error) throw saleRes.error
-    if (collectionRes.error) throw collectionRes.error
-    if (stockInRes.error) throw stockInRes.error
-    if (expenseRes.error) throw expenseRes.error
+    const rows = (lines ?? []) as any[]
+    const sourceIds = [...new Set(rows.map(r => r.journal_entry?.reference_id).filter(Boolean))]
+    if (!sourceIds.length) return []
 
-    const revenuePos = ((saleRes.data || []) as any[]).reduce((sum, r) => {
-      if (r.pos_sale_details?.voided_at) return sum
-      return sum + (r.total_amount ?? 0)
-    }, 0)
+    const { data: sources, error: srcErr } = await supabase
+      .from('transactions').select('id, transaction_type').in('id', sourceIds)
+    if (srcErr) throw srcErr
 
-    const allCollections = (collectionRes.data || []) as any[]
-    const revenueEthical = allCollections
-      .filter(r => r.transaction?.transaction_type === 'ethical_order')
-      .reduce((sum, r) => sum + (r.amount ?? 0), 0)
-    const revenueInhouse = allCollections
-      .filter(r => r.transaction?.transaction_type === 'inhouse_order')
-      .reduce((sum, r) => sum + (r.amount ?? 0), 0)
-
-    return {
-      revenuePos,
-      revenueEthical,
-      revenueInhouse,
-      cogs: ((stockInRes.data || []) as any[]).reduce((sum, r) => sum + (r.total_amount ?? 0), 0),
-      opex: ((expenseRes.data || []) as any[]).reduce((sum, r) => sum + (r.total_amount ?? 0), 0),
-    }
-  }
-
-  const fetchTodayPnLSlice = () => computeDaySlice(todayStr())
-
-  // Persist one day's slice into the finance_daily_summary cache — was
-  // finance_refresh_daily_summary.
-  const refreshDailySummary = async (date: string) => {
-    const slice = await computeDaySlice(date)
-    await supabase.from('finance_daily_summary').upsert({
-      summary_date: date,
-      revenue_pos: slice.revenuePos,
-      revenue_ethical: slice.revenueEthical,
-      revenue_inhouse: slice.revenueInhouse,
-      cogs: slice.cogs,
-      opex: slice.opex,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'summary_date' })
-  }
-
-  // Cache every CLOSED day (strictly before today) with activity in
-  // [dateFrom, dateTo] that isn't cached yet — was finance_backfill_daily_summary.
-  // Never touches today; fetchPnL always recomputes today live via
-  // fetchTodayPnLSlice instead.
-  const backfillDailySummaries = async (dateFrom: string | null, dateTo: string | null) => {
-    const yesterday = addDaysStr(todayStr(), -1)
-    const from = dateFrom ?? '1970-01-01'
-    const to = dateTo ? minDateStr(dateTo, yesterday) : yesterday
-    if (to < from) return
-
-    const fromTs = from + 'T00:00:00'
-    const toTs = to + 'T23:59:59.999'
-
-    const [saleRes, ethicalColRes, inhouseColRes, stockInRes, expenseRes, cachedRes] = await Promise.all([
-      supabase.from('transactions').select('created_at')
-        .eq('transaction_type', 'sale').eq('status', 'completed')
-        .gte('created_at', fromTs).lte('created_at', toTs),
-      supabase.from('collections').select('created_at, transaction:transaction_id!inner(transaction_type)')
-        .eq('transaction.transaction_type', 'ethical_order')
-        .is('voided_at', null)
-        .gte('created_at', fromTs).lte('created_at', toTs),
-      supabase.from('collections').select('created_at, transaction:transaction_id!inner(transaction_type)')
-        .eq('transaction.transaction_type', 'inhouse_order')
-        .is('voided_at', null)
-        .gte('created_at', fromTs).lte('created_at', toTs),
-      supabase.from('transactions').select('updated_at')
-        .eq('transaction_type', 'stock_in')
-        .gte('updated_at', fromTs).lte('updated_at', toTs),
-      supabase.from('transactions').select('paid_at')
-        .eq('transaction_type', 'expense')
-        .neq('status', 'voided')
-        .gte('paid_at', fromTs).lte('paid_at', toTs),
-      supabase.from('finance_daily_summary').select('summary_date'),
-    ])
-    for (const res of [saleRes, ethicalColRes, inhouseColRes, stockInRes, expenseRes, cachedRes]) {
-      if (res.error) throw res.error
+    const typeById = new Map(((sources ?? []) as any[]).map(t => [t.id, t.transaction_type]))
+    const channelOf: Record<string, PnLByOutletRow['outlet']> = {
+      sale: 'EXELMED', ethical_order: 'ETHICAL', inhouse_order: 'INHOUSE',
     }
 
-    const activeDays = new Set<string>()
-    for (const r of (saleRes.data ?? []) as any[]) activeDays.add(r.created_at.slice(0, 10))
-    for (const r of (ethicalColRes.data ?? []) as any[]) activeDays.add(r.created_at.slice(0, 10))
-    for (const r of (inhouseColRes.data ?? []) as any[]) activeDays.add(r.created_at.slice(0, 10))
-    for (const r of (stockInRes.data ?? []) as any[]) activeDays.add(r.updated_at.slice(0, 10))
-    for (const r of (expenseRes.data ?? []) as any[]) activeDays.add(r.paid_at.slice(0, 10))
-
-    const cachedDays = new Set((cachedRes.data ?? []).map((r: any) => r.summary_date as string))
-
-    for (const day of activeDays) {
-      if (!cachedDays.has(day)) await refreshDailySummary(day)
+    const totals = new Map<PnLByOutletRow['outlet'], number>()
+    for (const line of rows) {
+      const channel = channelOf[typeById.get(line.journal_entry?.reference_id) ?? ''] ?? 'OTHER'
+      totals.set(channel, (totals.get(channel) ?? 0) + Number(line.credit ?? 0))
     }
+    return [...totals.entries()]
+      .map(([outlet, revenue]) => ({ outlet, revenue }))
+      .filter(r => r.revenue !== 0)
   }
 
+  // P&L for the dashboards, derived from the GENERAL LEDGER — the same source
+  // as the Income Statement page, so the two can never disagree.
+  //
+  // This replaces an operational-table computation that broke the module's
+  // governing rule ("reports tie to the GL, never to operational tables") in
+  // two ways: it summed `stock_in.total_amount` as "cogs" when that is
+  // PURCHASES (receiving stock is DR 1040 Inventory / CR 2010 AP, a
+  // balance-sheet move, not a P&L hit), and it counted Ethical/In-House
+  // revenue from `collections` (cash basis) while the GL books at
+  // invoice/delivery (accrual). A ₱1,000,000 PO receipt was showing as a
+  // ₱1,000,000 loss on a period with no sales.
+  //
+  // Caveat inherited from the Income Statement, and the reason both now agree:
+  // the GL only reflects events that have been PROJECTED, which is a manual
+  // step ("Resync Ledger" on General Journal). Unprojected activity is absent
+  // from this and the Income Statement alike, rather than only from one.
   const fetchPnL = async (range: DateRange = {}) => {
     loading.value = true
     clearError()
     try {
-      const today = todayStr()
-      const includesToday = (!range.dateTo || range.dateTo >= today) && (!range.dateFrom || range.dateFrom <= today)
-
-      // Backfill any past days in range that aren't cached yet, then sum the
-      // cache directly — O(days with activity), not O(all-time transactions).
-      await backfillDailySummaries(range.dateFrom ?? null, range.dateTo ?? null)
-
-      let historicalQ = supabase.from('finance_daily_summary')
-        .select('revenue_pos, revenue_ethical, revenue_inhouse, cogs, opex')
-        .lt('summary_date', today)
-      if (range.dateFrom) historicalQ = historicalQ.gte('summary_date', range.dateFrom)
-      if (range.dateTo) historicalQ = historicalQ.lte('summary_date', range.dateTo)
-
-      const [historicalRes, todaySlice] = await Promise.all([
-        historicalQ,
-        includesToday ? fetchTodayPnLSlice() : Promise.resolve(null),
+      const [statement, byOutlet] = await Promise.all([
+        glStore.fetchIncomeStatement(range.dateFrom, range.dateTo),
+        fetchRevenueByChannel(range.dateFrom, range.dateTo),
       ])
-      if (historicalRes.error) throw historicalRes.error
-
-      const totals = ((historicalRes.data || []) as any[]).reduce(
-        (acc, r) => ({
-          revenuePos: acc.revenuePos + (r.revenue_pos ?? 0),
-          revenueEthical: acc.revenueEthical + (r.revenue_ethical ?? 0),
-          revenueInhouse: acc.revenueInhouse + (r.revenue_inhouse ?? 0),
-          cogs: acc.cogs + (r.cogs ?? 0),
-          opex: acc.opex + (r.opex ?? 0),
-        }),
-        { revenuePos: 0, revenueEthical: 0, revenueInhouse: 0, cogs: 0, opex: 0 },
-      )
-
-      if (todaySlice) {
-        totals.revenuePos += todaySlice.revenuePos
-        totals.revenueEthical += todaySlice.revenueEthical
-        totals.revenueInhouse += todaySlice.revenueInhouse
-        totals.cogs += todaySlice.cogs
-        totals.opex += todaySlice.opex
+      if (!statement) {
+        pnl.value = null
+        return null
       }
 
-      const revenueTotal = totals.revenuePos + totals.revenueEthical + totals.revenueInhouse
+      const revenueFor = (outlet: string) =>
+        byOutlet.find(r => r.outlet === outlet)?.revenue ?? 0
 
       const summary: PnLSummary = {
-        revenuePos: totals.revenuePos,
-        revenueEthical: totals.revenueEthical,
-        revenueInhouse: totals.revenueInhouse,
-        revenueTotal,
-        cogs: totals.cogs,
-        opex: totals.opex,
-        net: revenueTotal - totals.cogs - totals.opex,
-        byOutlet: [
-          { outlet: 'EXELMED', revenue: totals.revenuePos },
-          { outlet: 'ETHICAL', revenue: totals.revenueEthical },
-          { outlet: 'INHOUSE', revenue: totals.revenueInhouse },
-        ],
+        revenuePos: revenueFor('EXELMED'),
+        revenueEthical: revenueFor('ETHICAL'),
+        revenueInhouse: revenueFor('INHOUSE'),
+        revenueTotal: statement.netSales,
+        cogs: statement.cogs,
+        opex: statement.sellingExpenses + statement.adminExpenses + statement.financeCosts,
+        // Taken from the GL rather than recomputed: netIncome already accounts
+        // for other income, which sits below operating income and so isn't
+        // part of revenueTotal.
+        net: statement.netIncome,
+        byOutlet,
       }
       pnl.value = summary
       return summary

@@ -34,3 +34,8 @@ SALES_HUB_REDESIGN.md
 SALES_FINANCE_DATA_MAP.md
 SALES_FINANCE_COLUMN_ATTRIBUTES.md
 
+
+# Schema migrations are NOT committed — only RPC function definitions live in
+# supabase/migrations/. Schema changes are pasted into the Supabase SQL editor
+# and kept here for reference only.
+supabase/schema/

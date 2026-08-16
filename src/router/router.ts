@@ -22,6 +22,7 @@ import StockTransfersView from '@/pages/sales/StockTransfersView.vue'
 import PosView from '@/pages/sales/PosView.vue'
 import RemittanceView from '@/pages/sales/RemittanceView.vue'
 import InventoryView from '@/pages/sales/InventoryView.vue'
+import SalesCustomersView from '@/pages/sales/CustomersView.vue'
 import SalesHistoryView from '@/pages/sales/SalesHistoryView.vue'
 import OutletsView from '@/pages/sales/OutletsView.vue'
 import InhouseOrdersView from '@/pages/inhouse/InhouseOrdersView.vue'
@@ -34,6 +35,7 @@ import EthicalCommissionsView from '@/pages/ethical/CommissionsView.vue'
 import EthicalRebatePayoutsView from '@/pages/ethical/RebatePayoutsView.vue'
 import FinanceView from '@/pages/finance/FinanceView.vue'
 import ExpensesView from '@/pages/finance/ExpensesView.vue'
+import DisbursementVouchersView from '@/pages/finance/DisbursementVouchersView.vue'
 import SupplierPaymentsView from '@/pages/finance/SupplierPaymentsView.vue'
 import DiscrepanciesView from '@/pages/finance/DiscrepanciesView.vue'
 import AccountsReceivableView from '@/pages/finance/AccountsReceivableView.vue'
@@ -153,6 +155,11 @@ const routes = setupLayouts([
     meta: { requiresAuth: true },
   },
   {
+    path: '/sales/customers',
+    component: SalesCustomersView,
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/sales/history',
     component: SalesHistoryView,
     meta: { requiresAuth: true },
@@ -212,6 +219,11 @@ const routes = setupLayouts([
   {
     path: '/finance/dashboard',
     component: FinanceView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/finance/disbursement-vouchers',
+    component: DisbursementVouchersView,
     meta: { requiresAuth: true },
   },
   {

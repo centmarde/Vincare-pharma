@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { formatCurrency } from '@/utils/helpers'
+import { useDisplay } from 'vuetify'
+
+const { mobile } = useDisplay()
 
 defineProps<{
   modelValue: boolean
@@ -89,7 +92,7 @@ const quickAmounts = [20, 50, 100, 200, 500, 1000]
           <v-btn
             v-for="amt in quickAmounts"
             :key="amt"
-            size="small"
+            :size="mobile ? 'default' : 'small'"
             variant="outlined"
             class="text-none"
             @click="emit('update:tendered', amt)"
@@ -110,14 +113,15 @@ const quickAmounts = [20, 50, 100, 200, 500, 1000]
 
       <v-divider />
 
-      <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end ga-2">
-        <v-btn variant="outlined" class="text-none" @click="emit('update:modelValue', false)">
+      <v-card-actions class="px-4 px-sm-5 pb-4 pb-sm-5 pt-3 d-flex ga-2" :class="mobile ? 'flex-column-reverse' : 'justify-end'">
+        <v-btn variant="outlined" class="text-none" :block="mobile" @click="emit('update:modelValue', false)">
           Cancel
         </v-btn>
         <v-btn
           color="success"
           class="text-none font-weight-bold"
           elevation="0"
+          :block="mobile"
           :loading="loading"
           :disabled="!canComplete"
           @click="emit('confirm')"

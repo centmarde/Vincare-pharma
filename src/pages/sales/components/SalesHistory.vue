@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { useSalesHistory, headers } from '../composables/useSalesHistory'
-import PosReceiptDialog from '../dialogs/PosReceiptDialog.vue'
 import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
+import { useSalesHistory, headers } from '../composables/useSalesHistory'
 import { useSalesChangeRequestStore } from '../stores/salesChangeRequest'
-import type { SaleType } from '@/stores/salesData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import PosReceiptDialog from '../dialogs/PosReceiptDialog.vue'
+import type { SaleType } from '@/stores/salesData'
+import { useDisplay } from 'vuetify'
 
+const { mobile } = useDisplay()
 const {
   loading, search, filterStatus, filterOutletId, outletOptions, dateFrom, dateTo, statusOptions,
   filteredSales, cashierName, canVoid,
@@ -40,7 +42,7 @@ onMounted(loadPending)
 
       <v-card-title class="d-flex justify-space-between align-center pa-5 flex-wrap ga-3">
         <span class="text-h6 font-weight-bold">Sales History</span>
-        <div class="d-flex align-center flex-wrap ga-3">
+        <div class="d-flex align-center flex-wrap ga-3" :class="mobile ? 'w-100' : ''">
           <v-select
             v-model="filterOutletId"
             :items="outletOptions"
@@ -50,7 +52,7 @@ onMounted(loadPending)
             variant="outlined"
             density="compact"
             hide-details
-            style="min-width: 170px"
+            :style="mobile ? 'width: 100%' : 'min-width: 170px'"
             @update:model-value="load"
           />
           <v-text-field
@@ -60,7 +62,7 @@ onMounted(loadPending)
             variant="outlined"
             density="compact"
             hide-details
-            style="min-width: 150px"
+            :style="mobile ? 'width: 100%' : 'min-width: 150px'"
             @update:model-value="load"
           />
           <v-text-field
@@ -70,7 +72,7 @@ onMounted(loadPending)
             variant="outlined"
             density="compact"
             hide-details
-            style="min-width: 150px"
+            :style="mobile ? 'width: 100%' : 'min-width: 150px'"
             @update:model-value="load"
           />
           <v-text-field
@@ -80,7 +82,7 @@ onMounted(loadPending)
             variant="outlined"
             density="compact"
             hide-details
-            style="min-width: 220px"
+            :style="mobile ? 'width: 100%' : 'min-width: 220px'"
           />
           <v-select
             v-model="filterStatus"
@@ -88,14 +90,66 @@ onMounted(loadPending)
             variant="outlined"
             density="compact"
             hide-details
-            style="min-width: 150px"
+            :style="mobile ? 'width: 100%' : 'min-width: 150px'"
           />
         </div>
       </v-card-title>
 
       <v-divider />
 
+      <!-- Mobile: card list -->
+      <v-list v-if="mobile" lines="two" :loading="loading">
+        <v-list-item v-for="s in filteredSales" :key="s.id">
+          <template #prepend>
+            <v-avatar color="primary" variant="tonal" size="40" class="text-caption font-weight-bold">
+              {{ s.sale_no?.slice(-4) }}
+            </v-avatar>
+          </template>
+          <template #title>
+            <div class="text-body-2 font-weight-medium">{{ s.sale_no }}</div>
+          </template>
+          <template #subtitle>
+            <div class="text-caption">{{ formatDatePR_ISO(s.created_at) }}</div>
+          </template>
+          <template #append>
+            <div class="text-right">
+              <div class="font-weight-bold text-body-2">{{ formatCurrency(s.total_amount ?? 0) }}</div>
+              <v-chip :color="s.status === 'voided' ? 'error' : 'success'" size="x-small" variant="tonal">
+                {{ s.status === 'voided' ? 'Voided' : 'Completed' }}
+              </v-chip>
+            </div>
+          </template>
+          <template #default>
+            <div class="text-caption text-medium-emphasis mt-1">
+              <div>{{ s.outlet?.name ?? '—' }} · {{ s.customer?.name || '—' }}</div>
+              <div>{{ cashierName(s.cashier_id) }} · {{ s.sale_items?.length ?? 0 }} item(s)</div>
+            </div>
+            <div class="d-flex align-center ga-2 mt-2">
+              <v-btn variant="text" size="small" color="primary" class="text-none" @click="openReceipt(s)">
+                Reprint
+              </v-btn>
+              <v-chip v-if="isPending(s.id)" size="x-small" color="warning" variant="tonal" label>Void pending</v-chip>
+              <v-btn
+                v-else-if="canVoid(s)"
+                variant="text"
+                size="small"
+                color="error"
+                class="text-none"
+                @click="openChange(s)"
+              >
+                Request Void
+              </v-btn>
+            </div>
+          </template>
+        </v-list-item>
+        <v-list-item v-if="!filteredSales.length && !loading">
+          <v-list-item-title class="text-medium-emphasis text-body-2">No sales found.</v-list-item-title>
+        </v-list-item>
+      </v-list>
+
+      <!-- Desktop: table -->
       <v-data-table
+        v-else
         :headers="headers"
         :items="filteredSales"
         :loading="loading"

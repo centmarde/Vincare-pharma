@@ -198,6 +198,12 @@ export const navigationConfig: NavigationGroup[] = [
         permission: 'sales.inventory.view',
       },
       {
+        title: 'Customers',
+        icon: 'mdi-account-group',
+        route: '/sales/customers',
+        permission: 'sales.customers.manage',
+      },
+      {
         title: 'Sales History',
         icon: 'mdi-history',
         route: '/sales/history',
@@ -321,6 +327,12 @@ export const navigationConfig: NavigationGroup[] = [
             icon: 'mdi-view-dashboard',
             route: '/finance/dashboard',
             permission: 'finance.dashboard.view',
+          },
+          {
+            title: 'Disbursement Vouchers',
+            icon: 'mdi-file-document-outline',
+            route: '/finance/disbursement-vouchers',
+            permission: 'finance.vouchers.manage',
           },
           {
             title: 'Expenses',

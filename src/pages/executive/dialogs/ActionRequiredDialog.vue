@@ -8,6 +8,10 @@ import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
 import type { PRItem } from '@/stores/purchaseRequisitionData'
 import { formatDatePR_ISO } from '@/utils/helpers'
 import { computed, ref, watch } from 'vue'
+import { useDisplay } from 'vuetify'
+import ActionRequiredDialogMobile from '../mobile/ActionRequiredDialogMobile.vue'
+
+const { mobile } = useDisplay()
 
 const prChangeRequests = useChangeRequestsPR()
 const financeChangeRequests = useFinanceChangeRequests()
@@ -16,9 +20,7 @@ const sharedChangeRequests = useSharedChangeRequests()
 const { approve: approvePR, reject: rejectPR } = useExecutiveApprovePR()
 const prStore = usePurchaseRequisitionStore()
 
-// A change request must be approved through the store that owns it — each one
-// applies the change via its own module's reversal path. Dispatch on the
-// `source` tag ActionRequired stamped onto the row.
+
 function changeRequestOwner(source: string | undefined) {
   if (source === 'finance') return financeChangeRequests
   if (source === 'sales') return salesChangeRequests
@@ -38,10 +40,6 @@ const isRejecting = ref(false)
 const showRejectInput = ref(false)
 const rejectReason = ref('')
 
-// A change request can come from four modules and be three different types, so
-// the copy below must follow the request — describing a payment void as
-// "revert this purchase requisition to Pending Approval" tells the approver
-// they're doing something entirely different from what will actually happen.
 const source = computed(() => raw.value?.source as string | undefined)
 const isPRUndo = computed(() => source.value === 'pr')
 
@@ -73,16 +71,12 @@ const undoFallbackSummary = computed(() =>
     : 'Apply this change request.',
 )
 
-// Undo-request rows only carry transaction_id/reason — fetch the underlying
-// PR (with items) on demand so the same items table can render for both branches.
+
 const undoItems = ref<PRItem[]>([])
 const undoItemsLoading = ref(false)
 
 watch(() => [selected.value, kind.value, raw.value?.transaction_id] as const,
 async ([open, k, txId]) => {
-  // Only PR undo requests have a purchase requisition behind them — a
-  // finance/sales/in-house request's transaction_id is an expense, sale or
-  // order, so looking it up as a PR would return nothing useful.
   if (!open || k !== 'undo' || !txId || raw.value?.source !== 'pr') {
     undoItems.value = []
     return
@@ -132,6 +126,15 @@ async function confirmReject() {
 </script>
 
 <template>
+  <!-- ── MOBILE: dedicated mobile dialog component ─────────────────── -->
+  <ActionRequiredDialogMobile
+    v-if="mobile"
+    v-model="selected"
+    :request="request"
+  />
+
+  <!-- ── DESKTOP ───────────────────────────────────────────────────── -->
+  <template v-else>
   <v-dialog v-model="selected" max-width="720" persistent>
     <v-card class="rounded-xl" elevation="0">
       <div class="d-flex align-center pa-4 pa-md-6 pb-2">
@@ -382,4 +385,5 @@ async function confirmReject() {
       </v-card-text>
     </v-card>
   </v-dialog>
+  </template>
 </template>

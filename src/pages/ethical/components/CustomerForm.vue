@@ -2,9 +2,12 @@
 import { computed, reactive, ref } from 'vue'
 import type { CreateCustomerData } from '@/stores/customersData'
 import type { AgentType } from '@/stores/agentsData'
+import CustomerTermsCard from '@/components/customers/CustomerTermsCard.vue'
 
 interface Props {
   customer?: any
+  /** Parsed rates for this customer, so the card can show them beside the narrative. */
+  profile?: any
   agentOptions?: any[]
   businessStructureOptions?: any[]
 }
@@ -114,6 +117,13 @@ async function submit() {
 </script>
 
 <template>
+  <CustomerTermsCard
+    v-if="customer"
+    :customer="customer"
+    :profile="profile"
+    title="Recorded terms for this customer"
+    class="mb-4"
+  />
   <v-form ref="formRef" @submit.prevent="submit">
     <v-text-field v-model="form.name" label="Name" :rules="required" />
     <v-select
@@ -199,7 +209,13 @@ async function submit() {
 
     <v-row dense>
       <v-col cols="12" sm="6">
-        <v-text-field v-model.number="form.term_days" label="Term (days)" type="number" min="0" />
+        <v-text-field
+          v-model="form.term_days"
+          label="Payment terms"
+          placeholder="e.g. 60 Days, COD, Consignment"
+          hint="Free text. A leading number sets the due date; COD means due on invoice. Arrangements with no day count (e.g. Consignment) leave the receivable un-aged."
+          persistent-hint
+        />
       </v-col>
       <v-col cols="12" sm="6">
         <v-text-field v-model.number="form.target_sales" label="Target Sales" type="number" min="0" prefix="₱" />

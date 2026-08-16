@@ -15,6 +15,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
+  (e: 'print-requested'): void
 }>()
 
 const { printArea, poNumber, emptyRows, uniqueSuppliers, handlePrint } = usePODetailModal(props, emit)
@@ -217,7 +218,7 @@ const { printArea, poNumber, emptyRows, uniqueSuppliers, handlePrint } = usePODe
         <v-btn variant="outlined" size="small" class="text-none" @click="emit('update:modelValue', false)">
           Close
         </v-btn>
-        <v-btn variant="text" size="small" color="error" prepend-icon="mdi-printer" @click="handlePrint">
+        <v-btn variant="text" size="small" color="error" prepend-icon="mdi-printer" @click="emit('print-requested')">
           Print Document
         </v-btn>
       </v-card-actions>

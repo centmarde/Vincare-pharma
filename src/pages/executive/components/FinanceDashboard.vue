@@ -21,10 +21,28 @@ const { pnl, loading, dateFrom, dateTo, applyFilter, clearFilter } = useFinanceD
       <!-- Date range filter -->
       <v-row dense class="mb-1">
         <v-col cols="12" sm="4">
-          <v-text-field v-model="dateFrom" type="date" label="From" density="compact" variant="outlined" hide-details />
+          <v-text-field
+            v-model="dateFrom"
+            type="date"
+            label="From"
+            density="compact"
+            variant="outlined"
+            hide-details
+            class="date-field-right"
+            append-inner-icon="mdi-calendar"
+          />
         </v-col>
         <v-col cols="12" sm="4">
-          <v-text-field v-model="dateTo" type="date" label="To" density="compact" variant="outlined" hide-details />
+          <v-text-field
+            v-model="dateTo"
+            type="date"
+            label="To"
+            density="compact"
+            variant="outlined"
+            hide-details
+            class="date-field-right"
+            append-inner-icon="mdi-calendar"
+          />
         </v-col>
         <v-col cols="12" sm="4" class="d-flex align-center ga-2">
           <v-btn color="primary" variant="flat" :loading="loading" @click="applyFilter">Apply</v-btn>
@@ -95,3 +113,27 @@ const { pnl, loading, dateFrom, dateTo, applyFilter, clearFilter } = useFinanceD
     </div>
   </v-container>
 </template>
+
+<style>
+/* ── Date range filter ────────────────────────────────────────────────── */
+/* The visible calendar icon is Vuetify's appended mdi-calendar icon, which
+   is always pinned to the far right of the field. The native browser icon
+   is hidden (opacity 0) but stretched over that same right-side area so
+   tapping the icon still opens the native date picker. */
+.date-field-right input[type='date'] {
+  min-width: 0;
+}
+
+.date-field-right input[type='date']::-webkit-calendar-picker-indicator {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px; /* roughly the append-icon tap area */
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0; /* hide the native icon, keep it clickable */
+  cursor: pointer;
+}
+</style>

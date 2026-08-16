@@ -13,9 +13,9 @@ onMounted(load)
 </script>
 
 <template>
-  <v-container fluid pa-0>
+  <v-container fluid class="pa-0">
     <v-card class="elevation-0">
-      <v-card-title class="d-flex align-center gap-2 pb-2 flex-wrap">
+      <v-card-title class="d-flex align-center ga-2 pb-2 flex-wrap">
         <span>Balance Sheet</span>
         <v-chip v-if="sheet" :color="tiesOut ? 'success' : 'error'" size="small" label class="ml-2">
           {{ tiesOut ? 'Balanced ✓' : 'OUT OF BALANCE' }}
@@ -41,7 +41,7 @@ onMounted(load)
                 </tr>
               </tbody>
               <tfoot>
-                <tr class="font-weight-medium" style="border-top: 1px solid #ccc">
+                <tr class="font-weight-medium border-t">
                   <td>Total {{ section.subsection }}</td>
                   <td class="text-right">{{ formatCurrency(section.subtotal) }}</td>
                 </tr>
@@ -63,7 +63,7 @@ onMounted(load)
                 </tr>
               </tbody>
               <tfoot>
-                <tr class="font-weight-medium" style="border-top: 1px solid #ccc">
+                <tr class="font-weight-medium border-t">
                   <td>Total {{ section.subsection }}</td>
                   <td class="text-right">{{ formatCurrency(section.subtotal) }}</td>
                 </tr>
@@ -89,7 +89,7 @@ onMounted(load)
               </tbody>
             </v-table>
           </div>
-          <div class="d-flex justify-space-between font-weight-bold mb-2" style="border-top: 1px solid #ccc">
+          <div class="d-flex justify-space-between font-weight-bold mb-2 border-t">
             <span>Total Equity</span><span>{{ formatCurrency(sheet.totalEquity) }}</span>
           </div>
 

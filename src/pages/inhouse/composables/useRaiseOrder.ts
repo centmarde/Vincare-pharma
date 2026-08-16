@@ -2,9 +2,9 @@ import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useInhouseDataStore } from '@/stores/inhouseData'
-import { useCustomersDataStore } from '@/stores/customersData'
 import { useProductsDataStore } from '@/stores/productsData'
 import { useFormDraft } from '@/composables/useFormDraft'
+import { useCustomerPicker } from '@/composables/useCustomerPicker'
 
 const toast = useToast()
 
@@ -17,9 +17,7 @@ type FormLine = {
 
 export function useRaiseOrder(onCreated: () => void) {
   const inhouse = useInhouseDataStore()
-  const customersStore = useCustomersDataStore()
   const productsStore = useProductsDataStore()
-  const { customers } = storeToRefs(customersStore)
   const { products } = storeToRefs(productsStore)
 
   const loading = ref(false)
@@ -40,13 +38,17 @@ export function useRaiseOrder(onCreated: () => void) {
       && !lines.value.some((l) => l.product_id != null || l.offer_unit > 0 || l.cost_unit > 0),
   })
 
-  const customerOptions = computed(() =>
-    customers.value.map((c) => ({ title: `${c.name}${c.agency_type ? ` (${c.agency_type})` : ''}`, value: c.id })))
+  // Searches ALL customers, not just department='inhouse' — see useCustomerPicker.
+  // In-House prices are negotiated per line, so the profile is DISPLAY-ONLY
+  // here — it never adjusts a price. It matters because 54 of 81 government
+  // accounts carry an agreed basis the negotiator otherwise cannot see.
+  const { search: customerSearch, customerOptions, selectedCustomer, discountProfile, init: initCustomerPicker } =
+    useCustomerPicker(customerId)
 
   // The govt PO # field is documentation for actual government/LGU accounts only —
   // a private in-house client has no external govt PO to record.
   const isGovtCustomer = computed(() => {
-    const c = customers.value.find((x) => x.id === customerId.value)
+    const c = selectedCustomer.value
     return c?.agency_type === 'government' || c?.agency_type === 'lgu'
   })
 
@@ -107,7 +109,7 @@ export function useRaiseOrder(onCreated: () => void) {
   }
 
   async function init() {
-    await customersStore.fetchCustomers({ activeOnly: true, department: 'inhouse' })
+    await initCustomerPicker()
     if (!products.value.length) await productsStore.fetchProducts()
     // Restore a saved draft first; only seed an empty line if there's nothing to restore.
     if (!draft.restore() && !lines.value.length) addLine()
@@ -115,7 +117,7 @@ export function useRaiseOrder(onCreated: () => void) {
 
   return {
     loading, customerId, govtPoNo, poAmount, remarks, lines,
-    customerOptions, productOptions, isGovtCustomer,
+    customerSearch, customerOptions, selectedCustomer, discountProfile, productOptions, isGovtCustomer,
     offerTotal, costTotal, profit, marginPct,
     addLine, removeLine, onProductChange, unitFor, submit, reset, init,
   }
