@@ -249,7 +249,7 @@ watch(() => props.modelValue, (val) => {
                       <v-text-field :model-value="expiryText" label="Expiry Date" placeholder="MM/YYYY" maxlength="7" inputmode="numeric" prepend-inner-icon="mdi-calendar-clock" variant="outlined" density="comfortable" :disabled="isFieldDisabled" @update:model-value="onExpiryInput" @blur="onExpiryBlur"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model="productForm.item_decription" label="Item Description" prepend-inner-icon="mdi-text" variant="outlined" density="comfortable" :disabled="isFieldDisabled"></v-text-field>
+                      <v-text-field v-model="productForm.item_description" label="Item Description" prepend-inner-icon="mdi-text" variant="outlined" density="comfortable" :disabled="isFieldDisabled"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
                       <v-select v-model="productForm.unit" label="Unit" prepend-inner-icon="mdi-counter" variant="outlined" density="comfortable" :items="['Box', 'Pcs', 'Set', 'Unit', 'Kg', 'M']" clearable :disabled="isFieldDisabled"></v-select>
