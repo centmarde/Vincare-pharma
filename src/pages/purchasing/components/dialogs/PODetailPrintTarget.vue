@@ -13,7 +13,7 @@ const props = defineProps<{
 // but usePODetailModal expects the emit signature, so we pass a no-op.
 const noopEmit = (_e: 'update:modelValue', _value: boolean) => {}
 
-const { printArea, poNumber, emptyRows, uniqueSuppliers, handlePrint } = usePODetailModal(props, noopEmit)
+const { printArea, poNumber, emptyRows, uniqueSuppliers, showActualQty, handlePrint } = usePODetailModal(props, noopEmit)
 
 defineExpose({ handlePrint })
 </script>
@@ -109,7 +109,7 @@ defineExpose({ handlePrint })
             <th style="color:#fff; font-weight:600; padding: 10px 12px;">ITEM #</th>
             <th style="color:#fff; font-weight:600; padding: 10px 12px;">DESCRIPTION</th>
             <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">QTY</th>
-            <!-- I don't want to show or display for the printed the actual qty -->
+            <th v-if="showActualQty" style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">ACTUAL QTY</th>
             <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">SUPPLIER</th>
             <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">UNIT PRICE</th>
             <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">TOTAL</th>
@@ -120,17 +120,18 @@ defineExpose({ handlePrint })
             <td>{{ item.no }}</td>
             <td>{{ item.item_description }}</td>
             <td class="text-right">{{ item.qty }}</td>
+            <td v-if="showActualQty" class="text-right">{{ item.actual_count_stock_in ?? '—' }}</td>
             <td class="text-right">{{ item.supplier_name }}</td>
             <td class="text-right">{{ formatCurrency(item.cost_per_unit) }}</td>
             <td class="text-right">{{ formatCurrency(item.qty * item.cost_per_unit) }}</td>
           </tr>
           <tr v-for="n in emptyRows" :key="`empty-${n}`" class="empty-row">
-            <td colspan="5">&nbsp;</td>
+            <td :colspan="showActualQty ? 6 : 5">&nbsp;</td>
           </tr>
         </tbody>
         <tfoot>
           <tr class="bg-grey-lighten-3">
-            <td colspan="5" class="text-black font-weight-bold" style="text-align:right;">TOTAL</td>
+            <td :colspan="showActualQty ? 5 : 4" class="text-black font-weight-bold" style="text-align:right;">TOTAL</td>
             <td style="text-align:right; font-weight:700; padding: 10px 12px; color: #000;">
               {{ formatCurrency(po?.total_amount ?? 0) }}
             </td>
