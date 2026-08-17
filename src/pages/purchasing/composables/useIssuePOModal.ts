@@ -9,6 +9,7 @@ import { storeToRefs } from 'pinia'
 export function useIssuePOModal(
   props: { modelValue: boolean; pr: PR | null },
   emit: (e: 'update:modelValue', value: boolean) => void,
+  emitIssue: () => void,
 ) {
   const supplierStore      = useSuppliersDataStore()
   const purchaseRequisitionStore = usePurchaseRequisitionStore()
@@ -90,6 +91,7 @@ export function useIssuePOModal(
 
       showConfirm.value = false
       emit('update:modelValue', false)
+      emitIssue()
     }
   }
 

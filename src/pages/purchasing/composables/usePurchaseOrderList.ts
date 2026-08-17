@@ -239,6 +239,13 @@ export function usePurchaseOrderList() {
     await loadStats()
   }
 
+  async function refresh() {
+    await Promise.all([
+      loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] }),
+      loadStats(),
+    ])
+  }
+
   return {
     loading, search, filterStatus,
     showDetailModal, showSkuEditModal,
@@ -248,7 +255,7 @@ export function usePurchaseOrderList() {
     searchInput, commitSearch, clearSearch,
     resolveSupplier, statusLabel, getSupplierSummary,
     loadItems, openDetail, openDetailForSku,
-    openConfirm, handleMarkReceived, init,
+    openConfirm, handleMarkReceived, refresh, init,
     stats,
   }
 }
