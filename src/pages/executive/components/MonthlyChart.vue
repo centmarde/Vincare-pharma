@@ -1,18 +1,41 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { formatCurrency } from '@/utils/helpers'
-import type { MonthlyData } from '../composables/executiveStatic'
+import type { MonthlyPnL } from '@/stores/executiveData'
 
 const props = defineProps<{
-  monthlyData: MonthlyData[]
-  totalRevenue: number
-  totalExpenses: number
+  monthlyData: MonthlyPnL[]
+  loading?: boolean
 }>()
 
-const maxMonthlyValue = Math.max(...props.monthlyData.map((m) => Math.max(m.revenue, m.expenses)))
+// The largest absolute value across all three series drives the scale, so a
+// loss month (negative net) can still be drawn without clipping — revenue and
+// expenses are always positive, but net income can dip below zero.
+const maxAbsValue = computed(() =>
+  Math.max(
+    ...props.monthlyData.flatMap((m) => [Math.abs(m.revenue), Math.abs(m.expenses), Math.abs(m.net)]),
+    1,
+  ),
+)
 
-// Scale to 0-100 where maxMonthlyValue = 100%
-const revenuePercent = (value: number) => (value / maxMonthlyValue) * 100
-const expensePercent = (value: number) => (value / maxMonthlyValue) * 100
+// Percent (0–50) of the container — the half above the baseline can reach at
+// most 50% of the container's height, so a value equal to maxAbsValue fills
+// exactly the top (or bottom) half.
+const barPercent = (value: number) => (Math.abs(value) / maxAbsValue.value) * 50
+
+// Positive bars grow up from the baseline; negative ones hang below it.
+const barStyle = (value: number) => {
+  const pct = barPercent(value)
+  if (value >= 0) {
+    return { height: pct + '%', bottom: '50%' }
+  }
+  return { height: pct + '%', top: '50%' }
+}
+
+// Summary totals are derived from the live monthly rows.
+const totalRevenue = computed(() => props.monthlyData.reduce((sum, m) => sum + m.revenue, 0))
+const totalExpenses = computed(() => props.monthlyData.reduce((sum, m) => sum + m.expenses, 0))
+const totalNet = computed(() => props.monthlyData.reduce((sum, m) => sum + m.net, 0))
 </script>
 
 <template>
@@ -32,31 +55,40 @@ const expensePercent = (value: number) => (value / maxMonthlyValue) * 100
             <span>Expenses</span>
           </div>
           <div class="d-flex align-center ga-1">
-            <span class="legend-dot legend-dot--orders" />
-            <span>Orders</span>
+            <span class="legend-dot legend-dot--net" />
+            <span>Net Income</span>
           </div>
         </div>
       </div>
 
-      <!-- 1-100 scale bar chart (200px height = 100%) -->
-      <div class="chart-scroll-wrapper">
+      <v-skeleton-loader v-if="loading" type="image" class="rounded-lg" height="260" />
+
+      <!-- Zero-baseline bar chart (200px height = 100%) -->
+      <div v-else class="chart-scroll-wrapper">
         <div class="chart-container">
           <div v-for="(month, idx) in monthlyData" :key="idx" class="chart-column">
             <div class="chart-bars">
+              <div class="chart-baseline" />
               <div
                 class="bar bar--revenue"
-                :style="{ height: revenuePercent(month.revenue) + '%' }"
-                :title="'Revenue: ₱' + month.revenue.toLocaleString()"
+                :style="barStyle(month.revenue)"
+                :title="'Revenue: ' + formatCurrency(month.revenue)"
               />
               <div
                 class="bar bar--expenses"
-                :style="{ height: expensePercent(month.expenses) + '%' }"
-                :title="'Expenses: ₱' + month.expenses.toLocaleString()"
+                :style="barStyle(month.expenses)"
+                :title="'Expenses: ' + formatCurrency(month.expenses)"
+              />
+              <div
+                class="bar bar--net"
+                :class="{ 'bar--net-loss': month.net < 0 }"
+                :style="barStyle(month.net)"
+                :title="'Net Income: ' + formatCurrency(month.net)"
               />
             </div>
             <div class="chart-month-label text-caption">{{ month.month }}</div>
-            <div class="chart-order-count text-caption text-medium-emphasis">
-              {{ month.orders }}
+            <div class="chart-net-label text-caption" :class="month.net < 0 ? 'text-error' : 'text-success'">
+              {{ formatCurrency(month.net) }}
             </div>
           </div>
         </div>
@@ -78,9 +110,9 @@ const expensePercent = (value: number) => (value / maxMonthlyValue) * 100
         </v-col>
         <v-col cols="12" sm="4" class="pa-1">
           <div class="rounded-lg pa-3 text-center summary-tile summary-tile--net">
-            <div class="text-caption font-weight-medium text-medium-emphasis">Net Profit</div>
-            <div class="text-body-1 font-weight-bold">
-              {{ formatCurrency(totalRevenue - totalExpenses) }}
+            <div class="text-caption font-weight-medium text-medium-emphasis">Net Income</div>
+            <div class="text-body-1 font-weight-bold" :class="totalNet < 0 ? 'text-error' : ''">
+              {{ formatCurrency(totalNet) }}
             </div>
           </div>
         </v-col>

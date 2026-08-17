@@ -7,10 +7,12 @@ import QuickStatsCards from './QuickStatsCards.vue'
 import MonthlyChart from './MonthlyChart.vue'
 import TopProducts from './TopProducts.vue'
 import ActionRequired from './ActionRequired.vue'
-import { useExecutiveStatic } from '../composables/executiveStatic'
+import MonthlyChartBar from './MonthlyChartBar.vue'
+import MonthlyChartLine from './MonthlyChartLine.vue'
 
 const dash = useExecutiveDashboard()
-const staticData = useExecutiveStatic()
+
+const chartVariant = ref<'bar' | 'line'>('bar')
 
 const searchQuery = ref('')
 const rightPanelView = ref<'actionRequired' | 'topProducts'>('actionRequired')
@@ -32,13 +34,23 @@ const rightPanelView = ref<'actionRequired' | 'topProducts'>('actionRequired')
     />
 
     <v-row class="ma-0" align="stretch">
-      <v-col cols="12" lg="8" class="pa-2 d-flex">
+      <!-- <v-col cols="12" lg="8" class="pa-2 d-flex">
         <MonthlyChart
-          :monthly-data="staticData.monthlyData"
-          :total-revenue="staticData.totalRevenue"
-          :total-expenses="staticData.totalExpenses"
+          :monthly-data="dash.monthlyPnL.value"
+          :loading="dash.loading.value"
           class="flex-grow-1"
         />
+      </v-col> -->
+      <v-col cols="12" lg="8" class="pa-2 d-flex flex-column">
+        <div class="d-flex align-center mb-2 bg-surface-variant rounded-lg pa-1 toggle-switch flex-shrink-0" style="max-width: 220px;">
+          <v-btn variant="text" size="small" class="text-none flex-grow-1"
+            :class="{ 'toggle-active': chartVariant === 'bar' }" @click="chartVariant = 'bar'">Bar</v-btn>
+          <v-btn variant="text" size="small" class="text-none flex-grow-1"
+            :class="{ 'toggle-active': chartVariant === 'line' }" @click="chartVariant = 'line'">Line</v-btn>
+        </div>
+
+        <MonthlyChartBar v-if="chartVariant === 'bar'" :monthly-data="dash.monthlyPnL.value" :loading="dash.loading.value" class="flex-grow-1" />
+        <MonthlyChartLine v-else :monthly-data="dash.monthlyPnL.value" :loading="dash.loading.value" class="flex-grow-1" />
       </v-col>
 
       <v-col cols="12" lg="4" class="pa-2 d-flex flex-column">

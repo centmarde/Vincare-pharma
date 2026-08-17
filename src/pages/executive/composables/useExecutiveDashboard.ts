@@ -77,6 +77,8 @@ export function useExecutiveDashboard() {
     return refresh()
   }
 
+  const monthlyPnL = computed(() => store.monthlyPnL)
+
   const kpiCards = computed<KpiCard[]>(() => {
     const cur = store.currentPnL
     const prev = store.prevPnL
@@ -162,6 +164,7 @@ export function useExecutiveDashboard() {
 
   return {
     kpiCards,
+    monthlyPnL,
     dateFrom,
     dateTo,
     loading: computed(() => store.loading),
