@@ -58,7 +58,6 @@ export function useProductsWidget() {
   const isEditRestricted = computed(() => isProductEditRestricted(authStore.userRole))
   const expiryFilterValue = ref<string>('')
 
-
   // Form state
   const form = ref<any>(null)
 
@@ -77,7 +76,7 @@ export function useProductsWidget() {
     batch_no: null,
     expiry_date: '',
     status: '',
-    item_decription: '',
+    item_description: '',
     offer_per_unit: null,
     cost_per_unit: null,
     no: null,
@@ -88,6 +87,7 @@ export function useProductsWidget() {
 
   // Search, pagination, sort state
   const searchQuery = ref('')
+  const typeFilter = ref('All')
   const itemsPerPage = ref(10)
   const page = ref(1)
   const sortBy = ref([{ key: 'current_stock', order: 'asc' as 'asc' | 'desc' }])
@@ -102,9 +102,9 @@ export function useProductsWidget() {
   const warehouseProductDetails = ref<Map<number, { total_qty: number }>>(new Map())
 
   // Reserved products — maps product_id -> list of reservations with customer name and reservation id
-  const reservedProductsMap = ref<Map<number, { id: number; customer_name: string; reserved_qty: number }[]>>(
-    new Map(),
-  )
+  const reservedProductsMap = ref<
+    Map<number, { id: number; customer_name: string; reserved_qty: number }[]>
+  >(new Map())
   const warehouseProductsIdToProductId = ref<Map<number, number>>(new Map())
 
   // Add reservation dialog
@@ -148,12 +148,27 @@ export function useProductsWidget() {
   const totalProducts = computed(() => productsStore.totalCount)
 
   const stockStatusCardDefs: StockStatusCardDef[] = [
-  { type: 'out-of-stock', label: 'Out of Stock', icon: 'mdi-close-circle-outline', color: 'error' },
-  { type: 'low-stock', label: 'Low Stock', icon: 'mdi-alert-outline', color: 'warning' },
-  { type: 'no-reorder-level', label: 'No Reorder Level', icon: 'mdi-information-outline', color: 'info' },
-  { type: 'expiring-soon', label: 'Expiring Soon', icon: 'mdi-clock-alert-outline', color: 'orange' },
-  { type: 'expired', label: 'Expired', icon: 'mdi-calendar-remove', color: 'error' },
-]
+    {
+      type: 'out-of-stock',
+      label: 'Out of Stock',
+      icon: 'mdi-close-circle-outline',
+      color: 'error',
+    },
+    { type: 'low-stock', label: 'Low Stock', icon: 'mdi-alert-outline', color: 'warning' },
+    {
+      type: 'no-reorder-level',
+      label: 'No Reorder Level',
+      icon: 'mdi-information-outline',
+      color: 'info',
+    },
+    {
+      type: 'expiring-soon',
+      label: 'Expiring Soon',
+      icon: 'mdi-clock-alert-outline',
+      color: 'orange',
+    },
+    { type: 'expired', label: 'Expired', icon: 'mdi-calendar-remove', color: 'error' },
+  ]
 
   // Cards for the StockStatusCards row (label/icon/color/count)
   const stockStatusCards = computed(() =>
@@ -204,6 +219,7 @@ export function useProductsWidget() {
 
     await productsStore.fetchProducts({
       search: searchQuery.value,
+      type: typeFilter.value,
       orderBy: range ? 'expiry_date' : (sortBy.value[0]?.key as any) || 'created_at',
       ascending: range ? true : sortBy.value[0]?.order === 'asc',
       limit: itemsPerPage.value,
@@ -303,9 +319,10 @@ export function useProductsWidget() {
           // Fetch actual reservation IDs from the reserved_products table
           const reservationIdMap = new Map<number, number>() // warehouse_product_id -> reservation id
           if (warehouseProductIdsWithReservations.size > 0) {
-            const reservationRows = await reservedProductsStore.fetchReservedProductsByWarehouseProductIds(
-              Array.from(warehouseProductIdsWithReservations)
-            )
+            const reservationRows =
+              await reservedProductsStore.fetchReservedProductsByWarehouseProductIds(
+                Array.from(warehouseProductIdsWithReservations),
+              )
 
             for (const rp of reservationRows) {
               if (rp.warehouse_products_id != null && rp.id != null) {
@@ -321,7 +338,7 @@ export function useProductsWidget() {
           >()
 
           for (const [productId, reservations] of reservationsByProduct) {
-            const updatedReservations = reservations.map(res => ({
+            const updatedReservations = reservations.map((res) => ({
               id: reservationIdMap.get(res.id) || 0,
               customer_name: res.customer_name,
               reserved_qty: res.reserved_qty,
@@ -369,7 +386,6 @@ export function useProductsWidget() {
     return reservedProductsMap.value.get(productId) || []
   }
 
-
   /**
    * Remove a customer reservation by its ID and refresh warehouse stock data.
    */
@@ -398,7 +414,10 @@ export function useProductsWidget() {
     const result = await reservedProductsStore.deleteReservedProduct(reservationId)
 
     console.log('[ProductsWidget] Delete result:', result)
-    console.log('[ProductsWidget] Reserved products store error after delete:', reservedProductsStore.error)
+    console.log(
+      '[ProductsWidget] Reserved products store error after delete:',
+      reservedProductsStore.error,
+    )
 
     if (result) {
       toast.success('Reservation removed successfully')
@@ -409,7 +428,10 @@ export function useProductsWidget() {
       }
     } else {
       toast.error('Failed to remove reservation')
-      console.error('[ProductsWidget] Failed to delete reservation. Store error:', reservedProductsStore.error)
+      console.error(
+        '[ProductsWidget] Failed to delete reservation. Store error:',
+        reservedProductsStore.error,
+      )
     }
   }
 
@@ -517,9 +539,9 @@ export function useProductsWidget() {
             )
           if (oldData.status !== result.status)
             changes.push(`status=${oldData.status ?? 'N/A'} → ${result.status ?? 'N/A'}`)
-          if (oldData.item_decription !== result.item_decription)
+          if (oldData.item_description !== result.item_description)
             changes.push(
-              `item_description=${oldData.item_decription ?? 'N/A'} → ${result.item_decription ?? 'N/A'}`,
+              `item_description=${oldData.item_description ?? 'N/A'} → ${result.item_description ?? 'N/A'}`,
             )
           if (oldData.unit !== result.unit)
             changes.push(`unit=${oldData.unit ?? 'N/A'} → ${result.unit ?? 'N/A'}`)
@@ -669,11 +691,11 @@ export function useProductsWidget() {
     const end = new Date(ref.year, ref.month - 1 + 18 + 1, 0) // last day of ref+18 months
 
     const toLocalISODate = (d: Date) => {
-    const y = d.getFullYear()
-    const m = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    return `${y}-${m}-${day}`
-  }
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${y}-${m}-${day}`
+    }
     return { start: toLocalISODate(start), end: toLocalISODate(end) }
   })
 
@@ -718,64 +740,64 @@ export function useProductsWidget() {
     refreshStockDialogProducts()
   }
 
-/**
- * Open add reservation dialog for a product
- */
-function openAddReservationDialog(product: ProductType) {
-  selectedProductForReservation.value = product
-  reservationCustomerId.value = null
-  reservationQuantity.value = 0
-  showAddReservationDialog.value = true
-}
-
-/**
- * Add a new customer reservation for a product in the selected warehouse
- */
-async function addReservation() {
-  if (
-    !selectedProductForReservation.value ||
-    !reservationCustomerId.value ||
-    reservationQuantity.value <= 0
-  ) {
-    toast.error('Please fill in all reservation details')
-    return
+  /**
+   * Open add reservation dialog for a product
+   */
+  function openAddReservationDialog(product: ProductType) {
+    selectedProductForReservation.value = product
+    reservationCustomerId.value = null
+    reservationQuantity.value = 0
+    showAddReservationDialog.value = true
   }
 
-  if (!selectedWarehouseId.value) {
-    toast.error('Please select a warehouse first')
-    return
+  /**
+   * Add a new customer reservation for a product in the selected warehouse
+   */
+  async function addReservation() {
+    if (
+      !selectedProductForReservation.value ||
+      !reservationCustomerId.value ||
+      reservationQuantity.value <= 0
+    ) {
+      toast.error('Please fill in all reservation details')
+      return
+    }
+
+    if (!selectedWarehouseId.value) {
+      toast.error('Please select a warehouse first')
+      return
+    }
+
+    const reservedProductsStore = useReservedProductsDataStore()
+    const warehouseProductsStore = useWarehouseProductsDataStore()
+
+    const warehouseProduct = warehouseProductsStore.warehouseProducts.find(
+      (wp) =>
+        wp.product_id === selectedProductForReservation.value?.id &&
+        wp.warehouse_id === selectedWarehouseId.value,
+    )
+
+    if (!warehouseProduct || warehouseProduct.id == null) {
+      toast.error('Product not found in selected warehouse')
+      return
+    }
+
+    const result = await reservedProductsStore.createReservedProduct({
+      warehouse_products_id: warehouseProduct.id,
+      customer_id: reservationCustomerId.value,
+      reserved_qty: reservationQuantity.value,
+    })
+
+    if (result) {
+      toast.success('Reservation added successfully')
+      showAddReservationDialog.value = false
+
+      // Refresh warehouse stock and reservations
+      await setWarehouseFilter(selectedWarehouseId.value)
+    } else {
+      toast.error('Failed to add reservation')
+    }
   }
-
-  const reservedProductsStore = useReservedProductsDataStore()
-  const warehouseProductsStore = useWarehouseProductsDataStore()
-
-  const warehouseProduct = warehouseProductsStore.warehouseProducts.find(
-    wp =>
-      wp.product_id === selectedProductForReservation.value?.id &&
-      wp.warehouse_id === selectedWarehouseId.value,
-  )
-
-  if (!warehouseProduct || warehouseProduct.id == null) {
-    toast.error('Product not found in selected warehouse')
-    return
-  }
-
-  const result = await reservedProductsStore.createReservedProduct({
-    warehouse_products_id: warehouseProduct.id,
-    customer_id: reservationCustomerId.value,
-    reserved_qty: reservationQuantity.value,
-  })
-
-  if (result) {
-    toast.success('Reservation added successfully')
-    showAddReservationDialog.value = false
-
-    // Refresh warehouse stock and reservations
-    await setWarehouseFilter(selectedWarehouseId.value)
-  } else {
-    toast.error('Failed to add reservation')
-  }
-}
 
   // Lifecycle
   onMounted(async () => {
@@ -802,7 +824,7 @@ async function addReservation() {
       reservationQuantity.value = 0
     }
   })
-    watch(expiryFilterValue, (val) => {
+  watch(expiryFilterValue, (val) => {
     // Only refetch on a real clear ('') or a fully-formed 'YYYY-MM' value —
     // ignore any transient partial state the native month picker might emit.
     if (val !== '' && !/^\d{4}-\d{2}$/.test(val)) return
@@ -810,12 +832,18 @@ async function addReservation() {
     fetchProducts()
   })
 
+  // Refetch when the product type filter changes
+  watch(typeFilter, () => {
+    page.value = 1
+    handleSearch()
+  })
+
   // Re-fetch card counts when the reference month or ignore list changes
   watch([expiryFilterValue, () => productIgnore.activeIgnoredIdsArray.value], () => {
     refreshStockStatusCounts()
   })
 
-    // Fetch the dialog's row list the moment it opens, or when the bucket changes while open
+  // Fetch the dialog's row list the moment it opens, or when the bucket changes while open
   watch([showStockDialog, stockDialogType], ([open]) => {
     if (open) {
       stockDialogPage.value = 1
@@ -833,6 +861,7 @@ async function addReservation() {
     productForm,
     currentProduct,
     searchQuery,
+    typeFilter,
     itemsPerPage,
     page,
     sortBy,
@@ -899,6 +928,5 @@ async function addReservation() {
     clearExpiryFilter,
     refreshStockStatusCounts,
     refreshStockDialogProducts,
-
   }
 }
