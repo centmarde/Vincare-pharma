@@ -21,10 +21,12 @@
     "@mdi/font": "7.4.47",
     "@supabase/supabase-js": "^2.57.2",
     "axios": "^1.11.0",
+    "chart.js": "^4.5.1",
     "html2pdf.js": "^0.14.0",
     "pinia": "^3.0.3",
     "vite-plugin-vue-devtools": "^8.0.1",
     "vue": "^3.5.17",
+    "vue-chartjs": "^5.3.4",
     "vue-toastification": "^2.0.0-rc.5",
     "vuetify": "^3.12.10"
   },

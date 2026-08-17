@@ -13,18 +13,8 @@ export interface KpiCard {
   trendLabel: string
 }
 
-export interface MonthlyData {
-  month: string
-  revenue: number
-  expenses: number
-  orders: number
-}
-
 export interface ExecutiveDashboardData {
   kpiCards: KpiCard[]
-  monthlyData: MonthlyData[]
-  totalRevenue: number
-  totalExpenses: number
   totalOrders: number
   pendingOrders: number
   activeSuppliers: number
@@ -32,8 +22,6 @@ export interface ExecutiveDashboardData {
 
 export function useExecutiveStatic(): ExecutiveDashboardData {
   return {
-    totalRevenue: 1_284_500.0,
-    totalExpenses: 876_200.0,
     totalOrders: 342,
     pendingOrders: 28,
     activeSuppliers: 45,
@@ -75,21 +63,6 @@ export function useExecutiveStatic(): ExecutiveDashboardData {
         trend: 'down',
         trendLabel: '-2.1% vs last month',
       },
-    ],
-
-    monthlyData: [
-      { month: 'Jan', revenue: 98_000, expenses: 72_000, orders: 26 },
-      { month: 'Feb', revenue: 102_000, expenses: 74_500, orders: 28 },
-      { month: 'Mar', revenue: 95_000, expenses: 70_000, orders: 25 },
-      { month: 'Apr', revenue: 110_000, expenses: 78_000, orders: 30 },
-      { month: 'May', revenue: 108_000, expenses: 76_500, orders: 29 },
-      { month: 'Jun', revenue: 120_000, expenses: 82_000, orders: 32 },
-      { month: 'Jul', revenue: 115_000, expenses: 80_000, orders: 31 },
-      { month: 'Aug', revenue: 122_000, expenses: 83_500, orders: 33 },
-      { month: 'Sep', revenue: 118_000, expenses: 81_000, orders: 30 },
-      { month: 'Oct', revenue: 125_000, expenses: 84_000, orders: 34 },
-      { month: 'Nov', revenue: 130_000, expenses: 86_000, orders: 35 },
-      { month: 'Dec', revenue: 41_500, expenses: 28_700, orders: 9 },
     ],
   }
 }

@@ -36,8 +36,8 @@
 .legend-dot--expenses {
   background: rgb(var(--v-theme-warning));
 }
-.legend-dot--orders {
-  background: rgb(var(--v-theme-info));
+.legend-dot--net {
+  background: rgb(var(--v-theme-success));
 }
 
 /* ── Bar Chart ───────────────────────────────── */
@@ -60,33 +60,56 @@
   min-width: 38px;
 }
 .chart-bars {
+  position: relative;
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
+  justify-content: center;
   gap: 3px;
   height: 200px;
   width: 100%;
 }
+/* Zero-baseline — positive bars sit above it, negative bars hang below. */
+.chart-baseline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: rgba(0, 0, 0, 0.12);
+  pointer-events: none;
+}
 .bar {
-  flex: 1;
-  border-radius: 4px 4px 0 0;
+  position: absolute;
+  width: 22%;
   min-height: 4px;
-  transition: height 0.4s ease;
+  border-radius: 4px;
+  transition: height 0.4s ease, bottom 0.4s ease, top 0.4s ease;
   cursor: help;
 }
 .bar--revenue {
+  left: 8%;
   background: rgb(var(--v-theme-primary));
   opacity: 0.85;
 }
 .bar--expenses {
+  left: 39%;
   background: rgb(var(--v-theme-warning));
   opacity: 0.7;
+}
+.bar--net {
+  left: 70%;
+  background: rgb(var(--v-theme-success));
+  opacity: 0.85;
+}
+.bar--net-loss {
+  background: rgb(var(--v-theme-error));
 }
 .chart-month-label {
   margin-top: 6px;
   font-weight: 600;
   text-align: center;
 }
-.chart-order-count {
+.chart-net-label {
   text-align: center;
   margin-top: 2px;
 }

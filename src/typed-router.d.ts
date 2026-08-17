@@ -55,6 +55,8 @@ declare module 'vue-router/auto-routes' {
     '/executive/components/HeaderBar': RouteRecordInfo<'/executive/components/HeaderBar', '/executive/components/HeaderBar', Record<never, never>, Record<never, never>>,
     '/executive/components/KpiCards': RouteRecordInfo<'/executive/components/KpiCards', '/executive/components/KpiCards', Record<never, never>, Record<never, never>>,
     '/executive/components/MonthlyChart': RouteRecordInfo<'/executive/components/MonthlyChart', '/executive/components/MonthlyChart', Record<never, never>, Record<never, never>>,
+    '/executive/components/MonthlyChartBar': RouteRecordInfo<'/executive/components/MonthlyChartBar', '/executive/components/MonthlyChartBar', Record<never, never>, Record<never, never>>,
+    '/executive/components/MonthlyChartLine': RouteRecordInfo<'/executive/components/MonthlyChartLine', '/executive/components/MonthlyChartLine', Record<never, never>, Record<never, never>>,
     '/executive/components/PurchaseRequisitionList': RouteRecordInfo<'/executive/components/PurchaseRequisitionList', '/executive/components/PurchaseRequisitionList', Record<never, never>, Record<never, never>>,
     '/executive/components/QuickStatsCards': RouteRecordInfo<'/executive/components/QuickStatsCards', '/executive/components/QuickStatsCards', Record<never, never>, Record<never, never>>,
     '/executive/components/RequestHistory': RouteRecordInfo<'/executive/components/RequestHistory', '/executive/components/RequestHistory', Record<never, never>, Record<never, never>>,
