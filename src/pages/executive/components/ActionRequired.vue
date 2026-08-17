@@ -11,11 +11,31 @@ import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
 import { formatDatePR_ISO } from '@/utils/helpers'
 import { useRequestHistory } from '../composables/useRequestHistory'
 
-const { requests: undoRequests, loading: undoLoading } = useChangeRequestsPR()
-const { requests: financeRequests, loading: financeLoading } = useFinanceChangeRequests()
-const { requests: salesRequests, loading: salesLoading } = useSalesChangeRequests()
-const { requests: sharedRequests, loading: sharedLoading } = useSharedChangeRequests()
-const { requests: pendingPRs, loading: prLoading } = useExecutiveApprovePR()
+const {
+  requests: undoRequests,
+  loading: undoLoading,
+  refresh: refreshPR,
+} = useChangeRequestsPR()
+const {
+  requests: financeRequests,
+  loading: financeLoading,
+  refresh: refreshFinance,
+} = useFinanceChangeRequests()
+const {
+  requests: salesRequests,
+  loading: salesLoading,
+  refresh: refreshSales,
+} = useSalesChangeRequests()
+const {
+  requests: sharedRequests,
+  loading: sharedLoading,
+  refresh: refreshShared,
+} = useSharedChangeRequests()
+const {
+  requests: pendingPRs,
+  loading: prLoading,
+  refresh: refreshPRApprovals,
+} = useExecutiveApprovePR()
 const { mobile } = useDisplay()
 
 type MergedActionItem =
@@ -58,6 +78,23 @@ const loading = computed(
     sharedLoading.value ||
     prLoading.value,
 )
+
+const refreshing = ref(false)
+
+async function refreshAll() {
+  refreshing.value = true
+  try {
+    await Promise.allSettled([
+      refreshPR(),
+      refreshFinance(),
+      refreshSales(),
+      refreshShared(),
+      refreshPRApprovals(),
+    ])
+  } finally {
+    refreshing.value = false
+  }
+}
 
 const selected = ref(false)
 const selectedReq = ref<MergedActionItem | null>(null)
@@ -114,6 +151,19 @@ watch(historyDialog, (val) => {
         </v-col>
         <v-col v-if="count" cols="auto">
           <v-chip size="small" color="error" variant="flat">{{ count }}</v-chip>
+        </v-col>
+        <v-col cols="auto">
+          <v-btn
+            icon
+            size="small"
+            variant="text"
+            class="refresh-btn"
+            :disabled="refreshing"
+            title="Refresh requests"
+            @click="refreshAll"
+          >
+            <v-icon :icon="'mdi-refresh'" size="20" :class="{ spin: refreshing }" />
+          </v-btn>
         </v-col>
       </v-row>
 
@@ -272,5 +322,25 @@ watch(historyDialog, (val) => {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+/* Refresh button hover tint */
+.refresh-btn {
+  opacity: 0.75;
+  transition: opacity 0.15s ease;
+}
+.refresh-btn:hover {
+  opacity: 1;
+}
+/* Spin animation while refreshing */
+.spin {
+  animation: vincare-spin 0.8s linear infinite;
+}
+@keyframes vincare-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

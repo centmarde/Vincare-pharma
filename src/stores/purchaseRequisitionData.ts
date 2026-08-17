@@ -223,10 +223,23 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       return false
     }
 
-    // 1. Update transaction remarks
+    // 1. Update transaction remarks + recalculate total_amount from the
+    //    edited line items — matches savePurchaseRequisition's convention
+    //    (total_amount = Σ qty × cost_per_unit). Without this, editing a
+    //    PR (cost/unit, qty, add/remove items) leaves the stored total
+    //    stale, so approval dialogs show the wrong amount.
+    const companyCostTotal = payload.items.reduce(
+      (sum, i) => sum + (i.qty || 0) * (i.cost_per_unit || 0),
+      0,
+    )
+
     const { error: updateError } = await supabase
       .from('transactions')
-      .update({ remarks: payload.remarks, updated_at: new Date().toISOString() })
+      .update({
+        remarks: payload.remarks,
+        total_amount: companyCostTotal,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', payload.prId)
 
     if (updateError) {
@@ -242,7 +255,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     const { data: existingItems, error: fetchItemsError } = await supabase
       .from('transaction_items')
       .select(
-        'id, product_id, products ( product_name, unit, supplier_id, expiry_date, sku )',
+        'id, product_id, products ( product_name, unit, supplier_id, expiry_date, sku, cost_price, selling_price )',
       )
       .eq('transaction_id', payload.prId)
 
@@ -279,7 +292,11 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       (i) => !(typeof i.id === 'number' && i.id > 0 && existingItemIds.includes(i.id)),
     )
 
-    // 5. Existing items whose product identity changed vs. what's on file.
+    // 5. Existing items whose product identity OR pricing changed vs. what's
+    //    on file. Price edits must be routed through the product-resolution
+    //    path so they propagate back to the products table — otherwise a
+    //    price-only edit is silently dropped (it's classified "unchanged"
+    //    and only qty gets written).
     const existingToUpdate = payload.items.filter((i) => existingItemIds.includes(i.id))
 
     const changedExistingItems = existingToUpdate.filter((item) => {
@@ -287,11 +304,15 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       const product = Array.isArray(onFile?.products) ? onFile?.products[0] : onFile?.products
       if (!product) return true // no linked product on file — treat as changed
       const supplierId = item.supplier_id ? Number(item.supplier_id) : null
+      const priceDiffers =
+        Math.abs(Number(product.cost_price ?? 0) - Number(item.cost_per_unit ?? 0)) > 0.001 ||
+        Math.abs(Number(product.selling_price ?? 0) - Number(item.offer_per_unit ?? 0)) > 0.001
       return (
         product.product_name !== item.item_description ||
         product.unit !== item.unit ||
         (product.supplier_id ?? null) !== supplierId ||
-        (product.expiry_date ?? null) !== (item.expiry_date ?? null)
+        (product.expiry_date ?? null) !== (item.expiry_date ?? null) ||
+        priceDiffers
       )
     })
 
@@ -299,6 +320,17 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     const unchangedExistingItems = existingToUpdate.filter(
       (item) => !changedExistingItems.includes(item),
     )
+
+    // ── Track price edits so they can be synced back to the underlying
+    // product rows after items are persisted.
+    const priceSyncByProduct = new Map<number, { cost: number; offer: number }>()
+    const recordPrice = (productId: number | undefined | null, item: PRItem) => {
+      if (productId == null || productId <= 0) return
+      priceSyncByProduct.set(productId, {
+        cost: Number(item.cost_per_unit ?? 0),
+        offer: Number(item.offer_per_unit ?? 0),
+      })
+    }
 
     // ── Resolve products for BOTH brand-new items and changed-existing
     // items in one combined pass.
@@ -480,6 +512,15 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       const newItemsProductIds = productIdByIndex.slice(0, newItems.length)
       const changedItemsProductIds = productIdByIndex.slice(newItems.length)
 
+      // Record price edits for every item whose product was resolved this
+      // pass (new items resolved to a reused batch, or existing items
+      // re-linked/re-batched). Newly-created products already carry the
+      // prices from their insert, but re-recording them is harmless.
+      newItems.forEach((item, index) => recordPrice(newItemsProductIds[index], item))
+      changedExistingItems.forEach((item, index) =>
+        recordPrice(changedItemsProductIds[index], item),
+      )
+
       if (newItems.length) {
         const { error: insertError } = await supabase.from('transaction_items').insert(
           newItems.map((item, index) => ({
@@ -524,6 +565,25 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         toast.error(`Failed to update item ${item.id}.`)
         loading.value = false
         return false
+      }
+    }
+
+    // 7. Sync edited prices back to the underlying product rows. PR line
+    //    items read qty from transaction_items but unit prices from
+    //    products.cost_price / products.selling_price (join in
+    //    mapTransactionItems), so edits must land on the products table or
+    //    the PR would still display the old prices after saving.
+    for (const [productId, { cost, offer }] of priceSyncByProduct) {
+      const { error: priceError } = await supabase
+        .from('products')
+        .update({ cost_price: cost, selling_price: offer })
+        .eq('id', productId)
+
+      if (priceError) {
+        console.warn(
+          `updatePR: failed to sync product ${productId} prices (${cost}/${offer}):`,
+          priceError.message,
+        )
       }
     }
 
