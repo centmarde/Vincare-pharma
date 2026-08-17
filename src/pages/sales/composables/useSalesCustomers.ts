@@ -29,6 +29,20 @@ const emptyForm = (): CreateCustomerData => ({
   category: '',
   term_days: null,
   is_active: true,
+
+  owner_name: null,
+  owner_contact_no: null,
+  purchaser_name: null,
+  purchaser_contact_no: null,
+  scheme: [],
+  target_sales: null,
+  product_sales_list: null,
+  markup_percent: null,
+  discount_rate: null,
+  rebate_rate: null,
+  rebate_ratio_distribution: null,
+  rebate_payment_mode: null,
+  rebate_payment_account_no: null,
 })
 
 export function useSalesCustomers() {
@@ -119,6 +133,20 @@ export function useSalesCustomers() {
       category: customer.category,
       term_days: customer.term_days,
       is_active: customer.is_active,
+
+      owner_name: customer.owner_name,
+      owner_contact_no: customer.owner_contact_no,
+      purchaser_name: customer.purchaser_name,
+      purchaser_contact_no: customer.purchaser_contact_no,
+      scheme: customer.scheme,
+      target_sales: customer.target_sales,
+      product_sales_list: customer.product_sales_list,
+      markup_percent: customer.markup_percent,
+      discount_rate: customer.discount_rate,
+      rebate_rate: customer.rebate_rate,
+      rebate_ratio_distribution: customer.rebate_ratio_distribution,
+      rebate_payment_mode: customer.rebate_payment_mode,
+      rebate_payment_account_no: customer.rebate_payment_account_no,
     }
 
     showForm.value = true

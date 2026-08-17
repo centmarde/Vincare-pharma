@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import { useCashAccounts, requestHeaders } from '../composables/useCashAccounts'
+import { useBankDeposits, depositHeaders } from '../composables/useBankDeposits'
 import CashAccountsManager from './CashAccountsManager.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
@@ -14,6 +16,17 @@ const {
   openRequestDialog, submitRequest, approve, openRejectDialog, confirmReject,
   createAccount,
 } = useCashAccounts()
+
+const {
+  deposits, showDepositDialog,
+  fromAccountId, toAccountId, amount: depositAmount, depositDate, validationNo, depositRemarks,
+  sourceOptions, destinationOptions, onHand, remainingOnHand, exceedsOnHand,
+  blockers: depositBlockers, canSubmit: canSubmitDeposit, statusMeta: depositStatusMeta, setupHint,
+  depositReminder,
+  init: initDeposits, openDepositDialog, closeDepositDialog, submitDeposit, clearDeposit, warnSetup,
+} = useBankDeposits()
+
+onMounted(initDeposits)
 </script>
 
 <template>
@@ -113,6 +126,97 @@ const {
                 </v-btn>
               </template>
             </div>
+          </template>
+        </v-data-table>
+      </v-card>
+
+      <!-- Bank deposits: banking cash the company already holds.
+           Cash on Hand -> Cash in Bank, a transfer between our own accounts. -->
+      <v-card rounded="lg" elevation="1" class="mt-4">
+        <v-card-title class="pa-4 pa-sm-5 d-flex justify-space-between align-center">
+          <div>
+            <div class="text-h6 font-weight-bold">Bank Deposits</div>
+            <div class="text-caption text-medium-emphasis">
+              Moves undeposited collections from Cash on Hand into the bank.
+            </div>
+          </div>
+          <v-btn
+            class="text-none"
+            size="small"
+            color="primary"
+            variant="tonal"
+            @click="setupHint ? warnSetup() : openDepositDialog()"
+          >
+            Record Deposit
+          </v-btn>
+        </v-card-title>
+        <v-divider />
+
+        <v-alert v-if="setupHint" type="info" variant="tonal" density="compact" class="ma-4 text-body-2">
+          {{ setupHint }}
+        </v-alert>
+
+        <!-- Ceiling on undeposited cash — the mirror of the petty cash
+             replenishment warning. -->
+        <v-alert
+          v-else-if="depositReminder"
+          type="warning"
+          variant="tonal"
+          density="compact"
+          class="ma-4 text-body-2"
+        >
+          {{ depositReminder }}
+        </v-alert>
+
+        <v-data-table
+          mobile-breakpoint="md"
+          :headers="depositHeaders"
+          :items="deposits"
+          :loading="loading"
+          loading-text="Loading deposits..."
+          no-data-text="No bank deposits recorded yet."
+          hover
+        >
+          <template #item.deposit_date="{ item }">
+            <span class="text-body-2 text-medium-emphasis">
+              {{ item.deposit_date ? formatDatePR_ISO(item.deposit_date) : '—' }}
+            </span>
+          </template>
+
+          <template #item.validation_no="{ item }">
+            {{ item.validation_no ?? '—' }}
+          </template>
+
+          <template #item.amount="{ item }">
+            <span class="font-weight-medium">{{ formatCurrency(item.amount) }}</span>
+          </template>
+
+          <template #item.status="{ item }">
+            <v-chip
+              size="small"
+              variant="tonal"
+              label
+              :color="depositStatusMeta(item.status).color"
+              :title="depositStatusMeta(item.status).hint"
+            >
+              {{ depositStatusMeta(item.status).label }}
+            </v-chip>
+          </template>
+
+          <template #item.actions="{ item }">
+            <v-btn
+              v-if="item.status !== 'cleared'"
+              size="small"
+              color="success"
+              variant="tonal"
+              class="text-none"
+              :loading="loading"
+              title="Confirm this deposit appears on the bank statement"
+              @click="clearDeposit(item.id)"
+            >
+              Mark Cleared
+            </v-btn>
+            <span v-else class="text-caption text-medium-emphasis">—</span>
           </template>
         </v-data-table>
       </v-card>
@@ -256,6 +360,113 @@ const {
           <v-spacer />
           <v-btn variant="outlined" :disabled="loading" @click="showRejectDialog = false">Cancel</v-btn>
           <v-btn color="error" :loading="loading" @click="confirmReject">Reject</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Record deposit dialog. Asks for a SOURCE, not just an amount: money
+         arriving in a bank account has to come from somewhere, or the entry
+         has no credit side. -->
+    <v-dialog v-model="showDepositDialog" max-width="560" persistent>
+      <v-card rounded="lg">
+        <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold">Record Bank Deposit</v-card-title>
+        <v-divider />
+        <v-card-text class="pa-4 pa-sm-5">
+          <label class="field-label">Deposit From <span class="text-error">*</span></label>
+          <v-select
+            v-model="fromAccountId"
+            :items="sourceOptions"
+            placeholder="Account holding the cash"
+            variant="outlined"
+            density="comfortable"
+            hide-details="auto"
+            class="mb-4"
+          />
+
+          <label class="field-label">Deposit To <span class="text-error">*</span></label>
+          <v-select
+            v-model="toAccountId"
+            :items="destinationOptions"
+            placeholder="Bank account receiving it"
+            variant="outlined"
+            density="comfortable"
+            hide-details="auto"
+            class="mb-4"
+          />
+
+          <label class="field-label">Amount <span class="text-error">*</span></label>
+          <v-text-field
+            v-model.number="depositAmount"
+            type="number"
+            prefix="₱"
+            placeholder="0.00"
+            variant="outlined"
+            density="comfortable"
+            hide-details="auto"
+            class="mb-1"
+          />
+          <div v-if="fromAccountId" class="text-caption text-medium-emphasis mb-4">
+            {{ formatCurrency(onHand) }} on hand —
+            {{ formatCurrency(remainingOnHand) }} left after this deposit.
+          </div>
+
+          <label class="field-label">Deposit Date <span class="text-error">*</span></label>
+          <v-text-field
+            v-model="depositDate"
+            type="date"
+            variant="outlined"
+            density="comfortable"
+            hide-details="auto"
+            class="mb-1"
+          />
+          <div class="text-caption text-medium-emphasis mb-4">
+            The date the bank credits it. Until you mark the deposit cleared it counts
+            as a deposit in transit for reconciliation.
+          </div>
+
+          <label class="field-label">Bank Validation / Slip No. <span class="text-error">*</span></label>
+          <v-text-field
+            v-model="validationNo"
+            placeholder="From the deposit slip"
+            variant="outlined"
+            density="comfortable"
+            hide-details="auto"
+            class="mb-1"
+          />
+          <div class="text-caption text-medium-emphasis mb-4">
+            This is what you match against the bank statement, so it is required.
+          </div>
+
+          <label class="field-label">Remarks</label>
+          <v-text-field
+            v-model="depositRemarks"
+            placeholder="Optional"
+            variant="outlined"
+            density="comfortable"
+            hide-details="auto"
+          />
+
+          <v-alert v-if="exceedsOnHand" type="error" variant="tonal" density="compact" class="mt-4 text-body-2">
+            You cannot deposit more than the {{ formatCurrency(onHand) }} on hand.
+          </v-alert>
+        </v-card-text>
+        <v-divider />
+        <v-card-actions class="pa-4">
+          <span v-if="depositBlockers.length" class="text-caption text-medium-emphasis">
+            Still needed: {{ depositBlockers.join(', ') }}
+          </span>
+          <v-spacer />
+          <v-btn variant="text" class="text-none" @click="closeDepositDialog">Cancel</v-btn>
+          <v-btn
+            color="primary"
+            variant="flat"
+            class="text-none font-weight-bold"
+            :disabled="!canSubmitDeposit"
+            :loading="loading"
+            @click="submitDeposit"
+          >
+            Record Deposit
+          </v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>

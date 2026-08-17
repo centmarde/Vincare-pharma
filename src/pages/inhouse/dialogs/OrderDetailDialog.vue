@@ -26,6 +26,7 @@ const {
   requestedAt, requestNote,
   items, isNegotiating, isAwaitingStock, isReady, isDelivered, isPartiallyPaid, isPaid, canRecordPayment,
   proposedTotal, proposedCost, proposedProfit, proposedMarginPct, deliveredPct, remaining, balance, paidPct,
+  payCashAccountId, cashAccountOptions,
   onLineProductChange, recordCounter, agree, recheck, deliver, recordPayment, notifyPurchasing,
 } = useOrderDetail(() => props.order, () => emit('changed'))
 
@@ -260,19 +261,24 @@ const productName = (id: number | null) =>
                 — outstanding: {{ formatCurrency(balance) }}
               </div>
               <v-row dense>
-                <v-col cols="4">
+                <v-col cols="12" sm="6" md="3">
                   <v-text-field v-model.number="payAmount" type="number" min="0" :max="balance" prefix="₱" label="Amount" variant="outlined" density="compact" hide-details />
                 </v-col>
-                <v-col cols="4">
+                <!-- Where the money landed. Required: without it the payment
+                     never reaches cash_accounts.balance. -->
+                <v-col cols="12" sm="6" md="3">
+                  <v-select v-model="payCashAccountId" :items="cashAccountOptions" label="Deposit To *" variant="outlined" density="compact" hide-details />
+                </v-col>
+                <v-col cols="12" sm="6" md="3">
                   <v-text-field v-model="payReference" label="Reference / OR #" variant="outlined" density="compact" hide-details />
                 </v-col>
-                <v-col cols="4">
+                <v-col cols="12" sm="6" md="3">
                   <v-text-field v-model="payRemarks" label="Remarks (optional)" variant="outlined" density="compact" hide-details />
                 </v-col>
               </v-row>
               <div class="d-flex justify-end mt-2">
                 <v-btn color="success" size="small" class="text-none font-weight-bold" elevation="0" :loading="loading"
-                  :disabled="!payAmount || payAmount <= 0 || payAmount > balance" @click="recordPayment">
+                  :disabled="!payAmount || payAmount <= 0 || payAmount > balance || payCashAccountId === null" @click="recordPayment">
                   Record Payment
                 </v-btn>
               </div>

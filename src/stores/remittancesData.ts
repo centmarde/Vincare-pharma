@@ -196,6 +196,11 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
     actualAmount: number
     notes?: string
     resolution?: 'paid_on_spot' | 'employee_receivable' | null
+    // The Cash on Hand account the counted cash is handed into. Until this
+    // existed, POS cash was never added to any cash account — balances only
+    // ever went down. The money sits here as undeposited collections until a
+    // bank deposit moves it (see bankDepositsData.ts).
+    cashAccountId: number
   }) => {
     loading.value = true
     clearError()
@@ -287,6 +292,25 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
       await rollbackRemittance(created.id)
       loading.value = false
       return { success: false }
+    }
+
+    // The counted cash is now held in a real account. actualAmount, not
+    // expected: what physically arrived is what we hold — any shortage is
+    // handled by `resolution`, not by pretending the full amount came in.
+    const { data: account, error: accountError } = await supabase
+      .from('cash_accounts').select('id, name, balance').eq('id', payload.cashAccountId).maybeSingle()
+    if (accountError || !account) {
+      console.warn('submitRemittance: cash account not found, balance not credited:', payload.cashAccountId)
+      toast.warning('Remittance saved, but the cash account was not found — credit it manually.')
+    } else {
+      const { error: balanceError } = await supabase
+        .from('cash_accounts')
+        .update({ balance: (account.balance ?? 0) + payload.actualAmount })
+        .eq('id', payload.cashAccountId)
+      if (balanceError) {
+        console.warn('submitRemittance: cash account balance update failed:', balanceError.message)
+        toast.warning(`Remittance saved, but ${account.name}'s balance was not updated. Verify it manually.`)
+      }
     }
 
     const { error: logError } = await supabase.from('logs').insert({

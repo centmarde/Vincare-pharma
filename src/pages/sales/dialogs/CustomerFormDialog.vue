@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CreateCustomerData } from '@/stores/customersData'
+import CustomerTradeProfileFields from '@/components/customers/CustomerTradeProfileFields.vue'
 
 interface Props {
   modelValue: boolean
@@ -123,6 +124,26 @@ const emit = defineEmits<{
             />
           </v-col>
         </v-row>
+
+        <!-- Deactivating hides a customer from the POS customer picker without
+             deleting them or their sales history. -->
+        <div class="text-subtitle-2 font-weight-bold mt-2 mb-1">Trade / Rebate Profile</div>
+        <v-divider class="mb-3" />
+
+        <!-- Rebate PAYOUT settings are hidden here: a rebate is an Ethical
+             construct with its own approval + payout workflow, so a walk-in POS
+             buyer has no use for a payout mode. The rates themselves stay, since
+             a regular POS customer can legitimately have a discount or markup. -->
+        <CustomerTradeProfileFields :form="form" :show-rebate-payout="false" />
+
+        <v-switch
+          v-model="form.is_active"
+          :label="form.is_active ? 'Active' : 'Inactive — hidden from the POS picker'"
+          color="primary"
+          density="compact"
+          hide-details
+          class="mb-3"
+        />
 
         <v-textarea
           v-model="form.address"

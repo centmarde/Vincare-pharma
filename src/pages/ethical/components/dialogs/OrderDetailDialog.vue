@@ -32,6 +32,7 @@ const {
   receivedBy, issuedReceipt, canIssueDR,
   requestedAt, requestNote,
   isInvoiced, isPartial, isPaid, isAwaitingStock, isCancellable, isOverdue, balance, shortfall, collections,
+  collectionCashAccountId, cashAccountOptions,
   recordCollection, cancelOrder, markCommissionPaid, recheck, issueDR, notifyPurchasing,
 } = useOrderDetail(() => order.value)
 
@@ -254,11 +255,22 @@ watch(
           <v-col cols="12" sm="6" md="4">
             <v-text-field v-model="collectionReference" label="Ref No" :disabled="isPaid" />
           </v-col>
+          <!-- Where the money landed. Required: without it the payment never
+               reaches cash_accounts.balance. -->
+          <v-col cols="12" sm="6" md="4">
+            <v-select
+              v-model="collectionCashAccountId"
+              :items="cashAccountOptions"
+              label="Deposit To *"
+              placeholder="Account that received it"
+              :disabled="isPaid"
+            />
+          </v-col>
           <v-col cols="12" class="d-flex align-center mt-1">
             <v-btn
               color="success"
               :block="mobile"
-              :disabled="isPaid || collectionAmount <= 0"
+              :disabled="isPaid || collectionAmount <= 0 || collectionCashAccountId === null"
               :loading="loading"
               @click="recordCollection"
             >

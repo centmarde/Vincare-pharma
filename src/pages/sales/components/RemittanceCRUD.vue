@@ -14,6 +14,7 @@ const {
   remittances, loading,
   selectedOutletId, outletOptions, setOutlet,
   showSubmitDialog, expected, actualAmount, notes, resolution,
+  cashAccountId, cashOnHandOptions,
   discrepancy, requiresNote, canSubmit, isShortfall, recommendReceivable,
   init, openSubmitDialog, handleSubmit,
 } = useRemittance()
@@ -243,6 +244,9 @@ onMounted(async () => { await init(); await loadPending() })
       :is-shortfall="isShortfall"
       :recommend-receivable="recommendReceivable"
       :resolution="resolution"
+      :cash-account-id="cashAccountId"
+      :cash-on-hand-options="cashOnHandOptions"
+      @update:cash-account-id="cashAccountId = $event"
       @update:actual-amount="actualAmount = $event"
       @update:notes="notes = $event"
       @update:resolution="resolution = $event"
