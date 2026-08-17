@@ -4,6 +4,7 @@ import type { CreateCustomerData, CustomerType } from '@/stores/customersData'
 import type { DiscountProfile } from '@/stores/discountsData'
 import { agencyTypes, businessStructures } from '../composables/useCustomers'
 import CustomerTermsCard from '@/components/customers/CustomerTermsCard.vue'
+import CustomerTradeProfileFields from '@/components/customers/CustomerTradeProfileFields.vue'
 
 interface Props {
   modelValue: boolean
@@ -189,6 +190,23 @@ async function onSubmit() {
               />
             </v-col>
           </v-row>
+
+          <!-- Deactivating hides a customer from order/picker dropdowns without
+               deleting them or their history. The form state already carried
+               is_active; it just had no control, so it could never be changed. -->
+          <div class="text-subtitle-2 font-weight-bold mt-2 mb-1">Trade / Rebate Profile</div>
+          <v-divider class="mb-3" />
+
+          <CustomerTradeProfileFields :form="form" />
+
+          <v-switch
+            v-model="form.is_active"
+            :label="form.is_active ? 'Active' : 'Inactive — hidden from new orders'"
+            color="primary"
+            density="compact"
+            hide-details
+            class="mb-3"
+          />
 
           <v-text-field
             v-model="form.tin_number"

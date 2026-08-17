@@ -18,7 +18,7 @@ const emit = defineEmits<{
   (e: 'print-requested'): void
 }>()
 
-const { printArea, poNumber, emptyRows, uniqueSuppliers, handlePrint } = usePODetailModal(props, emit)
+const { printArea, poNumber, emptyRows, uniqueSuppliers, showActualQty, handlePrint } = usePODetailModal(props, emit)
 </script>
 
 <template>
@@ -121,6 +121,23 @@ const { printArea, poNumber, emptyRows, uniqueSuppliers, handlePrint } = usePODe
             </v-col>
           </v-row>
 
+          <!-- Items section toggle (desktop only — mobile has its own toggle below) -->
+          <div v-if="!mobile" class="d-flex justify-end mb-2 d-print-none">
+            <v-tooltip location="top">
+              <template #activator="{ props }">
+                <v-btn
+                  v-bind="props"
+                  :icon="showActualQty ? 'mdi-eye-off' : 'mdi-eye'"
+                  variant="tonal"
+                  size="small"
+                  color="primary"
+                  @click="showActualQty = !showActualQty"
+                />
+              </template>
+              <span>{{ showActualQty ? 'Hide Actual Qty' : 'Show Actual Qty' }}</span>
+            </v-tooltip>
+          </div>
+
           <!-- ── Desktop: Items Table ─────────────────────────────── -->
           <v-table v-if="!mobile" density="compact" class="po-table mb-6 border rounded-lg">
             <thead>
@@ -128,7 +145,7 @@ const { printArea, poNumber, emptyRows, uniqueSuppliers, handlePrint } = usePODe
                 <th style="color:#fff; font-weight:600; padding: 10px 12px;">ITEM #</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px;">DESCRIPTION</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">QTY</th>
-                <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">ACTUAL QTY</th>
+                <th v-if="showActualQty" style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">ACTUAL QTY</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">SUPPLIER</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">UNIT PRICE</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">TOTAL</th>
@@ -139,18 +156,18 @@ const { printArea, poNumber, emptyRows, uniqueSuppliers, handlePrint } = usePODe
                 <td>{{ item.no }}</td>
                 <td>{{ item.item_description }}</td>
                 <td class="text-right">{{ item.qty }}</td>
-                <td class="text-right">{{ item.actual_count_stock_in ?? '—' }}</td>
+                <td v-if="showActualQty" class="text-right">{{ item.actual_count_stock_in ?? '—' }}</td>
                 <td class="text-right">{{ item.supplier_name }}</td>
                 <td class="text-right">{{ formatCurrency(item.cost_per_unit) }}</td>
                 <td class="text-right">{{ formatCurrency(item.qty * item.cost_per_unit) }}</td>
               </tr>
               <tr v-for="n in emptyRows" :key="`empty-${n}`" class="empty-row">
-                <td colspan="6">&nbsp;</td>
+                <td :colspan="showActualQty ? 7 : 6">&nbsp;</td>
               </tr>
             </tbody>
             <tfoot>
               <tr class="bg-grey-lighten-3">
-                <td colspan="6" class="text-black font-weight-bold" style="text-align:right;">TOTAL</td>
+                <td :colspan="showActualQty ? 6 : 5" class="text-black font-weight-bold" style="text-align:right;">TOTAL</td>
                 <td style="text-align:right; font-weight:700; padding: 10px 12px; color: #000;">
                   {{ formatCurrency(po?.total_amount ?? 0) }}
                 </td>
@@ -160,7 +177,22 @@ const { printArea, poNumber, emptyRows, uniqueSuppliers, handlePrint } = usePODe
 
           <!-- ── Mobile: Items as Cards ──────────────────────────── -->
           <div v-else class="mb-4">
-            <div class="text-caption font-weight-bold text-medium-emphasis mb-2">ITEMS</div>
+            <div class="d-flex justify-space-between align-center mb-2">
+              <div class="text-caption font-weight-bold text-medium-emphasis">ITEMS</div>
+              <v-tooltip location="top">
+                <template #activator="{ props }">
+                  <v-btn
+                    v-bind="props"
+                    :icon="showActualQty ? 'mdi-eye-off' : 'mdi-eye'"
+                    variant="tonal"
+                    size="x-small"
+                    color="primary"
+                    @click="showActualQty = !showActualQty"
+                  />
+                </template>
+                <span>{{ showActualQty ? 'Hide Actual Qty' : 'Show Actual Qty' }}</span>
+              </v-tooltip>
+            </div>
             <v-card
               v-for="item in pr?.items"
               :key="item.id"
@@ -178,7 +210,7 @@ const { printArea, poNumber, emptyRows, uniqueSuppliers, handlePrint } = usePODe
                 <v-divider class="my-1" />
                 <div class="d-flex flex-wrap ga-3 text-caption">
                   <div><span class="text-medium-emphasis">Qty: </span>{{ item.qty }}</div>
-                  <div><span class="text-medium-emphasis">Actual: </span>{{ item.actual_count_stock_in ?? '—' }}</div>
+                  <div v-if="showActualQty"><span class="text-medium-emphasis">Actual: </span>{{ item.actual_count_stock_in ?? '—' }}</div>
                   <div><span class="text-medium-emphasis">Supplier: </span>{{ item.supplier_name }}</div>
                   <div><span class="text-medium-emphasis">Price: </span>{{ formatCurrency(item.cost_per_unit) }}</div>
                   <div><span class="text-medium-emphasis">Total: </span><span class="font-weight-medium">{{ formatCurrency(item.qty * item.cost_per_unit) }}</span></div>

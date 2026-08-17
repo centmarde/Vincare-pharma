@@ -40,6 +40,7 @@ const {
   productForm,
   currentProduct,
   searchQuery,
+  typeFilter,
   itemsPerPage,
   page,
   sortBy,
@@ -120,6 +121,13 @@ const ignoredProductEntries = computed(() => {
     .filter((entry) => entry.remainingMs > 0)
 })
 
+// Static type filter options for the dropdown
+const typeOptions = [
+  { title: 'All', value: 'All' },
+  { title: 'injectibles', value: 'injectibles' },
+  { title: 'oral medicine', value: 'oral medicine' },
+]
+
 function handleStockCardClick(type: string) {
   stockDialogType.value = type as any
   showStockDialog.value = true
@@ -170,7 +178,6 @@ function stockColor(item: any) {
   if (isLowStock) return 'warning'
   return isDark.value === 'dark' ? 'grey-lighten-2' : 'grey-darken-3'
 }
-
 </script>
 
 <template>
@@ -197,7 +204,9 @@ function stockColor(item: any) {
         >
           <template #prepend-item>
             <v-list-item v-if="selectedWarehouseId" @click="setWarehouseFilter(null)">
-              <v-list-item-title class="text-caption text-grey-darken-1">Clear filter</v-list-item-title>
+              <v-list-item-title class="text-caption text-grey-darken-1"
+                >Clear filter</v-list-item-title
+              >
             </v-list-item>
             <v-divider class="mt-2"></v-divider>
           </template>
@@ -225,6 +234,26 @@ function stockColor(item: any) {
           class="expiry-filter"
           @click:clear="clearExpiryFilter"
         ></v-text-field>
+        <!--   <v-select
+          v-model="typeFilter"
+          :items="typeOptions"
+          item-title="title"
+          item-value="value"
+          label="Filter by type..."
+          prepend-inner-icon="mdi-tag-outline"
+          variant="outlined"
+          density="compact"
+          hide-details
+          persistent-placeholder
+          class="type-filter"
+        >
+          <template #prepend-item>
+            <v-list-item v-if="typeFilter !== 'All'" @click="typeFilter = 'All'">
+              <v-list-item-title class="text-caption text-grey-darken-1">All</v-list-item-title>
+            </v-list-item>
+            <v-divider class="mt-2"></v-divider>
+          </template>
+        </v-select> -->
         <!-- I want to restrict this when the user is a warehouse user -->
         <v-btn
           color="primary"
@@ -270,8 +299,22 @@ function stockColor(item: any) {
         class="mt-2"
         @click:clear="clearExpiryFilter"
       ></v-text-field>
+      <v-select
+        v-model="typeFilter"
+        :items="typeOptions"
+        item-title="title"
+        item-value="value"
+        label="Filter by type..."
+        prepend-inner-icon="mdi-tag-outline"
+        variant="outlined"
+        density="compact"
+        hide-details
+        clearable
+        persistent-placeholder
+        class="mt-2"
+      ></v-select>
     </div>
-    
+
     <!-- How to make this to the end of right part -->
     <div v-if="expiryFilterLabel" class="d-flex justify-end px-3 pt-2">
       <v-chip
@@ -326,10 +369,6 @@ function stockColor(item: any) {
         show-expand
         @update:options="handleTableOptions"
       >
-        <template #[`item.selling_price`]="{ value }">
-          <span v-if="value != null">{{ formatCurrency(Number(value)) }}</span>
-          <span v-else class="text-grey">-</span>
-        </template>
         <template #[`item.cost_price`]="{ value }">
           <span v-if="value != null">{{ formatCurrency(Number(value)) }}</span>
           <span v-else class="text-grey">-</span>
@@ -400,6 +439,47 @@ function stockColor(item: any) {
                       <div class="text-body-1 font-weight-medium">{{ item.status || 'N/A' }}</div>
                     </div>
                   </v-col>
+                  <v-col cols="12" md="6" class="d-flex align-center py-2">
+                    <v-icon icon="mdi-counter" color="primary" class="mr-3"></v-icon>
+                    <div>
+                      <div class="text-caption text-grey-darken-1">Physical Inventory</div>
+                      <div class="text-body-1 font-weight-medium">
+                        {{ item.physical_inventory ?? 'N/A' }}
+                      </div>
+                    </div>
+                  </v-col>
+                  <v-col cols="12" md="6" class="d-flex align-center py-2">
+                    <v-icon icon="mdi-pound" color="primary" class="mr-3"></v-icon>
+                    <div>
+                      <div class="text-caption text-grey-darken-1">Lot Number</div>
+                      <div class="text-body-1 font-weight-medium">
+                        {{ item.lot_number || 'N/A' }}
+                      </div>
+                    </div>
+                  </v-col>
+                  <v-col cols="12" md="6" class="d-flex align-center py-2">
+                    <v-icon icon="mdi-shape-outline" color="primary" class="mr-3"></v-icon>
+                    <div>
+                      <div class="text-caption text-grey-darken-1">Type</div>
+                      <div class="text-body-1 font-weight-medium">{{ item.type || 'N/A' }}</div>
+                    </div>
+                  </v-col>
+                  <v-col cols="12" md="6" class="d-flex align-center py-2">
+                    <v-icon icon="mdi-ruler" color="primary" class="mr-3"></v-icon>
+                    <div>
+                      <div class="text-caption text-grey-darken-1">Unit</div>
+                      <div class="text-body-1 font-weight-medium">{{ item.unit || 'N/A' }}</div>
+                    </div>
+                  </v-col>
+                  <v-col cols="12" md="6" class="d-flex align-center py-2">
+                    <v-icon icon="mdi-text-box-outline" color="primary" class="mr-3"></v-icon>
+                    <div>
+                      <div class="text-caption text-grey-darken-1">Description</div>
+                      <div class="text-body-1 font-weight-medium">
+                        {{ item.item_description || 'N/A' }}
+                      </div>
+                    </div>
+                  </v-col>
 
                   <!-- Warehouse details when a warehouse filter is active -->
                   <template v-if="selectedWarehouseId && getWarehouseProductDetail(item.id)">
@@ -464,7 +544,12 @@ function stockColor(item: any) {
                               {{ reservation.customer_name }}
                             </v-list-item-title>
                             <template #append>
-                              <v-chip size="x-small" color="warning" variant="outlined" class="mr-2">
+                              <v-chip
+                                size="x-small"
+                                color="warning"
+                                variant="outlined"
+                                class="mr-2"
+                              >
                                 {{ reservation.reserved_qty }}
                               </v-chip>
                               <v-btn
@@ -642,6 +727,11 @@ function stockColor(item: any) {
   width: 100%;
 }
 .expiry-filter {
+  min-width: 200px;
+  max-width: 280px;
+  width: 100%;
+}
+.type-filter {
   min-width: 200px;
   max-width: 280px;
   width: 100%;

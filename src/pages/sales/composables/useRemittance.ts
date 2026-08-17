@@ -2,6 +2,8 @@ import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRemittancesDataStore, largeDiscrepancyThreshold } from '@/stores/remittancesData'
 import { useOutletsDataStore } from '@/stores/outletsData'
+import { useFinanceDataStore } from '@/stores/financeData'
+import { formatCurrency } from '@/utils/helpers'
 import type { ExpectedSummary } from '@/stores/remittancesData'
 
 export const headers = [
@@ -19,8 +21,10 @@ export const headers = [
 export function useRemittance() {
   const remitStore = useRemittancesDataStore()
   const outletsStore = useOutletsDataStore()
+  const financeStore = useFinanceDataStore()
   const { remittances, loading } = storeToRefs(remitStore)
   const { outlets } = storeToRefs(outletsStore)
+  const { cashAccounts } = storeToRefs(financeStore)
 
   // ─── State ────────────────────────────────────────────────────────
   const selectedOutletId = ref<number | null>(null)
@@ -28,6 +32,9 @@ export function useRemittance() {
   const expected = ref<ExpectedSummary>({ expected: 0, saleCount: 0 })
   const actualAmount = ref<number | null>(null)
   const notes = ref('')
+  // Which Cash on Hand account the counted cash is handed into. It sits there
+  // as undeposited collections until a bank deposit banks it.
+  const cashAccountId = ref<number | null>(null)
   const resolution = ref<'paid_on_spot' | 'employee_receivable' | null>(null)
 
   // ─── Computed ─────────────────────────────────────────────────────
@@ -47,9 +54,18 @@ export function useRemittance() {
   const isShortfall = computed(() => actualAmount.value != null && discrepancy.value < 0)
   const recommendReceivable = computed(() => Math.abs(discrepancy.value) >= largeDiscrepancyThreshold)
   const requiresResolution = computed(() => isShortfall.value)
+  // Cash on Hand accounts only — remitted cash is held, not banked. The bank
+  // deposit that follows is what turns it into Cash in Bank.
+  const cashOnHandOptions = computed(() =>
+    cashAccounts.value
+      .filter((a) => a.is_active && a.classification === 'PETTY_CASH')
+      .map((a) => ({ value: a.id, title: `${a.name} — ${formatCurrency(a.balance ?? 0)} on hand` })),
+  )
+
   const canSubmit = computed(() =>
     expected.value.saleCount > 0 &&
     actualAmount.value != null &&
+    cashAccountId.value != null &&
     (!requiresNote.value || notes.value.trim().length > 0) &&
     (!requiresResolution.value || resolution.value != null),
   )
@@ -77,6 +93,10 @@ export function useRemittance() {
     actualAmount.value = null
     notes.value = ''
     resolution.value = null
+    cashAccountId.value = null
+    await financeStore.fetchCashAccounts()
+    // Usually only one cash-on-hand account exists, so don't make staff pick it.
+    if (cashOnHandOptions.value.length === 1) cashAccountId.value = cashOnHandOptions.value[0].value
     showSubmitDialog.value = true
   }
 
@@ -87,6 +107,7 @@ export function useRemittance() {
       actualAmount: actualAmount.value ?? 0,
       notes:        notes.value || undefined,
       resolution:   resolution.value,
+      cashAccountId: cashAccountId.value ?? 0,
     })
     if (result.success) showSubmitDialog.value = false
   }
@@ -95,6 +116,7 @@ export function useRemittance() {
     remittances, loading,
     selectedOutletId, outletOptions, setOutlet,
     showSubmitDialog, expected, actualAmount, notes, resolution,
+    cashAccountId, cashOnHandOptions,
     discrepancy, requiresNote, canSubmit, isShortfall, recommendReceivable,
     init, openSubmitDialog, handleSubmit,
   }

@@ -31,7 +31,10 @@ export type ProductType = {
   batch_no: number | null
   expiry_date: string | null
   status: string | null
-  item_decription: string | null
+  physical_inventory: number | null
+  lot_number: string | null
+  type: string | null
+  item_description: string | null
   offer_per_unit: number | null
   cost_per_unit: number | null
   no: number | null
@@ -54,7 +57,7 @@ export type CreateProductData = {
   batch_no?: number | null
   expiry_date?: string | null
   status?: string | null
-  item_decription?: string | null
+  item_description?: string | null
   offer_per_unit?: number | null
   cost_per_unit?: number | null
   no?: number | null
@@ -66,6 +69,7 @@ type FetchProductsOptions = {
   search?: string
   category?: string | null
   supplier_id?: number | null
+  type?: string | null
   orderBy?: keyof Pick<
     ProductType,
     'created_at' | 'product_name' | 'current_stock' | 'selling_price' | 'cost_price'
@@ -313,6 +317,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     try {
       const {
         search, category, supplier_id,
+        type,
         orderBy = 'current_stock', ascending = true,
         limit, offset, eligibleIds, expiryStart, expiryEnd,
       } = options
@@ -330,6 +335,8 @@ export const useProductsDataStore = defineStore('productsData', () => {
       // eligibleIds is now warehouse-scoped only (see useProductsWidget.fetchProducts)
       if (eligibleIds && eligibleIds.length > 0) q = q.in('id', eligibleIds)
       if (expiryStart && expiryEnd) q = q.gte('expiry_date', expiryStart).lte('expiry_date', expiryEnd)
+      // Apply product-type filter (e.g. "injectibles", "oral medicine"); "All" means no filter
+      if (type && type !== 'All') q = q.eq('type', type)
 
       if (orderBy === 'current_stock') {
         

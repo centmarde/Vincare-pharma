@@ -30,6 +30,10 @@ export const company = {
   contact: '0968-879-5589',
 } as const
 
+// Shared reactive state so the on-screen modal and the off-screen print
+// target always agree on whether the ACTUAL QTY column is visible.
+const showActualQty = ref(false)
+
 export function usePODetailModal(
   props: { po: PurchaseOrder | null; pr: PR | null },
   emit: (e: 'update:modelValue', value: boolean) => void,
@@ -122,6 +126,7 @@ export function usePODetailModal(
     poNumber,
     emptyRows,
     uniqueSuppliers,
+    showActualQty,
     handlePrint,
     company,
   }

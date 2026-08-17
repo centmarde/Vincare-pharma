@@ -35,6 +35,19 @@ export const classificationMeta = (value: CashClassification): CashClassificatio
 
 export const DEFAULT_REPLENISH_THRESHOLD = 1000
 
+/**
+ * Ceiling on undeposited cash. The mirror of DEFAULT_REPLENISH_THRESHOLD: that
+ * one warns when a petty cash fund runs too LOW, this one warns when collections
+ * held on hand run too HIGH and should be banked.
+ *
+ * Why a ceiling matters: a fidelity bond / insurance policy normally covers cash
+ * on hand only up to a stated amount, theft and loss exposure grows with
+ * whatever is sitting in the drawer, and auditors question large undeposited
+ * balances. Tune this to whatever the company's insurance and cash-handling
+ * policy actually allows.
+ */
+export const DEFAULT_DEPOSIT_THRESHOLD = 20000
+
 export type CreateCashAccountPayload = {
   name: string
   classification: CashClassification

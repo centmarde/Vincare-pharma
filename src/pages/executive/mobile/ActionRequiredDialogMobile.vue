@@ -33,6 +33,17 @@ const request = computed(() => props.request)
 const kind = computed(() => request.value?.kind as 'undo' | 'pr_approval' | undefined)
 const raw = computed(() => request.value?.raw)
 
+// Compute the total live from line items (Σ qty × cost_per_unit) instead of
+// trusting the stored transactions.total_amount column, which can be stale
+// for PRs edited before updatePR() began recalculating it.
+const totalAmount = computed(() =>
+  (raw.value?.items ?? []).reduce(
+    (sum: number, it: { qty?: number; cost_per_unit?: number }) =>
+      sum + (it.qty ?? 0) * (it.cost_per_unit ?? 0),
+    0,
+  ),
+)
+
 const isApproving = ref(false)
 const isRejecting = ref(false)
 const showRejectInput = ref(false)
@@ -193,7 +204,7 @@ function formatMoney(value: number | string | undefined) {
               <div>
                 <div class="text-caption text-medium-emphasis">Total Amount</div>
                 <div class="text-body-2 text-high-emphasis">
-                  {{ raw.total_amount?.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' }) }}
+                  {{ totalAmount.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' }) }}
                 </div>
               </div>
             </div>
