@@ -1015,7 +1015,7 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
     const changes = stripReservedKeys(request.proposed_changes ?? {})
     const { data: cur } = await supabase
       .from('collections')
-      .select('transaction_id, amount, payment_method, reference_no, remarks, voided_at')
+      .select('transaction_id, amount, payment_method, reference_no, remarks, voided_at, cash_account_id')
       .eq('id', collectionId)
       .maybeSingle()
     if (!cur) return { success: false, error: 'Payment not found.' }
@@ -1067,6 +1067,11 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
       reference:
         ((toVal(changes, 'reference_no') ?? cur.reference_no) as string | undefined) || undefined,
       remarks: reissueRemarks(request, toVal(changes, 'remarks') ?? cur.remarks),
+      // A reissue lands in the same account the original did — the correction
+      // is to the amount, not to where the money went. Collections recorded
+      // before cash_account_id existed have none, and the store rejects a
+      // missing account rather than silently crediting a default.
+      cashAccountId: Number(cur.cash_account_id),
     }
     const v = await voidCollection(collectionId, userId, kind, reissueReason(request))
     if (!v.success) return v

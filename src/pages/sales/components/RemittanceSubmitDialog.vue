@@ -16,6 +16,8 @@ defineProps<{
   isShortfall: boolean
   recommendReceivable: boolean
   resolution: 'paid_on_spot' | 'employee_receivable' | null
+  cashAccountId: number | null
+  cashOnHandOptions: { value: number; title: string }[]
 }>()
 
 const emit = defineEmits<{
@@ -23,6 +25,7 @@ const emit = defineEmits<{
   (e: 'update:actualAmount', value: number | null): void
   (e: 'update:notes', value: string): void
   (e: 'update:resolution', value: 'paid_on_spot' | 'employee_receivable' | null): void
+  (e: 'update:cashAccountId', value: number | null): void
   (e: 'submit'): void
 }>()
 
@@ -80,6 +83,23 @@ const noteRequiredRule = (v: string) => !!v?.trim() || 'A note is required for a
             hide-details
             @update:model-value="emit('update:actualAmount', $event === '' ? null : Number($event))"
           />
+
+          <!-- Where the counted cash is held. Without this the money never
+               reaches any cash account balance; it stays there as undeposited
+               collections until a bank deposit banks it. -->
+          <label class="field-label mt-4">Cash Held In <span class="text-error">*</span></label>
+          <v-select
+            :model-value="cashAccountId"
+            :items="cashOnHandOptions"
+            placeholder="Cash on Hand account"
+            variant="outlined"
+            density="compact"
+            hide-details="auto"
+            @update:model-value="emit('update:cashAccountId', $event)"
+          />
+          <div v-if="!cashOnHandOptions.length" class="text-caption text-error mt-1">
+            No Cash on Hand account exists yet — Finance must add one before cash can be remitted.
+          </div>
 
           <v-divider class="my-4" />
 

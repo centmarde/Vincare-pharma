@@ -1,10 +1,12 @@
 import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useToast } from 'vue-toastification'
 import { useInhouseDataStore } from '@/stores/inhouseData'
 import type { InhouseOrderType, Shortfall, NegotiationRound } from '@/stores/inhouseData'
 import { useDeliveryReceiptsDataStore, type DeliveryReceiptType } from '@/stores/deliveryReceiptsData'
 import { useProductsDataStore } from '@/stores/productsData'
 import { useProcurementDataStore } from '@/stores/procurementData'
+import { useFinanceDataStore } from '@/stores/financeData'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { formatCurrency } from '@/utils/helpers'
@@ -18,8 +20,24 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   const productsStore = useProductsDataStore()
   const procurementStore = useProcurementDataStore()
   const authStore = useAuthUserStore()
+  const financeStore = useFinanceDataStore()
+  // Inside the composable body, not at module scope — a factory called on
+  // import can run before the app is set up.
+  const toast = useToast()
   const { products } = storeToRefs(productsStore)
   if (!products.value.length) void productsStore.fetchProducts()
+
+  // Deposit-account options for the payment form. Investment placements are
+  // excluded: a customer payment is received into an operating account or the
+  // cash box, never into a time deposit.
+  const cashAccountOptions = computed(() =>
+    financeStore.cashAccounts
+      .filter((a) => a.is_active && a.classification !== 'TIME_INVESTMENT')
+      .map((a) => ({ value: a.id, title: `${a.name} — ${formatCurrency(a.balance ?? 0)}` })),
+  )
+
+  const cashAccountName = (id: number | null): string =>
+    financeStore.cashAccounts.find((a) => a.id === id)?.name ?? '—'
 
   const loading = ref(false)
   const rounds = ref<NegotiationRound[]>([])
@@ -46,6 +64,9 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   const payAmount = ref<number | null>(null)
   const payReference = ref('')
   const payRemarks = ref('')
+  // Where the money is deposited. Without it nothing ever credited
+  // cash_accounts.balance, which only ever decreased.
+  const payCashAccountId = ref<number | null>(null)
 
   const items = computed(() => order()?.items ?? [])
   const status = computed(() => order()?.status ?? '')
@@ -108,6 +129,7 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     payReference.value = ''
     payRemarks.value = ''
     payAmount.value = null
+    payCashAccountId.value = null
     requestedAt.value = null
     requestNote.value = ''
     if (!o) return
@@ -122,7 +144,11 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     payAmount.value = (o.total_amount ?? 0) - (o.amount_paid ?? 0)
     void loadRounds(o.id)
     if (o.status === 'awaiting_stock') { void refreshShortfall(o.id); void loadRequestStatus(o.id) }
-    if (o.status === 'delivered' || o.status === 'partial' || o.status === 'paid') void loadPayments(o.id)
+    if (o.status === 'delivered' || o.status === 'partial' || o.status === 'paid') {
+      void loadPayments(o.id)
+      // Deposit accounts are only needed once the order can take a payment.
+      void financeStore.fetchCashAccounts()
+    }
   }, { immediate: true })
 
   async function loadRounds(id: number) { rounds.value = await store.fetchNegotiation(id) }
@@ -209,11 +235,13 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
 
   async function recordPayment() {
     const o = order(); if (!o || payAmount.value == null || payAmount.value <= 0) return
+    if (payCashAccountId.value === null) { toast.warning('Choose which cash account received this payment'); return }
 
     const willFullyPay = payAmount.value >= balance.value
     const summary = [
       `Amount: ${formatCurrency(payAmount.value)}`,
       `Reference / OR #: ${payReference.value || '—'}`,
+      `Deposited to: ${cashAccountName(payCashAccountId.value)}`,
       `Remarks: ${payRemarks.value || '—'}`,
       `Remaining balance after this: ${formatCurrency(Math.max(0, balance.value - payAmount.value))}`,
       willFullyPay ? 'This will mark the order as PAID IN FULL.' : '',
@@ -227,11 +255,13 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
       amount:    payAmount.value,
       reference: payReference.value || undefined,
       remarks:   payRemarks.value || undefined,
+      cashAccountId: payCashAccountId.value,
     })
     loading.value = false
     if (result.success) {
       payReference.value = ''
       payRemarks.value = ''
+      payCashAccountId.value = null
       await loadPayments(o.id)
       onChanged()
     }
@@ -240,7 +270,7 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   return {
     loading, rounds, shortfall, payments, lineEdits, lineProductEdits, lineCostEdits, productOptions, offerNote, deliverQtys,
     receivedBy, issuedReceipt,
-    payAmount, payReference, payRemarks,
+    payAmount, payReference, payRemarks, payCashAccountId, cashAccountOptions,
     requestedAt, requestNote,
     items, status, isNegotiating, isAwaitingStock, isReady, isDelivered, isPartiallyPaid, isPaid, canRecordPayment,
     proposedTotal, proposedCost, proposedProfit, proposedMarginPct, deliveredPct, remaining, balance, paidPct,

@@ -341,7 +341,7 @@ function applyDateRange<T>(q: T, column: string, range?: DateRange): T {
 }
 
 // classification -> GL asset account code (was the gl_cash_code SQL helper).
-function glCashCode(classification: CashClassification): string {
+export function glCashCode(classification: CashClassification): string {
   if (classification === 'PETTY_CASH') return '1010'      // Cash on Hand
   if (classification === 'TIME_INVESTMENT') return '1100' // Other Investment
   return '1020'                                           // Cash in Bank (CASA / default)

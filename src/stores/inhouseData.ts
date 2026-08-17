@@ -606,6 +606,9 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     method?: string
     reference?: string
     remarks?: string
+    // Which of our accounts received the money. Without it nothing ever
+    // credited cash_accounts.balance, which only ever decreased.
+    cashAccountId: number
   }) => {
     loading.value = true
     clearError()
@@ -636,12 +639,22 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       loading.value = false; return { success: false }
     }
 
+    // Resolve the receiving account before writing anything — a payment
+    // pointing at a missing account would record money as landing nowhere.
+    const { data: account, error: accountError } = await supabase
+      .from('cash_accounts').select('id, name, balance').eq('id', payload.cashAccountId).maybeSingle()
+    if (accountError || !account) {
+      toast.error('Select a valid cash account to deposit this payment into.')
+      loading.value = false; return { success: false }
+    }
+
     const { data: payment, error: paymentError } = await supabase
       .from('collections')
       .insert({
         transaction_id: payload.orderId, amount: payload.amount,
         payment_method: payload.method || null, reference_no: payload.reference || null,
         collected_by: user.id, remarks: payload.remarks || null,
+        cash_account_id: payload.cashAccountId,
       })
       .select('id')
       .single()
@@ -669,9 +682,21 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       .eq('id', payload.orderId)
     if (statusError) console.warn('recordPayment: status flip failed:', statusError.message)
 
+    // The money lands in the chosen account. Best-effort like every other
+    // balance write in the app (JS-over-RPC convention) — surfaced, not rolled
+    // back, since the collections row is the record of record.
+    const { error: balanceError } = await supabase
+      .from('cash_accounts')
+      .update({ balance: (account.balance ?? 0) + payload.amount })
+      .eq('id', payload.cashAccountId)
+    if (balanceError) {
+      console.warn('recordPayment: cash account balance update failed:', balanceError.message)
+      toast.warning(`Payment recorded, but ${account.name}'s balance was not updated. Verify it manually.`)
+    }
+
     const { error: logError } = await supabase.from('logs').insert({
       created_by: user.id, action: 'payment',
-      description: `Payment of ${payload.amount} recorded (${newPaid}/${total})`,
+      description: `Payment of ${payload.amount} into ${account.name} (${newPaid}/${total})`,
       module: 'inhouse', transaction_id: payload.orderId,
     })
     if (logError) console.warn('recordPayment: activity log insert failed:', logError.message)
