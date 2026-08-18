@@ -3,7 +3,7 @@ import { company } from '@/pages/purchasing/composables/usePODetailModal'
 import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
 import { formatCurrency, formatDatePO_Written } from '@/utils/helpers'
 import type { PR, PRItem } from '@/stores/purchaseRequisitionData'
-import type { WarehouseType } from '@/stores/warehouseData'
+import { useProductsDataStore } from '@/stores/productsData'
 
 const props = defineProps<{
   po: PurchaseOrder | null
@@ -12,13 +12,18 @@ const props = defineProps<{
   skuEditMode?: boolean
   transactionItems: PRItem[]
   effectiveEmptyRows: number
-  warehouses: WarehouseType[]
 }>()
 
-function getWarehouseName(item: PRItem): string {
-  const id = item.warehouse_id
-  if (id == null || id <= 0) return '—'
-  return props.warehouses.find((w) => w.id === id)?.name ?? '—'
+const productsStore = useProductsDataStore()
+
+// Returns the existing SKU from the linked product record (if any) so it can
+// be shown as the placeholder while editing the SKU input.
+function productSkuFor(item: PRItem): string {
+  if (item.product_id == null) return ''
+  const product = productsStore.products.find((p) => p.id === item.product_id)
+  const sku = product?.sku?.toString().trim() ?? ''
+  console.log('[PODetailViewBody] Retrieved SKU for product', item.product_id, '=>', sku)
+  return sku
 }
 </script>
 
@@ -86,13 +91,12 @@ function getWarehouseName(item: PRItem): string {
           <th class="text-white text-right">TOTAL</th>
           <th class="text-white text-center" style="width: 130px">ACTUAL COUNT</th>
           <th class="text-white text-center" style="width: 130px">SKU</th>
-          <th class="text-white text-center" style="width: 170px">WAREHOUSE</th>
         </tr>
       </thead>
 
       <tbody>
         <tr v-if="transactionItems.length === 0">
-          <td colspan="7" class="text-center pa-4">No items found.</td>
+          <td colspan="6" class="text-center pa-4">No items found.</td>
         </tr>
 
         <tr v-for="(item, index) in transactionItems" :key="item.id">
@@ -123,39 +127,21 @@ function getWarehouseName(item: PRItem): string {
               density="compact"
               variant="outlined"
               hide-details
-              placeholder="Enter SKU"
+              :placeholder="productSkuFor(item) || 'Enter SKU'"
               style="width: 120px"
             />
             <span v-else>{{ item.sku ?? '—' }}</span>
           </td>
-          <td class="text-center" style="width: 170px">
-            <v-select
-              v-if="skuEditMode"
-              v-model="item['warehouse_id']"
-              :items="warehouses"
-              item-title="name"
-              item-value="id"
-              density="compact"
-              variant="outlined"
-              hide-details
-              placeholder="Select warehouse"
-              clearable
-              style="width: 160px"
-            />
-            <span v-else>
-              {{ getWarehouseName(item) }}
-            </span>
-          </td>
         </tr>
 
         <tr v-for="n in effectiveEmptyRows" :key="`empty-${n}`">
-          <td colspan="7">&nbsp;</td>
+          <td colspan="6">&nbsp;</td>
         </tr>
       </tbody>
 
       <tfoot>
         <tr class="bg-grey-lighten-3">
-          <td colspan="6" class="text-right font-weight-bold">TOTAL</td>
+          <td colspan="5" class="text-right font-weight-bold">TOTAL</td>
           <td class="text-center font-weight-bold">
             {{ formatCurrency(po?.total_amount ?? 0) }}
           </td>
@@ -195,23 +181,6 @@ function getWarehouseName(item: PRItem): string {
             </div>
           </div>
 
-          <!-- Warehouse select (always visible when in edit mode) -->
-          <div v-if="skuEditMode" class="mb-2">
-            <div class="text-caption text-medium-emphasis mb-1">Warehouse</div>
-            <v-select
-              v-model="item['warehouse_id']"
-              :items="warehouses"
-              item-title="name"
-              item-value="id"
-              density="compact"
-              variant="outlined"
-              hide-details
-              placeholder="Select warehouse"
-              clearable
-              style="width: 100%"
-            />
-          </div>
-
           <!-- Actual count + SKU inputs (always visible when in edit mode) -->
           <div v-if="skuEditMode" class="d-flex ga-3">
             <div style="flex: 1; min-width: 0;">
@@ -233,7 +202,7 @@ function getWarehouseName(item: PRItem): string {
                 density="compact"
                 variant="outlined"
                 hide-details
-                placeholder="SKU"
+                :placeholder="productSkuFor(item) || 'SKU'"
                 style="width: 100%"
               />
             </div>
@@ -247,10 +216,6 @@ function getWarehouseName(item: PRItem): string {
             <div>
               <span class="text-medium-emphasis">SKU: </span>
               <span class="font-weight-medium">{{ item.sku ?? '—' }}</span>
-            </div>
-            <div>
-              <span class="text-medium-emphasis">Warehouse: </span>
-              <span class="font-weight-medium">{{ getWarehouseName(item) }}</span>
             </div>
           </div>
         </v-card-text>
