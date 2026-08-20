@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { useTheme } from '@/stores/useTheme.ts'
 import { useAuthUserStore } from '@/stores/authUser'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import SlugName from './SlugName.vue'
 import { useUserPermissions } from '@/composables/useUserPermissions'
 import { flattenNavigationItems } from '@/utils/navigation'
@@ -16,6 +17,7 @@ interface Props {
 const props = defineProps<Props>()
 const router = useRouter()
 const authStore = useAuthUserStore()
+const { confirmDialog } = useConfirmDialog()
 
 // User permissions composable (permission-based navigation)
 const { getFilteredNavigationGroups, isLoading } = useUserPermissions()
@@ -121,6 +123,11 @@ function toggleTheme() {
 
 async function handleLogout() {
   try {
+    const confirmed = await confirmDialog('Are you sure you want to log out?', {
+      title: 'Confirm Logout',
+      confirmText: 'Logout',
+    })
+    if (!confirmed) return
     await authStore.signOut()
   } catch (error) {
     console.error('Logout failed:', error)
@@ -227,14 +234,34 @@ async function handleLogout() {
           <SlugName class="ml-2" />
         </div>
 
-        <!-- Mobile Menu Button -->
-        <v-btn
-          v-if="!lgAndUp"
-          icon="mdi-menu"
-          variant="text"
-          :size="xs ? 'default' : 'large'"
-          @click="drawer = !drawer"
-        />
+        <!-- Mobile Actions: Logout + Menu Button -->
+        <div v-if="!lgAndUp" class="d-flex align-center ga-2">
+          <!-- Logout Circle Button -->
+          <v-tooltip location="bottom">
+            <template #activator="{ props: tooltipProps }">
+              <v-btn
+                v-bind="tooltipProps"
+                icon
+                variant="flat"
+                :loading="authStore.loading"
+                :size="xs ? 'default' : 'large'"
+                :aria-label="'Logout'"
+                @click="handleLogout"
+              >
+                <v-icon>mdi-logout</v-icon>
+              </v-btn>
+            </template>
+            <span>Logout</span>
+          </v-tooltip>
+
+          <!-- Mobile Menu Button -->
+          <v-btn
+            icon="mdi-menu"
+            variant="text"
+            :size="xs ? 'default' : 'large'"
+            @click="drawer = !drawer"
+          />
+        </div>
       </template>
     </v-app-bar>
 
