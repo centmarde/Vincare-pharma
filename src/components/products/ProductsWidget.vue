@@ -406,9 +406,9 @@ function stockColor(item: any) {
                   <v-col cols="12" md="6" class="d-flex align-center py-2">
                     <v-icon icon="mdi-label" color="primary" class="mr-3"></v-icon>
                     <div>
-                      <div class="text-caption text-grey-darken-1">Generic Name</div>
+                      <div class="text-caption text-grey-darken-1">Product Name</div>
                       <div class="text-body-1 font-weight-medium">
-                        {{ item.generic_name || 'N/A' }}
+                        {{ item.product_name || 'N/A' }}
                       </div>
                     </div>
                   </v-col>

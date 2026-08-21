@@ -19,25 +19,18 @@ export type ProductType = {
   barcode: string | null
   sku: string | null
   product_name: string | null
-  generic_name: string | null
   category: string | null
   unit: string | null
   cost_price: number | null
   selling_price: number | null
-  qty_stock_in: number | null
   current_stock: number | null
   reorder_level: number | null
   supplier_id: number | null
   batch_no: number | null
   expiry_date: string | null
   status: string | null
-  physical_inventory: number | null
-  lot_number: string | null
-  type: string | null
-  item_description: string | null
-  offer_per_unit: number | null
-  cost_per_unit: number | null
-  no: number | null
+  brand: string | null
+  remarks: string | null
   // Joined supplier data (via FK)
   suppliers: SupplierType | null
 }
@@ -46,7 +39,6 @@ export type CreateProductData = {
   barcode?: string | null
   sku?: string | null
   product_name?: string | null
-  generic_name?: string | null
   category?: string | null
   unit?: string | null
   cost_price?: number | null
@@ -57,10 +49,8 @@ export type CreateProductData = {
   batch_no?: number | null
   expiry_date?: string | null
   status?: string | null
-  item_description?: string | null
-  offer_per_unit?: number | null
-  cost_per_unit?: number | null
-  no?: number | null
+  brand?: string | null
+  remarks?: string | null
 }
 
 export type UpdateProductData = CreateProductData
@@ -69,7 +59,6 @@ type FetchProductsOptions = {
   search?: string
   category?: string | null
   supplier_id?: number | null
-  type?: string | null
   orderBy?: keyof Pick<
     ProductType,
     'created_at' | 'product_name' | 'current_stock' | 'selling_price' | 'cost_price'
@@ -317,7 +306,6 @@ export const useProductsDataStore = defineStore('productsData', () => {
     try {
       const {
         search, category, supplier_id,
-        type,
         orderBy = 'current_stock', ascending = true,
         limit, offset, eligibleIds, expiryStart, expiryEnd,
       } = options
@@ -330,13 +318,11 @@ export const useProductsDataStore = defineStore('productsData', () => {
       if (typeof supplier_id === 'number') q = q.eq('supplier_id', supplier_id)
       if (search && search.trim()) {
         const s = search.trim().replace(/,/g, '')
-        q = q.or(`product_name.ilike.%${s}%,generic_name.ilike.%${s}%,barcode.ilike.%${s}%,sku.ilike.%${s}%`)
+        q = q.or(`product_name.ilike.%${s}%,barcode.ilike.%${s}%,sku.ilike.%${s}%`)
       }
       // eligibleIds is now warehouse-scoped only (see useProductsWidget.fetchProducts)
       if (eligibleIds && eligibleIds.length > 0) q = q.in('id', eligibleIds)
       if (expiryStart && expiryEnd) q = q.gte('expiry_date', expiryStart).lte('expiry_date', expiryEnd)
-      // Apply product-type filter (e.g. "injectibles", "oral medicine"); "All" means no filter
-      if (type && type !== 'All') q = q.eq('type', type)
 
       if (orderBy === 'current_stock') {
         
