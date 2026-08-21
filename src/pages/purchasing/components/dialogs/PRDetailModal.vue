@@ -95,7 +95,7 @@ async function onUnapprove() {
             v-if="
               pr.status === 'approved' ||
               pr.status === 'rejected' ||
-              pr.status === 'issued' ||
+              pr.status === 'ordered' ||
               pr.status === 'complete'
             "
           >
@@ -290,7 +290,7 @@ async function onUnapprove() {
             v-if="
               pr.status !== 'approved' &&
               pr.status !== 'rejected' &&
-              pr.status !== 'issued' &&
+              pr.status !== 'ordered' &&
               pr.status !== 'complete' &&
               pr.status !== 'change_request'
             "
@@ -359,7 +359,7 @@ async function onUnapprove() {
 .status-chip--pending_approval { color: #A16207; background: rgba(183, 121, 31, 0.12); }
 .status-chip--approved { color: #2563EB; background: rgba(51, 102, 204, 0.12); }
 .status-chip--rejected { color: #DC2626; background: rgba(197, 48, 48, 0.12); }
-.status-chip--issued { color: #7C3AED; background: rgba(79, 70, 229, 0.12); }
+.status-chip--ordered { color: #7C3AED; background: rgba(79, 70, 229, 0.12); }
 .status-chip--complete { color: #15803D; background: rgba(47, 133, 90, 0.12); }
 .status-chip--change_request    { color: #fb8c00; background: rgba(255, 152, 0,  0.12); }
 

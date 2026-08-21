@@ -937,7 +937,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
           .from('transactions')
           .update({
             transaction_type: 'purchase_order',
-            status: 'issued',
+            status: 'ordered',
             reference_no: docNo,
             requisition_no: payload.pr.reference_no,
             ship_via: payload.ship_via,
@@ -1001,7 +1001,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
             updated_at: new Date().toISOString(),
           })
           .eq('id', po.id)
-          .eq('status', 'issued')
+          .eq('status', 'ordered')
           .select('id'),
     )
 
