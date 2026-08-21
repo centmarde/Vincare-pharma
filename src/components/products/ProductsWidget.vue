@@ -8,7 +8,6 @@ import { useLogsDataStore, type LogType } from '@/stores/logsData'
 import ProductMobile from './mobile/ProductMobile.vue'
 import ProductFormDialog from './dialogs/ProductFormDialog.vue'
 import ProductDeleteDialog from './dialogs/ProductDeleteDialog.vue'
-import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import StockStatusCards from '../products/StockStatusCards.vue'
 import StockStatusDialog from './dialogs/StockStatusDialog.vue'
 import ManageIgnoredItemsDialog from './dialogs/ManageIgnoredItemsDialog.vue'
@@ -668,9 +667,6 @@ function stockColor(item: any) {
     v-model="showManageIgnoredDialog"
     :ignored-product-entries="ignoredProductEntries"
   />
-
-  <!-- Confirm Dialog -->
-  <ConfirmDialog />
 
   <!-- Add Reservation Dialog -->
   <AddReservationDialog

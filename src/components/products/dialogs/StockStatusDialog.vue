@@ -39,11 +39,39 @@ const { confirmDialog } = useConfirmDialog()
 
 const hasSearch = computed(() => props.searchQuery.trim().length > 0)
 
+// Products that are not currently ignored — ignored products are completely
+// removed from the dialog list.
+const visibleProducts = computed(() =>
+  props.products.filter((p) => !productIgnore.isIgnored(p.id)),
+)
+
+async function confirmIgnoreProduct(product: ProductType, durationMs: number) {
+  const durationLabel =
+    durationMs === IGNORE_DURATIONS.ONE_DAY
+      ? '1 day'
+      : durationMs === IGNORE_DURATIONS.ONE_WEEK
+        ? '1 week'
+        : '1 month'
+
+  const confirmed = await confirmDialog(
+    `Are you sure you want to ignore "${product.product_name}" for ${durationLabel}? It will be removed from this list until the ignore period expires.`,
+    {
+      title: 'Ignore Product',
+      confirmText: 'Ignore',
+      cancelText: 'Cancel',
+    },
+  )
+
+  if (confirmed) {
+    productIgnore.ignoreProduct(product.id, durationMs)
+  }
+}
+
 async function confirmCreatePRFromSelection() {
   if (!props.selectedReorderProductIds.length) return
 
   const selectedProducts = props.products.filter(p => props.selectedReorderProductIds.includes(p.id))
-  const productNames = selectedProducts.map(p => `  • ${p.product_name}`).join('\n')
+  const productNames = selectedProducts.map(p => `  \u2022 ${p.product_name}`).join('\n')
 
   const confirmed = await confirmDialog(
     `You're about to flag **${props.selectedReorderProductIds.length}** product(s) for reorder and start a new Purchase Requisition:\n\n${productNames}`,
@@ -104,9 +132,9 @@ async function confirmCreatePRFromSelection() {
             Search
           </v-btn>
         </div>
-        <v-list v-if="products.length > 0" density="comfortable">
+        <v-list v-if="visibleProducts.length > 0" density="comfortable">
           <v-list-item
-            v-for="p in products"
+            v-for="p in visibleProducts"
             :key="p.id"
             @click="emit('edit-product', p); emit('update:modelValue', false)"
           >
@@ -148,47 +176,36 @@ async function confirmCreatePRFromSelection() {
                       class="ignore-btn"
                     >
                       <v-icon size="16">mdi-bell-off-outline</v-icon>
-                      <v-tooltip activator="parent" location="top">Ignore this product item</v-tooltip>
+                      <v-tooltip activator="parent" location="top">
+                        Ignore this product item
+                      </v-tooltip>
                     </v-btn>
                   </template>
                   <v-list density="compact" min-width="200">
-                    <template v-if="!productIgnore.isIgnored(p.id)">
-                      <v-list-item
-                        @click.stop="productIgnore.confirmIgnore(p.id, p.product_name ?? '', IGNORE_DURATIONS.ONE_DAY, '1 day')"
-                      >
-                        <template #prepend>
-                          <v-icon size="small">mdi-clock-outline</v-icon>
-                        </template>
-                        <v-list-item-title>Ignore for 1 day</v-list-item-title>
-                      </v-list-item>
-                      <v-list-item
-                        @click.stop="productIgnore.confirmIgnore(p.id, p.product_name ?? '', IGNORE_DURATIONS.ONE_WEEK, '1 week')"
-                      >
-                        <template #prepend>
-                          <v-icon size="small">mdi-calendar-week</v-icon>
-                        </template>
-                        <v-list-item-title>Ignore for 1 week</v-list-item-title>
-                      </v-list-item>
-                      <v-list-item
-                        @click.stop="productIgnore.confirmIgnore(p.id, p.product_name ?? '', IGNORE_DURATIONS.ONE_MONTH, '1 month')"
-                      >
-                        <template #prepend>
-                          <v-icon size="small">mdi-calendar-month</v-icon>
-                        </template>
-                        <v-list-item-title>Ignore for 1 month</v-list-item-title>
-                      </v-list-item>
-                    </template>
-                    <template v-else>
-                      <v-list-item @click.stop="productIgnore.unignoreProduct(p.id)">
-                        <template #prepend>
-                          <v-icon size="small" color="warning">mdi-bell-ring-outline</v-icon>
-                        </template>
-                        <v-list-item-title>Unignore (show alerts)</v-list-item-title>
-                        <v-list-item-subtitle>
-                          Remaining: {{ productIgnore.formatRemainingTime(productIgnore.getIgnoreInfo(p.id)?.remainingMs ?? 0) }}
-                        </v-list-item-subtitle>
-                      </v-list-item>
-                    </template>
+                    <v-list-item
+                      @click.stop="confirmIgnoreProduct(p, IGNORE_DURATIONS.ONE_DAY)"
+                    >
+                      <template #prepend>
+                        <v-icon size="small">mdi-clock-outline</v-icon>
+                      </template>
+                      <v-list-item-title>Ignore for 1 day</v-list-item-title>
+                    </v-list-item>
+                    <v-list-item
+                      @click.stop="confirmIgnoreProduct(p, IGNORE_DURATIONS.ONE_WEEK)"
+                    >
+                      <template #prepend>
+                        <v-icon size="small">mdi-calendar-week</v-icon>
+                      </template>
+                      <v-list-item-title>Ignore for 1 week</v-list-item-title>
+                    </v-list-item>
+                    <v-list-item
+                      @click.stop="confirmIgnoreProduct(p, IGNORE_DURATIONS.ONE_MONTH)"
+                    >
+                      <template #prepend>
+                        <v-icon size="small">mdi-calendar-month</v-icon>
+                      </template>
+                      <v-list-item-title>Ignore for 1 month</v-list-item-title>
+                    </v-list-item>
                   </v-list>
                 </v-menu>
                 <v-btn
@@ -290,3 +307,5 @@ async function confirmCreatePRFromSelection() {
     </v-card>
   </v-dialog>
 </template>
+
+<style scoped></style>

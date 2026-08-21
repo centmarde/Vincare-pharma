@@ -1,5 +1,4 @@
 import { ref, computed } from 'vue'
-import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
 const STORAGE_KEY = 'vincare_ignored_products'
 
@@ -7,70 +6,79 @@ export interface IgnoreEntry {
   ignoredUntil: string // ISO date string
 }
 
+// Module-scope singleton state — one shared ignored-product map for the whole
+// app, mirroring how useConfirmDialog uses module-scope refs. This ensures
+// every caller (StockStatusDialog, ProductsWidget, ManageIgnoredItemsDialog)
+// observes the same reactive state and localStorage persistence, so ignoring
+// a product in one place is instantly reflected everywhere else.
+const ignoredMap = ref<Map<number, IgnoreEntry>>(new Map())
+
+// Load persisted data on init
+function loadFromStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as Record<string, string>
+      const map = new Map<number, IgnoreEntry>()
+      for (const [key, value] of Object.entries(parsed)) {
+        map.set(Number(key), { ignoredUntil: value })
+      }
+      ignoredMap.value = map
+    }
+    console.log('[useProductIgnore] Loaded ignored products:', ignoredMap.value)
+  } catch (err) {
+    console.error('[useProductIgnore] Failed to load from localStorage:', err)
+    ignoredMap.value = new Map()
+  }
+}
+
+function saveToStorage() {
+  try {
+    const obj: Record<string, string> = {}
+    for (const [id, entry] of ignoredMap.value.entries()) {
+      obj[String(id)] = entry.ignoredUntil
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(obj))
+    console.log('[useProductIgnore] Saved ignored products:', ignoredMap.value)
+  } catch (err) {
+    console.error('[useProductIgnore] Failed to save to localStorage:', err)
+  }
+}
+
+// Clean up expired entries
+function pruneExpired() {
+  const now = Date.now()
+  for (const [id, entry] of ignoredMap.value.entries()) {
+    if (new Date(entry.ignoredUntil).getTime() <= now) {
+      ignoredMap.value.delete(id)
+    }
+  }
+  saveToStorage()
+}
+
+// Active (not yet expired) ignored product IDs
+const activeIgnoredIds = computed<Set<number>>(() => {
+  const now = Date.now()
+  const active = new Set<number>()
+  for (const [id, entry] of ignoredMap.value.entries()) {
+    if (new Date(entry.ignoredUntil).getTime() > now) {
+      active.add(id)
+    }
+  }
+  return active
+})
+
+// All ignored product IDs (including expired, for debugging)
+const allIgnoredIds = computed<number[]>(() => Array.from(ignoredMap.value.keys()))
+
+// Active (non-expired) ignored product IDs as array
+const activeIgnoredIdsArray = computed<number[]>(() => Array.from(activeIgnoredIds.value))
+
 /**
- * Composable for ignoring (dismissing) products from stock status cards
+ * Composable for ignoring (dismissing) products from stock status alerts
  * for a specified duration. Data is persisted in localStorage.
  */
 export function useProductIgnore() {
-  // Map of productId -> IgnoreEntry
-  const ignoredMap = ref<Map<number, IgnoreEntry>>(new Map())
-
-  // Load persisted data on init
-  function loadFromStorage() {
-    // How to display all the ignored products in the console for debugging
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (raw) {
-        const parsed = JSON.parse(raw) as Record<string, string>
-        const map = new Map<number, IgnoreEntry>()
-        for (const [key, value] of Object.entries(parsed)) {
-          map.set(Number(key), { ignoredUntil: value })
-        }
-        ignoredMap.value = map
-      }
-      console.log('[useProductIgnore] Loaded ignored products:', ignoredMap.value)
-    } catch (err) {
-      console.error('[useProductIgnore] Failed to load from localStorage:', err)
-      ignoredMap.value = new Map()
-    }
-  }
-
-  function saveToStorage() {
-    try {
-      const obj: Record<string, string> = {}
-      for (const [id, entry] of ignoredMap.value.entries()) {
-        obj[String(id)] = entry.ignoredUntil
-      }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(obj))
-      console.log('[useProductIgnore] Saved ignored products:', ignoredMap.value)
-    } catch (err) {
-      console.error('[useProductIgnore] Failed to save to localStorage:', err)
-    }
-  }
-
-  // Active (not yet expired) ignored product IDs
-  const activeIgnoredIds = computed<Set<number>>(() => {
-    const now = Date.now()
-    const active = new Set<number>()
-    for (const [id, entry] of ignoredMap.value.entries()) {
-      if (new Date(entry.ignoredUntil).getTime() > now) {
-        active.add(id)
-      }
-    }
-    return active
-  })
-
-  // Clean up expired entries
-  function pruneExpired() {
-    const now = Date.now()
-    for (const [id, entry] of ignoredMap.value.entries()) {
-      if (new Date(entry.ignoredUntil).getTime() <= now) {
-        ignoredMap.value.delete(id)
-      }
-    }
-    saveToStorage()
-  }
-
   /**
    * Ignore a product for a given duration.
    * @param productId - The product ID to ignore
@@ -125,43 +133,6 @@ export function useProductIgnore() {
     return 'Less than a minute'
   }
 
-  const { confirmDialog } = useConfirmDialog()
-
-  /**
-   * Open the confirmation dialog before ignoring a product using the global ConfirmDialog.
-   * @param productId - The product ID to ignore
-   * @param productName - Display name of the product
-   * @param durationMs - Duration in milliseconds
-   * @param durationLabel - Human-readable duration label (e.g. "1 day")
-   */
-  async function confirmIgnore(productId: number, productName: string, durationMs: number, durationLabel: string) {
-    const confirmed = await confirmDialog(
-      `Are you sure you want to ignore **${productName}** for **${durationLabel}**?\n\nIt will be hidden from stock status alerts until the time expires.`,
-      {
-        title: 'Dismiss Alert',
-        confirmText: 'Dismiss',
-        cancelText: 'Cancel',
-      },
-    )
-    if (confirmed) {
-      ignoreProduct(productId, durationMs)
-    }
-  }
-
-  // Load on initialization
-  loadFromStorage()
-  pruneExpired()
-
-  // All ignored product IDs (including expired, for debugging)
-  const allIgnoredIds = computed<number[]>(() =>
-    Array.from(ignoredMap.value.keys())
-  )
-
-  // Active (non-expired) ignored product IDs as array
-  const activeIgnoredIdsArray = computed<number[]>(() =>
-    Array.from(activeIgnoredIds.value)
-  )
-
   return {
     // Core ignore state
     ignoredMap,
@@ -173,8 +144,6 @@ export function useProductIgnore() {
     isIgnored,
     getIgnoreInfo,
     formatRemainingTime,
-    // Confirmation dialog method (uses global ConfirmDialog)
-    confirmIgnore,
   }
 }
 
@@ -184,3 +153,7 @@ export const IGNORE_DURATIONS = {
   ONE_WEEK: 7 * 24 * 60 * 60 * 1000,
   ONE_MONTH: 30 * 24 * 60 * 60 * 1000,
 } as const
+
+// Load persisted data once at module init (function declarations are hoisted)
+loadFromStorage()
+pruneExpired()

@@ -682,17 +682,14 @@ export function useProductsWidget() {
   }
 
   async function refreshStockStatusCounts() {
-    await productsStore.fetchAllStockStatusCounts(
-      currentStatusRef(),
-      productIgnore.activeIgnoredIdsArray.value,
-    )
+    await productsStore.fetchAllStockStatusCounts(currentStatusRef())
   }
 
   async function refreshStockDialogProducts() {
     await productsStore.fetchStockStatusProducts(
       stockDialogType.value,
       currentStatusRef(),
-      productIgnore.activeIgnoredIdsArray.value,
+      [],
       stockDialogItemsPerPage.value,
       (stockDialogPage.value - 1) * stockDialogItemsPerPage.value,
       stockDialogSearchQuery.value.trim(),
