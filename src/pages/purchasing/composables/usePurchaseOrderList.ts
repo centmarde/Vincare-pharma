@@ -205,13 +205,11 @@ export function usePurchaseOrderList() {
       })
     }
 
-      // NEW — complete any reorder requests tied to the products just received
-    const productIds = (selectedPR.value?.items ?? [])
-        .map(i => i.product_id)
-        .filter((id): id is number => id != null)
-      if (productIds.length) {
-        await productsStore.completeReorderRequests(productIds)
-      }
+    // CHANGED — resolve by reorder_request_id instead of product_id
+    const reorderRequestIds = await productsStore.fetchReorderRequestIdsForTransaction(poId)
+    if (reorderRequestIds.length) {
+      await productsStore.completeReorderRequestsById(reorderRequestIds)
+    }
 
       confirmDialog.value.show = false
       await Promise.all([

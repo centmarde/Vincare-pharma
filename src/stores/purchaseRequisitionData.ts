@@ -755,6 +755,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         transaction_id: txData.id,
         product_id: productIdByIndex[index]!,
         qty_stock_in: item.qty,
+        reorder_request_id: item.reorder_request_id ?? null, // NEW
       })),
     )
 
@@ -783,7 +784,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       .select(
         `
         *,
-        transaction_items (
+        transaction_items!transaction_items_transaction_id_fkey (
           id, product_id, qty_stock_in, actual_count_stock_in,
           products ( id, product_name, unit, cost_price, selling_price, sku, supplier_id, expiry_date, suppliers ( name ) )
         )
@@ -815,7 +816,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       .select(
         `
         *,
-        transaction_items (
+        transaction_items!transaction_items_transaction_id_fkey (
           id, product_id, qty_stock_in, actual_count_stock_in,
           products ( id, product_name, unit, cost_price, selling_price, sku, supplier_id, expiry_date, suppliers ( name ) )
         )
@@ -850,21 +851,11 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       loading.value = false
       return
     }
-    // NEW — approving a PR is what actually resolves any reorder requests
-    // that fed into it (not PR submission, which was the old, incorrect
-    // trigger). Look up this PR's line items to find matching products.
-    const { data: prItems } = await supabase
-      .from('transaction_items')
-      .select('product_id')
-      .eq('transaction_id', prId)
-
-    const productIds = (prItems || [])
-      .map((i) => i.product_id)
-      .filter((id): id is number => id != null)
-
-    if (productIds.length) {
-      const productsStore = useProductsDataStore()
-      await productsStore.approveReorderRequestsByProduct(productIds)
+    // CHANGED — resolve by reorder_request_id instead of product_id
+    const productsStore = useProductsDataStore()
+    const reorderRequestIds = await productsStore.fetchReorderRequestIdsForTransaction(prId)
+    if (reorderRequestIds.length) {
+      await productsStore.approveReorderRequestsById(reorderRequestIds)
     }
 
     toast.success('Purchase Requisition approved successfully.')
@@ -893,21 +884,11 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       return
     }
 
-    // NEW — mirrors approvePR: reject any reorder requests tied to this PR's
-    // products. They stay visible as 'rejected' but remain re-flaggable,
-    // since createReorderRequest's duplicate-guard only blocks on 'pending'.
-    const { data: prItems } = await supabase
-      .from('transaction_items')
-      .select('product_id')
-      .eq('transaction_id', prId)
-
-    const productIds = (prItems || [])
-      .map((i) => i.product_id)
-      .filter((id): id is number => id != null)
-
-    if (productIds.length) {
-      const productsStore = useProductsDataStore()
-      await productsStore.rejectReorderRequestsByProduct(productIds)
+    // CHANGED — resolve by reorder_request_id instead of product_id
+    const productsStore = useProductsDataStore()
+    const reorderRequestIds = await productsStore.fetchReorderRequestIdsForTransaction(prId)
+    if (reorderRequestIds.length) {
+      await productsStore.rejectReorderRequestsById(reorderRequestIds)
     }
 
     toast.success('Purchase Requisition rejected successfully.')
@@ -964,16 +945,10 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       return { success: false }
     }
 
-    // NEW — issuing a PO is what moves any reorder requests behind this PR
-    // from approved -> awaiting_stock (they're now waiting on physical
-    // delivery, not just PM sign-off).
-    const productIds = payload.pr.items
-      .map((i) => i.product_id)
-      .filter((id): id is number => id != null)
-
-    if (productIds.length) {
-      const productsStore = useProductsDataStore()
-      await productsStore.markReorderRequestsAwaitingStock(productIds)
+    // CHANGED — resolve by reorder_request_id instead of product_id
+    const reorderRequestIds = await useProductsDataStore().fetchReorderRequestIdsForTransaction(payload.pr.id)
+    if (reorderRequestIds.length) {
+      await useProductsDataStore().markReorderRequestsAwaitingStockById(reorderRequestIds)
     }
 
     toast.success('Purchase order issued successfully!')

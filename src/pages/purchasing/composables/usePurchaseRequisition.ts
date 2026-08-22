@@ -149,7 +149,6 @@ export function usePurchaseRequisition() {
 
   // ─── Submit ───────────────────────────────────────────────────────
   async function handleSubmit(): Promise<SubmitResult> {
-
     const validItems = items.value.filter(i => i.item_description.trim())
     if (!validItems.length) {
       toast.warning('Please add at least one item.')
@@ -176,6 +175,20 @@ export function usePurchaseRequisition() {
 
     loading.value = true
 
+    const productsStore = useProductsDataStore()
+
+    for (const item of validItems) {
+      if (item.reorder_reason && item.product_id != null && item.reorder_request_id == null) {
+        const result = await productsStore.createReorderRequest({
+          product_id: item.product_id,
+          reason:     item.reorder_reason,
+        })
+        if (result.success && result.id != null) {
+          item.reorder_request_id = result.id
+        }
+      }
+    }
+
     // Sync to store state so savePurchaseRequisition can read it
     prStore.currentPR.remarks     = currentPR.value.remarks || null
     prStore.currentPR.supplier_id = null
@@ -201,31 +214,22 @@ export function usePurchaseRequisition() {
     loading.value = false
 
     if (result?.success && result.transactionId && result.requisitionNo) {
-      // Log the PR submission to the logs table with module = transaction_type
       await logPRSubmission(
         result.transactionId,
         result.requisitionNo,
         'purchase_requisition',
         validItems.length,
       )
-      const productsStore = useProductsDataStore()
-      const itemsNeedingReorderRow = validItems.filter(
-          i => i.reorder_reason && i.product_id != null
-        )
-        // SERIALIZED — Promise.all would race generateRONumber() calls,
-        // all seeing the same max RO-YYYY-### and minting duplicate numbers,
-        // which violates the unique constraint on transactions.reference_no.
-        for (const i of itemsNeedingReorderRow) {
-          await productsStore.createReorderRequest({
-            product_id: i.product_id!,
-            reason:     i.reorder_reason!,
-          })
-        }
       draft.clear()
       reset()
       return { success: true, resolvedReorderIds }
     }
 
+    // NOTE: if savePurchaseRequisition fails here, any reorder rows created
+    // above are now orphaned as 'pending' with no PR attached. They're
+    // low-risk (each item's reorder_request_id is now set, so retrying this
+    // same submit won't create duplicates) but worth a follow-up cleanup pass
+    // if PR-save failures turn out to be common.
     return { success: false, resolvedReorderIds: [] }
   }
 
