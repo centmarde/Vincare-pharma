@@ -587,7 +587,7 @@ async function onPOIssued() {
     <PurchaseRequisitionDialog v-model="showNewPRDialog" :prefill-items="prefillItemsForDialog" @submitted="onPRSubmitted" />
 
     <!-- 3. Add the Modal Component -->
-    <IssuePOModal v-model="showPOModal" :pr="selectedPRForPO" @issued="onPOIssued" />
+    <IssuePOModal v-model="showPOModal" :pr="selectedPRForPO" @ordered="onPOIssued" />
 
     <!-- Detail Modal -->
     <PRDetailModal v-if="selectedPR" v-model="showModal" :pr="selectedPR"
@@ -638,7 +638,7 @@ async function onPOIssued() {
   color: #DC2626;
   background: rgba(197, 48, 48, 0.12);
 }
-.status-chip--issued {
+.status-chip--ordered {
   color: #7C3AED;
   background: rgba(79, 70, 229, 0.12);
 }

@@ -67,15 +67,15 @@ function handlePrintRequested() {
         </v-card>
 
         <v-card elevation="1" class="stat-card rounded-xl"
-          :class="{ 'stat-card--active': filterStatus === 'issued' }"
-          @click="filterStatus = 'issued'"
+          :class="{ 'stat-card--active': filterStatus === 'ordered' }"
+          @click="filterStatus = 'ordered'"
           @click:clear="clearSearch">
           <v-card-text class="d-flex align-center" style="gap: 12px">
             <v-avatar color="#1565c0" variant="tonal" size="40">
               <v-icon icon="mdi-truck-outline" />
             </v-avatar>
             <div>
-              <div class="text-subtitle-2">Pending / Issued</div>
+              <div class="text-subtitle-2">Pending / Ordered</div>
               <div class="text-h6 font-weight-bold">{{ stats.pending.toLocaleString() }}</div>
             </div>
           </v-card-text>
@@ -102,7 +102,7 @@ function handlePrintRequested() {
               <span class="text-h6 font-weight-bold">₱</span>
             </v-avatar>
             <div>
-              <div class="text-subtitle-2">Total Orders Issued</div>
+              <div class="text-subtitle-2">Total Orders</div>
               <div class="text-h6 font-weight-bold">{{ formatCurrency(stats.totalCost) }}</div>
             </div>
           </v-card-text>
@@ -477,7 +477,7 @@ function handlePrintRequested() {
 .status-chip--pending_approval { color: #A16207; background: rgba(183, 121, 31, 0.12); }
 .status-chip--approved { color: #2563EB; background: rgba(51, 102, 204, 0.12); }
 .status-chip--rejected { color: #DC2626; background: rgba(197, 48, 48, 0.12); }
-.status-chip--issued { color: #7C3AED; background: rgba(79, 70, 229, 0.12); }
+.status-chip--ordered { color: #7C3AED; background: rgba(79, 70, 229, 0.12); }
 .status-chip--complete { color: #15803D; background: rgba(47, 133, 90, 0.12); }
 .status-chip--change_request    { color: #fb8c00; background: rgba(255, 152, 0,  0.12); }
 

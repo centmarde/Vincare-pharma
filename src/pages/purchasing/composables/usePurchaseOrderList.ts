@@ -20,7 +20,7 @@ export const headers = [
   { title: 'TOTAL',       key: 'total_amount',  sortable: false, align: 'center' as const },
   { title: 'SHIP VIA',    key: 'ship_via',      sortable: true,  align: 'center' as const },
   { title: 'SHIP METHOD', key: 'ship_method',   sortable: true,  align: 'center' as const },
-  { title: 'ISSUED AT',   key: 'created_at',    sortable: true,  align: 'center' as const },
+  { title: 'ORDERED AT',   key: 'created_at',    sortable: true,  align: 'center' as const },
   { title: 'STATUS',      key: 'status',        sortable: true,  align: 'center' as const },
   { title: 'ACTIONS',     key: 'actions',       sortable: false, align: 'center' as const },
 ] as const
@@ -30,7 +30,7 @@ export const headersWarehouse = [
   { title: 'TOTAL',       key: 'total_amount',  sortable: false, align: 'center' as const },
   { title: 'SHIP VIA',    key: 'ship_via',      sortable: true,  align: 'center' as const },
   { title: 'SHIP METHOD', key: 'ship_method',   sortable: true,  align: 'center' as const },
-  { title: 'ISSUED AT',   key: 'created_at',    sortable: true,  align: 'center' as const },
+  { title: 'ORDERED AT',   key: 'created_at',    sortable: true,  align: 'center' as const },
   { title: 'STATUS',      key: 'status',        sortable: true,  align: 'center' as const },
   { title: 'ACTIONS',     key: 'actions',       sortable: false, align: 'center' as const},
 ] as const
@@ -79,7 +79,7 @@ export function usePurchaseOrderList() {
 
   const statusLabel = (status: string) => {
     const labels: Record<string, string> = {
-      issued:   'Issued',
+      ordered:   'Ordered',
       complete: 'Complete',
       received: 'Received',
       pending:  'Pending',
@@ -129,7 +129,7 @@ export function usePurchaseOrderList() {
       reference_no:   row.reference_no,
       requisition_no: row.requisition_no,
       po_no:          row.po_no,
-      status:         row.status ?? 'issued',
+      status:         row.status ?? 'ordered',
       supplier_id:    row.supplier_id,
       total_amount:   row.total_amount,
       created_at:     row.created_at,
@@ -205,13 +205,11 @@ export function usePurchaseOrderList() {
       })
     }
 
-      // NEW — complete any reorder requests tied to the products just received
-    const productIds = (selectedPR.value?.items ?? [])
-        .map(i => i.product_id)
-        .filter((id): id is number => id != null)
-      if (productIds.length) {
-        await productsStore.completeReorderRequests(productIds)
-      }
+    // CHANGED — resolve by reorder_request_id instead of product_id
+    const reorderRequestIds = await productsStore.fetchReorderRequestIdsForTransaction(poId)
+    if (reorderRequestIds.length) {
+      await productsStore.completeReorderRequestsById(reorderRequestIds)
+    }
 
       confirmDialog.value.show = false
       await Promise.all([

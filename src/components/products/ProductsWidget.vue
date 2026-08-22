@@ -8,7 +8,6 @@ import { useLogsDataStore, type LogType } from '@/stores/logsData'
 import ProductMobile from './mobile/ProductMobile.vue'
 import ProductFormDialog from './dialogs/ProductFormDialog.vue'
 import ProductDeleteDialog from './dialogs/ProductDeleteDialog.vue'
-import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import StockStatusCards from '../products/StockStatusCards.vue'
 import StockStatusDialog from './dialogs/StockStatusDialog.vue'
 import ManageIgnoredItemsDialog from './dialogs/ManageIgnoredItemsDialog.vue'
@@ -406,9 +405,9 @@ function stockColor(item: any) {
                   <v-col cols="12" md="6" class="d-flex align-center py-2">
                     <v-icon icon="mdi-label" color="primary" class="mr-3"></v-icon>
                     <div>
-                      <div class="text-caption text-grey-darken-1">Generic Name</div>
+                      <div class="text-caption text-grey-darken-1">Product Name</div>
                       <div class="text-body-1 font-weight-medium">
-                        {{ item.generic_name || 'N/A' }}
+                        {{ item.product_name || 'N/A' }}
                       </div>
                     </div>
                   </v-col>
@@ -440,44 +439,10 @@ function stockColor(item: any) {
                     </div>
                   </v-col>
                   <v-col cols="12" md="6" class="d-flex align-center py-2">
-                    <v-icon icon="mdi-counter" color="primary" class="mr-3"></v-icon>
-                    <div>
-                      <div class="text-caption text-grey-darken-1">Physical Inventory</div>
-                      <div class="text-body-1 font-weight-medium">
-                        {{ item.physical_inventory ?? 'N/A' }}
-                      </div>
-                    </div>
-                  </v-col>
-                  <v-col cols="12" md="6" class="d-flex align-center py-2">
-                    <v-icon icon="mdi-pound" color="primary" class="mr-3"></v-icon>
-                    <div>
-                      <div class="text-caption text-grey-darken-1">Lot Number</div>
-                      <div class="text-body-1 font-weight-medium">
-                        {{ item.lot_number || 'N/A' }}
-                      </div>
-                    </div>
-                  </v-col>
-                  <v-col cols="12" md="6" class="d-flex align-center py-2">
-                    <v-icon icon="mdi-shape-outline" color="primary" class="mr-3"></v-icon>
-                    <div>
-                      <div class="text-caption text-grey-darken-1">Type</div>
-                      <div class="text-body-1 font-weight-medium">{{ item.type || 'N/A' }}</div>
-                    </div>
-                  </v-col>
-                  <v-col cols="12" md="6" class="d-flex align-center py-2">
                     <v-icon icon="mdi-ruler" color="primary" class="mr-3"></v-icon>
                     <div>
                       <div class="text-caption text-grey-darken-1">Unit</div>
                       <div class="text-body-1 font-weight-medium">{{ item.unit || 'N/A' }}</div>
-                    </div>
-                  </v-col>
-                  <v-col cols="12" md="6" class="d-flex align-center py-2">
-                    <v-icon icon="mdi-text-box-outline" color="primary" class="mr-3"></v-icon>
-                    <div>
-                      <div class="text-caption text-grey-darken-1">Description</div>
-                      <div class="text-body-1 font-weight-medium">
-                        {{ item.item_description || 'N/A' }}
-                      </div>
                     </div>
                   </v-col>
 
@@ -702,9 +667,6 @@ function stockColor(item: any) {
     v-model="showManageIgnoredDialog"
     :ignored-product-entries="ignoredProductEntries"
   />
-
-  <!-- Confirm Dialog -->
-  <ConfirmDialog />
 
   <!-- Add Reservation Dialog -->
   <AddReservationDialog

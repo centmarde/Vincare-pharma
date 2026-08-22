@@ -112,8 +112,8 @@ async function handlePrint() {
               <tr v-for="(line, i) in receipt.items" :key="i">
                 <td>
                   <div class="font-weight-medium">{{ line.product?.product_name ?? `#${line.product_id}` }}</div>
-                  <div class="text-caption text-medium-emphasis" v-if="line.product?.generic_name">
-                    {{ line.product.generic_name }}
+                  <div class="text-caption text-medium-emphasis" v-if="line.product?.product_name">
+                    {{ line.product.product_name }}
                   </div>
                 </td>
                 <td class="text-caption">

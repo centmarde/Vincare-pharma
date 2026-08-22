@@ -13,7 +13,7 @@ const props = defineProps<{
  
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
-  (e: 'issued'): void
+  (e: 'ordered'): void
 }>()
   
 const {
@@ -31,7 +31,7 @@ const {
   promptIssuePO,
   closeConfirm,
   handleConfirmIssue,
-} = useIssuePOModal(props, emit, () => emit('issued'))
+} = useIssuePOModal(props, emit, () => emit('ordered'))
 </script>
 <template>
   <v-dialog

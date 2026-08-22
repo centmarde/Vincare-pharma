@@ -65,7 +65,6 @@ export function useProductsWidget() {
     barcode: '',
     sku: '',
     product_name: '',
-    generic_name: '',
     category: '',
     unit: '',
     cost_price: null,
@@ -76,10 +75,6 @@ export function useProductsWidget() {
     batch_no: null,
     expiry_date: '',
     status: '',
-    item_description: '',
-    offer_per_unit: null,
-    cost_per_unit: null,
-    no: null,
   })
 
   const productForm = ref<CreateProductData & UpdateProductData>(emptyForm())
@@ -219,7 +214,7 @@ export function useProductsWidget() {
 
     await productsStore.fetchProducts({
       search: searchQuery.value,
-      type: typeFilter.value,
+      // type: typeFilter.value,
       orderBy: range ? 'expiry_date' : (sortBy.value[0]?.key as any) || 'created_at',
       ascending: range ? true : sortBy.value[0]?.order === 'asc',
       limit: itemsPerPage.value,
@@ -519,14 +514,6 @@ export function useProductsWidget() {
             changes.push(
               `reorder_level=${oldData.reorder_level ?? 'N/A'} → ${result.reorder_level ?? 'N/A'}`,
             )
-          if (oldData.offer_per_unit !== result.offer_per_unit)
-            changes.push(
-              `offer_per_unit=${oldData.offer_per_unit ?? 'N/A'} → ${result.offer_per_unit ?? 'N/A'}`,
-            )
-          if (oldData.cost_per_unit !== result.cost_per_unit)
-            changes.push(
-              `cost_per_unit=${oldData.cost_per_unit ?? 'N/A'} → ${result.cost_per_unit ?? 'N/A'}`,
-            )
           if (oldData.supplier_id !== result.supplier_id)
             changes.push(
               `supplier_id=${oldData.supplier_id ?? 'N/A'} → ${result.supplier_id ?? 'N/A'}`,
@@ -539,23 +526,13 @@ export function useProductsWidget() {
             )
           if (oldData.status !== result.status)
             changes.push(`status=${oldData.status ?? 'N/A'} → ${result.status ?? 'N/A'}`)
-          if (oldData.item_description !== result.item_description)
-            changes.push(
-              `item_description=${oldData.item_description ?? 'N/A'} → ${result.item_description ?? 'N/A'}`,
-            )
           if (oldData.unit !== result.unit)
             changes.push(`unit=${oldData.unit ?? 'N/A'} → ${result.unit ?? 'N/A'}`)
-          if (oldData.no !== result.no)
-            changes.push(`no=${oldData.no ?? 'N/A'} → ${result.no ?? 'N/A'}`)
           if (oldData.barcode !== result.barcode)
             changes.push(`barcode=${oldData.barcode ?? 'N/A'} → ${result.barcode ?? 'N/A'}`)
           if (oldData.product_name !== result.product_name)
             changes.push(
               `product_name="${oldData.product_name ?? 'N/A'}" → "${result.product_name ?? 'N/A'}"`,
-            )
-          if (oldData.generic_name !== result.generic_name)
-            changes.push(
-              `generic_name="${oldData.generic_name ?? 'N/A'}" → "${result.generic_name ?? 'N/A'}"`,
             )
           if (oldData.category !== result.category)
             changes.push(`category="${oldData.category ?? 'N/A'}" → "${result.category ?? 'N/A'}"`)
@@ -611,21 +588,13 @@ export function useProductsWidget() {
   const reorderRequestInfo = computed(() => {
     const map = new Map<number, { id: number; status: string }>()
     for (const r of productsStore.reorderRequests) {
-      // FIXED — reorderRequests is sorted created_at desc (newest first).
-      // The old `.set()` here unconditionally overwrote, so iterating
-      // forward left the OLDEST entry per product in the map. That's now a
-      // real bug: a rejected row followed by a fresh pending re-flag would
-      // show as "Rejected" forever. Guard with `!map.has` so only the first
-      // (i.e. most recent) entry per product sticks.
       if (r.product?.id != null && !map.has(r.product.id)) {
         map.set(r.product.id, { id: r.id, status: r.status })
       }
     }
     return map
   })
-
-  // NEW — a product can be reordered if it has no request yet, OR its most
-  // recent request was rejected (re-flagging is allowed after rejection).
+  
   function canRequestReorder(productId: number): boolean {
     const info = reorderRequestInfo.value.get(productId)
     return !info || info.status === 'rejected'
@@ -713,17 +682,14 @@ export function useProductsWidget() {
   }
 
   async function refreshStockStatusCounts() {
-    await productsStore.fetchAllStockStatusCounts(
-      currentStatusRef(),
-      productIgnore.activeIgnoredIdsArray.value,
-    )
+    await productsStore.fetchAllStockStatusCounts(currentStatusRef())
   }
 
   async function refreshStockDialogProducts() {
     await productsStore.fetchStockStatusProducts(
       stockDialogType.value,
       currentStatusRef(),
-      productIgnore.activeIgnoredIdsArray.value,
+      [],
       stockDialogItemsPerPage.value,
       (stockDialogPage.value - 1) * stockDialogItemsPerPage.value,
       stockDialogSearchQuery.value.trim(),

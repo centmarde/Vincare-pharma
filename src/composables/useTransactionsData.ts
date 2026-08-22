@@ -50,7 +50,7 @@ export function useTransactionsData() {
 
   const poStatusOptions = [
     { title: 'All',      value: null },
-    { title: 'Issued',   value: 'issued' },
+    { title: 'Ordered',   value: 'ordered' },
     { title: 'Complete', value: 'complete' },
   ]
 
@@ -78,7 +78,7 @@ export function useTransactionsData() {
       pending_approval: { label: 'Pending Approval', color: '#c2922e', bg: '#fff8ee', dot: '#c2922e' },
       approved:         { label: 'Approved',         color: '#2563eb', bg: '#f0f9f0', dot: '#2563eb' },
       rejected:         { label: 'Rejected',         color: '#c62828', bg: '#fff0f0', dot: '#ef5350' },
-      issued:           { label: 'Issued',           color: '#7c3aed', bg: '#e3f2fd', dot: '#7c3aed' },
+      ordered:           { label: 'Ordered',           color: '#7c3aed', bg: '#e3f2fd', dot: '#7c3aed' },
       received:         { label: 'Received',         color: '#2e7d32', bg: '#f0f9f0', dot: '#4caf50' },
       complete:        { label: 'Complete',        color: '#15803d', bg: '#f3e5f5', dot: '#15803d' },
       change_request:   { label: 'Change Request',  color: '#fb8c00', bg: '#fff3e0', dot: '#fb8c00' },

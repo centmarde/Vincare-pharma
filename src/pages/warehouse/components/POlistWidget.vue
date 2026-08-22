@@ -39,10 +39,10 @@ const {
 
 const totalPages = computed(() => Math.max(1, Math.ceil(totalItems.value / itemsPerPage.value)))
 
-// Local filter options: always show All / Issued / Complete
+// Local filter options: always show All / Ordered / Complete
 const statusFilterOptions = [
   { title: 'All', value: null },
-  { title: 'Issued', value: 'issued' },
+  { title: 'Ordered', value: 'ordered' },
   { title: 'Complete', value: 'complete' },
 ]
 const searchInput = ref(search.value)
@@ -270,7 +270,7 @@ function goToPage(p: number) {
                   <span>{{ item.ship_method ?? '—' }}</span>
                 </div>
                 <div>
-                  <span class="text-medium-emphasis">Issued: </span>
+                  <span class="text-medium-emphasis">Ordered: </span>
                   <span>{{ item.created_at ? formatDateShort(item.created_at) : '—' }}</span>
                 </div>
               </div>
@@ -364,11 +364,11 @@ function goToPage(p: number) {
 .status-chip--pending .status-dot {
   background: #c2922e;
 }
-.status-chip--issued {
+.status-chip--ordered {
   color: #1565c0;
   background: rgba(21, 101, 192, 0.12);
 }
-.status-chip--issued .status-dot {
+.status-chip--ordered .status-dot {
   background: #1565c0;
 }
 .status-chip--complete {
