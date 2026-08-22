@@ -1,10 +1,9 @@
 import { ref, computed, watch } from 'vue'
-import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useInhouseDataStore } from '@/stores/inhouseData'
 import type { InhouseOrderType, Shortfall, NegotiationRound } from '@/stores/inhouseData'
 import { useDeliveryReceiptsDataStore, type DeliveryReceiptType } from '@/stores/deliveryReceiptsData'
-import { useProductsDataStore } from '@/stores/productsData'
+import type { ProductPickerResult } from '@/stores/productsData'
 import { useProcurementDataStore } from '@/stores/procurementData'
 import { useFinanceDataStore } from '@/stores/financeData'
 import { useAuthUserStore } from '@/stores/authUser'
@@ -17,15 +16,12 @@ const { confirmDialog } = useConfirmDialog()
 export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: () => void) {
   const store = useInhouseDataStore()
   const drStore = useDeliveryReceiptsDataStore()
-  const productsStore = useProductsDataStore()
   const procurementStore = useProcurementDataStore()
   const authStore = useAuthUserStore()
   const financeStore = useFinanceDataStore()
   // Inside the composable body, not at module scope — a factory called on
   // import can run before the app is set up.
   const toast = useToast()
-  const { products } = storeToRefs(productsStore)
-  if (!products.value.length) void productsStore.fetchProducts()
 
   // Deposit-account options for the payment form. Investment placements are
   // excluded: a customer payment is received into an operating account or the
@@ -54,6 +50,11 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   // for ~the same spend) — product_id + the new product's cost snapshot.
   const lineProductEdits = ref<Record<number, number | null>>({})
   const lineCostEdits = ref<Record<number, number>>({})
+  // The display name for each line's currently-selected product. Held here
+  // rather than resolved from the products store, which only holds the first
+  // page of a 2.4k-row file — a product swapped in via the search dialog is
+  // usually not in it.
+  const lineProductNames = ref<Record<number, string>>({})
   const offerNote = ref('')
   // fulfillment panel: qty to deliver now, per line + the consignee's printed name
   const deliverQtys = ref<Record<number, number>>({})
@@ -86,21 +87,26 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     return Math.round(((order()?.amount_paid ?? 0) / total) * 100)
   })
 
-  const productOptions = computed(() =>
-    products.value.map((p) => ({
-      title: `${p.product_name ?? '—'}${p.sku ? ` (${p.sku})` : ''}`,
-      value: p.id,
-      cost: p.cost_price ?? 0,
-      selling: p.selling_price ?? 0,
-    })))
-
   const proposedTotal = computed(() =>
     items.value.reduce((s, i) => s + (lineEdits.value[i.id] ?? i.unit_price) * i.qty, 0))
   const proposedCost = computed(() =>
     items.value.reduce((s, i) => s + (lineCostEdits.value[i.id] ?? i.cost_price ?? 0) * i.qty, 0))
-  const proposedProfit = computed(() => proposedTotal.value - proposedCost.value)
-  const proposedMarginPct = computed(() =>
-    proposedTotal.value === 0 ? 0 : Math.round((proposedProfit.value / proposedTotal.value) * 100))
+  // Ratio = Company Cost / Customer Offer — see useRaiseOrder for why a missing
+  // side renders '—' instead of 0.00.
+  const proposedRatio = computed(() =>
+    proposedTotal.value > 0 && proposedCost.value > 0 ? proposedCost.value / proposedTotal.value : null)
+
+  // Rounded once, everything derives from it — see useRaiseOrder.
+  const ratioValue = computed(() => proposedRatio.value === null ? null : Number(proposedRatio.value.toFixed(2)))
+  const ratioLabel = computed(() => ratioValue.value === null ? '—' : ratioValue.value.toFixed(2))
+  const ratioClass = computed(() =>
+    ratioValue.value === null ? 'text-medium-emphasis' : ratioValue.value < 1 ? 'text-success' : 'text-error')
+
+  const proposedProfit = computed(() =>
+    proposedRatio.value === null ? null : proposedTotal.value - proposedCost.value)
+  const profitLabel = computed(() => proposedProfit.value === null ? '—' : formatCurrency(proposedProfit.value))
+  const marginLabel = computed(() =>
+    ratioValue.value === null ? '—' : `${Math.round((1 - ratioValue.value) * 100)}%`)
 
   const deliveredPct = computed(() => {
     const ordered = items.value.reduce((s, i) => s + i.qty, 0)
@@ -122,6 +128,7 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     lineEdits.value = {}
     lineProductEdits.value = {}
     lineCostEdits.value = {}
+    lineProductNames.value = {}
     deliverQtys.value = {}
     receivedBy.value = ''
     issuedReceipt.value = null
@@ -137,6 +144,7 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
       lineEdits.value[it.id] = it.unit_price
       lineProductEdits.value[it.id] = it.product_id
       lineCostEdits.value[it.id] = it.cost_price ?? 0
+      lineProductNames.value[it.id] = it.product?.product_name ?? ''
       deliverQtys.value[it.id] = it.qty - (it.delivered_qty ?? 0)
     }
     // Default the next payment to the outstanding balance — staff can lower
@@ -178,9 +186,10 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   // Customer wants a different product on this line — snapshot the new
   // product's cost so profitability stays accurate; offer price is left for
   // the staff to adjust (a swap rarely lands on the exact same price).
-  function onLineProductChange(itemId: number) {
-    const p = productOptions.value.find((o) => o.value === lineProductEdits.value[itemId])
-    if (p) lineCostEdits.value[itemId] = p.cost
+  function applyPickedProduct(itemId: number, product: ProductPickerResult) {
+    lineProductEdits.value[itemId] = product.id
+    lineProductNames.value[itemId] = product.product_name ?? ''
+    if (product.cost_price != null) lineCostEdits.value[itemId] = product.cost_price
   }
 
   async function recordCounter() {
@@ -268,12 +277,12 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   }
 
   return {
-    loading, rounds, shortfall, payments, lineEdits, lineProductEdits, lineCostEdits, productOptions, offerNote, deliverQtys,
+    loading, rounds, shortfall, payments, lineEdits, lineProductEdits, lineCostEdits, lineProductNames, offerNote, deliverQtys,
     receivedBy, issuedReceipt,
     payAmount, payReference, payRemarks, payCashAccountId, cashAccountOptions,
     requestedAt, requestNote,
     items, status, isNegotiating, isAwaitingStock, isReady, isDelivered, isPartiallyPaid, isPaid, canRecordPayment,
-    proposedTotal, proposedCost, proposedProfit, proposedMarginPct, deliveredPct, remaining, balance, paidPct,
-    onLineProductChange, recordCounter, agree, recheck, deliver, recordPayment, notifyPurchasing,
+    proposedTotal, proposedCost, proposedRatio, ratioLabel, ratioClass, profitLabel, marginLabel, deliveredPct, remaining, balance, paidPct,
+    applyPickedProduct, recordCounter, agree, recheck, deliver, recordPayment, notifyPurchasing,
   }
 }

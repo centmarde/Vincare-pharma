@@ -3,7 +3,8 @@ import { computed, nextTick, ref } from 'vue'
 import html2pdf from 'html2pdf.js'
 import { useToast } from 'vue-toastification'
 import { voucherSignatories } from '@/stores/disbursementVouchersData'
-import type { VoucherType } from '@/stores/disbursementVouchersData'
+import type { VoucherItemType, VoucherType } from '@/stores/disbursementVouchersData'
+import { categoryTitle } from '@/stores/financeData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const props = defineProps<{
@@ -18,6 +19,19 @@ const emit = defineEmits<{
 }>()
 
 const toast = useToast()
+
+// PARTICULARS is split in two: the category on the left, the purpose of that
+// specific spend on the right. Vouchers created before per-line explanations
+// stored the category's own title in `particular`, so printing it verbatim
+// would read "Meals | Meals" — those show an empty explanation instead.
+// One department per voucher — stored on every line, entered and printed once.
+const voucherDepartment = computed(() =>
+  props.voucher?.items.find((line) => line.department)?.department ?? '')
+
+function explanationFor(line: VoucherItemType): string {
+  const text = line.particular ?? ''
+  return text === categoryTitle(line.category) ? '' : text
+}
 const printArea = ref<HTMLElement | null>(null)
 
 // Same legal entity as the POS receipt / Ethical invoice / Delivery Receipt /
@@ -127,7 +141,7 @@ async function handlePrint() {
                   <span class="dv-value">{{ voucher.payee_address ?? '' }}</span>
                 </div>
                 <div class="dv-cell dv-nocol">
-                  <span class="dv-label">Paid From:</span>
+                  <span class="dv-label">Payment Mode:</span>
                   <span class="dv-value">{{ voucher.cash_account_name ?? '' }}</span>
                 </div>
               </div>
@@ -137,6 +151,13 @@ async function handlePrint() {
                   <span class="dv-value">{{ voucher.payee_tin ?? '' }}</span>
                 </div>
                 <div class="dv-cell dv-nocol">
+                  <span class="dv-label">Dept:</span>
+                  <span class="dv-value">{{ voucherDepartment }}</span>
+                </div>
+              </div>
+
+              <div class="dv-row">
+                <div class="dv-cell dv-grow">
                   <span class="dv-label">Ref:</span>
                   <span class="dv-value">{{ voucher.remarks ?? '' }}</span>
                 </div>
@@ -144,25 +165,26 @@ async function handlePrint() {
 
               <!-- Particulars -->
               <div class="dv-row dv-head">
-                <div class="dv-cell dv-grow text-center font-weight-bold">PARTICULARS</div>
+                <div class="dv-cell dv-grow text-center font-weight-bold">EXPLANATION</div>
+                <div class="dv-cell dv-cat text-center font-weight-bold">PARTICULARS</div>
                 <div class="dv-cell dv-nocol text-center font-weight-bold">AMOUNT</div>
               </div>
               <div class="dv-row" v-for="line in voucher.items" :key="line.id">
-                <!-- `particular` is the category's title (lines carry no typed
-                     description — the purpose is the header remark), so don't
-                     also print the raw category here or it reads twice. -->
-                <div class="dv-cell dv-grow">
-                  <div class="dv-value">{{ line.particular }}</div>
-                  <div v-if="line.department" class="dv-fine">{{ line.department }}</div>
-                </div>
+                <!-- Blank for vouchers saved before per-line explanations: back
+                     then `particular` just repeated the category's title, and
+                     printing it here would read "Meals | Meals". -->
+                <div class="dv-cell dv-grow dv-value">{{ explanationFor(line) }}</div>
+                <div class="dv-cell dv-cat dv-value">{{ categoryTitle(line.category) }}</div>
                 <div class="dv-cell dv-nocol text-right dv-value">{{ formatCurrency(line.amount) }}</div>
               </div>
               <div class="dv-row dv-filler" v-for="n in fillerRows" :key="`filler-${n}`">
                 <div class="dv-cell dv-grow">&nbsp;</div>
+                <div class="dv-cell dv-cat">&nbsp;</div>
                 <div class="dv-cell dv-nocol">&nbsp;</div>
               </div>
               <div class="dv-row dv-total">
-                <div class="dv-cell dv-grow text-right font-weight-bold">TOTAL</div>
+                <div class="dv-cell dv-grow">&nbsp;</div>
+                <div class="dv-cell dv-cat text-right font-weight-bold">TOTAL</div>
                 <div class="dv-cell dv-nocol text-right font-weight-bold">{{ formatCurrency(voucher.total_amount) }}</div>
               </div>
 
@@ -170,11 +192,14 @@ async function handlePrint() {
               <div class="dv-row">
                 <div
                   v-for="role in voucherSignatories"
-                  :key="role"
+                  :key="role.field"
                   class="dv-cell dv-quarter"
                 >
-                  <div class="dv-fine font-weight-bold">{{ role }}:</div>
+                  <div class="dv-fine font-weight-bold">{{ role.label }}:</div>
                   <div class="dv-sign">
+                    <!-- The typed name sits ON the rule; blank prints an empty
+                         line to be filled in by hand. -->
+                    <div class="dv-signname">{{ voucher.signatories[role.field] || '&nbsp;' }}</div>
                     <div class="dv-signline"></div>
                     <div class="dv-fine text-center"><em>(Signature Over Printed Name)</em></div>
                     <div class="dv-fine mt-2">Date: ____________</div>
@@ -274,6 +299,13 @@ async function handlePrint() {
   flex: 0 0 170px;
 }
 
+/* Category sits to the RIGHT of the explanation and is a fixed, predictable
+   width (its labels are a known set); the explanation leads and takes whatever
+   width is left, since it is the free-text one. */
+.dv-cat {
+  flex: 0 0 190px;
+}
+
 .dv-quarter {
   flex: 1 1 25%;
   display: flex;
@@ -335,6 +367,13 @@ async function handlePrint() {
 
 .dv-sign {
   margin-top: 26px;
+}
+
+.dv-signname {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  min-height: 13px;
 }
 
 .dv-signline {

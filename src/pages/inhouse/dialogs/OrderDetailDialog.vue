@@ -6,6 +6,8 @@ import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
 import { useChangeRequestsDataStore } from '@/stores/changeRequestsData'
 import type { InhouseOrderType } from '@/stores/inhouseData'
+import type { ProductPickerResult } from '@/stores/productsData'
+import ProductPickerDialog from '@/components/products/ProductPicker.vue'
 import type { CollectionType } from '@/stores/ethicalData'
 import { expensePaymentMethods } from '@/stores/financeData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
@@ -20,15 +22,31 @@ const emit = defineEmits<{
 }>()
 
 const {
-  loading, rounds, shortfall, payments, lineEdits, lineProductEdits, lineCostEdits, productOptions, offerNote, deliverQtys,
+  loading, rounds, shortfall, payments, lineEdits, lineCostEdits, lineProductNames, offerNote, deliverQtys,
   receivedBy, issuedReceipt,
   payAmount, payReference, payRemarks,
   requestedAt, requestNote,
   items, isNegotiating, isAwaitingStock, isReady, isDelivered, isPartiallyPaid, isPaid, canRecordPayment,
-  proposedTotal, proposedCost, proposedProfit, proposedMarginPct, deliveredPct, remaining, balance, paidPct,
+  proposedTotal, proposedCost, ratioLabel, ratioClass, profitLabel, marginLabel, deliveredPct, remaining, balance, paidPct,
   payCashAccountId, cashAccountOptions,
-  onLineProductChange, recordCounter, agree, recheck, deliver, recordPayment, notifyPurchasing,
+  applyPickedProduct, recordCounter, agree, recheck, deliver, recordPayment, notifyPurchasing,
 } = useOrderDetail(() => props.order, () => emit('changed'))
+
+// Counter-offer product swap goes through the shared search dialog — the
+// products store only holds the first page of a 2.4k-row file.
+const showProductPicker = ref(false)
+const pickerTargetItemId = ref<number | null>(null)
+
+function openProductPicker(itemId: number) {
+  pickerTargetItemId.value = itemId
+  showProductPicker.value = true
+}
+
+function onProductSelected(product: ProductPickerResult) {
+  if (pickerTargetItemId.value === null) return
+  applyPickedProduct(pickerTargetItemId.value, product)
+  pickerTargetItemId.value = null
+}
 
 // Pop the printable DR as soon as one is issued by a delivery.
 const showReceipt = ref(false)
@@ -101,19 +119,20 @@ const productName = (id: number | null) =>
             <template v-if="isNegotiating">
               <div class="text-caption font-weight-bold mb-1">Counter-offer (swap products, edit per-unit prices)</div>
               <v-table density="compact">
-                <thead><tr><th class="text-left">Product</th><th class="text-right" style="width:90px">Qty</th><th class="text-right" style="width:140px">Offer/Unit</th><th class="text-right" style="width:110px">Cost/Unit</th></tr></thead>
+                <thead><tr><th class="text-left">Product</th><th class="text-right" style="width:90px">Qty</th><th class="text-right" style="width:140px">PR Price</th><th class="text-right" style="width:110px">Cost/Unit</th></tr></thead>
                 <tbody>
                   <tr v-for="it in items" :key="it.id">
                     <td>
-                      <v-select
-                        v-model="lineProductEdits[it.id]"
-                        :items="productOptions"
-                        item-title="title"
-                        item-value="value"
+                      <v-text-field
+                        :model-value="lineProductNames[it.id]"
+                        placeholder="Search product"
+                        readonly
                         variant="outlined"
                         density="compact"
                         hide-details
-                        @update:model-value="onLineProductChange(it.id)"
+                        append-inner-icon="mdi-database-search-outline"
+                        @click="openProductPicker(it.id)"
+                        @click:append-inner="openProductPicker(it.id)"
                       />
                     </td>
                     <td class="text-right">{{ it.qty }}</td>
@@ -123,7 +142,7 @@ const productName = (id: number | null) =>
                 </tbody>
               </v-table>
               <div class="text-caption text-medium-emphasis mt-1">
-                Swapping a product re-snapshots its cost so the profit below stays accurate — the offer price is left for you to adjust.
+                Swapping a product re-snapshots its cost so the ratio below stays accurate — the PR price is left for you to adjust.
               </div>
 
               <v-row class="mt-2" justify="end">
@@ -135,8 +154,11 @@ const productName = (id: number | null) =>
                     <span>Company Cost Total</span><span>{{ formatCurrency(proposedCost) }}</span>
                   </div>
                   <v-divider class="my-1" />
-                  <div class="d-flex justify-space-between text-body-1 font-weight-bold" :class="proposedProfit >= 0 ? 'text-success' : 'text-error'">
-                    <span>Projected Profit ({{ proposedMarginPct }}%)</span><span>{{ formatCurrency(proposedProfit) }}</span>
+                  <div class="d-flex justify-space-between text-body-1 font-weight-bold" :class="ratioClass">
+                    <span>Ratio (Cost / Offer)</span><span>{{ ratioLabel }}</span>
+                  </div>
+                  <div class="d-flex justify-space-between text-body-2 font-weight-bold" :class="ratioClass">
+                    <span>Projected Profit ({{ marginLabel }})</span><span>{{ profitLabel }}</span>
                   </div>
                 </v-col>
               </v-row>
@@ -302,6 +324,8 @@ const productName = (id: number | null) =>
       :void-summary="crConfig.voidSummary"
       :loading="crSubmitting"
       @submit="crSubmit" />
+
+    <ProductPickerDialog v-model="showProductPicker" @select="onProductSelected" />
 
     <!-- Printable Delivery Receipt, auto-opened after a delivery is recorded -->
     <DeliveryReceiptDialog v-model="showReceipt" :receipt="issuedReceipt" />

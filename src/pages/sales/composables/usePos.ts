@@ -20,7 +20,19 @@ export type CartLine = {
 
 export type PosProduct = {
   product_id: number
+  // product_name IS the molecule — the catalogue is all generics
+  // (ACETYLCYSTEINE 200MG SACHET 10S), so there is no separate generic name to
+  // search. products.generic_name does not exist in the database.
   product_name: string
+  /**
+   * Searchable: the trade name (FLUIMUCIL, HISTAZYN). We stock by molecule but
+   * a customer asks for the brand, so without this a walk-in asking for
+   * "Fluimucil" finds nothing even though the row carries it. Populated on
+   * 2,390 of 2,401 products.
+   */
+  brand: string | null
+  /** Searchable: what a barcode scanner types in. */
+  barcode: string | null
   sku: string | null
   unit: string | null
   batch_no: number | null
@@ -55,6 +67,8 @@ export function usePos() {
       .map(s => ({
         product_id:   s.product_id,
         product_name: s.product?.product_name ?? '—',
+        brand:        s.product?.brand ?? null,
+        barcode:      s.product?.barcode != null ? String(s.product.barcode) : null,
         sku:          s.product?.sku ?? null,
         unit:         s.product?.unit != null ? String(s.product.unit) : null,
         batch_no:     s.product?.batch_no ?? null,
@@ -64,13 +78,22 @@ export function usePos() {
       })),
   )
 
+  // Matches brand name, generic name, SKU and barcode. Barcode matters most:
+  // a scanner types the code and hits Enter, and without it in the filter a
+  // scan finds nothing at all.
   const filteredProducts = computed(() => {
     const s = search.value.trim().toLowerCase()
     if (!s) return products.value
     return products.value.filter(p =>
-      p.product_name.toLowerCase().includes(s) || (p.sku?.toLowerCase().includes(s) ?? false),
+      p.product_name.toLowerCase().includes(s)
+      || (p.brand?.toLowerCase().includes(s) ?? false)
+      || (p.sku?.toLowerCase().includes(s) ?? false)
+      || (p.barcode?.toLowerCase().includes(s) ?? false),
     )
   })
+
+  const isSearching = computed(() => search.value.trim().length > 0)
+  const resultCount = computed(() => filteredProducts.value.length)
 
   const subtotal = computed(() => cart.value.reduce((sum, l) => sum + l.quantity * l.unit_price, 0))
   const total = computed(() => subtotal.value)
@@ -108,6 +131,25 @@ export function usePos() {
       quantity:     1,
       available,
     })
+  }
+
+  // The Search button and the Enter key. An exact single match goes straight
+  // into the cart and clears the box — that is what makes a barcode scanner
+  // work (it types the code then sends Enter) and saves a click per item at
+  // the counter. Anything else just leaves the filtered grid on screen.
+  function submitSearch() {
+    if (!isSearching.value) return
+    const matches = filteredProducts.value
+    if (matches.length === 1) {
+      addToCart(matches[0])
+      search.value = ''
+      return
+    }
+    if (matches.length === 0) toast.info('No product matches that search.')
+  }
+
+  function clearSearch() {
+    search.value = ''
   }
 
   function setQty(index: number, qty: number) {
@@ -159,6 +201,7 @@ export function usePos() {
     selectedOutletId, posOutletOptions,
     products, filteredProducts,
     subtotal, total, itemCount, isEmpty,
+    isSearching, resultCount, submitSearch, clearSearch,
     addToCart, setQty, removeFromCart, clearCart,
     init, refreshStock, setOutlet,
   }

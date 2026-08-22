@@ -5,7 +5,7 @@ import { useDisplay } from 'vuetify'
 import { ref, watch, computed } from 'vue'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
 import { storeToRefs } from 'pinia'
-import ProductPickerDialog from './ProductPicker.vue'
+import ProductPickerDialog from '@/components/products/ProductPicker.vue'
 import type { ProductPickerResult } from '@/stores/productsData'
 
 const { mobile } = useDisplay()

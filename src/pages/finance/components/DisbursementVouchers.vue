@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { useDisbursementVouchers, headers } from '../composables/useDisbursementVouchers'
 import VoucherFormDialog from './dialogs/VoucherFormDialog.vue'
 import VoucherPrintDialog from './dialogs/VoucherPrintDialog.vue'
+import VoucherStampDialog from './dialogs/VoucherStampDialog.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
@@ -14,6 +15,7 @@ const {
   statusMeta, canEdit, canPrint, canRecord, canCancel, recordBlockedReason, particularsSummary,
   init, openCreateDialog, openEditDialog, handleSubmit,
   openPrint, handleRecord, openCancelDialog, closeCancelDialog, handleCancel,
+  showStampDialog, stampTarget, openStamp,
 } = useDisbursementVouchers()
 
 const route = useRoute()
@@ -158,6 +160,21 @@ onMounted(async () => {
               Record Expense
             </v-btn>
 
+            <!-- Only after recording: the mark states that the expenses exist
+                 in the ledger, so it must never be printable before they do. -->
+            <v-btn
+              v-if="item.status === 'recorded'"
+              size="small"
+              variant="tonal"
+              color="error"
+              class="text-none"
+              prepend-icon="mdi-stamper"
+              title="Print the RECORDED mark onto the signed voucher"
+              @click="openStamp(item)"
+            >
+              Mark Recorded
+            </v-btn>
+
             <v-btn
               v-if="canCancel(item)"
               size="small"
@@ -190,6 +207,8 @@ onMounted(async () => {
 
     <!-- Cancelling is only reachable before recording; after that the expenses
          are real and must be voided through the change-request flow instead. -->
+    <VoucherStampDialog v-model="showStampDialog" :voucher="stampTarget" />
+
     <v-dialog v-model="showCancelDialog" max-width="480">
       <v-card rounded="lg">
         <v-card-title class="text-h6 font-weight-bold pa-5">

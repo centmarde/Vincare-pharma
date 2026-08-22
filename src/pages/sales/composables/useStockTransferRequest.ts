@@ -2,7 +2,7 @@ import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useStockTransfersDataStore } from '@/stores/stockTransfersData'
-import { useProductsDataStore } from '@/stores/productsData'
+import type { ProductPickerResult } from '@/stores/productsData'
 import { useOutletsDataStore } from '@/stores/outletsData'
 import { useFormDraft } from '@/composables/useFormDraft'
 
@@ -10,15 +10,19 @@ const toast = useToast()
 
 type RequestLineItem = {
   product_id: number | null
+  // Held on the line rather than looked up from the products store, which only
+  // ever returns the first 1,000 of 2,401 rows (Supabase caps an unranged
+  // request) — a product picked through the search dialog is usually not in it.
+  product_name: string
+  brand: string | null
+  unit: string
   requested_qty: number
 }
 
 export function useStockTransferRequest(onCreated: () => void) {
   const transfersStore = useStockTransfersDataStore()
-  const productsStore  = useProductsDataStore()
   const outletsStore   = useOutletsDataStore()
 
-  const { products } = storeToRefs(productsStore)
   const { outlets } = storeToRefs(outletsStore)
 
   // ─── State ────────────────────────────────────────────────────────
@@ -30,7 +34,7 @@ export function useStockTransferRequest(onCreated: () => void) {
   // Persist a draft so a reload / crash mid-entry doesn't wipe the request.
   const draft = useFormDraft({
     key: 'stock-transfer-request',
-    version: 1,
+    version: 2,
     refs: { outletId, remarks, items },
     isEmpty: () => outletId.value == null && !remarks.value
       && !items.value.some((i) => i.product_id != null),
@@ -42,21 +46,24 @@ export function useStockTransferRequest(onCreated: () => void) {
     outlets.value.filter(o => o.is_active).map(o => ({ title: o.name, value: o.id })),
   )
 
-  const productOptions = computed(() =>
-    products.value.map(p => ({
-      title: `${p.product_name ?? '—'}${p.sku ? ` (${p.sku})` : ''}`,
-      value: p.id,
-      current_stock: p.current_stock ?? 0,
-    }))
-  )
-
   const validItems = computed(() =>
     items.value.filter(i => i.product_id != null && i.requested_qty > 0)
   )
 
   // ─── Item Actions ─────────────────────────────────────────────────
   function addItem() {
-    items.value.push({ product_id: null, requested_qty: 1 })
+    items.value.push({
+      product_id: null, product_name: '', brand: null, unit: '', requested_qty: 1,
+    })
+  }
+
+  function applyPickedProduct(index: number, product: ProductPickerResult) {
+    const item = items.value[index]
+    if (!item) return
+    item.product_id   = product.id
+    item.product_name = product.product_name ?? ''
+    item.brand        = product.brand
+    item.unit         = product.unit ?? ''
   }
 
   function removeItem(index: number) {
@@ -99,7 +106,6 @@ export function useStockTransferRequest(onCreated: () => void) {
 
   // ─── Init ─────────────────────────────────────────────────────────
   async function init() {
-    if (!products.value.length) await productsStore.fetchProducts()
     if (!outlets.value.length) await outletsStore.fetchOutlets()
     // Restore a saved draft first; only seed an empty row if there's nothing to restore.
     if (!draft.restore() && items.value.length === 0) addItem()
@@ -107,7 +113,7 @@ export function useStockTransferRequest(onCreated: () => void) {
 
   return {
     loading, outletId, remarks, items,
-    outletOptions, productOptions, validItems,
-    addItem, removeItem, handleSubmit, reset, init,
+    outletOptions, validItems,
+    addItem, removeItem, applyPickedProduct, handleSubmit, reset, init,
   }
 }

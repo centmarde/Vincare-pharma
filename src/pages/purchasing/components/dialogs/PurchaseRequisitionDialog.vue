@@ -3,7 +3,7 @@ import { usePurchaseRequisition, unitOptions } from '../../composables/usePurcha
 import type { ReorderPrefillItem } from '../../composables/usePurchaseRequisition'
 import type { ProductPickerResult } from '@/stores/productsData'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
-import ProductPickerDialog from './ProductPicker.vue'
+import ProductPickerDialog from '@/components/products/ProductPicker.vue'
 import { formatCurrency } from '@/utils/helpers'
 import { useDisplay } from 'vuetify'
 import { storeToRefs } from 'pinia'
