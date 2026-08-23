@@ -1,7 +1,8 @@
 import { ref, computed } from 'vue'
-import { expenseCategories, expenseDepartments } from '@/stores/financeData'
+import { categoryTitle, expenseCategories, expenseDepartments } from '@/stores/financeData'
 import type { ExpenseCategory, ExpenseDepartment } from '@/stores/financeData'
-import type { VoucherType, VoucherInput } from '@/stores/disbursementVouchersData'
+import { emptySignatories } from '@/stores/disbursementVouchersData'
+import type { VoucherType, VoucherInput, VoucherSignatoryField } from '@/stores/disbursementVouchersData'
 import { cashClassifications, classificationMeta } from '@/utils/cashAccountTypes'
 import type { CashClassificationMeta, ClassifiedCashAccount } from '@/utils/cashAccountTypes'
 import { formatCurrency } from '@/utils/helpers'
@@ -23,26 +24,29 @@ const todayISO = () => new Date().toISOString().slice(0, 10)
 //   - amount may be null: starting it at 0 rendered a "0" in the field, which
 //     looks filled but isn't a valid amount, so the submit button stayed
 //     disabled with the form looking complete.
-//   - no free-text description. Per the company accountant, a per-line remark
-//     duplicates the single Reference/Remarks on the voucher header, so a line
-//     is now just what it's charged to and how much. The stored `particular`
-//     is derived from the category at save time (see buildPayload).
+//   - a free-text `particular` per line (REVERSES the earlier "no per-line
+//     description" rule). The accountant asked for the PARTICULARS box to be
+//     split in two — the expense category on one side, the purpose of that
+//     specific spend on the other — rather than one Reference on the header
+//     covering every line at once. The header Reference/Remarks is unchanged
+//     and still prints; it is voucher-level context, not the line's purpose.
 type VoucherFormLine = {
   category: ExpenseCategory
-  department: ExpenseDepartment | null
+  /**
+   * Free-text purpose for THIS line ("Butuan–Zamboanga round trip"), printed in
+   * its own column beside the category. Stored in the long-existing
+   * `disbursement_voucher_items.particular`, which until now only held a copy of
+   * the category's title and carried no information of its own.
+   */
+  particular: string
   amount: number | null
 }
 
 const emptyItem = (): VoucherFormLine => ({
   category: 'other',
-  department: null,
+  particular: '',
   amount: null,
 })
-
-// The category's display title — what prints in the voucher's PARTICULARS
-// column now that a line carries no typed description of its own.
-const categoryTitle = (value: ExpenseCategory): string =>
-  expenseCategories.find((c) => c.value === value)?.title ?? value
 
 export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
   const editingId = ref<number | null>(null)
@@ -56,7 +60,15 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
   // One payee, one payment, so one receipt number — a header field, not a
   // per-particular one. Prints in section D of the voucher.
   const orSiNo = ref('')
+  // ONE department per voucher, not one per line. It was a per-line select,
+  // which meant re-picking the same value on every row; no voucher in the live
+  // data has ever used more than one department. Still WRITTEN to every line on
+  // save, because that is where the generated expense reads it from.
+  const department = ref<ExpenseDepartment | null>(null)
   const remarks = ref('')
+  // Typed names for the four signature blocks — printed above the rule so only
+  // the signature itself is handwritten.
+  const signatories = ref(emptySignatories())
   const items = ref<VoucherFormLine[]>([emptyItem()])
 
   // A voucher is an input-heavy multi-line form — losing one to a reload
@@ -64,12 +76,51 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
   // editable, so a restored draft can never resurrect a printed document.
   const draft = useFormDraft({
     key: 'finance-disbursement-voucher',
-    version: 1,
-    refs: { payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, remarks, items },
+    // v2: `signatories` joined the persisted shape. v3: each line gained a
+    // free-text `particular`. v4: `department` moved from the line to the
+    // header. Bumping discards older drafts rather than restoring a voucher
+    // with part of its shape silently missing.
+    version: 4,
+    refs: { payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, department, remarks, signatories, items },
     isEmpty: () => !payee.value && !payeeAddress.value && !payeeTin.value && cashAccountId.value == null
       && !checkNo.value && !orSiNo.value && !remarks.value
+      && !hasAnySignatory()
       && items.value.every((line) => !line.amount),
   })
+
+  // Remembers the last names used, so the same officers don't get retyped on
+  // every voucher. Separate from the form draft on purpose: the draft is
+  // cleared on submit, whereas these should survive precisely BECAUSE a
+  // voucher was submitted. useFormDraft handles the per-user namespacing and
+  // is wiped on logout, so the names never leak between accounts.
+  const cachedSignatories = ref(emptySignatories())
+  const signatoryCache = useFormDraft({
+    key: 'finance-voucher-signatories',
+    version: 1,
+    refs: { cachedSignatories },
+    isEmpty: () => Object.values(cachedSignatories.value).every((v) => !v),
+  })
+
+  function hasAnySignatory() {
+    return Object.values(signatories.value).some((v) => v)
+  }
+
+  // v-model on a member expression of a destructured ref does not reliably
+  // unwrap — the write lands on the ref object instead of its value, so the
+  // field stays blank and the payload saves null. Go through an explicit setter.
+  function setSignatory(field: VoucherSignatoryField, value: string) {
+    signatories.value[field] = value ?? ''
+    cachedSignatories.value[field] = value ?? ''
+  }
+
+  /** Fill blank signature blocks from the last voucher's names. Never
+   *  overwrites a name already typed or loaded from the voucher being edited. */
+  function applyCachedSignatories() {
+    signatoryCache.restore()
+    for (const key of Object.keys(signatories.value) as VoucherSignatoryField[]) {
+      if (!signatories.value[key]) signatories.value[key] = cachedSignatories.value[key] ?? ''
+    }
+  }
 
   const categoryOptions = expenseCategories
   const departmentOptions = expenseDepartments
@@ -114,7 +165,7 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
     const missing: string[] = []
     if (!payee.value.trim()) missing.push('Payee')
     if (!voucherDate.value) missing.push('Date')
-    if (cashAccountId.value === null) missing.push('Paid From')
+    if (cashAccountId.value === null) missing.push('Payment Mode')
     if (!validItems.value.length) missing.push('a particular with an amount')
     if (insufficientFunds.value) missing.push('a total within the account balance')
     return missing
@@ -133,7 +184,9 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
     cashAccountId.value = null
     checkNo.value = ''
     orSiNo.value = ''
+    department.value = null
     remarks.value = ''
+    signatories.value = emptySignatories()
     items.value = [emptyItem()]
     draft.clear()
   }
@@ -151,11 +204,18 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
     // Falls back to a line's copy for vouchers created before or_si_no moved
     // onto the header.
     orSiNo.value = voucher.or_si_no ?? voucher.items[0]?.or_si_no ?? ''
+    // Department is stored per line but entered once. Every live voucher uses a
+    // single department across its lines, so the first non-null one is it.
+    department.value = voucher.items.find((line) => line.department)?.department ?? null
     remarks.value = voucher.remarks ?? ''
+    signatories.value = { ...emptySignatories(), ...voucher.signatories }
     items.value = voucher.items.length
       ? voucher.items.map((line) => ({
         category: line.category,
-        department: line.department,
+        // Vouchers saved before per-line explanations stored the category's
+        // title here. Show those as empty rather than pre-filling the box with
+        // a word the category column already says.
+        particular: line.particular === categoryTitle(line.category) ? '' : (line.particular ?? ''),
         amount: line.amount,
       }))
       : [emptyItem()]
@@ -181,11 +241,19 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
       check_no: checkNo.value.trim(),
       or_si_no: orSiNo.value.trim(),
       remarks: remarks.value.trim(),
+      signatories: {
+        prepared_by_name: signatories.value.prepared_by_name.trim(),
+        checked_by_name: signatories.value.checked_by_name.trim(),
+        approved_by_name: signatories.value.approved_by_name.trim(),
+        received_by_name: signatories.value.received_by_name.trim(),
+      },
       items: validItems.value.map((line) => ({
-        // Derived, not typed — the header remark carries the purpose.
-        particular: categoryTitle(line.category),
+        // The typed purpose. Falls back to the category's title when left blank
+        // so the column is never empty in the database.
+        particular: line.particular.trim() || categoryTitle(line.category),
         category: line.category as ExpenseCategory,
-        department: line.department as ExpenseDepartment | null,
+        // Fanned out from the single header value.
+        department: department.value,
         amount: Number(line.amount),
       })),
     }
@@ -193,10 +261,10 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
 
   return {
     editingId, isEditing,
-    payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, remarks, items,
+    payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, department, remarks, signatories, items,
     categoryOptions, departmentOptions, accountOptions, metaForAccount, selectedAccount,
     voucherTotal, insufficientFunds, canSubmit, blockers,
-    resetForm, loadFrom, addItem, removeItem, buildPayload,
+    resetForm, loadFrom, addItem, removeItem, buildPayload, setSignatory, applyCachedSignatories,
     restoreDraft: draft.restore,
     clearDraft: draft.clear,
   }

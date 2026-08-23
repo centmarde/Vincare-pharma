@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useStockTransferRequest } from '../composables/useStockTransferRequest'
+import type { ProductPickerResult } from '@/stores/productsData'
+import ProductPickerDialog from '@/components/products/ProductPicker.vue'
 
 const props = defineProps<{
   modelValue: boolean
@@ -13,9 +15,25 @@ const emit = defineEmits<{
 
 const {
   loading, outletId, remarks, items,
-  outletOptions, productOptions,
-  addItem, removeItem, handleSubmit, init,
+  outletOptions,
+  addItem, removeItem, applyPickedProduct, handleSubmit, init,
 } = useStockTransferRequest(() => emit('created'))
+
+// Shared search dialog instead of a dropdown — it searches all 2,401 products
+// server-side, where the products store only ever held the first 1,000.
+const showProductPicker = ref(false)
+const pickerTargetIndex = ref<number | null>(null)
+
+function openProductPicker(index: number) {
+  pickerTargetIndex.value = index
+  showProductPicker.value = true
+}
+
+function onProductSelected(product: ProductPickerResult) {
+  if (pickerTargetIndex.value === null) return
+  applyPickedProduct(pickerTargetIndex.value, product)
+  pickerTargetIndex.value = null
+}
 
 onMounted(init)
 </script>
@@ -79,13 +97,16 @@ onMounted(init)
 
         <v-row v-for="(item, index) in items" :key="index" dense align="center">
           <v-col cols="7">
-            <v-select
-              v-model="item.product_id"
-              :items="productOptions"
-              placeholder="Select product"
+            <v-text-field
+              :model-value="item.product_name"
+              placeholder="Search product"
+              readonly
               variant="outlined"
               density="compact"
               hide-details
+              append-inner-icon="mdi-database-search-outline"
+              @click="openProductPicker(index)"
+              @click:append-inner="openProductPicker(index)"
             />
           </v-col>
           <v-col cols="3">
@@ -129,6 +150,8 @@ onMounted(init)
         </v-btn>
       </v-card-actions>
     </v-card>
+
+    <ProductPickerDialog v-model="showProductPicker" @select="onProductSelected" />
   </v-dialog>
 </template>
 

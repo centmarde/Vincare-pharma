@@ -22,15 +22,17 @@ const emit = defineEmits<{
 
 const {
   isEditing,
-  payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, remarks, items,
+  payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, department, remarks, items,
   categoryOptions, departmentOptions, accountOptions, metaForAccount, selectedAccount,
-  voucherTotal, insufficientFunds, canSubmit, blockers,
+  voucherTotal, insufficientFunds, canSubmit, blockers, signatories,
   resetForm, loadFrom, addItem, removeItem, buildPayload, restoreDraft,
+  setSignatory, applyCachedSignatories,
 } = useVoucherForm(() => props.accounts)
 
 // The form deliberately mirrors the printed voucher cell-for-cell, so what the
 // user fills in is laid out exactly where it lands on the paper they sign.
-// Signature blocks are shown but not editable — they're signed by hand.
+// Signatory names are typed here and print above the rule; only the signature
+// itself is handwritten.
 
 // The ruled cells divide vertically on a wide screen and stack on a narrow one,
 // so the divider that separates a pair has to switch edges with the breakpoint.
@@ -53,6 +55,9 @@ watch(() => props.modelValue, (open) => {
   resetForm()
   if (props.editing) loadFrom(props.editing)
   else restoreDraft()
+  // Prefill any signature block still blank with the last names used. Runs for
+  // edits too — an older voucher saved before this field existed has none.
+  applyCachedSignatories()
 })
 
 function handleSubmit() {
@@ -146,14 +151,15 @@ function handleSubmit() {
             <v-col cols="12" sm="4" class="pa-2">
               <!-- Not "Fund" (an LGU fund-cluster term from the source form) and
                    not "Bank/Checking Account" — this can be a bank account, the
-                   petty cash box, or a placement. "Paid From" is true for all. -->
+                   petty cash box, or a placement. "Payment Mode" covers all
+                   three, and is the wording used across the whole module. -->
               <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis">
                 Payment Mode <span class="text-error">*</span>
               </div>
               <v-select
                 v-model="cashAccountId"
                 :items="accountOptions"
-                placeholder="Account paid from"
+                placeholder="Select payment mode"
                 variant="plain"
                 density="compact"
                 hide-details
@@ -227,7 +233,30 @@ function handleSubmit() {
             </v-col>
           </v-row>
 
-          <!-- Particulars: every field the expense form asks for lives on the line -->
+          <v-row no-gutters class="border-b">
+            <v-col cols="12" class="pa-2">
+              <!-- One department for the whole voucher. It used to be a select
+                   on every line, which meant picking the same value over and
+                   over; it is still saved onto each line, where the generated
+                   expense reads it from. -->
+              <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis">
+                Department
+              </div>
+              <v-select
+                v-model="department"
+                :items="departmentOptions"
+                item-title="title"
+                item-value="value"
+                placeholder="Charged to which department"
+                variant="plain"
+                density="compact"
+                clearable
+                hide-details
+              />
+            </v-col>
+          </v-row>
+
+          <!-- Particulars: category + purpose per line; department is on the header -->
           <v-row no-gutters class="border-b bg-surface-light">
             <v-col
               cols="12"
@@ -244,11 +273,22 @@ function handleSubmit() {
 
           <v-row v-for="(line, index) in items" :key="index" no-gutters class="border-b">
             <v-col cols="12" sm="8" class="pa-2" :class="smAndUp ? 'border-e' : 'border-b'">
-              <!-- No per-line description: the purpose is written once in
-                   Reference / Remarks above. A line is only what the spend is
-                   charged to. -->
+              <!-- Purpose of THIS line. Prints beside the category, which is
+                   the split the accountant asked for: what it is charged to on
+                   one side, what it was actually for on the other. -->
               <v-row dense>
-                <v-col cols="12" sm="6">
+                <v-col cols="12">
+                  <v-text-field
+                    v-model="line.particular"
+                    label="Purpose / Explanation"
+                    placeholder="e.g. Butuan–Zamboanga round trip"
+                    variant="outlined"
+                    density="compact"
+                    hide-details
+                    class="mb-2"
+                  />
+                </v-col>
+                <v-col cols="12">
                   <v-select
                     v-model="line.category"
                     :items="categoryOptions"
@@ -257,19 +297,6 @@ function handleSubmit() {
                     label="Category"
                     variant="outlined"
                     density="compact"
-                    hide-details
-                  />
-                </v-col>
-                <v-col cols="12" sm="6">
-                  <v-select
-                    v-model="line.department"
-                    :items="departmentOptions"
-                    item-title="title"
-                    item-value="value"
-                    label="Department"
-                    variant="outlined"
-                    density="compact"
-                    clearable
                     hide-details
                   />
                 </v-col>
@@ -327,19 +354,28 @@ function handleSubmit() {
             </v-col>
           </v-row>
 
-          <!-- Signed by hand on the printed copy, not captured here -->
+          <!-- Names are typed here and PRINTED above the rule, so only the
+               signature itself is handwritten. Optional: leave one blank and it
+               prints as an empty line to fill in by hand. -->
           <v-row no-gutters>
             <v-col
               v-for="(role, index) in voucherSignatories"
-              :key="role"
+              :key="role.field"
               cols="6"
               sm="3"
               class="pa-2"
               :class="signatoryBorder(index)"
             >
-              <div class="text-caption font-weight-bold">{{ role }}:</div>
-              <!-- The hand-signature rule: blank space to sign on, then the line. -->
-              <div class="border-b mt-8 mb-1" />
+              <div class="text-caption font-weight-bold">{{ role.label }}:</div>
+              <v-text-field
+                :model-value="signatories[role.field]"
+                placeholder="Name"
+                variant="plain"
+                density="compact"
+                hide-details
+                @update:model-value="setSignatory(role.field, $event)"
+              />
+              <div class="border-b mb-1" />
               <div class="text-caption text-center"><em>(Signature Over Printed Name)</em></div>
             </v-col>
           </v-row>

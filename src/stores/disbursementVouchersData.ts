@@ -15,14 +15,35 @@ import type { ExpenseCategory, ExpenseDepartment } from '@/stores/financeData'
 
 export type VoucherStatus = 'draft' | 'printed' | 'recorded' | 'cancelled'
 
-// Labels only — signed by hand on the printed copy. Shared by the form and the
-// printed voucher so the two can't drift.
+// The four signature blocks, shared by the form and the printed voucher so the
+// two can't drift. `field` is the finance_details column holding the typed name.
 export const voucherSignatories = [
-  'Prepared by',
-  'Checked by',
-  'Approved by',
-  'Received by',
+  { label: 'Prepared by', field: 'prepared_by_name' },
+  { label: 'Checked by',  field: 'checked_by_name' },
+  { label: 'Approved by', field: 'approved_by_name' },
+  { label: 'Received by', field: 'received_by_name' },
 ] as const
+
+/**
+ * The typed name printed under each signature rule, so only the signature is
+ * handwritten. Free text, NOT a user FK: a signatory is often not an app user
+ * (an owner, a driver collecting payment, an external approver), and the name
+ * on a signed voucher must stay exactly as printed even if a user is later
+ * renamed or deactivated. Distinct from finance_details.printed_by, which is
+ * the auth user who hit Print.
+ */
+export type VoucherSignatories = {
+  prepared_by_name: string
+  checked_by_name: string
+  approved_by_name: string
+  received_by_name: string
+}
+
+export type VoucherSignatoryField = keyof VoucherSignatories
+
+export const emptySignatories = (): VoucherSignatories => ({
+  prepared_by_name: '', checked_by_name: '', approved_by_name: '', received_by_name: '',
+})
 
 export type VoucherItemType = {
   id: number
@@ -33,6 +54,9 @@ export type VoucherItemType = {
   or_si_no: string | null
   amount: number
   expense_transaction_id: number | null
+  /** The expense this line became, once recorded. Drives the RECORDED stamp. */
+  expense_no: string | null
+  expense_recorded_at: string | null
 }
 
 export type VoucherType = {
@@ -55,6 +79,7 @@ export type VoucherType = {
   printed_at: string | null
   print_count: number
   created_by: string | null
+  signatories: VoucherSignatories
   items: VoucherItemType[]
 }
 
@@ -76,6 +101,7 @@ export type VoucherInput = {
   // on the header (and prints in section D) rather than per particular.
   or_si_no: string
   remarks: string
+  signatories: VoucherSignatories
   items: VoucherItemInput[]
 }
 
@@ -86,7 +112,10 @@ const voucherSelect = `
   *,
   cash_account:cash_account_id(name, institution, classification),
   finance_details(*),
-  items:disbursement_voucher_items!disbursement_voucher_items_voucher_id_fkey(*)
+  items:disbursement_voucher_items!disbursement_voucher_items_voucher_id_fkey(
+    *,
+    expense:expense_transaction_id(expense_no, created_at)
+  )
 `
 
 export const useDisbursementVouchersStore = defineStore('disbursementVouchers', () => {
@@ -115,6 +144,8 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
       or_si_no: row.or_si_no ?? null,
       amount: Number(row.amount ?? 0),
       expense_transaction_id: row.expense_transaction_id ?? null,
+      expense_no: row.expense?.expense_no ?? null,
+      expense_recorded_at: row.expense?.created_at ?? null,
     }
   }
 
@@ -141,6 +172,12 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
       printed_at: details.printed_at ?? null,
       print_count: details.print_count ?? 0,
       created_by: row.created_by,
+      signatories: {
+        prepared_by_name: details.prepared_by_name ?? '',
+        checked_by_name: details.checked_by_name ?? '',
+        approved_by_name: details.approved_by_name ?? '',
+        received_by_name: details.received_by_name ?? '',
+      },
       // Aliased to `items` in voucherSelect; sorted by id so the printed
       // particulars keep the order they were entered in.
       items: (row.items ?? []).map(mapItem).sort((a: VoucherItemType, b: VoucherItemType) => a.id - b.id),
@@ -256,6 +293,10 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
         payee_tin: payload.payee_tin || null,
         check_no: payload.check_no || null,
         or_si_no: payload.or_si_no || null,
+        prepared_by_name: payload.signatories.prepared_by_name || null,
+        checked_by_name: payload.signatories.checked_by_name || null,
+        approved_by_name: payload.signatories.approved_by_name || null,
+        received_by_name: payload.signatories.received_by_name || null,
       }, { onConflict: 'transaction_id' })
     if (detailsError) {
       handleError(detailsError, 'Failed to save voucher details.')

@@ -12,7 +12,7 @@ export const headers = [
   { title: 'DV NO.',      key: 'dv_no',             sortable: true,  align: 'center' as const },
   { title: 'DATE',        key: 'voucher_date',      sortable: true,  align: 'center' as const },
   { title: 'PAYEE',       key: 'payee',             sortable: true,  align: 'center' as const },
-  { title: 'PAID FROM',   key: 'cash_account_name', sortable: false, align: 'center' as const },
+  { title: 'PAYMENT MODE', key: 'cash_account_name', sortable: false, align: 'center' as const },
   { title: 'PARTICULARS', key: 'particulars',       sortable: false, align: 'center' as const },
   { title: 'AMOUNT',      key: 'total_amount',      sortable: true,  align: 'center' as const },
   { title: 'STATUS',      key: 'status',            sortable: true,  align: 'center' as const },
@@ -37,6 +37,9 @@ export function useDisbursementVouchers() {
 
   const showPrintDialog = ref(false)
   const printTarget = ref<VoucherType | null>(null)
+  // The RECORDED overprint, laid onto the already-signed sheet.
+  const showStampDialog = ref(false)
+  const stampTarget = ref<VoucherType | null>(null)
   // Which physical copy the open print view represents. Anything above 1 is a
   // reprint and must render the REPRINTED COPY mark, so a second copy can never
   // be mistaken for the original.
@@ -110,6 +113,18 @@ export function useDisbursementVouchers() {
     showPrintDialog.value = true
   }
 
+  // Re-fetched rather than reusing the row, so the stamp reads the expense
+  // numbers created by recording — the list row predates them.
+  async function openStamp(voucher: VoucherType) {
+    stampTarget.value = await voucherStore.fetchVoucherById(voucher.id)
+    showStampDialog.value = true
+  }
+
+  function closeStampDialog() {
+    showStampDialog.value = false
+    stampTarget.value = null
+  }
+
   function closePrintDialog() {
     showPrintDialog.value = false
     printTarget.value = null
@@ -141,6 +156,7 @@ export function useDisbursementVouchers() {
     vouchers, cashAccounts, loading,
     showFormDialog, editTarget,
     showPrintDialog, printTarget, printCopyNo,
+    showStampDialog, stampTarget, openStamp, closeStampDialog,
     showCancelDialog, cancelTarget, cancelReason,
     statusMeta, canEdit, canPrint, canRecord, canCancel, recordBlockedReason, particularsSummary,
     init, openCreateDialog, openEditDialog, closeFormDialog, handleSubmit,

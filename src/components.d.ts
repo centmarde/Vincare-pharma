@@ -34,6 +34,7 @@ declare module 'vue' {
     ProductDeleteDialog: typeof import('./components/products/dialogs/ProductDeleteDialog.vue')['default']
     ProductFormDialog: typeof import('./components/products/dialogs/ProductFormDialog.vue')['default']
     ProductMobile: typeof import('./components/products/mobile/ProductMobile.vue')['default']
+    ProductPicker: typeof import('./components/products/ProductPicker.vue')['default']
     ProductsWidget: typeof import('./components/products/ProductsWidget.vue')['default']
     RegisterForm: typeof import('./components/auth/RegisterForm.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']

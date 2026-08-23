@@ -11,6 +11,7 @@ const { mobile } = useDisplay()
 const pos = usePos()
 const {
   search, cart, loading,
+  isSearching, resultCount, submitSearch, clearSearch,
   selectedOutletId, posOutletOptions,
   filteredProducts, subtotal, total, itemCount, isEmpty,
   addToCart, setQty, removeFromCart, clearCart, init, setOutlet,
@@ -48,25 +49,62 @@ onMounted(init)
                 :style="mobile ? 'width: 100%' : 'min-width: 200px'"
                 @update:model-value="setOutlet"
               />
+              <!-- Enter (or the button) adds a single exact match straight to
+                   the cart, so a barcode scanner works and the counter saves a
+                   click per item. Typing still filters live. -->
               <v-text-field
                 v-model="search"
-                placeholder="Search product or SKU..."
+                placeholder="Scan barcode or search name / generic / SKU"
                 prepend-inner-icon="mdi-magnify"
+                :clearable="isSearching"
                 variant="outlined"
                 density="compact"
                 hide-details
-                :style="mobile ? 'width: 100%' : 'min-width: 240px'"
+                :style="mobile ? 'width: 100%' : 'min-width: 300px'"
+                @keyup.enter="submitSearch"
+                @click:clear="clearSearch"
               />
+              <v-btn
+                color="primary"
+                variant="flat"
+                class="text-none font-weight-bold"
+                prepend-icon="mdi-magnify"
+                :disabled="!isSearching"
+                :block="mobile"
+                @click="submitSearch"
+              >
+                Search
+              </v-btn>
             </div>
           </v-card-title>
           <v-divider />
 
           <v-card-text class="pa-3" :style="mobile ? 'max-height: 50vh; overflow-y: auto' : 'max-height: 70vh; overflow-y: auto'">
             <div v-if="loading" class="text-center pa-6 text-medium-emphasis">Loading stock…</div>
-            <div v-else-if="!filteredProducts.length" class="text-center pa-6 text-medium-emphasis">
-              No sellable stock. Transfer stock into this branch first.
-            </div>
-            <v-row v-else dense>
+
+            <template v-else>
+              <div v-if="isSearching" class="d-flex align-center justify-space-between px-1 pb-2">
+                <span class="text-caption text-medium-emphasis">
+                  {{ resultCount }} match{{ resultCount === 1 ? '' : 'es' }} for "{{ search }}"
+                </span>
+                <v-btn size="x-small" variant="text" class="text-none" @click="clearSearch">
+                  Show all
+                </v-btn>
+              </div>
+
+              <!-- An empty RESULT is not an empty BRANCH. Telling a cashier to
+                   "transfer stock in" because their search typo matched nothing
+                   is misleading, so the two cases read differently. -->
+              <div v-if="!filteredProducts.length" class="text-center pa-6 text-medium-emphasis">
+                <template v-if="isSearching">
+                  No product matches "{{ search }}" in this branch.
+                </template>
+                <template v-else>
+                  No sellable stock. Transfer stock into this branch first.
+                </template>
+              </div>
+
+              <v-row v-else dense>
               <v-col v-for="p in filteredProducts" :key="p.product_id" cols="6" sm="4" lg="3">
                 <v-card
                   variant="outlined"
@@ -76,7 +114,13 @@ onMounted(init)
                   @click="addToCart(p)"
                 >
                   <div class="text-body-2 font-weight-medium text-truncate">{{ p.product_name }}</div>
-                  <div class="text-caption text-medium-emphasis text-truncate mb-2">{{ p.sku ?? '—' }}</div>
+                  <!-- Brand is shown because search matches on it: a customer
+                       asks for "Fluimucil" but the card is titled by molecule,
+                       so without it a hit looks like an unrelated result. -->
+                  <div class="text-caption text-medium-emphasis text-truncate mb-2">
+                    <span v-if="p.brand" class="font-weight-medium">{{ p.brand }}</span>
+                    <span v-if="p.brand"> · </span>{{ p.sku ?? '—' }}
+                  </div>
                   <v-spacer />
                   <div class="d-flex justify-space-between align-center ga-1">
                     <span class="text-body-2 font-weight-bold text-primary text-truncate">{{ formatCurrency(p.unit_price) }}</span>
@@ -84,7 +128,8 @@ onMounted(init)
                   </div>
                 </v-card>
               </v-col>
-            </v-row>
+              </v-row>
+            </template>
           </v-card-text>
         </v-card>
       </v-col>

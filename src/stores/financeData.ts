@@ -30,9 +30,14 @@ export const expenseCategories = [
   { value: 'labor_services', title: 'Labor & Other Services' },
   { value: 'freight_handling', title: 'Freight & Handling' },
   { value: 'taxes_licenses', title: 'Taxes & Licenses' },
+  { value: 'meals', title: 'Meals' },
 ] as const
 
 export type ExpenseCategory = typeof expenseCategories[number]['value']
+
+/** An expense category's display title ("fuel_lubricants" -> "Fuel & Lubricants"). */
+export const categoryTitle = (value: ExpenseCategory): string =>
+  expenseCategories.find((c) => c.value === value)?.title ?? value
 
 export const expenseDepartments = [
   { value: 'VP-Admin', title: 'VP-Admin' },

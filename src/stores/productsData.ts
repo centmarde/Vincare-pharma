@@ -71,17 +71,20 @@ type FetchProductsOptions = {
   expiryEnd?: string   // 'YYYY-MM-DD'
 }
 
+// Mirrors search_products_with_sku's RETURNS TABLE exactly (see
+// supabase/migrations/20260823_search_products_with_sku_brand.sql).
+// supplier_name / supplier_is_active are deliberately NOT here: the RPC stopped
+// returning them because supplier identity is confidential. supplier_id stays —
+// Purchasing's PR dialogs set the line's supplier from it.
 export type ProductPickerResult = {
   id: number
   product_name: string | null
+  brand: string | null
   unit: string | null
   current_stock: number | null
-  reorder_level: number | null
   cost_price: number | null
   selling_price: number | null
   supplier_id: number | null
-  supplier_name: string | null
-  supplier_is_active: boolean | null
   total_count: number
 }
 
@@ -109,6 +112,9 @@ export const useProductsDataStore = defineStore('productsData', () => {
   const error: Ref<string> = ref('')
   const pickerProducts = ref<ProductPickerResult[]>([])
   const pickerTotalCount = ref(0)
+  // Search now fires per keystroke, so a slow earlier response can land after a
+  // later one. Stamped at store scope so the counter survives between calls.
+  let pickerRequestId = 0
   const reorderRequests: Ref<any[]> = ref([])
   const reorderCount:    Ref<number> = ref(0)
   // const statusProductExpiry: Ref<ProductType[]> = ref([])
@@ -386,22 +392,31 @@ export const useProductsDataStore = defineStore('productsData', () => {
   }
 
   async function fetchProductPicker({ search = '', limit = 15 }: { search?: string; limit?: number }) {
+    const requestId = ++pickerRequestId
     loading.value = true
 
-    const { data, error } = await supabase.rpc('search_products_with_sku', {
-      search_term: search,
-      page_limit: limit,
-    })
+    try {
+      const { data, error } = await supabase.rpc('search_products_with_sku', {
+        search_term: search,
+        page_limit: limit,
+      })
 
-    loading.value = false
+      if (error) {
+        console.error(error)
+        return
+      }
 
-    if (error) {
-      console.error(error)
-      return
+      // A newer keystroke already fired — discard this result rather than
+      // clobbering the list with matches for a term the user has moved past.
+      if (requestId !== pickerRequestId) return
+
+      // current_stock and brand now come straight off the RPC — the second
+      // round-trip that used to fetch stock per search is gone.
+      pickerProducts.value = (data ?? []) as ProductPickerResult[]
+      pickerTotalCount.value = data?.[0]?.total_count ?? 0
+    } finally {
+      if (requestId === pickerRequestId) loading.value = false
     }
-
-    pickerProducts.value = (data ?? []) as ProductPickerResult[]
-    pickerTotalCount.value = data?.[0]?.total_count ?? 0
   }
 
 

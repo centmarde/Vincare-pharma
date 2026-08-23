@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
+import type { ProductPickerResult } from '@/stores/productsData'
+import ProductPickerDialog from '@/components/products/ProductPicker.vue'
 
 import CustomerTermsCard from '@/components/customers/CustomerTermsCard.vue'
 import { useCreateOrder } from '../../composables/useCreateOrder'
@@ -34,7 +36,6 @@ const {
   outletOptions,
   remarks,
   lines,
-  productOptions,
   subtotal,
   discountRate,
   discountAmount,
@@ -56,9 +57,8 @@ const {
   erodesSystemPrice,
   addLine,
   removeLine,
-  onProductChange,
+  applyPickedProduct,
   onCustomerChange,
-  unitFor,
   submit,
   reset,
   init,
@@ -66,6 +66,23 @@ const {
   emit('created')
   internalValue.value = false
 })
+
+// Products are chosen through the shared search dialog rather than a dropdown:
+// it searches all 2,401 products server-side (and matches brand names), where
+// the products store only ever held the first 1,000 rows.
+const showProductPicker = ref(false)
+const pickerTargetIndex = ref<number | null>(null)
+
+function openProductPicker(index: number) {
+  pickerTargetIndex.value = index
+  showProductPicker.value = true
+}
+
+function onProductSelected(product: ProductPickerResult) {
+  if (pickerTargetIndex.value === null) return
+  applyPickedProduct(pickerTargetIndex.value, product)
+  pickerTargetIndex.value = null
+}
 
 watch(
   () => internalValue.value,
@@ -261,20 +278,21 @@ watch(
                 </div>
               </div>
 
-              <v-select
-                v-model="line.product_id"
-                :items="productOptions"
-                item-title="title"
-                item-value="value"
+              <v-text-field
+                :model-value="line.product_name"
+                label="Product"
+                placeholder="Search product"
+                readonly
                 density="compact"
                 variant="outlined"
-                label="Product"
                 class="mb-2"
-                @update:model-value="onProductChange(i)"
+                append-inner-icon="mdi-database-search-outline"
+                @click="openProductPicker(i)"
+                @click:append-inner="openProductPicker(i)"
               />
 
               <div class="text-caption text-medium-emphasis mb-2">
-                {{ unitFor(line.product_id) }}
+                {{ line.unit || '—' }}
               </div>
 
               <v-row dense>
@@ -326,18 +344,21 @@ watch(
                 }"
               >
                 <td>
-                  <v-select
-                    v-model="line.product_id"
-                    :items="productOptions"
-                    item-title="title"
-                    item-value="value"
+                  <v-text-field
+                    :model-value="line.product_name"
+                    placeholder="Search product"
+                    readonly
                     density="compact"
-                    @update:model-value="onProductChange(i)"
+                    variant="outlined"
+                    hide-details
+                    append-inner-icon="mdi-database-search-outline"
+                    @click="openProductPicker(i)"
+                    @click:append-inner="openProductPicker(i)"
                   />
                 </td>
 
                 <td class="text-medium-emphasis">
-                  {{ unitFor(line.product_id) }}
+                  {{ line.unit || '—' }}
                 </td>
 
                 <td>
@@ -436,5 +457,7 @@ watch(
         </v-card-actions>
       </template>
     </v-card>
+
+    <ProductPickerDialog v-model="showProductPicker" @select="onProductSelected" />
   </v-dialog>
 </template>
