@@ -29,7 +29,7 @@ export const historyHeaders = [
   { title: 'UNIT',        key: 'unit',            sortable: false, align: 'center' as const },
   { title: 'QTY',         key: 'qty',             sortable: true,  align: 'center' as const },
   { title: 'COST/UNIT',   key: 'cost_per_unit',   sortable: true,  align: 'center' as const },
-  { title: 'OFFER/UNIT',  key: 'offer_per_unit',  sortable: true,  align: 'center' as const },
+  { title: 'PR PRICE',  key: 'offer_per_unit',  sortable: true,  align: 'center' as const },
   { title: 'TOTAL COST',  key: 'total_cost',      sortable: true,  align: 'center' as const },
   { title: 'SUPPLIER',    key: 'supplier_name',   sortable: true,  align: 'center' as const },
   { title: 'DATE',        key: 'created_at',      sortable: true,  align: 'center' as const },

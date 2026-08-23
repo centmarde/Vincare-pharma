@@ -107,7 +107,7 @@ async function onUnapprove() {
               </template>
               <th v-else class="table-header text-caption">QTY</th>
               <th class="table-header text-caption">SUPPLIER</th>
-              <th class="table-header text-caption">OFFER/UNIT</th>
+              <th class="table-header text-caption">PR PRICE</th>
               <th class="table-header text-caption">OFFER TOTAL</th>
               <th class="table-header text-caption">COST/UNIT</th>
               <th class="table-header text-caption">COST TOTAL</th>
@@ -154,7 +154,7 @@ async function onUnapprove() {
                 <div><span class="text-medium-emphasis">Unit: </span>{{ item.unit }}</div>
                 <div><span class="text-medium-emphasis">Qty: </span>{{ item.qty.toLocaleString() }}</div>
                 <div><span class="text-medium-emphasis">Supplier: </span>{{ item.supplier_name ?? '—' }}</div>
-                <div><span class="text-medium-emphasis">Offer/Unit: </span>{{ formatCurrency(item.offer_per_unit ?? 0) }}</div>
+                <div><span class="text-medium-emphasis">PR Price: </span>{{ formatCurrency(item.offer_per_unit ?? 0) }}</div>
                 <div><span class="text-medium-emphasis">Offer Total: </span>{{ formatCurrency(item.qty * (item.offer_per_unit ?? 0)) }}</div>
                 <div><span class="text-medium-emphasis">Cost/Unit: </span>{{ formatCurrency(item.cost_per_unit ?? 0) }}</div>
                 <div><span class="text-medium-emphasis">Cost Total: </span><span class="font-weight-medium">{{ formatCurrency(item.qty * (item.cost_per_unit ?? 0)) }}</span></div>

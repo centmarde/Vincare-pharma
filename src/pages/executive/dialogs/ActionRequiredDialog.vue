@@ -216,7 +216,7 @@ async function confirmReject() {
                   <th class="text-caption">Supplier</th>
                   <th class="text-caption text-right">Qty</th>
                   <th class="text-caption text-right">Cost/Unit</th>
-                  <th class="text-caption text-right">Offer/Unit</th>
+                  <th class="text-caption text-right">PR Price</th>
                 </tr>
               </thead>
               <tbody>
@@ -309,7 +309,7 @@ async function confirmReject() {
                 <th class="text-caption">Supplier</th>
                 <th class="text-caption text-right">Qty</th>
                 <th class="text-caption text-right">Cost/Unit</th>
-                <th class="text-caption text-right">Offer/Unit</th>
+                <th class="text-caption text-right">PR Price</th>
               </tr>
             </thead>
             <tbody>

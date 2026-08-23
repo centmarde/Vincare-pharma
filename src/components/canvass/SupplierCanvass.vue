@@ -8,6 +8,8 @@ const props = defineProps<{
   order: CanvassableOrder | null
   shortfall: Shortfall[]
   commitFn: CanvassCommitFn
+  /** Quantities an RFQ already asked suppliers to cost, keyed by item id. */
+  initialQty?: Record<number, number>
 }>()
 const emit = defineEmits<{ (e: 'created'): void }>()
 
@@ -17,7 +19,7 @@ const {
   validateQty, onExpiryInput, onExpiryBlur, bufferQty, lineTotal,
   canCommit, prPreview, commit, init,
   MIN_MONTHS_TO_EXPIRY,
-} = useCanvass(() => props.order, () => props.shortfall, props.commitFn, () => emit('created'))
+} = useCanvass(() => props.order, () => props.shortfall, props.commitFn, () => emit('created'), () => props.initialQty)
 
 onMounted(init)
 </script>
