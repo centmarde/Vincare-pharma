@@ -13,7 +13,7 @@ const emit = defineEmits<{
 }>()
 
 const {
-  stampArea, generating, offsetX, offsetY, leftMm, bottomMm,
+  stampArea, generating, offsetX, offsetY, leftMm, topMm,
   isRecorded, expenseNos, recordedDate,
   printStamp, resetCalibration,
 } = useVoucherStamp(() => props.voucher)
@@ -147,7 +147,7 @@ const expenseLabel = computed(() =>
       <div ref="stampArea" class="stamp-page">
         <div
           class="dv-stamp stamp-placed"
-          :style="{ left: `${leftMm}mm`, bottom: `${bottomMm}mm` }"
+          :style="{ left: `${leftMm}mm`, top: `${topMm}mm` }"
         >
           <div class="dv-stamp-word">RECORDED</div>
           <div class="dv-stamp-meta">{{ recordedDate }}</div>
@@ -183,7 +183,7 @@ const expenseLabel = computed(() =>
    after the fact rather than printed with the form. */
 .dv-stamp {
   display: inline-block;
-  padding: 3mm 5mm;
+  padding: 2.2mm 3.5mm;
   border: 0.9mm solid #c62828;
   outline: 0.3mm solid #c62828;
   outline-offset: 1.1mm;
@@ -195,16 +195,18 @@ const expenseLabel = computed(() =>
 }
 
 .dv-stamp-word {
-  font-size: 7mm;
+  /* Sized so "RECORDED" plus padding stays inside a 47.5mm quarter of the
+     signature row (~38mm total). Larger and it overruns into "Approved by". */
+  font-size: 4.6mm;
   font-weight: 700;
-  letter-spacing: 2.2mm;
+  letter-spacing: 1mm;
   /* letter-spacing adds a trailing gap; pull it back so the word looks centred */
-  text-indent: 2.2mm;
-  line-height: 1.1;
+  text-indent: 1mm;
+  line-height: 1.15;
 }
 
 .dv-stamp-meta {
-  font-size: 2.6mm;
+  font-size: 2.2mm;
   letter-spacing: 0.35mm;
   line-height: 1.5;
 }
@@ -226,9 +228,8 @@ const expenseLabel = computed(() =>
 
 .preview-stamp {
   position: absolute;
-  left: 10px;
-  bottom: 10px;
-  transform: scale(0.85);
-  transform-origin: bottom left;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(0.9);
 }
 </style>

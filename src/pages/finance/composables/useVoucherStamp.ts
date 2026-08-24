@@ -17,11 +17,25 @@ import { formatDatePR_ISO } from '@/utils/helpers'
  * from the bottom-left corner of that page.
  */
 
-// Millimetres. Measured from the bottom-left corner of the printable area, and
-// clear of section D (Received Payment), which occupies the bottom-left of the
-// voucher itself.
-const BASE_LEFT_MM = 14
-const BASE_BOTTOM_MM = 12
+// Millimetres from the TOP-LEFT of the sheet.
+//
+// The stamp aims at the reserved quarter in the signature row — the box that
+// used to be "Received by", freed up at the accountant's request. Anchored from
+// the TOP because html2pdf lays the voucher out downwards from the top margin,
+// so the signature row's distance from the top is what stays constant; its
+// distance from the bottom is not (it moves with the page's unused tail).
+//
+// Horizontal is exact: the printable width is 190mm (A4 less two 10mm margins),
+// the row divides into four 47.5mm quarters, so the fourth starts at
+// 10 + 3 x 47.5 = 152.5mm. 157mm centres a ~38mm stamp inside it.
+//
+// Vertical is an ESTIMATE. It depends on the rendered height of everything
+// above the signature row, which cannot be computed here — that is what the
+// alignment test and the calibration offsets are for. A voucher with more than
+// eight particulars also pushes the row further down; see the note in the
+// dialog.
+const BASE_LEFT_MM = 157
+const BASE_TOP_MM = 137
 
 const CALIBRATION_KEY = 'vincare:voucher-stamp-calibration'
 
@@ -60,7 +74,8 @@ export function useVoucherStamp(voucher: () => VoucherType | null) {
   })
 
   const leftMm = computed(() => BASE_LEFT_MM + (Number(offsetX.value) || 0))
-  const bottomMm = computed(() => BASE_BOTTOM_MM - (Number(offsetY.value) || 0))
+  // Positive offsetY moves the stamp UP the page, matching the field label.
+  const topMm = computed(() => BASE_TOP_MM - (Number(offsetY.value) || 0))
 
   const isRecorded = computed(() => voucher()?.status === 'recorded')
 
@@ -120,7 +135,7 @@ export function useVoucherStamp(voucher: () => VoucherType | null) {
   }
 
   return {
-    stampArea, generating, offsetX, offsetY, leftMm, bottomMm,
+    stampArea, generating, offsetX, offsetY, leftMm, topMm,
     isRecorded, expenseNos, recordedDate,
     printStamp, resetCalibration,
   }
