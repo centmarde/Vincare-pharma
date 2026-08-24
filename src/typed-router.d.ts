@@ -143,6 +143,7 @@ declare module 'vue-router/auto-routes' {
     '/purchasing/components/dialogs/PREditDialog': RouteRecordInfo<'/purchasing/components/dialogs/PREditDialog', '/purchasing/components/dialogs/PREditDialog', Record<never, never>, Record<never, never>>,
     '/purchasing/components/dialogs/PurchaseRequisitionDialog': RouteRecordInfo<'/purchasing/components/dialogs/PurchaseRequisitionDialog', '/purchasing/components/dialogs/PurchaseRequisitionDialog', Record<never, never>, Record<never, never>>,
     '/purchasing/components/dialogs/ReorderRequestsDialog': RouteRecordInfo<'/purchasing/components/dialogs/ReorderRequestsDialog', '/purchasing/components/dialogs/ReorderRequestsDialog', Record<never, never>, Record<never, never>>,
+    '/purchasing/components/dialogs/RFQPrintDialog': RouteRecordInfo<'/purchasing/components/dialogs/RFQPrintDialog', '/purchasing/components/dialogs/RFQPrintDialog', Record<never, never>, Record<never, never>>,
     '/purchasing/components/ProcurementRequests': RouteRecordInfo<'/purchasing/components/ProcurementRequests', '/purchasing/components/ProcurementRequests', Record<never, never>, Record<never, never>>,
     '/purchasing/components/PurchaseOrderList': RouteRecordInfo<'/purchasing/components/PurchaseOrderList', '/purchasing/components/PurchaseOrderList', Record<never, never>, Record<never, never>>,
     '/purchasing/components/PurchaseRequisitionList': RouteRecordInfo<'/purchasing/components/PurchaseRequisitionList', '/purchasing/components/PurchaseRequisitionList', Record<never, never>, Record<never, never>>,

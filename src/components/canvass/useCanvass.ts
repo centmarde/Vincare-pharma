@@ -42,6 +42,8 @@ export function useCanvass(
   shortfall: () => Shortfall[],
   commitFn: CanvassCommitFn,
   onCreated: () => void,
+  /** Optional per-item starting quantities, keyed by transaction_item id. */
+  initialQty?: () => Record<number, number> | undefined,
 ) {
   const suppliersStore = useSuppliersDataStore()
   const { suppliers } = storeToRefs(suppliersStore)
@@ -64,7 +66,10 @@ export function useCanvass(
         item_id: item?.id ?? 0,
         product_name: item?.product?.product_name ?? `#${s.product_id}`,
         shortfall_qty: s.needed,
-        order_qty: s.needed,
+        // Starts at the shortfall unless an RFQ was printed asking the supplier
+        // to cost a buffer — then price what was actually asked for, or the
+        // quote gets entered against the wrong quantity.
+        order_qty: initialQty?.()?.[item?.id ?? 0] ?? s.needed,
         quotes: [],
         selected_supplier_id: null,
       }

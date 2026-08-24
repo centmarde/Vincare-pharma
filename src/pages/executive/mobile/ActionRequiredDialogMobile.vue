@@ -242,7 +242,7 @@ function formatMoney(value: number | string | undefined) {
                     <span class="font-weight-medium ms-1">{{ formatMoney(it.cost_per_unit) }}</span>
                   </div>
                   <div class="text-caption">
-                    <span class="text-medium-emphasis">Offer/Unit:</span>
+                    <span class="text-medium-emphasis">PR Price:</span>
                     <span class="font-weight-medium ms-1">{{ formatMoney(it.offer_per_unit) }}</span>
                   </div>
                 </div>
@@ -347,7 +347,7 @@ function formatMoney(value: number | string | undefined) {
                     <span class="font-weight-medium ms-1">{{ formatMoney(it.cost_per_unit) }}</span>
                   </div>
                   <div class="text-caption">
-                    <span class="text-medium-emphasis">Offer/Unit:</span>
+                    <span class="text-medium-emphasis">PR Price:</span>
                     <span class="font-weight-medium ms-1">{{ formatMoney(it.offer_per_unit) }}</span>
                   </div>
                 </div>

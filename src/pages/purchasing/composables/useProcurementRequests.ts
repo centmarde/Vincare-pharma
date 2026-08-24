@@ -24,6 +24,19 @@ export function useProcurementRequests() {
   const selected = ref<ProcurementRequestType | null>(null)
   const showDetail = ref(false)
 
+  // RFQ (costing sheet) for the selected request. The quantities it was printed
+  // with flow into the canvass so quotes are entered against what was asked.
+  const showRFQ = ref(false)
+  const rfqQuantities = ref<Record<number, number>>({})
+
+  function openRFQ() {
+    if (selected.value) showRFQ.value = true
+  }
+
+  function onRFQQuantities(q: Record<number, number>) {
+    rfqQuantities.value = q
+  }
+
   async function init() {
     await procurementStore.fetchQueue()
   }
@@ -35,7 +48,9 @@ export function useProcurementRequests() {
 
   function closeDetail() {
     showDetail.value = false
+    showRFQ.value = false
     selected.value = null
+    rfqQuantities.value = {}
   }
 
   // SupplierCanvass needs a stable CanvassableOrder + a commitFn matching the
@@ -71,6 +86,7 @@ export function useProcurementRequests() {
 
   return {
     queue, loading, selected, showDetail,
+    showRFQ, rfqQuantities, openRFQ, onRFQQuantities,
     canvassOrder, canvassShortfall, commitFn,
     init, openDetail, closeDetail, onCanvassCreated, moduleLabel,
   }

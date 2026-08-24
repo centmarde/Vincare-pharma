@@ -5,6 +5,8 @@ import { useToast } from 'vue-toastification'
 import { voucherSignatories } from '@/stores/disbursementVouchersData'
 import type { VoucherItemType, VoucherType } from '@/stores/disbursementVouchersData'
 import { categoryTitle } from '@/stores/financeData'
+import { companyFor, companyOptions, defaultCompanyFor } from '@/utils/companyProfiles'
+import type { CompanyKey } from '@/utils/companyProfiles'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const props = defineProps<{
@@ -38,12 +40,8 @@ const printArea = ref<HTMLElement | null>(null)
 // SOA — Exelmed is VinCare's printed-document letterhead regardless of module.
 // This replaces the source form's Barangay / City / Province block, which is
 // LGU-specific and has no meaning for a private distributor.
-const company = {
-  name:  'EXELMED PHARMA TRADE',
-  line1: 'Ground Floor NB Building, Ochoa Avenue, Butuan City',
-  line2: '8600 Agusan del Norte, Philippines (Tel: 085-3000-460)',
-  tin:   'VAT Reg TIN: 178-845-363-000',
-} as const
+const companyKey = ref<CompanyKey>(defaultCompanyFor('disbursement_voucher'))
+const company = computed(() => companyFor(companyKey.value))
 
 // Every copy after the original must carry the mark, so a reprint can never be
 // passed off as the original signed voucher.
@@ -103,7 +101,7 @@ async function handlePrint() {
               <div class="text-subtitle-1 font-weight-bold" style="letter-spacing: 2px;">{{ company.name }}</div>
               <div class="dv-fine">{{ company.line1 }}</div>
               <div class="dv-fine">{{ company.line2 }}</div>
-              <div class="dv-fine">{{ company.tin }}</div>
+              <div v-if="company.license" class="dv-fine">{{ company.license }}</div>
             </div>
 
             <div class="dv-box">
@@ -240,6 +238,16 @@ async function handlePrint() {
         <v-divider />
 
         <v-card-actions class="pa-4">
+          <v-select
+            v-model="companyKey"
+            :items="companyOptions"
+            label="Issuing company"
+            variant="outlined"
+            density="compact"
+            hide-details
+            class="flex-grow-0 mr-3"
+            style="max-width: 230px"
+          />
           <v-chip v-if="isReprint" color="warning" variant="tonal" size="small" label>
             REPRINT — COPY NO. {{ copyNo }}
           </v-chip>

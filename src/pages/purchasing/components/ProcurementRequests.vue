@@ -2,10 +2,12 @@
 import { onMounted } from 'vue'
 import { useProcurementRequests, headers } from '../composables/useProcurementRequests'
 import SupplierCanvass from '@/components/canvass/SupplierCanvass.vue'
+import RFQPrintDialog from './dialogs/RFQPrintDialog.vue'
 import { formatDatePR_ISO } from '@/utils/helpers'
 
 const {
   queue, loading, selected, showDetail,
+  showRFQ, rfqQuantities, openRFQ, onRFQQuantities,
   canvassOrder, canvassShortfall, commitFn,
   init, openDetail, closeDetail, onCanvassCreated, moduleLabel,
 } = useProcurementRequests()
@@ -66,7 +68,21 @@ onMounted(init)
               <span v-if="selected.note"> · "{{ selected.note }}"</span>
             </div>
           </div>
-          <v-btn icon="mdi-close" variant="text" size="small" @click="closeDetail" />
+          <div class="d-flex align-center ga-2">
+            <!-- Costing sheet for the shortfall. Prices are left blank — it asks
+                 suppliers what they'd charge, it doesn't order anything. -->
+            <v-btn
+              variant="tonal"
+              size="small"
+              color="primary"
+              class="text-none"
+              prepend-icon="mdi-file-document-edit-outline"
+              @click="openRFQ"
+            >
+              Print RFQ
+            </v-btn>
+            <v-btn icon="mdi-close" variant="text" size="small" @click="closeDetail" />
+          </div>
         </v-card-title>
         <v-divider />
         <v-card-text class="pa-4 pa-sm-5">
@@ -74,10 +90,17 @@ onMounted(init)
             :order="canvassOrder"
             :shortfall="canvassShortfall"
             :commit-fn="commitFn"
+            :initial-qty="rfqQuantities"
             @created="onCanvassCreated"
           />
         </v-card-text>
       </v-card>
     </v-dialog>
+
+    <RFQPrintDialog
+      v-model="showRFQ"
+      :request="selected"
+      @quantities="onRFQQuantities"
+    />
   </v-container>
 </template>

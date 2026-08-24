@@ -81,6 +81,32 @@ export const useProcurementDataStore = defineStore('procurementData', () => {
     return true
   }
 
+  // Purchaser-side: an RFQ sheet was printed for this order's shortfall.
+  // Logged, not stored as a document — the RFQ carries a reference number
+  // derived from the order, and the paper itself is the record. This row is
+  // only the audit trail of who asked for costing and when.
+  const logRfqPrinted = async (
+    orderType: ProcurementOrderType,
+    orderId: number,
+    rfqNo: string,
+    description: string,
+    userId: string,
+  ): Promise<boolean> => {
+    const module = orderType === 'inhouse_order' ? 'inhouse' : 'ethical'
+    const { error: logError } = await supabase.from('logs').insert({
+      module, action: 'rfq_printed', transaction_id: orderId,
+      description: `${rfqNo} — ${description}`,
+      created_by: userId,
+    })
+    if (logError) {
+      // Non-fatal: the sheet has already been generated, and failing to log it
+      // must not make the purchaser think the print failed.
+      console.error(logError)
+      return false
+    }
+    return true
+  }
+
   // Staff-side: latest procurement_requested log for this order, so the
   // dialog can show "Sent to Purchasing on {date}" and disable re-sending
   // until a fresh shortfall episode.
@@ -200,7 +226,7 @@ export const useProcurementDataStore = defineStore('procurementData', () => {
 
   return {
     loading, error, queue,
-    fetchQueue, notifyPurchasing, fetchLatestRequest, shortfallFor,
+    fetchQueue, notifyPurchasing, logRfqPrinted, fetchLatestRequest, shortfallFor,
     clearError,
   }
 })

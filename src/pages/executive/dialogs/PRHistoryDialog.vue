@@ -129,7 +129,7 @@ watch(model, (open) => {
                 >{{ formatCurrency(item.cost_per_unit) }}
               </div>
               <div>
-                <span class="text-medium-emphasis">Offer/Unit: </span
+                <span class="text-medium-emphasis">PR Price: </span
                 >{{ formatCurrency(item.offer_per_unit) }}
               </div>
               <div>
