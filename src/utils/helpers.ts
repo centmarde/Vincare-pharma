@@ -497,7 +497,7 @@ export function parseTermDays(value: string | number | null | undefined): number
   // number that was never a term.
   if (text.includes('%')) return null
   // Ranges ('30 - 60 Days') resolve to the EARLIER bound: the receivable starts
-  // ageing at the first date it could have been due, which is the conservative
+  // aging at the first date it could have been due, which is the conservative
   // read for collections.
   const match = text.match(/(\d+)/)
   if (!match) return null // 'Consignment', 'Doctor's deal', ...
