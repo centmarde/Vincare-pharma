@@ -1239,21 +1239,22 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     clearError()
     try {
       const threshold = options.threshold ?? 0.01
-      // actual_amount moved to remittance_details in hub redesign; old rows
-      // still have it on transactions — coalesce handles both.
+      // actual_amount and the bare `outlet` text code were both DROPPED from
+      // transactions. actual_amount now lives only on remittance_details, and
+      // the outlet code is read through the outlet_id relationship.
       const { data, error: fetchError } = await supabase.from('transactions')
-        .select('id, remittance_no, outlet, outlet_id, created_at, total_amount, actual_amount, remarks, remittance_details(actual_amount, resolution, receivable_status)')
+        .select('id, remittance_no, outlet_id, outlet:outlet_id(code), created_at, total_amount, remarks, remittance_details(actual_amount, resolution, receivable_status)')
         .eq('transaction_type', 'remittance')
         .order('created_at', { ascending: false })
       if (fetchError) throw fetchError
 
       const rows: RemittanceDiscrepancyRow[] = ((data || []) as any[])
         .map((r) => {
-          const actualAmount = r.remittance_details?.actual_amount ?? r.actual_amount ?? 0
+          const actualAmount = r.remittance_details?.actual_amount ?? 0
           return {
             id: r.id,
             reference_no: r.remittance_no,
-            outlet: r.outlet,
+            outlet: r.outlet?.code ?? null,
             created_at: r.created_at,
             expected_amount: r.total_amount ?? 0,
             actual_amount: actualAmount,
@@ -1372,7 +1373,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
           .select(`id, status, created_at, total_amount, po_no, ethical_no, inhouse_no,
                    customer:customer_id(name),
                    ${extension},
-                   transaction_items(qty_stock_out, actual_count_stock_out, unit_price, line_total, products(product_name, unit))`)
+                   transaction_items!transaction_items_transaction_id_fkey(qty_stock_out, actual_count_stock_out, unit_price, line_total, products(product_name, unit))`)
           .eq('id', transactionId)
           .eq('transaction_type', source)
           .maybeSingle(),

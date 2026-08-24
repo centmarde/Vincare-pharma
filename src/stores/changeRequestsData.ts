@@ -1109,12 +1109,15 @@ export const useChangeRequestsDataStore = defineStore('changeRequestsData', () =
 
     const { data: tx, error: txErr } = await supabase
       .from('transactions')
-      .select('id, reference_no, recent_transaction_no, status, voided_at')
+      // transactions.voided_at was dropped in the soft-void restructure --
+      // status='voided' is the only void signal left on a transactions-level
+      // document (collections/pos_sale_details keep their own columns).
+      .select('id, reference_no, recent_transaction_no, status')
       .eq('id', request.transaction_id)
       .maybeSingle()
 
     if (txErr || !tx) return { success: false, error: 'Transaction not found.' }
-    if (tx.voided_at)
+    if (tx.status === 'voided')
       return { success: false, error: 'This purchase requisition has already been voided.' }
 
     // Retrieve the current reference_no to store as to_transaction_no

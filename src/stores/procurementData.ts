@@ -136,11 +136,11 @@ export const useProcurementDataStore = defineStore('procurementData', () => {
           .eq('action', 'procurement_requested')
           .order('created_at', { ascending: true }),
         supabase.from('transactions')
-          .select('id, inhouse_no, customer:customer_id(name), transaction_items(id, product_id, qty_stock_out, actual_count_stock_out, supplier_quotes, product:product_id(product_name))')
+          .select('id, inhouse_no, customer:customer_id(name), transaction_items!transaction_items_transaction_id_fkey(id, product_id, qty_stock_out, actual_count_stock_out, supplier_quotes, product:product_id(product_name))')
           .eq('transaction_type', 'inhouse_order')
           .eq('status', 'awaiting_stock'),
         supabase.from('transactions')
-          .select('id, ethical_no, customer:customer_id(name), ethical_details!inner(fulfillment_status), transaction_items(id, product_id, qty_stock_out, actual_count_stock_out, supplier_quotes, product:product_id(product_name))')
+          .select('id, ethical_no, customer:customer_id(name), ethical_details!inner(fulfillment_status), transaction_items!transaction_items_transaction_id_fkey(id, product_id, qty_stock_out, actual_count_stock_out, supplier_quotes, product:product_id(product_name))')
           .eq('transaction_type', 'ethical_order')
           .eq('ethical_details.fulfillment_status', 'awaiting_stock'),
       ])
