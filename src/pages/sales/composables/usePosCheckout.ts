@@ -112,6 +112,7 @@ export function usePosCheckout(pos: ReturnType<typeof usePos>) {
         product_id: l.product_id,
         quantity:   l.quantity,
         unit_price: l.unit_price,
+        cost_price: l.cost_price,
       })),
       amountTendered: amountTendered.value ?? 0,
       customer: {

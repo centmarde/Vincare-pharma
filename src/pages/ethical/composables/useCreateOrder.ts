@@ -218,6 +218,9 @@ export function useCreateOrder(onCreated: () => void) {
         product_id: l.product_id!,
         quantity: l.quantity,
         unit_price: l.unit_price,
+        // Snapshotted at order time — the same figure the below-cost guard
+        // above checks against, so the ledger and the guard agree.
+        cost_price: l.cost,
       })),
     })
     loading.value = false

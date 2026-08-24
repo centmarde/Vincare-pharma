@@ -14,6 +14,12 @@ export type CartLine = {
   batch_no: number | null
   expiry_date: string | null
   unit_price: number
+  /**
+   * What the goods cost us, snapshotted when they are sold. COGS is a
+   * historical fact — freezing it here stops the ledger valuing a past sale at
+   * whatever the product master happens to say when the ledger is next resynced.
+   */
+  cost_price: number | null
   quantity: number
   available: number
 }
@@ -31,6 +37,8 @@ export type PosProduct = {
    * 2,390 of 2,401 products.
    */
   brand: string | null
+  /** Snapshotted onto the sale line so COGS is priced at the cost on the day. */
+  cost_price: number | null
   /** Searchable: what a barcode scanner types in. */
   barcode: string | null
   sku: string | null
@@ -68,6 +76,7 @@ export function usePos() {
         product_id:   s.product_id,
         product_name: s.product?.product_name ?? '—',
         brand:        s.product?.brand ?? null,
+        cost_price:   s.product?.cost_price ?? null,
         barcode:      s.product?.barcode != null ? String(s.product.barcode) : null,
         sku:          s.product?.sku ?? null,
         unit:         s.product?.unit != null ? String(s.product.unit) : null,
@@ -128,6 +137,7 @@ export function usePos() {
       batch_no:     product.batch_no,
       expiry_date:  product.expiry_date,
       unit_price:   product.unit_price,
+      cost_price:   product.cost_price,
       quantity:     1,
       available,
     })
