@@ -3,7 +3,7 @@
     v-if="config?.showFooter && footerConfig"
     app
     class="text-white"
-    :color="footerConfig.color"
+    style="background-color: #bb1212"
   >
     <v-container>
       <!-- Compact/minimal footer for inner layouts -->
