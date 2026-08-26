@@ -4,6 +4,7 @@ import { useProcurementDataStore, type ProcurementRequestType } from '@/stores/p
 import { useInhouseDataStore } from '@/stores/inhouseData'
 import { useEthicalDataStore } from '@/stores/ethicalData'
 import type { CanvassCommitFn, CanvassableOrder } from '@/utils/canvassTypes'
+import { useDraftPRDataStore, type DraftPRType } from '@/stores/draftPRData'
 
 export const headers = [
   { title: 'MODULE',      key: 'order_type',    sortable: false, align: 'center' as const },
@@ -19,13 +20,20 @@ export function useProcurementRequests() {
   const procurementStore = useProcurementDataStore()
   const inhouseStore = useInhouseDataStore()
   const ethicalStore = useEthicalDataStore()
+  const draftStore = useDraftPRDataStore()
   const { queue, loading } = storeToRefs(procurementStore)
+  const { draftCountsByOrder: draftCounts } = storeToRefs(draftStore)
 
   const selected = ref<ProcurementRequestType | null>(null)
   const showDetail = ref(false)
+  const showDraftEdit = ref(false)
+  const showDraftReview = ref(false)
+  const activeDraftId = ref<number | null>(null)
 
-  // RFQ (costing sheet) for the selected request. The quantities it was printed
-  // with flow into the canvass so quotes are entered against what was asked.
+  const showOrderDrafts = ref(false)
+  const orderDrafts = ref<DraftPRType[]>([])
+  const draftsForOrder = ref<ProcurementRequestType | null>(null) // FIX — was missing
+
   const showRFQ = ref(false)
   const rfqQuantities = ref<Record<number, number>>({})
 
@@ -39,6 +47,7 @@ export function useProcurementRequests() {
 
   async function init() {
     await procurementStore.fetchQueue()
+    await draftStore.fetchDraftCountsByOrder()
   }
 
   function openDetail(req: ProcurementRequestType) {
@@ -53,9 +62,6 @@ export function useProcurementRequests() {
     rfqQuantities.value = {}
   }
 
-  // SupplierCanvass needs a stable CanvassableOrder + a commitFn matching the
-  // selected request's module — reuse the existing, unchanged in-house/ethical
-  // canvassToPRs (they already wrap canvassData.commitToPRs correctly).
   const canvassOrder = computed<CanvassableOrder | null>(() => {
     const req = selected.value
     if (!req) return null
@@ -73,9 +79,6 @@ export function useProcurementRequests() {
   }
 
   async function onCanvassCreated() {
-    // A commit doesn't resolve the shortfall (stock hasn't arrived yet) — it
-    // just flags the order as canvassed, so refresh the queue and keep the
-    // dialog open on the same request if it's still there.
     const orderId = selected.value?.order_id
     await procurementStore.fetchQueue()
     selected.value = orderId != null ? queue.value.find((r) => r.order_id === orderId) ?? null : null
@@ -84,10 +87,56 @@ export function useProcurementRequests() {
 
   const moduleLabel = (t: ProcurementRequestType['order_type']) => (t === 'inhouse_order' ? 'In-House' : 'Ethical')
 
+  async function startDraftPR(req: ProcurementRequestType) {
+    const result = await draftStore.createDraft({
+      sourceOrderId: req.order_id,
+      sourceOrderType: req.order_type,
+      remarks: `Draft from ${moduleLabel(req.order_type)} ${req.order_no ?? ''}`,
+      lines: req.lines.map((l) => ({ product_id: l.product_id!, qty: l.needed })),
+    })
+    if (result.success) {
+      activeDraftId.value = (result as any).draftId
+      showDraftEdit.value = true
+    }
+  }
+
+  function goToReview() {
+    showDraftEdit.value = false
+    showDraftReview.value = true
+  }
+
+  async function onDraftSubmitted() {
+    activeDraftId.value = null
+    await init()
+  }
+
+  function onDraftSaved(draftId: number) {
+    activeDraftId.value = draftId
+    showDraftEdit.value = true
+    closeDetail()
+    draftStore.fetchDraftCountsByOrder() // keep the badge count in sync right away
+  }
+
+  async function openOrderDrafts(req: ProcurementRequestType) {
+    draftsForOrder.value = req
+    orderDrafts.value = await draftStore.fetchDrafts('draft', req.order_id)
+    showOrderDrafts.value = true
+  }
+
+  function resumeDraft(draftId: number) {
+    showOrderDrafts.value = false
+    activeDraftId.value = draftId
+    showDraftEdit.value = true
+  }
+
   return {
     queue, loading, selected, showDetail,
     showRFQ, rfqQuantities, openRFQ, onRFQQuantities,
     canvassOrder, canvassShortfall, commitFn,
     init, openDetail, closeDetail, onCanvassCreated, moduleLabel,
+    showDraftEdit, showDraftReview, activeDraftId,
+    startDraftPR, goToReview, onDraftSubmitted, onDraftSaved,
+    draftCounts, showOrderDrafts, orderDrafts, draftsForOrder,
+    openOrderDrafts, resumeDraft,
   }
 }
