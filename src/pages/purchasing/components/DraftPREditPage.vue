@@ -28,29 +28,73 @@ async function onConfirm(payload: any) {
   })
 }
 
-async function onDateChange(item: DraftPRItemType, date: string) {
-  await draftStore.setRequiredByDate(item.id, date || null)
+// Qty/date edits are held here and only pushed to Supabase on save/close —
+// typing used to fire an UPDATE per keystroke, which spammed the API.
+type ItemEdit = { qty: number; required_by_date: string | null }
+const edits = ref<Record<number, ItemEdit>>({})
+const saving = ref(false)
+
+watch(() => draftStore.currentDraft?.items, (items) => {
+  edits.value = Object.fromEntries((items ?? []).map((i) => [i.id, { qty: i.qty, required_by_date: i.required_by_date }]))
+}, { immediate: true })
+
+function onDateChange(item: DraftPRItemType, date: string) {
+  const buf = edits.value[item.id]
+  if (buf) buf.required_by_date = date || null
 }
 
-const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * item.qty
+function onQtyChange(item: DraftPRItemType, value: number | string) {
+  const qty = Number(value)
+  if (!qty || qty <= 0) return
+  const buf = edits.value[item.id]
+  if (buf) buf.qty = qty
+}
+
+async function flushEdits() {
+  const items = draftStore.currentDraft?.items ?? []
+  saving.value = true
+  for (const item of items) {
+    const buf = edits.value[item.id]
+    if (!buf) continue
+    if (buf.qty !== item.qty) await draftStore.setQty(item.id, buf.qty)
+    if (buf.required_by_date !== item.required_by_date) await draftStore.setRequiredByDate(item.id, buf.required_by_date)
+  }
+  saving.value = false
+}
+
+// Every way of leaving this dialog (X, click-outside/ESC, Save & Close,
+// Continue to Review) saves pending edits first — same as before, when every
+// keystroke was already persisted, just batched into one flush instead.
+async function onDialogUpdate(open: boolean) {
+  if (open) { emit('update:modelValue', true); return }
+  await flushEdits()
+  emit('update:modelValue', false)
+}
+
+async function continueToReview() {
+  await flushEdits()
+  emit('continue')
+}
+
+const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.value[item.id]?.qty ?? item.qty)
 </script>
 
 <template>
-  <v-dialog :model-value="modelValue" max-width="960" scrollable @update:model-value="emit('update:modelValue', $event)">
+  <v-dialog :model-value="modelValue" max-width="960" scrollable @update:model-value="onDialogUpdate">
     <v-card v-if="draftStore.currentDraft" rounded="lg">
       <v-card-title class="pa-4 pb-2 d-flex justify-space-between align-center">
         <div>
           <div class="text-h6 font-weight-bold">Draft PR #{{ draftStore.currentDraft.id }}</div>
           <div class="text-caption text-medium-emphasis">{{ draftStore.currentDraft.remarks }}</div>
         </div>
-        <v-btn icon="mdi-close" variant="text" size="small" @click="emit('update:modelValue', false)" />
+        <v-btn icon="mdi-close" variant="text" size="small" :loading="saving" @click="onDialogUpdate(false)" />
       </v-card-title>
       <v-divider />
       <v-card-text class="pa-4">
         <v-table density="comfortable">
           <thead>
             <tr>
-              <th class="text-left">Product</th><th class="text-right" style="width:90px">Qty</th>
+              <th class="text-left">Product</th><th class="text-right" style="width:110px">Qty</th>
               <th style="width:160px">Required by</th><th class="text-left">Supplier</th>
               <th class="text-right">Unit Price</th><th class="text-right">Line Total</th><th style="width:110px"></th>
             </tr>
@@ -58,9 +102,13 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * item.qty
           <tbody>
             <tr v-for="item in draftStore.currentDraft.items" :key="item.id">
               <td>{{ item.product_name }}</td>
-              <td class="text-right">{{ item.qty }}</td>
+              <td class="text-right">
+                <v-text-field :model-value="edits[item.id]?.qty ?? item.qty" type="number" min="1" density="compact"
+                  variant="outlined" hide-details style="width:100%; min-width:0"
+                  @update:model-value="onQtyChange(item, $event)" />
+              </td>
               <td>
-                <v-text-field :model-value="item.required_by_date" type="date" density="compact"
+                <v-text-field :model-value="edits[item.id]?.required_by_date ?? item.required_by_date" type="date" density="compact"
                   variant="outlined" hide-details @update:model-value="onDateChange(item, $event)" />
               </td>
               <td>
@@ -77,7 +125,10 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * item.qty
       <v-divider />
       <v-card-actions class="pa-4">
         <v-spacer />
-        <v-btn color="primary" variant="flat" class="text-none font-weight-bold" @click="emit('continue')">
+        <v-btn variant="tonal" class="text-none font-weight-bold" :loading="saving" @click="onDialogUpdate(false)">
+          Save &amp; Close
+        </v-btn>
+        <v-btn color="primary" variant="flat" class="text-none font-weight-bold" :loading="saving" @click="continueToReview">
           Continue to Review
         </v-btn>
       </v-card-actions>
@@ -88,5 +139,7 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * item.qty
     v-model="showCompare"
     :product="activeItem ? { id: activeItem.product_id, name: activeItem.product_name } : null"
     :required-by-date="activeItem?.required_by_date ?? new Date().toISOString().slice(0,10)"
-    @confirm="onConfirm" />
+    :qty="activeItem ? (edits[activeItem.id]?.qty ?? activeItem.qty) : 1"
+    @confirm="onConfirm"
+    @update:qty="activeItem && onQtyChange(activeItem, $event)" />
 </template>

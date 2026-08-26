@@ -14,8 +14,7 @@ const {
   init, openDetail, closeDetail, onCanvassCreated, moduleLabel,
   showDraftEdit, showDraftReview, activeDraftId,
   startDraftPR, goToReview, onDraftSubmitted, onDraftSaved,
-  draftCounts, showOrderDrafts, orderDrafts, draftsForOrder,
-  openOrderDrafts, resumeDraft,
+  draftIdByOrder, openDraft,
 } = useProcurementRequests()
 
 onMounted(init)
@@ -60,38 +59,15 @@ onMounted(init)
           </v-btn>
           <v-btn
             size="small" variant="tonal" class="text-none"
-            :color="draftCounts[item.order_id] ? 'secondary' : undefined"
-            :disabled="!draftCounts[item.order_id]"
-            @click="openOrderDrafts(item)">
-            Drafts<span v-if="draftCounts[item.order_id]"> ({{ draftCounts[item.order_id] }})</span>
+            :color="draftIdByOrder[item.order_id] ? 'secondary' : undefined"
+            :disabled="!draftIdByOrder[item.order_id]"
+            @click="openDraft(item)">
+            Resume Draft
           </v-btn>
         </template>
       </v-data-table>
     </v-card>
 
-    <v-dialog v-model="showOrderDrafts" max-width="600">
-      <v-card rounded="lg" v-if="draftsForOrder">
-        <v-card-title class="pa-4 pb-2">
-          <div class="text-h6 font-weight-bold">Drafts — {{ draftsForOrder.order_no }}</div>
-        </v-card-title>
-        <v-divider />
-        <v-list>
-          <v-list-item
-            v-for="d in orderDrafts" :key="d.id"
-            :title="`Draft #${d.id} — ${d.items.length} item(s)`"
-            :subtitle="d.remarks ?? undefined"
-            @click="resumeDraft(d.id)">
-            <template #append><v-icon icon="mdi-chevron-right" /></template>
-          </v-list-item>
-          <v-list-item v-if="!orderDrafts.length" title="No drafts for this order." />
-        </v-list>
-        <v-card-actions class="pa-4">
-          <v-spacer />
-          <v-btn variant="text" class="text-none" @click="showOrderDrafts = false">Close</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-    
     <v-dialog v-model="showDetail" max-width="920" scrollable>
       <v-card v-if="selected" rounded="lg">
         <v-card-title class="pa-4 pa-sm-5 pb-2 d-flex justify-space-between align-center">

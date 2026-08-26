@@ -4,7 +4,7 @@ import { useProcurementDataStore, type ProcurementRequestType } from '@/stores/p
 import { useInhouseDataStore } from '@/stores/inhouseData'
 import { useEthicalDataStore } from '@/stores/ethicalData'
 import type { CanvassCommitFn, CanvassableOrder } from '@/utils/canvassTypes'
-import { useDraftPRDataStore, type DraftPRType } from '@/stores/draftPRData'
+import { useDraftPRDataStore } from '@/stores/draftPRData'
 
 export const headers = [
   { title: 'MODULE',      key: 'order_type',    sortable: false, align: 'center' as const },
@@ -22,17 +22,13 @@ export function useProcurementRequests() {
   const ethicalStore = useEthicalDataStore()
   const draftStore = useDraftPRDataStore()
   const { queue, loading } = storeToRefs(procurementStore)
-  const { draftCountsByOrder: draftCounts } = storeToRefs(draftStore)
+  const { draftIdByOrder } = storeToRefs(draftStore)
 
   const selected = ref<ProcurementRequestType | null>(null)
   const showDetail = ref(false)
   const showDraftEdit = ref(false)
   const showDraftReview = ref(false)
   const activeDraftId = ref<number | null>(null)
-
-  const showOrderDrafts = ref(false)
-  const orderDrafts = ref<DraftPRType[]>([])
-  const draftsForOrder = ref<ProcurementRequestType | null>(null) // FIX — was missing
 
   const showRFQ = ref(false)
   const rfqQuantities = ref<Record<number, number>>({})
@@ -47,7 +43,7 @@ export function useProcurementRequests() {
 
   async function init() {
     await procurementStore.fetchQueue()
-    await draftStore.fetchDraftCountsByOrder()
+    await draftStore.fetchDraftIdsByOrder()
   }
 
   function openDetail(req: ProcurementRequestType) {
@@ -114,19 +110,17 @@ export function useProcurementRequests() {
     activeDraftId.value = draftId
     showDraftEdit.value = true
     closeDetail()
-    draftStore.fetchDraftCountsByOrder() // keep the badge count in sync right away
-  }
-
-  async function openOrderDrafts(req: ProcurementRequestType) {
-    draftsForOrder.value = req
-    orderDrafts.value = await draftStore.fetchDrafts('draft', req.order_id)
-    showOrderDrafts.value = true
+    draftStore.fetchDraftIdsByOrder() // keep the badge in sync right away
   }
 
   function resumeDraft(draftId: number) {
-    showOrderDrafts.value = false
     activeDraftId.value = draftId
     showDraftEdit.value = true
+  }
+
+  function openDraft(req: ProcurementRequestType) {
+    const draftId = draftIdByOrder.value[req.order_id]
+    if (draftId != null) resumeDraft(draftId)
   }
 
   return {
@@ -136,7 +130,6 @@ export function useProcurementRequests() {
     init, openDetail, closeDetail, onCanvassCreated, moduleLabel,
     showDraftEdit, showDraftReview, activeDraftId,
     startDraftPR, goToReview, onDraftSubmitted, onDraftSaved,
-    draftCounts, showOrderDrafts, orderDrafts, draftsForOrder,
-    openOrderDrafts, resumeDraft,
+    draftIdByOrder, resumeDraft, openDraft,
   }
 }

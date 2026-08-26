@@ -66,7 +66,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
   const error: Ref<string> = ref('')
   const drafts: Ref<DraftPRType[]> = ref([])
   const currentDraft: Ref<DraftPRType | null> = ref(null)
-  const draftCountsByOrder: Ref<Record<number, number>> = ref({})
+  const draftIdByOrder: Ref<Record<number, number>> = ref({})
 
   const handleError = (err: unknown, msg: string) => {
     error.value = err instanceof Error ? err.message : msg
@@ -144,6 +144,98 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return { success: true, draftId: draft.id }
   }
 
+  // Find-or-create: at most one open draft per source order. Reuses an
+  // existing 'draft' row for the same source_order_id if present, reconciling
+  // its items to match payload.lines, instead of inserting a new header.
+  async function getOrCreateDraft(payload: {
+    remarks?: string
+    sourceOrderId?: number | null
+    sourceOrderType?: string | null
+    lines: { product_id: number; qty: number; required_by_date?: string | null }[]
+  }) {
+    if (payload.sourceOrderId == null) return createDraft(payload)
+
+    const { data: existing, error: findError } = await supabase
+      .from('draft_purchase_requisitions')
+      .select('id, items:draft_pr_items(id, product_id)')
+      .eq('status', 'draft')
+      .eq('source_order_id', payload.sourceOrderId)
+      .maybeSingle()
+    if (findError) {
+      handleError(findError, 'Failed to look up existing draft.')
+      toast.error('Failed to look up existing draft.')
+      return { success: false }
+    }
+    if (!existing) {
+      const created = await createDraft(payload)
+      return { ...created, reused: false }
+    }
+
+    loading.value = true
+    const existingItems: { id: number; product_id: number }[] = existing.items ?? []
+    const linesByProduct = new Map(payload.lines.map((l) => [l.product_id, l]))
+    const existingByProduct = new Map(existingItems.map((i) => [i.product_id, i]))
+
+    const toInsert = payload.lines.filter((l) => !existingByProduct.has(l.product_id))
+    const toUpdate = existingItems.filter((i) => linesByProduct.has(i.product_id))
+    const toDelete = existingItems.filter((i) => !linesByProduct.has(i.product_id))
+
+    for (const item of toUpdate) {
+      const line = linesByProduct.get(item.product_id)!
+      const { error: updateError } = await supabase
+        .from('draft_pr_items')
+        .update({ qty: line.qty, required_by_date: line.required_by_date ?? null })
+        .eq('id', item.id)
+      if (updateError) {
+        handleError(updateError, 'Failed to update draft items.')
+        toast.error('Failed to update draft items.')
+        loading.value = false
+        return { success: false }
+      }
+    }
+
+    if (toInsert.length) {
+      const { error: insertError } = await supabase.from('draft_pr_items').insert(
+        toInsert.map((l) => ({
+          draft_pr_id: existing.id,
+          product_id: l.product_id,
+          qty: l.qty,
+          required_by_date: l.required_by_date ?? null,
+        })),
+      )
+      if (insertError) {
+        handleError(insertError, 'Failed to add draft items.')
+        toast.error('Failed to add draft items.')
+        loading.value = false
+        return { success: false }
+      }
+    }
+
+    if (toDelete.length) {
+      const { error: deleteError } = await supabase
+        .from('draft_pr_items')
+        .delete()
+        .in('id', toDelete.map((i) => i.id))
+      if (deleteError) {
+        handleError(deleteError, 'Failed to remove stale draft items.')
+        toast.error('Failed to remove stale draft items.')
+        loading.value = false
+        return { success: false }
+      }
+    }
+
+    if (payload.remarks != null) {
+      await supabase
+        .from('draft_purchase_requisitions')
+        .update({ remarks: payload.remarks, updated_at: new Date().toISOString() })
+        .eq('id', existing.id)
+    }
+
+    toast.success('Draft PR updated.')
+    loading.value = false
+    return { success: true, draftId: existing.id, reused: true }
+  }
+
   async function fetchDrafts(status?: 'draft' | 'converted', sourceOrderId?: number) {
     loading.value = true
     let q = supabase
@@ -209,6 +301,20 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     if (currentDraft.value?.id === draftId) {
       currentDraft.value.items = currentDraft.value.items.filter((i) => i.id !== itemId)
     }
+    return true
+  }
+
+  async function setQty(itemId: number, qty: number) {
+    const { error: updateError } = await supabase
+      .from('draft_pr_items')
+      .update({ qty })
+      .eq('id', itemId)
+    if (updateError) {
+      toast.error('Failed to update quantity.')
+      return false
+    }
+    const item = currentDraft.value?.items.find((i) => i.id === itemId)
+    if (item) item.qty = qty
     return true
   }
 
@@ -302,9 +408,12 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
         offers,
         requiredByOrToday(item.required_by_date),
       )
-      if (!qualified.some((o) => o.id === item.selected_supplier_offer_id)) {
+      const selected = qualified.find((o) => o.id === item.selected_supplier_offer_id)
+      if (!selected) {
         warnings.push({ item_id: item.id, message: 'Selected supplier no longer qualifies.' })
-      } else if (recommended && recommended.id !== item.selected_supplier_offer_id) {
+      } else if (recommended && recommended.cost_price_per_unit < selected.cost_price_per_unit) {
+        // Strictly cheaper only — an equally-priced rival (or a duplicate row of
+        // the selected offer itself) is not an upgrade worth warning about.
         warnings.push({
           item_id: item.id,
           message: `A cheaper qualifying offer is now available (${recommended.supplier_name}).`,
@@ -388,7 +497,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
         loading.value = false
         return { success: false, error: `Selected supplier no longer qualifies for item ${item.id}.` }
       }
-      if (recommended && recommended.id !== offer.id) {
+      if (recommended && recommended.cost_price_per_unit < offer.cost_price_per_unit) {
         warnings.push({
           item_id: item.id,
           message: `A cheaper qualifying offer is now available (${recommended.supplier_name}).`,
@@ -512,7 +621,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       justification: string | null
     }[]
   }) {
-    const created = await createDraft({
+    const created = await getOrCreateDraft({
       sourceOrderId: payload.sourceOrderId,
       sourceOrderType: payload.sourceOrderType,
       remarks: payload.remarks,
@@ -526,37 +635,57 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
 
     const draft = await fetchDraft((created as any).draftId)
     if (draft) {
-      for (const item of draft.items) {
-        const row = payload.rows.find((r) => r.product_id === item.product_id)
-        if (row?.offer) {
-          await selectOffer({
-            itemId: item.id,
-            offer: row.offer,
-            consideredOffers: row.consideredOffers,
-            justification: row.justification,
-          })
+      // Two rows/items can share a product_id (same product needed on
+      // separate lines) — pair items to rows per product_id, in order,
+      // instead of .find()'s always-first match, so each keeps its own offer.
+      const rowsByProduct = new Map<number, typeof payload.rows>()
+      for (const row of payload.rows) {
+        const arr = rowsByProduct.get(row.product_id) ?? []
+        arr.push(row)
+        rowsByProduct.set(row.product_id, arr)
+      }
+      const itemsByProduct = new Map<number, typeof draft.items>()
+      for (const item of [...draft.items].sort((a, b) => a.id - b.id)) {
+        const arr = itemsByProduct.get(item.product_id) ?? []
+        arr.push(item)
+        itemsByProduct.set(item.product_id, arr)
+      }
+      for (const [productId, items] of itemsByProduct) {
+        const rows = rowsByProduct.get(productId) ?? []
+        for (let i = 0; i < items.length; i++) {
+          const row = rows[i]
+          if (row?.offer) {
+            await selectOffer({
+              itemId: items[i].id,
+              offer: row.offer,
+              consideredOffers: row.consideredOffers,
+              justification: row.justification,
+            })
+          }
         }
       }
     }
     return created
   }
 
-  async function fetchDraftCountsByOrder(): Promise<Record<number, number>> {
+  // At most one open draft per source order now, so this maps order_id -> that
+  // draft's id (rather than a count) for direct "Resume Draft" navigation.
+  async function fetchDraftIdsByOrder(): Promise<Record<number, number>> {
     const { data, error: fetchError } = await supabase
       .from('draft_purchase_requisitions')
-      .select('source_order_id')
+      .select('id, source_order_id')
       .eq('status', 'draft')
       .not('source_order_id', 'is', null)
     if (fetchError) {
-      handleError(fetchError, 'Failed to fetch draft counts.')
+      handleError(fetchError, 'Failed to fetch drafts.')
       return {}
     }
-    const counts: Record<number, number> = {}
+    const ids: Record<number, number> = {}
     for (const row of data ?? []) {
-      counts[row.source_order_id] = (counts[row.source_order_id] ?? 0) + 1
+      ids[row.source_order_id] = row.id
     }
-    draftCountsByOrder.value = counts
-    return counts
+    draftIdByOrder.value = ids
+    return ids
   }
 
   return {
@@ -564,12 +693,14 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     error,
     drafts,
     currentDraft,
-    draftCountsByOrder,
+    draftIdByOrder,
     createDraft,
+    getOrCreateDraft,
     fetchDrafts,
     fetchDraft,
     addItem,
     removeItem,
+    setQty,
     setRequiredByDate,
     selectOffer,
     updateRemarks,
@@ -577,6 +708,6 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     precheckDraft,
     submitDraft,
     createDraftWithSelections,
-    fetchDraftCountsByOrder,
+    fetchDraftIdsByOrder,
   }
 })

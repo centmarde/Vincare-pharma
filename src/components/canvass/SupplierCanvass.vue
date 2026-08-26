@@ -25,6 +25,11 @@ const activeRowIdx = ref<number | null>(null)
 
 function openCompare(idx: number) { activeRowIdx.value = idx; showCompare.value = true }
 function onConfirm(payload: any) { if (activeRowIdx.value != null) onOfferSelected(activeRowIdx.value, payload) }
+function onCompareQtyChange(value: number) {
+  if (activeRowIdx.value == null) return
+  rows.value[activeRowIdx.value].order_qty = value
+  validateQty(activeRowIdx.value)
+}
 async function onSaveAsDraft() {
   const result = await saveAsDraft()
   if (result.success && (result as any).draftId) emit('draft-saved', (result as any).draftId)
@@ -79,7 +84,7 @@ async function onSaveAsDraft() {
         Save as Draft PR
       </v-btn>
       <v-btn color="success" size="small" class="text-none font-weight-bold" elevation="0" :loading="loading" :disabled="!canCommit" @click="commit">
-        Raise Purchase Requisition(s)
+        Submit Purchase Requisition(s)
       </v-btn>
     </div>
 
@@ -87,6 +92,9 @@ async function onSaveAsDraft() {
       v-model="showCompare"
       :product="activeRowIdx != null ? { id: rows[activeRowIdx].product_id, name: rows[activeRowIdx].product_name } : null"
       :required-by-date="activeRowIdx != null ? rows[activeRowIdx].required_by_date : new Date().toISOString().slice(0,10)"
-      @confirm="onConfirm" />
+      :qty="activeRowIdx != null ? rows[activeRowIdx].order_qty : 1"
+      :min-qty="activeRowIdx != null ? rows[activeRowIdx].shortfall_qty : undefined"
+      @confirm="onConfirm"
+      @update:qty="onCompareQtyChange" />
   </div>
 </template>

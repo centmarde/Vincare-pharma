@@ -50,10 +50,41 @@ export const useSupplierOffersDataStore = defineStore('supplierOffersData', () =
     return mapped
   }
 
+  // Re-confirming an unchanged quote must NOT mint a second row: duplicates of
+  // the same offer make qualifyOffers pick an arbitrary one as "recommended",
+  // which surfaces as a bogus "a cheaper offer is available" warning naming the
+  // supplier that's already selected. Same supplier/product/price/expiry is the
+  // same commercial offer, so reuse it — source is deliberately not part of the
+  // match key (a 'canvass' and a 'manual' entry of one quote are still one quote).
+  const findIdenticalOffer = async (payload: {
+    supplierId: number; productId: number; costPricePerUnit: number; expiryDate: string | null
+  }): Promise<SupplierOfferType | null> => {
+    let q = supabase
+      .from('supplier_offers')
+      .select('*, supplier:supplier_id(name)')
+      .eq('supplier_id', payload.supplierId)
+      .eq('product_id', payload.productId)
+      .eq('cost_price_per_unit', payload.costPricePerUnit)
+    // PostgREST .eq never matches SQL NULL — nullable expiry needs .is().
+    q = payload.expiryDate == null ? q.is('expiry_date', null) : q.eq('expiry_date', payload.expiryDate)
+    const { data, error: findError } = await q.limit(1).maybeSingle()
+    if (findError || !data) return null // lookup trouble falls through to insert
+    return mapOffer(data)
+  }
+
   const createOffer = async (payload: {
     supplierId: number; productId: number; costPricePerUnit: number
     expiryDate: string | null; currency?: string; source?: string
   }): Promise<SupplierOfferType | null> => {
+    const existing = await findIdenticalOffer(payload)
+    if (existing) {
+      const cached = offersByProduct.value[payload.productId] ?? []
+      if (!cached.some((o) => o.id === existing.id)) {
+        offersByProduct.value[payload.productId] = [...cached, existing]
+      }
+      return existing
+    }
+
     const { user } = await authStore.getCurrentUser()
     const { data, error: insertError } = await supabase
       .from('supplier_offers')
