@@ -44,5 +44,6 @@ declare module 'vue' {
     StockStatusCards: typeof import('./components/products/StockStatusCards.vue')['default']
     StockStatusDialog: typeof import('./components/products/dialogs/StockStatusDialog.vue')['default']
     SupplierCanvass: typeof import('./components/canvass/SupplierCanvass.vue')['default']
+    WarehouseStockDetails: typeof import('./components/products/WarehouseStockDetails.vue')['default']
   }
 }

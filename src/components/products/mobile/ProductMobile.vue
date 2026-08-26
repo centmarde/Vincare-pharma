@@ -33,6 +33,16 @@ function toggleExpand(productId: number) {
   expandedProductId.value = expandedProductId.value === productId ? null : productId
 }
 
+// Main warehouse (no filter) available stock = current stock minus reserved quantities.
+function mainStock(product: ProductType): number {
+  if (props.selectedWarehouseId) return product.current_stock ?? 0
+  const reserved = (props.getProductReservations?.(product.id) ?? []).reduce(
+    (sum, r) => sum + (r.reserved_qty ?? 0),
+    0,
+  )
+  return Math.max(0, (product.current_stock ?? 0) - reserved)
+}
+
 function prevPage() {
   const newPage = props.page - 1
   emit('update:page', newPage)
@@ -69,15 +79,15 @@ function nextPage() {
           <template #prepend>
             <v-chip
               :color="
-                (product.current_stock ?? 0) <= 0 ? 'error'
-                : product.reorder_level && (product.current_stock ?? 0) <= product.reorder_level ? 'primary'
+                mainStock(product) <= 0 ? 'error'
+                : product.reorder_level && mainStock(product) <= product.reorder_level ? 'primary'
                 : 'black'
               "
               size="small"
               variant="outlined"
               class="mr-2"
             >
-              {{ Math.max(0, product.current_stock ?? 0) }}
+              {{ mainStock(product) }}
             </v-chip>
           </template>
 
@@ -147,6 +157,62 @@ function nextPage() {
           </div>
         </v-card-text>
 
+        <!-- Main warehouse (no filter): reservation module -->
+        <template v-if="!selectedWarehouseId">
+          <v-divider></v-divider>
+          <v-card-text class="pt-2 pb-3">
+            <div class="d-flex align-center justify-space-between mb-1">
+              <div class="text-subtitle-2 font-weight-bold text-grey-darken-1">
+                <v-icon icon="mdi-bookmark-multiple" size="18" class="mr-1"></v-icon>
+                Reserved to Customers
+              </div>
+              <v-btn
+                v-if="mainStock(product) > 0"
+                variant="text"
+                size="small"
+                color="primary"
+                class="text-none"
+                prepend-icon="mdi-bookmark-plus"
+                @click="openAddReservationDialog?.(product)"
+              >
+                Add Reservation
+              </v-btn>
+            </div>
+            <template v-if="getProductReservations && getProductReservations(product.id)?.length > 0">
+              <v-list density="compact" class="pa-0" lines="one">
+                <v-list-item
+                  v-for="reservation in (getProductReservations(product.id) ?? [])"
+                  :key="reservation.id"
+                  class="px-0"
+                >
+                  <template #prepend>
+                    <v-icon icon="mdi-account" color="warning" size="20"></v-icon>
+                  </template>
+                  <v-list-item-title class="text-body-2">
+                    {{ reservation.customer_name }}
+                  </v-list-item-title>
+                  <template #append>
+                    <v-chip size="x-small" color="warning" variant="outlined" class="mr-2">
+                      {{ reservation.reserved_qty }}
+                    </v-chip>
+                    <v-btn
+                      v-if="removeReservation"
+                      icon="mdi-delete"
+                      size="x-small"
+                      variant="text"
+                      color="error"
+                      @click.stop="removeReservation(reservation.id)"
+                    ></v-btn>
+                  </template>
+                </v-list-item>
+              </v-list>
+            </template>
+            <div v-else class="text-body-2 text-grey">
+              No reservations for this product
+            </div>
+          </v-card-text>
+        </template>
+
         <!-- Warehouse details (expanded) -->
         <template v-if="selectedWarehouseId && expandedProductId === product.id && getWarehouseProductDetail && getWarehouseProductDetail(product.id)">
           <v-divider></v-divider>
@@ -173,6 +239,7 @@ function nextPage() {
             <!-- Add reservation button -->
             <div class="d-flex justify-start mt-1">
               <v-btn
+                v-if="(getWarehouseStock?.(product.id) ?? 0) > 0"
                 variant="text"
                 size="small"
                 color="primary"

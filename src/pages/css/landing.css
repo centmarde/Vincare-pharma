@@ -30,45 +30,231 @@
 
 
 /* The motto carries the page; sized by viewport so it stays commanding on a
-   projector and still fits a phone. */
+   projector and still fits a phone. The second line is set in italic serif so
+   the promise reads as a signature rather than a headline. */
 .landing .hero-motto {
-  font-size: clamp(2.5rem, 6vw, 4.25rem);
-  font-weight: 800;
-  line-height: 1.05;
+  font-size: clamp(2.5rem, 5.4vw, 4rem);
+  font-weight: 400;
+  line-height: 1.04;
   letter-spacing: -0.02em;
   color: rgb(var(--v-theme-on-surface));
 }
 
 
+.landing .hero-motto-accent {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-style: italic;
+  font-weight: 400;
+  color: rgb(var(--v-theme-primary));
+}
+
+
 .landing .hero-rule {
-  width: 72px;
-  height: 4px;
+  width: 64px;
+  height: 3px;
   background: rgb(var(--v-theme-primary));
 }
 
 
 .landing .hero-lead {
-  font-size: clamp(1.05rem, 2vw, 1.3rem);
-  line-height: 1.6;
-  font-weight: 500;
-  max-width: 60ch;
+  font-size: clamp(1.15rem, 1.9vw, 1.45rem);
+  line-height: 1.45;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  max-width: 26ch;
   color: rgb(var(--v-theme-on-surface));
 }
 
 
 .landing .hero-body {
   font-size: 1rem;
-  line-height: 1.75;
-  max-width: 62ch;
-  color: rgba(var(--v-theme-on-surface), 0.72);
+  line-height: 1.7;
+  max-width: 46ch;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+}
+
+
+.landing .hero-cta {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+
+/* ── Hero visual panel ─────────────────────────────────────────────────── */
+.landing .hero-panel {
+  position: relative;
+  display: block;
+  margin: 0;
+  overflow: hidden;
+  min-height: 420px;
+  background: rgba(var(--v-theme-on-surface), 0.08);
+}
+
+
+.landing .hero-panel-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+
+/* Darkens the lower half only, so the photograph stays visible at the top while
+   the copy below it keeps AA contrast. */
+.landing .hero-panel-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.15) 0%,
+    rgba(0, 0, 0, 0.3) 42%,
+    rgba(0, 0, 0, 0.78) 100%
+  );
+}
+
+
+.landing .hero-panel-tag {
+  position: absolute;
+  top: 1.5rem;
+  left: 1.75rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+
+.landing .hero-panel-body {
+  position: absolute;
+  right: 1.75rem;
+  bottom: 1.75rem;
+  left: 1.75rem;
+}
+
+
+.landing .hero-glance {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+
+.landing .hero-glance-item {
+  border-top: 3px solid rgb(var(--v-theme-primary));
+  padding-top: 0.6rem;
+}
+
+
+.landing .hero-glance-step {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: rgb(var(--v-theme-primary));
+  margin-bottom: 0.25rem;
+}
+
+
+.landing .hero-glance-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #fff;
+}
+
+
+.landing .hero-glance-note {
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.72);
+  margin-top: 0.15rem;
+}
+
+
+.landing .hero-panel-rule {
+  height: 1px;
+  background: rgb(var(--v-theme-primary));
+  margin: 1.75rem 0 1.25rem;
+}
+
+
+.landing .hero-panel-quote {
+  margin: 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(1.05rem, 1.6vw, 1.3rem);
+  line-height: 1.45;
+  color: #fff;
+}
+
+
+@media (max-width: 599px) {
+  .landing .hero-panel {
+    min-height: 360px;
+  }
+
+  .landing .hero-glance {
+    gap: 0.65rem;
+  }
+
+  .landing .hero-glance-title {
+    font-size: 0.95rem;
+  }
+
+  .landing .hero-glance-note {
+    font-size: 0.72rem;
+  }
 }
 
 
 /* ── Credentials ───────────────────────────────────────────────────────── */
+/* A near-black band, deliberately fixed rather than themed: it is the one strip
+   on the page that must read the same in light and dark mode, because it sits
+   between two light sections and acts as the page's spine. */
 .landing .credentials {
-  background: rgba(var(--v-theme-on-surface), 0.03);
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-  padding: 2.5rem 0;
+  background: #121212;
+  padding: 2rem 0;
+}
+
+
+/* The hairline sits on the left of every item and is removed from the first in
+   each row, so the dividers fall BETWEEN the figures and never on the edge. */
+.landing .cred-item {
+  padding: 0.35rem 0 0.35rem 1.75rem;
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+  height: 100%;
+}
+
+
+/* Two per row on mobile, so the 1st and 3rd start a row and lose their rule. */
+.landing .credentials .v-col:nth-child(2n + 1) .cred-item {
+  border-left: 0;
+  padding-left: 0;
+}
+
+
+/* Four across from md up: only the very first item starts a row. */
+@media (min-width: 960px) {
+  .landing .credentials .v-col:nth-child(2n + 1) .cred-item {
+    border-left: 1px solid rgba(255, 255, 255, 0.14);
+    padding-left: 1.75rem;
+  }
+
+  .landing .credentials .v-col:first-child .cred-item {
+    border-left: 0;
+    padding-left: 0;
+  }
+}
+
+
+.landing .cred-value {
+  font-size: clamp(1.35rem, 2.2vw, 1.7rem);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  color: #fff;
+  margin-bottom: 0.4rem;
 }
 
 
@@ -77,24 +263,18 @@
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(var(--v-theme-on-surface), 0.55);
-  margin-bottom: 0.4rem;
+  color: rgba(255, 255, 255, 0.62);
 }
 
 
-.landing .cred-value {
-  font-size: 1.35rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  color: rgb(var(--v-theme-on-surface));
-  line-height: 1.2;
-}
+@media (max-width: 959px) {
+  .landing .cred-item {
+    padding-left: 1.25rem;
+  }
 
-
-.landing .cred-note {
-  font-size: 0.8rem;
-  color: rgba(var(--v-theme-on-surface), 0.6);
-  margin-top: 0.15rem;
+  .landing .credentials .v-col:nth-child(n + 3) .cred-item {
+    margin-top: 1.75rem;
+  }
 }
 
 
@@ -111,6 +291,23 @@
 
 .landing .section-head {
   max-width: 62ch;
+}
+
+
+/* Narrower measure for heads that stack their title over several short lines,
+   so the lead paragraph wraps with the title rather than running past it. */
+.landing .section-head-narrow {
+  max-width: 42ch;
+}
+
+
+/* Matches the hero: the closing line of a title set in italic serif and the
+   brand red, so the statement reads as a phrase rather than a label. */
+.landing .section-title-accent {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-style: italic;
+  font-weight: 400;
+  color: rgb(var(--v-theme-primary));
 }
 
 
@@ -132,6 +329,16 @@
 }
 
 
+/* Display variant: bigger, lighter and tighter-leaded, for heads that carry a
+   stacked statement instead of a single running line. */
+.landing .section-title-display {
+  font-size: clamp(2.25rem, 4.6vw, 3.5rem);
+  font-weight: 400;
+  line-height: 1.04;
+  letter-spacing: -0.025em;
+}
+
+
 .landing .section-lead {
   font-size: 1rem;
   line-height: 1.7;
@@ -140,10 +347,46 @@
 }
 
 
+/* ── Group cover photo ─────────────────────────────────────────────────── */
+/* A wide, cover-ratio photograph placed beneath the Group section head, mirroring
+   the .hero-panel pattern (object-fit cover + a light lower-left wash so the
+   caption reads). Square corners and a soft surface shadow keep it flush with the
+   section that follows. */
+.landing .group-cover {
+  position: relative;
+  margin: 0 auto;
+  overflow: hidden;
+  /* ~16:5 cover ratio; never smaller than the hero panel height. */
+  aspect-ratio: 16 / 5;
+  min-height: 220px;
+  border-radius: 0;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.12);
+}
+
+.landing .group-cover-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.landing .group-cover-caption {
+  position: absolute;
+  right: 1.5rem;
+  bottom: 1.25rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  color: rgba(var(--v-theme-on-surface), 0.65);
+}
+
+
 /* ── Channels ──────────────────────────────────────────────────────────── */
 .landing .channel {
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
-  border-radius: 4px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  border-radius: 0;
   background: rgb(var(--v-theme-surface));
   transition: border-color 0.18s ease;
 }
@@ -154,10 +397,23 @@
 }
 
 
+/* Square outlined glyph, balanced against the eyebrow at the far right of the
+   same row — the two together form the card's header rule. */
+.landing .channel-icon {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(var(--v-theme-primary), 0.4);
+  flex-shrink: 0;
+}
+
+
 .landing .channel-eyebrow {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: rgb(var(--v-theme-primary));
 }
@@ -165,8 +421,9 @@
 
 .landing .channel-title {
   font-size: 1.3rem;
-  font-weight: 700;
+  font-weight: 500;
   line-height: 1.3;
+  letter-spacing: -0.01em;
   color: rgb(var(--v-theme-on-surface));
 }
 

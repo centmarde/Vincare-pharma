@@ -11,6 +11,8 @@ export type WarehouseProductType = {
   warehouse_id: number | null
   total_qty: number | null
   notes: string | null
+  // True when this row models the "main warehouse" (warehouse_id is NULL).
+  is_main_warehouse: boolean | null
 }
 
 export type CreateWarehouseProductData = {
@@ -18,6 +20,7 @@ export type CreateWarehouseProductData = {
   warehouse_id?: number | null
   total_qty?: number | null
   notes?: string | null
+  is_main_warehouse?: boolean | null
 }
 
 export type UpdateWarehouseProductData = CreateWarehouseProductData
@@ -211,6 +214,29 @@ export const useWarehouseProductsDataStore = defineStore('warehouseProductsData'
     }
   }
 
+  const fetchMainWarehouseProducts = async () => {
+    loading.value = true
+    clearError()
+
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('warehouse_products')
+        .select('*')
+        .is('warehouse_id', null)
+        .eq('is_main_warehouse', true)
+
+      if (fetchError) throw fetchError
+
+      warehouseProducts.value = (data || []) as WarehouseProductType[]
+      return warehouseProducts.value
+    } catch (err) {
+      handleError(err, 'Failed to fetch main warehouse products')
+      return []
+    } finally {
+      loading.value = false
+    }
+  }
+
   const createWarehouseProduct = async (data: CreateWarehouseProductData) => {
     loading.value = true
     clearError()
@@ -318,6 +344,7 @@ export const useWarehouseProductsDataStore = defineStore('warehouseProductsData'
     fetchWarehouseProducts,
     fetchWarehouseProductById,
     fetchWarehouseProductByProductAndWarehouse,
+    fetchMainWarehouseProducts,
     createWarehouseProduct,
     updateWarehouseProduct,
     deleteWarehouseProduct,

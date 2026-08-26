@@ -51,33 +51,66 @@ async function addReservation() {
     return
   }
 
-  if (!props.selectedWarehouseId) {
-    toast.error('Please select a warehouse first')
-    return
-  }
+  if (props.selectedWarehouseId) {
+    // Find the warehouse_product_id for this product in the selected warehouse
+    const warehouseProduct = warehouseProductsStore.warehouseProducts.find(
+      wp => wp.product_id === props.selectedProduct?.id && wp.warehouse_id === props.selectedWarehouseId
+    )
 
-  // Find the warehouse_product_id for this product in the selected warehouse
-  const warehouseProduct = warehouseProductsStore.warehouseProducts.find(
-    wp => wp.product_id === props.selectedProduct?.id && wp.warehouse_id === props.selectedWarehouseId
-  )
+    if (!warehouseProduct || warehouseProduct.id == null) {
+      toast.error('Product not found in selected warehouse')
+      return
+    }
 
-  if (!warehouseProduct || warehouseProduct.id == null) {
-    toast.error('Product not found in selected warehouse')
-    return
-  }
+    const result = await reservedProductsStore.createReservedProduct({
+      warehouse_products_id: warehouseProduct.id,
+      customer_id: reservationCustomerId.value,
+      reserved_qty: reservationQuantity.value,
+    })
 
-  const result = await reservedProductsStore.createReservedProduct({
-    warehouse_products_id: warehouseProduct.id,
-    customer_id: reservationCustomerId.value,
-    reserved_qty: reservationQuantity.value,
-  })
-
-  if (result) {
-    toast.success('Reservation added successfully')
-    showDialog.value = false
-    emit('reservation-added')
+    if (result) {
+      toast.success('Reservation added successfully')
+      showDialog.value = false
+      emit('reservation-added')
+    } else {
+      toast.error('Failed to add reservation')
+    }
   } else {
-    toast.error('Failed to add reservation')
+    // Main warehouse (no specific warehouse selected): ensure a main-warehouse
+    // warehouse_products row exists (warehouse_id NULL, is_main_warehouse true),
+    // then reference it from the reservation.
+    const mainProducts = await warehouseProductsStore.fetchMainWarehouseProducts()
+    let warehouseProduct = mainProducts.find(
+      wp => wp.product_id === props.selectedProduct?.id && wp.warehouse_id == null && wp.is_main_warehouse
+    )
+
+    if (!warehouseProduct) {
+      warehouseProduct = await warehouseProductsStore.createWarehouseProduct({
+        product_id: props.selectedProduct?.id ?? null,
+        warehouse_id: null,
+        is_main_warehouse: true,
+        total_qty: props.selectedProduct?.current_stock ?? null,
+      })
+    }
+
+    if (!warehouseProduct || warehouseProduct.id == null) {
+      toast.error('Product not found in main warehouse')
+      return
+    }
+
+    const result = await reservedProductsStore.createReservedProduct({
+      warehouse_products_id: warehouseProduct.id,
+      customer_id: reservationCustomerId.value,
+      reserved_qty: reservationQuantity.value,
+    })
+
+    if (result) {
+      toast.success('Reservation added successfully')
+      showDialog.value = false
+      emit('reservation-added')
+    } else {
+      toast.error('Failed to add reservation')
+    }
   }
 }
 </script>
