@@ -119,7 +119,7 @@
         }
       ],
       "thesisTeam": {
-        "enabled": true,
+        "enabled": false,
         "title": "Platform Team",
         "subtitle": "Meet the team building reliable pharmaceutical supply-chain workflows",
         "members": [
