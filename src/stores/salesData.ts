@@ -54,6 +54,8 @@ export type SaleLineInput = {
   product_id: number
   quantity: number
   unit_price: number
+  /** Cost at the moment of sale — what the GL relieves from inventory. */
+  cost_price?: number | null
 }
 
 type FetchSalesOptions = {
@@ -71,7 +73,7 @@ type FetchSalesOptions = {
 // transaction types) so we still fall back to row.payment_method for it.
 // Line values live directly on transaction_items (transaction_item_details was
 // merged back in). A sale is outbound, so the line quantity is qty_stock_out.
-const SELECT_SALE = '*, transaction_items(id, product_id, qty_stock_out, unit_price, line_total, product:product_id(*)), customer:customer_id(*), outlet:outlet_id(*), pos_sale_details(*)'
+const SELECT_SALE = '*, transaction_items!transaction_items_transaction_id_fkey(id, product_id, qty_stock_out, unit_price, line_total, product:product_id(*)), customer:customer_id(*), outlet:outlet_id(*), pos_sale_details(*)'
 
 function mapRowToSale(row: any): SaleType {
   const details = row.pos_sale_details ?? {}
@@ -364,6 +366,9 @@ export const useSalesDataStore = defineStore('salesData', () => {
           qty_stock_out: line.quantity,
           unit_price: line.unit_price,
           line_total: line.quantity * line.unit_price,
+          // Without this the GL reads cost from the live product master at
+          // projection time (or books no COGS at all when it is null).
+          cost_price: line.cost_price ?? null,
         })
       if (itemError) {
         handleError(itemError, 'Failed to save sale line item.')
@@ -427,7 +432,7 @@ export const useSalesDataStore = defineStore('salesData', () => {
 
     const { data: sale, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, remittance_id, outlet_id, transaction_items(product_id, qty_stock_out)')
+      .select('id, status, remittance_id, outlet_id, transaction_items!transaction_items_transaction_id_fkey(product_id, qty_stock_out)')
       .eq('id', saleId)
       .eq('transaction_type', 'sale')
       .maybeSingle()

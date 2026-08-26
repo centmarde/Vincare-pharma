@@ -78,7 +78,7 @@ export type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult }
 // merged back in). An in-house order is outbound, so the ordered quantity is
 // qty_stock_out and the delivered count is actual_count_stock_out.
 const SELECT_ORDER =
-  '*, transaction_items(id, product_id, qty_stock_out, unit_price, line_total, cost_price, actual_count_stock_out, product:product_id(*)), customer:customer_id(*), inhouse_details(*)'
+  '*, transaction_items!transaction_items_transaction_id_fkey(id, product_id, qty_stock_out, unit_price, line_total, cost_price, actual_count_stock_out, product:product_id(*)), customer:customer_id(*), inhouse_details(*)'
 
 function mapRow(row: any): InhouseOrderType {
   const details = row.inhouse_details ?? {}
@@ -362,7 +362,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const { data: order, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, transaction_items(product_id, qty_stock_out)')
+      .select('id, status, transaction_items!transaction_items_transaction_id_fkey(product_id, qty_stock_out)')
       .eq('id', orderId)
       .eq('transaction_type', 'inhouse_order')
       .maybeSingle()
@@ -429,7 +429,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
   const computeShortfall = async (orderId: number): Promise<Shortfall[]> => {
     const { data: order, error: fetchError } = await supabase
       .from('transactions')
-      .select('transaction_items(product_id, qty_stock_out)')
+      .select('transaction_items!transaction_items_transaction_id_fkey(product_id, qty_stock_out)')
       .eq('id', orderId)
       .maybeSingle()
     if (fetchError || !order) { handleError(fetchError, 'Failed to check stock'); return [] }

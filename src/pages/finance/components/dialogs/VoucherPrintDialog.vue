@@ -186,7 +186,11 @@ async function handlePrint() {
                 <div class="dv-cell dv-nocol text-right font-weight-bold">{{ formatCurrency(voucher.total_amount) }}</div>
               </div>
 
-              <!-- Prepared by / Verified by / Approved by / Received by -->
+              <!-- Prepared by / Checked by / Approved by, then a reserved
+                   quarter for the RECORDED stamp (see VoucherStampDialog).
+                   The cell is kept at the same width as the other three so the
+                   row still divides the page evenly and the stamp has a box to
+                   aim at. -->
               <div class="dv-row">
                 <div
                   v-for="role in voucherSignatories"
@@ -202,6 +206,11 @@ async function handlePrint() {
                     <div class="dv-fine text-center"><em>(Signature Over Printed Name)</em></div>
                     <div class="dv-fine mt-2">Date: ____________</div>
                   </div>
+                </div>
+
+                <div class="dv-cell dv-quarter">
+                  <div class="dv-fine font-weight-bold">Recorded:</div>
+                  <div class="dv-stampbox"></div>
                 </div>
               </div>
 
@@ -312,6 +321,13 @@ async function handlePrint() {
    width is left, since it is the free-text one. */
 .dv-cat {
   flex: 0 0 190px;
+}
+
+.dv-stampbox {
+  /* Deliberately empty — the RECORDED stamp is overprinted here on the signed
+     original. Sized to the signature block beside it so the row stays level. */
+  flex: 1 1 auto;
+  min-height: 17mm;
 }
 
 .dv-quarter {

@@ -17,11 +17,18 @@ export type VoucherStatus = 'draft' | 'printed' | 'recorded' | 'cancelled'
 
 // The four signature blocks, shared by the form and the printed voucher so the
 // two can't drift. `field` is the finance_details column holding the typed name.
+// THREE signatories, not four. "Received by" was dropped at the accountant's
+// request: its box on the printed voucher is now reserved for the RECORDED
+// stamp, and receipt of payment is already signed for in section D at the foot
+// of the form, so the fourth box was duplicating it.
+//
+// `received_by_name` is deliberately left on VoucherSignatories and in the
+// database — historical vouchers carry real values there and dropping the
+// column would erase them. It simply has no input and no longer prints.
 export const voucherSignatories = [
   { label: 'Prepared by', field: 'prepared_by_name' },
   { label: 'Checked by',  field: 'checked_by_name' },
   { label: 'Approved by', field: 'approved_by_name' },
-  { label: 'Received by', field: 'received_by_name' },
 ] as const
 
 /**

@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import { onMounted } from 'vue'
 import { useLandingController } from '@/controller/landingController'
+import { companyProfiles, groupContact } from '@/utils/companyProfiles'
 import OuterLayoutWrapper from '@/layouts/OuterLayoutWrapper.vue'
 
 const { data, loading, error, fetchLandingData } = useLandingController()
@@ -9,138 +10,208 @@ onMounted(async () => {
   await fetchLandingData()
 })
 
-function scrollToFeatures() {
-  const element = document.querySelector('#features')
-  if (element) {
-    element.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    })
-  }
+function scrollTo(id: string) {
+  document.querySelector(`#${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-function openGithub() {
-  window.open('https://github.com', '_blank', 'noopener,noreferrer')
-}
+/**
+ * Credentials come from the SAME constant that prints on every invoice, receipt
+ * and voucher (src/utils/companyProfiles.ts). An institutional buyer checks the
+ * licence on the paperwork against the one on the website; keeping both from one
+ * source means they cannot drift apart.
+ */
+const exelmed = companyProfiles.exelmed
+const vincare = companyProfiles.vincare
 
-function openDocumentation() {
-  window.open('https://vuetifyjs.com/', '_blank', 'noopener,noreferrer')
-}
+/**
+ * The three channels the business actually trades through — the same split the
+ * system is built around (In-House / Ethical / Retail), not invented segments.
+ */
+const channels = [
+  {
+    eyebrow: 'Institutional',
+    title: 'Government & LGU Supply',
+    body: 'Supply against agency purchase requests and purchase orders, with delivery receipts, statements of account and payment terms handled end to end.',
+    points: ['Purchase request to delivery receipt', 'Statements of account and aging', 'Terms-based settlement'],
+  },
+  {
+    eyebrow: 'Professional',
+    title: 'Ethical & Clinic Accounts',
+    body: 'Direct supply to private clinics, hospitals and practitioners through assigned field representatives, on agreed credit terms.',
+    points: ['Assigned account representatives', 'Agreed discount and rebate terms', 'Scheduled collections'],
+  },
+  {
+    eyebrow: 'Retail',
+    title: 'Pharmacy Counter',
+    body: 'Over-the-counter dispensing through Exelmed Pharma Trade, on the same stock and pricing controls as the institutional channels.',
+    points: ['Batch and expiry controlled', 'Branch-level stock', 'Daily cash reconciliation'],
+  },
+]
 
-function formatDate(dateString: string) {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
-}
+/**
+ * Controls, stated plainly. These describe mechanisms that exist in the system,
+ * not aspirations — every one of them is enforced somewhere in the codebase.
+ */
+const assurances = [
+  {
+    icon: 'mdi-barcode-scan',
+    title: 'Batch and expiry tracked',
+    body: 'Every unit is held against its batch number and expiry date, from receipt through to dispensing.',
+  },
+  {
+    icon: 'mdi-book-open-variant',
+    title: 'Double-entry ledger',
+    body: 'Every peso that moves posts a balanced journal entry. Reports are produced from the ledger, never from operational tables.',
+  },
+  {
+    icon: 'mdi-file-document-check-outline',
+    title: 'Documented and reversible',
+    body: 'Documents are numbered, printed and retained. Corrections are made by reversal, never by quietly editing a posted record.',
+  },
+  {
+    icon: 'mdi-account-key-outline',
+    title: 'Role-controlled access',
+    body: 'Staff see only the pages their role permits, and every approval is attributable to a named person.',
+  },
+]
 </script>
 
 <template>
   <OuterLayoutWrapper>
     <template #content>
-      <div class="landing-view">
-        <!-- Loading State -->
+      <div class="landing">
         <v-container
           v-if="loading"
           class="d-flex justify-center align-center"
-          style="min-height: 50vh"
+          style="min-height: 60vh"
         >
-          <v-progress-circular color="primary" indeterminate size="64" />
+          <v-progress-circular color="primary" indeterminate size="56" />
         </v-container>
 
-        <!-- Error State -->
         <v-container
           v-else-if="error"
           class="d-flex justify-center align-center"
-          style="min-height: 50vh"
+          style="min-height: 60vh"
         >
-          <v-alert color="error" icon="mdi-alert-circle" type="error" variant="tonal">
+          <v-alert type="error" variant="tonal" icon="mdi-alert-circle">
             <v-alert-title>Failed to load content</v-alert-title>
-            {{ error }}
           </v-alert>
         </v-container>
 
-        <!-- Content -->
         <div v-else-if="data">
-          <!-- Hero Section -->
-          <section class="hero-section">
-            <v-container>
-              <v-row align="center" class="min-height-screen" justify="center">
-                <v-col cols="12" lg="8" md="10">
-                  <div class="text-center">
-                    <h1 class="text-h2 text-md-h3 font-weight-bold mb-4">
-                      {{ data.title }}
-                    </h1>
+          <!-- ── Hero ─────────────────────────────────────────────────────── -->
+          <section class="hero">
+            <v-container class="py-16">
+              <v-row justify="center">
+                <v-col cols="12" md="10" lg="9">
+                  <div class="hero-eyebrow mb-5">
+                    Pharmaceutical Distribution &middot; Butuan City
+                  </div>
 
-                    <h2 class="text-h4 text-md-h4 text-grey-darken-1 mb-6">
-                      {{ data.subtitle }}
-                    </h2>
+                  <h1 class="hero-motto mb-6">Your Health,<br class="d-sm-none" /> Our Care</h1>
 
-                    <p class="text-h6 text-md-h6 text-grey-darken-2 mb-8">
-                      {{ data.description }}
-                    </p>
+                  <div class="hero-rule mb-6"></div>
 
-                    <div class="d-flex flex-column flex-sm-row gap-4 justify-center">
-                      <v-btn
-                        class="text-none"
-                        color="primary"
-                        size="x-large"
-                        variant="elevated"
-                        @click="scrollToFeatures"
-                      >
-                        <v-icon class="me-2" icon="mdi-rocket-launch" />
-                        Explore Features
-                      </v-btn>
+                  <p class="hero-lead mb-4">
+                    Vincare Pharma and Exelmed Pharma Trade supply medicines and medical
+                    goods to government health facilities, private clinics and retail
+                    pharmacies.
+                  </p>
 
-                      <v-btn
-                        class="text-none"
-                        color="primary"
-                        size="x-large"
-                        variant="outlined"
-                        @click="openGithub"
-                      >
-                        <v-icon class="me-2" icon="mdi-github" />
-                        View Source
-                      </v-btn>
-                    </div>
+                  <p class="hero-body mb-10">
+                    We hold the stock, carry the terms and deliver on schedule &mdash; with
+                    the paperwork, batch traceability and financial records to account for
+                    every transaction.
+                  </p>
+
+                  <div class="d-flex flex-column flex-sm-row ga-3">
+                    <v-btn
+                      class="text-none px-8"
+                      color="primary"
+                      size="large"
+                      variant="flat"
+                      to="/auth"
+                    >
+                      Partner Sign In
+                    </v-btn>
+
+                    <v-btn
+                      class="text-none px-8"
+                      size="large"
+                      variant="outlined"
+                      @click="scrollTo('capabilities')"
+                    >
+                      What We Do
+                    </v-btn>
                   </div>
                 </v-col>
               </v-row>
             </v-container>
           </section>
 
-          <!-- Features Section -->
-          <section id="features" class="features-section py-16">
+          <!-- ── Registered credentials ───────────────────────────────────── -->
+          <section class="credentials">
             <v-container>
-              <div class="text-center mb-12">
-                <h2 class="text-h3 font-weight-bold mb-4">Key Features</h2>
-                <p class="text-h6 text-grey-darken-1">
-                  Everything you need for modern academic writing
+              <v-row align="stretch" justify="center">
+                <v-col cols="12" sm="6" md="3">
+                  <div class="cred-label">Licence to Operate</div>
+                  <div class="cred-value">3000001108883</div>
+                  <div class="cred-note">{{ exelmed.name }}</div>
+                </v-col>
+                <v-col cols="12" sm="6" md="3">
+                  <div class="cred-label">VAT Registered TIN</div>
+                  <div class="cred-value">178-845-363-000</div>
+                  <div class="cred-note">{{ exelmed.name }}</div>
+                </v-col>
+                <v-col cols="12" sm="6" md="3">
+                  <div class="cred-label">VAT Registered TIN</div>
+                  <div class="cred-value">176-395-238-000</div>
+                  <div class="cred-note">{{ vincare.name }}</div>
+                </v-col>
+                <v-col cols="12" sm="6" md="3">
+                  <div class="cred-label">Catalogue</div>
+                  <div class="cred-value">2,400+</div>
+                  <div class="cred-note">Stock-keeping units</div>
+                </v-col>
+              </v-row>
+            </v-container>
+          </section>
+
+          <!-- ── Channels ─────────────────────────────────────────────────── -->
+          <section id="capabilities" class="section">
+            <v-container>
+              <div class="section-head mb-12">
+                <div class="section-eyebrow mb-3">Who We Supply</div>
+                <h2 class="section-title mb-4">Three channels, one supply chain</h2>
+                <p class="section-lead">
+                  The same stock, the same controls and the same accountability, whether the
+                  buyer is a municipal health office, a private clinic or a walk-in customer.
                 </p>
               </div>
 
               <v-row>
-                <v-col
-                  v-for="(feature, index) in data.features"
-                  :key="index"
-                  cols="12"
-                  lg="3"
-                  md="6"
-                >
-                  <v-card class="h-100" elevation="2" hover>
-                    <v-card-text class="text-center pa-6">
-                      <v-avatar class="mb-4" color="primary" size="64">
-                        <v-icon color="on-primary" :icon="feature.icon" size="32" />
-                      </v-avatar>
+                <v-col v-for="channel in channels" :key="channel.title" cols="12" md="4">
+                  <v-card class="channel h-100" flat>
+                    <v-card-text class="pa-7">
+                      <div class="channel-eyebrow mb-3">{{ channel.eyebrow }}</div>
+                      <h3 class="channel-title mb-4">{{ channel.title }}</h3>
+                      <p class="channel-body mb-6">{{ channel.body }}</p>
 
-                      <h3 class="text-h5 font-weight-bold mb-3">
-                        {{ feature.title }}
-                      </h3>
+                      <v-divider class="mb-5" />
 
-                      <p class="text-body-1 text-grey-darken-3">
-                        {{ feature.description }}
-                      </p>
+                      <div
+                        v-for="point in channel.points"
+                        :key="point"
+                        class="channel-point d-flex align-start mb-3"
+                      >
+                        <v-icon
+                          icon="mdi-check"
+                          size="16"
+                          color="primary"
+                          class="mt-1 me-3 flex-shrink-0"
+                        />
+                        <span>{{ point }}</span>
+                      </div>
                     </v-card-text>
                   </v-card>
                 </v-col>
@@ -148,62 +219,191 @@ function formatDate(dateString: string) {
             </v-container>
           </section>
 
-          <!-- About section removed -->
+          <!-- ── Assurances ───────────────────────────────────────────────── -->
+          <section class="section section-alt">
+            <v-container>
+              <v-row>
+                <v-col cols="12" md="4">
+                  <div class="section-eyebrow mb-3">How We Operate</div>
+                  <h2 class="section-title mb-4">Accountable by design</h2>
+                  <p class="section-lead">
+                    Regulated buyers audit their suppliers. Everything below is a control we
+                    run day to day, not a claim about intent.
+                  </p>
+                </v-col>
+
+                <v-col cols="12" md="8">
+                  <v-row>
+                    <v-col
+                      v-for="item in assurances"
+                      :key="item.title"
+                      cols="12"
+                      sm="6"
+                    >
+                      <div class="assurance pa-6 h-100">
+                        <v-icon :icon="item.icon" color="primary" size="26" class="mb-4" />
+                        <h3 class="assurance-title mb-2">{{ item.title }}</h3>
+                        <p class="assurance-body">{{ item.body }}</p>
+                      </div>
+                    </v-col>
+                  </v-row>
+                </v-col>
+              </v-row>
+            </v-container>
+          </section>
+
+          <!-- ── Platform (JSON-driven, unchanged data source) ────────────── -->
+          <section id="features" class="section">
+            <v-container>
+              <div class="section-head mb-12">
+                <div class="section-eyebrow mb-3">The Platform</div>
+                <h2 class="section-title mb-4">{{ data.title }}</h2>
+                <p class="section-lead">{{ data.subtitle }}</p>
+              </div>
+
+              <v-row>
+                <v-col
+                  v-for="feature in data.features"
+                  :key="feature.title"
+                  cols="12"
+                  md="4"
+                >
+                  <div class="feature h-100">
+                    <div class="feature-icon mb-5">
+                      <v-icon :icon="feature.icon" size="24" />
+                    </div>
+                    <h3 class="feature-title mb-3">{{ feature.title }}</h3>
+                    <p class="feature-body">{{ feature.description }}</p>
+                  </div>
+                </v-col>
+              </v-row>
+            </v-container>
+          </section>
+
+          <!-- ── The group ────────────────────────────────────────────────── -->
+          <section class="section section-alt">
+            <v-container>
+              <div class="section-head mb-10">
+                <div class="section-eyebrow mb-3">The Group</div>
+                <h2 class="section-title mb-4">Two companies, one operation</h2>
+                <p class="section-lead">
+                  Both are registered trading entities working the same supply chain.
+                  Which one appears on your paperwork depends on the side of the
+                  transaction you are on.
+                </p>
+              </div>
+
+              <v-row>
+                <v-col cols="12" md="6">
+                  <div class="entity pa-7 h-100">
+                    <h3 class="entity-name mb-2">{{ vincare.name }}</h3>
+                    <div class="entity-role mb-5">Sourcing and supply</div>
+                    <p class="entity-body mb-6">
+                      Buys from manufacturers and suppliers. Purchase orders, supplier
+                      canvassing and inbound goods are issued and received under Vincare.
+                    </p>
+                    <v-divider class="mb-4" />
+                    <div class="entity-meta">{{ vincare.line1 }}</div>
+                    <div class="entity-meta">VAT Reg TIN 176-395-238-000</div>
+                  </div>
+                </v-col>
+
+                <v-col cols="12" md="6">
+                  <div class="entity pa-7 h-100">
+                    <h3 class="entity-name mb-2">{{ exelmed.name }}</h3>
+                    <div class="entity-role mb-5">Distribution and dispensing</div>
+                    <p class="entity-body mb-6">
+                      Sells to health facilities, clinics and the public. Invoices, delivery
+                      receipts and official receipts are issued under Exelmed.
+                    </p>
+                    <v-divider class="mb-4" />
+                    <div class="entity-meta">{{ exelmed.line1 }}</div>
+                    <div class="entity-meta">Licence 3000001108883 &middot; VAT Reg TIN 178-845-363-000</div>
+                  </div>
+                </v-col>
+              </v-row>
+            </v-container>
+          </section>
+
+          <!-- ── Contact ──────────────────────────────────────────────────── -->
+          <section id="contact" class="section">
+            <v-container>
+              <v-row>
+                <v-col cols="12" md="4">
+                  <div class="section-eyebrow mb-3">Get In Touch</div>
+                  <h2 class="section-title mb-4">Talk to us about supply</h2>
+                  <p class="section-lead">
+                    For procurement enquiries, price quotations and account applications.
+                  </p>
+                </v-col>
+
+                <v-col cols="12" md="8">
+                  <v-row>
+                    <v-col cols="12" sm="6">
+                      <div class="contact-label">Office</div>
+                      <div class="contact-value">{{ groupContact.address }}</div>
+                      <div class="contact-value">{{ groupContact.region }}</div>
+                    </v-col>
+                    <v-col cols="12" sm="6">
+                      <div class="contact-label">Landline</div>
+                      <a class="contact-link" :href="`tel:${groupContact.landline}`">
+                        {{ groupContact.landline }}
+                      </a>
+                    </v-col>
+                    <v-col cols="12" sm="6">
+                      <div class="contact-label">Sales &amp; Dispensing</div>
+                      <a class="contact-link" :href="`tel:${groupContact.mobileRetail}`">
+                        {{ groupContact.mobileRetail }}
+                      </a>
+                    </v-col>
+                    <v-col cols="12" sm="6">
+                      <div class="contact-label">Sourcing &amp; Supply</div>
+                      <a class="contact-link" :href="`tel:${groupContact.mobileSupply}`">
+                        {{ groupContact.mobileSupply }}
+                      </a>
+                    </v-col>
+                    <v-col cols="12">
+                      <div class="contact-label">Email</div>
+                      <a class="contact-link" :href="`mailto:${groupContact.email}`">
+                        {{ groupContact.email }}
+                      </a>
+                    </v-col>
+                  </v-row>
+                </v-col>
+              </v-row>
+            </v-container>
+          </section>
+
+          <!-- ── Close ────────────────────────────────────────────────────── -->
+          <section class="closing">
+            <v-container class="py-14">
+              <v-row align="center">
+                <v-col cols="12" md="8">
+                  <h2 class="closing-title mb-3">Supplying institutions that cannot run short.</h2>
+                  <p class="closing-body mb-0">
+                    {{ exelmed.line1 }} &middot; {{ exelmed.line2 }}
+                  </p>
+                </v-col>
+                <v-col cols="12" md="4" class="d-flex justify-md-end mt-6 mt-md-0">
+                  <v-btn
+                    class="text-none px-8"
+                    color="white"
+                    size="large"
+                    variant="flat"
+                    to="/auth"
+                  >
+                    Partner Sign In
+                  </v-btn>
+                </v-col>
+              </v-row>
+            </v-container>
+          </section>
         </div>
-      </div>
-      <div class="custom-shape-divider-top-1787545239">
-        <svg
-          data-name="Layer 1"
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 1200 120"
-          preserveAspectRatio="none"
-        >
-          <path
-            d="M321.39,56.44c58-10.79,114.16-30.13,172-41.86,82.39-16.72,168.19-17.73,250.45-.39C823.78,31,906.67,72,985.66,92.83c70.05,18.48,146.53,26.09,214.34,3V0H0V27.35A600.21,600.21,0,0,0,321.39,56.44Z"
-            class="shape-fill"
-          ></path>
-        </svg>
       </div>
     </template>
   </OuterLayoutWrapper>
 </template>
 
-<style scoped>
-.min-height-screen {
-  min-height: calc(100vh - 64px);
-}
-.custom-shape-divider-top-1787545239 {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  overflow: hidden;
-  line-height: 0;
-}
-
-.custom-shape-divider-top-1787545239 svg {
-  position: relative;
-  display: block;
-  width: calc(215% + 1.3px);
-  height: 362px;
-}
-
-.custom-shape-divider-top-1787545239 .shape-fill {
-  fill: #bc1212;
-}
-/* .features-section {
-  background: white;
-} */
-
-/* .about-section {
-  background: #fafafa;
-} */
-
-.gap-4 {
-  gap: 1rem;
-}
-
-.landing-view {
-  min-height: 100vh;
-}
+<style>
+@import url('./css/landing.css');
 </style>

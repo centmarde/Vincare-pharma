@@ -95,6 +95,8 @@ export type EthicalLineInput = {
   product_id: number
   quantity: number
   unit_price: number
+  /** Cost at the moment of invoicing — what the GL relieves from inventory. */
+  cost_price?: number | null
 }
 
 type FetchOrdersOptions = {
@@ -117,7 +119,7 @@ type CommissionSummaryRow = {
 // merged back in). An ethical order is outbound, so the ordered quantity is
 // qty_stock_out and the delivered/sourced count is actual_count_stock_out.
 const SELECT_ORDER =
-  '*, transaction_items(id, product_id, qty_stock_out, unit_price, line_total, actual_count_stock_out, stock_sources, product:product_id(*)), customer:customer_id(*), agent:agent_id(*), outlet:outlet_id(*), ethical_details(*)'
+  '*, transaction_items!transaction_items_transaction_id_fkey(id, product_id, qty_stock_out, unit_price, line_total, actual_count_stock_out, stock_sources, product:product_id(*)), customer:customer_id(*), agent:agent_id(*), outlet:outlet_id(*), ethical_details(*)'
 
 function mapRow(row: any): EthicalOrderType {
   const details = row.ethical_details ?? {}
@@ -369,6 +371,9 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
         .insert({
           transaction_id: created.id, product_id: line.product_id,
           qty_stock_out: line.quantity, unit_price: line.unit_price,
+          // Without this the GL reads cost from the live product master at
+          // projection time (or books no COGS at all when it is null).
+          cost_price: line.cost_price ?? null,
           line_total: line.quantity * line.unit_price,
           actual_count_stock_out: sourced, stock_sources: sources,
         })

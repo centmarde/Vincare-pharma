@@ -43,12 +43,10 @@ export const companyProfiles: Record<CompanyKey, CompanyProfile> = {
     name: 'VINCARE PHARMA',
     line1: '2F N.B. Building, Ochoa Avenue, Butuan City',
     line2: '8600 Agusan del Norte, Philippines',
-    // TODO(confirm): Vincare's licence and VAT/TIN are not recorded anywhere in
-    // the codebase — Purchasing's PO header has never carried them. Suppliers
-    // generally expect a TIN on anything they quote against or invoice. Fill
-    // this in once the accountant supplies the real values; until then the line
-    // is omitted rather than printed blank.
-    license: '',
+    // TIN confirmed 2026-08-24. The LICENCE NUMBER is still unknown — Exelmed's
+    // line carries both ("License Number: ... - VAT Reg: TIN: ..."), so add it
+    // here in the same shape once it is supplied.
+    license: 'VAT Reg TIN: 176-395-238-000',
     contact: 'Mobile: 0968-879-5589',
   },
 }
@@ -88,3 +86,18 @@ export function defaultCompanyFor(kind: PrintedDocumentKind): CompanyKey {
 export function companyFor(key: CompanyKey): CompanyProfile {
   return companyProfiles[key] ?? companyProfiles.exelmed
 }
+
+/**
+ * Structured contact details for the public site. The letterhead `contact`
+ * strings above are formatted for print ("Mobile: ... - Email Address: ...");
+ * these are the same values split so the web page can lay them out and make
+ * them tappable.
+ */
+export const groupContact = {
+  address: 'Ground Floor NB Building, Ochoa Avenue, Butuan City',
+  region: '8600 Agusan del Norte, Philippines',
+  landline: '085-3000-460',
+  mobileRetail: '09090734525',
+  mobileSupply: '0968-879-5589',
+  email: 'exelmedshop@gmail.com',
+} as const
