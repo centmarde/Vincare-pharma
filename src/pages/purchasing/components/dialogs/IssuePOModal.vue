@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useIssuePOModal } from '../../composables/useIssuePOModal'
 import type { PR } from '@/stores/purchaseRequisitionData'
-import { formatCurrency } from '@/utils/helpers'
+import { formatCurrency, formatExpiryMonthYear } from '@/utils/helpers'
 import { useDisplay } from 'vuetify'
 
 const { mobile } = useDisplay()
@@ -161,6 +161,7 @@ const {
               <th class="text-left">DESCRIPTION</th>
               <th class="text-right">QTY</th>
               <th class="text-right">SUPPLIER</th>
+              <th class="text-right">EXPIRY</th>
               <th class="text-right">UNIT PRICE</th>
               <th class="text-right">TOTAL</th>
             </tr>
@@ -171,16 +172,17 @@ const {
               <td>{{ item.item_description }}</td>
               <td class="text-right">{{ item.qty }}</td>
               <td class="text-right">{{ item.supplier_name }}</td>
+              <td class="text-right">{{ formatExpiryMonthYear(item.expiry_date) }}</td>
               <td class="text-right">{{ formatCurrency(item.cost_per_unit) }}</td>
               <td class="text-right">{{ formatCurrency(item.qty * item.cost_per_unit) }}</td>
             </tr>
             <tr v-for="n in emptyRows" :key="`empty-${n}`" class="empty-row">
-              <td colspan="6">&nbsp;</td>
+              <td colspan="7">&nbsp;</td>
             </tr>
           </tbody>
           <tfoot>
             <tr class="po-table-total bg-grey-lighten-3">
-              <td colspan="5" class="text-right font-weight-bold">TOTAL</td>
+              <td colspan="6" class="text-right font-weight-bold">TOTAL</td>
               <td class="text-right font-weight-bold text-subtitle-1">{{ formatCurrency(declaredValue) }}</td>
             </tr>
           </tfoot>
@@ -207,6 +209,7 @@ const {
               <div class="d-flex flex-wrap ga-3 text-caption">
                 <div><span class="text-medium-emphasis">Qty: </span>{{ item.qty }}</div>
                 <div><span class="text-medium-emphasis">Supplier: </span>{{ item.supplier_name }}</div>
+                <div><span class="text-medium-emphasis">Expiry: </span>{{ formatExpiryMonthYear(item.expiry_date) }}</div>
                 <div><span class="text-medium-emphasis">Price: </span>{{ formatCurrency(item.cost_per_unit) }}</div>
                 <div><span class="text-medium-emphasis">Total: </span><span class="font-weight-medium">{{ formatCurrency(item.qty * item.cost_per_unit) }}</span></div>
               </div>

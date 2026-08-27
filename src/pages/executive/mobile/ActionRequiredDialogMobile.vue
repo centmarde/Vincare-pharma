@@ -6,7 +6,7 @@ import { useSharedChangeRequests } from '../composables/useSharedChangeRequests'
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
 import type { PRItem } from '@/stores/purchaseRequisitionData'
-import { formatDatePR_ISO } from '@/utils/helpers'
+import { formatDatePR_ISO, formatExpiryMonthYear } from '@/utils/helpers'
 import { computed, ref, watch } from 'vue'
 
 const prChangeRequests = useChangeRequestsPR()
@@ -242,8 +242,8 @@ function formatMoney(value: number | string | undefined) {
                     <span class="font-weight-medium ms-1">{{ formatMoney(it.cost_per_unit) }}</span>
                   </div>
                   <div class="text-caption">
-                    <span class="text-medium-emphasis">PR Price:</span>
-                    <span class="font-weight-medium ms-1">{{ formatMoney(it.offer_per_unit) }}</span>
+                    <span class="text-medium-emphasis">Expiry:</span>
+                    <span class="font-weight-medium ms-1">{{ formatExpiryMonthYear(it.expiry_date) }}</span>
                   </div>
                 </div>
               </v-sheet>
@@ -347,8 +347,8 @@ function formatMoney(value: number | string | undefined) {
                     <span class="font-weight-medium ms-1">{{ formatMoney(it.cost_per_unit) }}</span>
                   </div>
                   <div class="text-caption">
-                    <span class="text-medium-emphasis">PR Price:</span>
-                    <span class="font-weight-medium ms-1">{{ formatMoney(it.offer_per_unit) }}</span>
+                    <span class="text-medium-emphasis">Expiry:</span>
+                    <span class="font-weight-medium ms-1">{{ formatExpiryMonthYear(it.expiry_date) }}</span>
                   </div>
                 </div>
               </v-sheet>

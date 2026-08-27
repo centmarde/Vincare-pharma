@@ -153,7 +153,7 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
       // live directly on transaction_items (transaction_item_details was merged in).
       const lineRows = supplierSelections.map(sel => ({
         transaction_id: pr.id, product_id: sel.product_id,
-        qty_stock_in: sel.qty, unit_price: sel.unit_price,
+        qty_stock_in: sel.qty, unit_price: sel.unit_price, cost_price: sel.unit_price,
         line_total: sel.qty * sel.unit_price,
         supplier_quotes: {
           source: `${logModule}_canvass`, order_type: orderType, order_id: orderId, order_no: orderNo,

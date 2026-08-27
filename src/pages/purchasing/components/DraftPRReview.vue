@@ -3,7 +3,7 @@ import { watch, computed } from 'vue'
 import { useDraftPRReview } from '../composables/useDraftPRReview'
 import { useTheme } from '@/stores/useTheme'
 import type { DraftPRItemType } from '@/stores/draftPRData'
-import { formatCurrency } from '@/utils/helpers'
+import { formatCurrency, formatExpiryMonthYear } from '@/utils/helpers'
 
 const props = defineProps<{ modelValue: boolean; draftId: number | null }>()
 const emit = defineEmits<{
@@ -37,13 +37,6 @@ async function onSubmit() {
     emit('submitted', (result as any).pr_id)
     emit('update:modelValue', false)
   }
-}
-function formatExpiryMonthYear(value: string | null | undefined) {
-  if (!value) return '—'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '—'
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  return `${month}/${date.getFullYear()}`
 }
 </script>
 

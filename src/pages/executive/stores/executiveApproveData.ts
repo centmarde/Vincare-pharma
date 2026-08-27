@@ -68,8 +68,8 @@ export const useExecutiveApproveStore = defineStore('executiveApproveData', () =
         `
         *,
         transaction_items!transaction_items_transaction_id_fkey (
-          id, product_id, qty_stock_in, actual_count_stock_in,
-          products ( id, product_name, unit, cost_price, selling_price, sku, supplier_id, expiry_date, suppliers ( name ) )
+          id, product_id, qty_stock_in, actual_count_stock_in, unit_price, cost_price,
+          products ( id, product_name, unit, cost_price, sku, supplier_id, expiry_date, suppliers ( name ) )
         )
       `,
       )

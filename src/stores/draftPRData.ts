@@ -69,6 +69,57 @@ function requiredByOrToday(date: string | null | undefined): string {
   return date ?? new Date().toISOString().slice(0, 10)
 }
 
+type BatchProduct = {
+  id: number
+  product_name: string | null
+  unit: string | null
+  supplier_id: number | null
+  expiry_date: string | null
+}
+
+// products.expiry_date is BATCH identity, so a different supplier/expiry is a
+// different row — never an in-place edit of the one the draft happened to point at.
+async function resolveBatchProduct(
+  product: BatchProduct,
+  supplierId: number,
+  expiryDate: string | null,
+): Promise<{ id: number | null; error?: string }> {
+  const sameBatch =
+    (product.supplier_id ?? null) === supplierId &&
+    (product.expiry_date ?? null) === (expiryDate ?? null)
+  if (sameBatch) return { id: product.id }
+
+  let query = supabase
+    .from('products')
+    .select('id')
+    .eq('product_name', product.product_name)
+    .eq('supplier_id', supplierId)
+  // Nullable columns — PostgREST needs is() for null, eq() otherwise. Using eq()
+  // on a null silently matches nothing, which would duplicate the row instead.
+  query = product.unit === null ? query.is('unit', null) : query.eq('unit', product.unit)
+  query = expiryDate === null ? query.is('expiry_date', null) : query.eq('expiry_date', expiryDate)
+
+  // limit(1) rather than maybeSingle(): duplicate batch rows exist and must not throw.
+  const { data: matches, error: matchError } = await query.limit(1)
+  if (matchError) return { id: null, error: matchError.message }
+  if (matches?.length) return { id: matches[0].id }
+
+  const { data: created, error: createError } = await supabase
+    .from('products')
+    .insert({
+      product_name: product.product_name,
+      unit: product.unit,
+      supplier_id: supplierId,
+      expiry_date: expiryDate,
+      status: 'active',
+      current_stock: 0,
+    })
+    .select('id')
+    .single()
+  if (createError || !created) return { id: null, error: createError?.message ?? 'insert failed' }
+  return { id: created.id }
+}
+
 export const useDraftPRDataStore = defineStore('draftPRData', () => {
   const authStore = useAuthUserStore()
   const offersStore = useSupplierOffersDataStore()
@@ -95,7 +146,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       selected_supplier_offer_id: row.selected_supplier_offer_id,
       justification: row.justification,
       considered_offers: row.considered_offers ?? [],
-      supplier_id: row.offer?.supplier_id ?? null, // NEW
+      supplier_id: row.supplier_id ?? row.offer?.supplier_id ?? null,
       supplier_name: row.offer?.supplier?.name ?? null,
       unit_price: row.offer?.cost_price_per_unit ?? null,
       expiry_date: row.offer?.expiry_date ?? null,
@@ -355,6 +406,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       .from('draft_pr_items')
       .update({
         selected_supplier_offer_id: payload.offer.id,
+        supplier_id: payload.offer.supplier_id,
         justification: payload.justification ?? null,
         considered_offers: payload.consideredOffers,
       })
@@ -469,7 +521,9 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
 
     const warnings: ConvertWarning[] = []
     type ResolvedLine = {
-      item_id: number; product_id: number; qty: number
+      // product_id is the catalogue row the offers hang off; resolved_product_id
+      // is the batch row the PR line actually points at.
+      item_id: number; product_id: number; resolved_product_id: number; qty: number
       supplier_id: number; offer_id: number; unit_price: number; currency: string
       expiry_date: string | null; required_by_date: string; justification: string | null
       considered_offers: any
@@ -484,7 +538,10 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
         return { success: false, error: `Invalid quantity on item ${item.id}.` }
       }
       const { data: product } = await supabase
-        .from('products').select('id').eq('id', item.product_id).maybeSingle()
+        .from('products')
+        .select('id, product_name, unit, supplier_id, expiry_date')
+        .eq('id', item.product_id)
+        .maybeSingle()
       if (!product) {
         loading.value = false
         return { success: false, error: `Product no longer exists for item ${item.id}.` }
@@ -518,9 +575,18 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
         })
       }
 
+      // Falls back to the offer so a draft item predating supplier_id still resolves.
+      const supplierId = item.supplier_id ?? offer.supplier_id
+      const resolved = await resolveBatchProduct(product, supplierId, offer.expiry_date)
+      if (resolved.id == null) {
+        loading.value = false
+        return { success: false, error: `Failed to resolve product batch for item ${item.id}: ${resolved.error}` }
+      }
+
       resolvedLines.push({
-        item_id: item.id, product_id: item.product_id, qty: item.qty,
-        supplier_id: offer.supplier_id, offer_id: offer.id, unit_price: offer.cost_price_per_unit,
+        item_id: item.id, product_id: item.product_id, resolved_product_id: resolved.id, qty: item.qty,
+        supplier_id: supplierId,
+        offer_id: offer.id, unit_price: offer.cost_price_per_unit,
         currency: offer.currency, expiry_date: offer.expiry_date, required_by_date: requiredBy,
         justification: item.justification, considered_offers: item.considered_offers,
       })
@@ -577,8 +643,8 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
 
       const { error: itemsError } = await supabase.from('transaction_items').insert(
         lines.map((l) => ({
-          transaction_id: pr.id, product_id: l.product_id, qty_stock_in: l.qty,
-          unit_price: l.unit_price, line_total: l.qty * l.unit_price,
+          transaction_id: pr.id, product_id: l.resolved_product_id, qty_stock_in: l.qty,
+          unit_price: l.unit_price, cost_price: l.unit_price, line_total: l.qty * l.unit_price,
           supplier_quotes: {
             source: 'draft_pr', draft_pr_id: draftId, draft_item_id: l.item_id,
             supplier_id: l.supplier_id, supplier_offer_id: l.offer_id, unit_price: l.unit_price,

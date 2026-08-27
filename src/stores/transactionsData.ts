@@ -85,7 +85,6 @@ export type TransactionItemJoined = {
   product_name: string | null
   unit: string | null
   cost_price: number | null
-  selling_price: number | null
   sku: string | null
   supplier_id: number | null
   supplier_name: string | null

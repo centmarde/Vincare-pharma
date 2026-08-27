@@ -8,28 +8,8 @@ export function useTransactionsData() {
   const { items, prs, filterStatus } = storeToRefs(store)
 
   // ─── Computed ────────────────────────────────────────────────────
-  const customerOfferTotal = computed(() =>
-    items.value.reduce((sum, i) => sum + i.qty * i.offer_per_unit, 0)
-  )
-
   const companyCostTotal = computed(() =>
     items.value.reduce((sum, i) => sum + i.qty * i.cost_per_unit, 0)
-  )
-
-  const profit = computed(() => customerOfferTotal.value - companyCostTotal.value)
-
-  const isProfitable = computed(() => profit.value > 0)
-
-  const offerCostRatio = computed(() =>
-    companyCostTotal.value === 0
-      ? '0.00'
-      : (customerOfferTotal.value / companyCostTotal.value).toFixed(2)
-  )
-
-  const marginPercent = computed(() =>
-    customerOfferTotal.value === 0
-      ? '0'
-      : Math.floor((profit.value / customerOfferTotal.value) * 100)
   )
 
   const filteredPRs = computed(() =>
@@ -93,12 +73,7 @@ export function useTransactionsData() {
     filterStatus,
 
     // Computed
-    customerOfferTotal,
     companyCostTotal,
-    profit,
-    isProfitable,
-    offerCostRatio,
-    marginPercent,
     filteredPRs,
 
     // Constants

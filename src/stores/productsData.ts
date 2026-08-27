@@ -93,6 +93,7 @@ export type ReceiveStockUpdate ={
   product_id: number
   sku: string | null
   actual_count_stock_in: number
+  expiry_date?: string | null
 }
 
 export type StockStatusBucket =
@@ -561,7 +562,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
         id, transaction_type, status, created_at, created_by, remarks,
         transaction_items!transaction_items_transaction_id_fkey (
           id, product_id,
-          products ( id, product_name, sku, unit, current_stock, reorder_level, expiry_date, supplier_id, cost_price, selling_price, suppliers ( name ) )
+          products ( id, product_name, sku, unit, current_stock, reorder_level, expiry_date, supplier_id, cost_price, suppliers ( name ) )
         )
       `)
       .in('transaction_type', REORDER_TYPES)
@@ -804,7 +805,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     clearError()
 
     try {
-      for (const { transaction_item_id, product_id, sku, actual_count_stock_in } of updates) {
+      for (const { transaction_item_id, product_id, sku, actual_count_stock_in, expiry_date } of updates) {
         const { data: existingItem, error: existingError } = await supabase
           .from('transaction_items')
           .select('actual_count_stock_in')
@@ -826,12 +827,24 @@ export const useProductsDataStore = defineStore('productsData', () => {
         const product = await fetchProductById(product_id)
         if (!product) throw new Error(`Failed to fetch product ID ${product_id}`)
 
-        const newStock = (product.current_stock ?? 0) + actual_count_stock_in
+        const priorStock = product.current_stock ?? 0
+        const newStock = priorStock + actual_count_stock_in
+
+        // Correcting expiry is only safe on an empty row — the batch row the PR
+        // created. Re-dating a row that already holds stock would mis-date it.
+        const expiryChanged =
+          expiry_date !== undefined && (expiry_date ?? null) !== (product.expiry_date ?? null)
+        if (expiryChanged && priorStock > 0) {
+          throw new Error(
+            `Cannot change expiry on product ID ${product_id}: it already holds ${priorStock} in stock from an earlier batch.`,
+          )
+        }
 
         // 2. Apply the stock increment first
         const result = await updateProduct(product_id, {
           current_stock: newStock,
           ...(sku ? { sku } : {}),
+          ...(expiryChanged ? { expiry_date } : {}),
         })
         if (!result) throw new Error(`Failed to update product ID ${product_id}`)
 

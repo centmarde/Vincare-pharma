@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { company } from '@/pages/purchasing/composables/usePODetailModal'
 import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
-import { formatCurrency, formatDatePO_Written } from '@/utils/helpers'
+import { formatCurrency, formatDatePO_Written, formatExpiryMonthYear } from '@/utils/helpers'
 import type { PR, PRItem } from '@/stores/purchaseRequisitionData'
 import { useProductsDataStore } from '@/stores/productsData'
 
@@ -25,6 +25,7 @@ function productSkuFor(item: PRItem): string {
   console.log('[PODetailViewBody] Retrieved SKU for product', item.product_id, '=>', sku)
   return sku
 }
+
 </script>
 
 <template>
@@ -91,12 +92,13 @@ function productSkuFor(item: PRItem): string {
           <th class="text-white text-right">TOTAL</th>
           <th class="text-white text-center" style="width: 130px">ACTUAL COUNT</th>
           <th class="text-white text-center" style="width: 130px">SKU</th>
+          <th class="text-white text-center" style="width: 150px">EXPIRY</th>
         </tr>
       </thead>
 
       <tbody>
         <tr v-if="transactionItems.length === 0">
-          <td colspan="6" class="text-center pa-4">No items found.</td>
+          <td colspan="7" class="text-center pa-4">No items found.</td>
         </tr>
 
         <tr v-for="(item, index) in transactionItems" :key="item.id">
@@ -132,16 +134,29 @@ function productSkuFor(item: PRItem): string {
             />
             <span v-else>{{ item.sku ?? '—' }}</span>
           </td>
+          <td class="text-center" style="width: 150px">
+            <v-text-field
+              v-if="skuEditMode"
+              :model-value="(item.expiry_date ?? '').slice(0, 10)"
+              @update:model-value="item.expiry_date = $event || null"
+              type="date"
+              density="compact"
+              variant="outlined"
+              hide-details
+              style="width: 140px"
+            />
+            <span v-else>{{ formatExpiryMonthYear(item.expiry_date) }}</span>
+          </td>
         </tr>
 
         <tr v-for="n in effectiveEmptyRows" :key="`empty-${n}`">
-          <td colspan="6">&nbsp;</td>
+          <td colspan="7">&nbsp;</td>
         </tr>
       </tbody>
 
       <tfoot>
         <tr class="bg-grey-lighten-3">
-          <td colspan="5" class="text-right font-weight-bold">TOTAL</td>
+          <td colspan="6" class="text-right font-weight-bold">TOTAL</td>
           <td class="text-center font-weight-bold">
             {{ formatCurrency(po?.total_amount ?? 0) }}
           </td>
@@ -182,27 +197,41 @@ function productSkuFor(item: PRItem): string {
           </div>
 
           <!-- Actual count + SKU inputs (always visible when in edit mode) -->
-          <div v-if="skuEditMode" class="d-flex ga-3">
-            <div style="flex: 1; min-width: 0;">
-              <div class="text-caption text-medium-emphasis mb-1">Actual count</div>
-              <v-text-field
-                v-model.number="item.actual_count_stock_in"
-                type="number"
-                density="compact"
-                variant="outlined"
-                hide-details
-                min="1"
-                style="width: 100%"
-              />
+          <div v-if="skuEditMode">
+            <div class="d-flex ga-3">
+              <div style="flex: 1; min-width: 0;">
+                <div class="text-caption text-medium-emphasis mb-1">Actual count</div>
+                <v-text-field
+                  v-model.number="item.actual_count_stock_in"
+                  type="number"
+                  density="compact"
+                  variant="outlined"
+                  hide-details
+                  min="1"
+                  style="width: 100%"
+                />
+              </div>
+              <div style="flex: 1; min-width: 0;">
+                <div class="text-caption text-medium-emphasis mb-1">SKU</div>
+                <v-text-field
+                  v-model="item.sku"
+                  density="compact"
+                  variant="outlined"
+                  hide-details
+                  :placeholder="productSkuFor(item) || 'SKU'"
+                  style="width: 100%"
+                />
+              </div>
             </div>
-            <div style="flex: 1; min-width: 0;">
-              <div class="text-caption text-medium-emphasis mb-1">SKU</div>
+            <div class="mt-3">
+              <div class="text-caption text-medium-emphasis mb-1">Expiry</div>
               <v-text-field
-                v-model="item.sku"
+                :model-value="(item.expiry_date ?? '').slice(0, 10)"
+                @update:model-value="item.expiry_date = $event || null"
+                type="date"
                 density="compact"
                 variant="outlined"
                 hide-details
-                :placeholder="productSkuFor(item) || 'SKU'"
                 style="width: 100%"
               />
             </div>
@@ -216,6 +245,10 @@ function productSkuFor(item: PRItem): string {
             <div>
               <span class="text-medium-emphasis">SKU: </span>
               <span class="font-weight-medium">{{ item.sku ?? '—' }}</span>
+            </div>
+            <div>
+              <span class="text-medium-emphasis">Expiry: </span>
+              <span class="font-weight-medium">{{ formatExpiryMonthYear(item.expiry_date) }}</span>
             </div>
           </div>
         </v-card-text>

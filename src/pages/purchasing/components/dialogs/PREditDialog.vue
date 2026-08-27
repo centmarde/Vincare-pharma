@@ -57,7 +57,6 @@ function onProductSelected(product: ProductPickerResult) {
   item.item_description = product.product_name || item.item_description
   if (product.unit) item.unit = product.unit
   item.cost_per_unit = product.cost_price ?? item.cost_per_unit
-  item.offer_per_unit = product.selling_price ?? item.offer_per_unit
   if (product.supplier_id != null) item.supplier_id = String(product.supplier_id)
   item.product_id = product.id ?? null
 
@@ -78,7 +77,6 @@ function addItem() {
     unit: 'Box',
     item_description: '',
     qty: 1,
-    offer_per_unit: 0,
     cost_per_unit: 0,
     product_id: undefined,
     supplier_id: null,
@@ -116,25 +114,9 @@ function save() {
   close()
 }
 
-const customerOfferTotal = computed(() => {
-  if (!props.pr) return 0
-  return props.pr.items.reduce((sum, item) => sum + (item.qty || 0) * (item.offer_per_unit || 0), 0)
-})
-
 const companyCostTotal = computed(() => {
   if (!props.pr) return 0
   return props.pr.items.reduce((sum, item) => sum + (item.qty || 0) * (item.cost_per_unit || 0), 0)
-})
-
-const profit = computed(() => customerOfferTotal.value - companyCostTotal.value)
-const isProfitable = computed(() => profit.value >= 0)
-const offerCostRatio = computed(() => {
-  if (companyCostTotal.value === 0) return '0.0'
-  return (customerOfferTotal.value / companyCostTotal.value).toFixed(1)
-})
-const marginPercent = computed(() => {
-  if (customerOfferTotal.value === 0) return '0.0'
-  return ((profit.value / customerOfferTotal.value) * 100).toFixed(1)
 })
 </script>
 
@@ -172,12 +154,10 @@ const marginPercent = computed(() => {
           <v-row class="text-caption font-weight-bold mb-1 px-1" no-gutters>
             <v-col cols="auto" style="width: 36px" class="text-center">NO.</v-col>
             <v-col cols="1" class="pl-2">UNIT</v-col>
-            <v-col cols="2" class="pl-2">PRODUCT</v-col>
-            <v-col cols="1.5" class="pl-2">SUPPLIER</v-col>
-            <v-col cols="1.5" class="pl-2">EXPIRY</v-col>
+            <v-col cols="3" class="pl-2">PRODUCT</v-col>
+            <v-col cols="2" class="pl-2">SUPPLIER</v-col>
+            <v-col cols="2" class="pl-2">EXPIRY</v-col>
             <v-col cols="1" class="pl-2">QTY</v-col>
-            <v-col cols="1" class="pl-2">OFFER/UNIT</v-col>
-            <v-col cols="1" class="text-right pr-4">OFFER TOTAL</v-col>
             <v-col cols="1" class="pl-2">COST/UNIT</v-col>
             <v-col cols="1" class="text-right pr-2">COST TOTAL</v-col>
             <v-col cols="auto" style="width: 40px" />
@@ -214,7 +194,7 @@ const marginPercent = computed(() => {
               />
             </v-col>
 
-            <v-col cols="2" class="pl-2">
+            <v-col cols="3" class="pl-2">
               <v-text-field
                 v-model="item.item_description"
                 placeholder="Item description"
@@ -226,7 +206,7 @@ const marginPercent = computed(() => {
               />
             </v-col>
 
-            <v-col cols="1.5" class="pl-2">
+            <v-col cols="2" class="pl-2">
               <v-select
                 v-model="item.supplier_id"
                 :items="supplierOptions"
@@ -240,7 +220,7 @@ const marginPercent = computed(() => {
               />
             </v-col>
 
-            <v-col cols="1.5" class="pl-2">
+            <v-col cols="2" class="pl-2">
               <v-menu
                 :model-value="expiryMenuOpen[index] ?? false"
                 @update:model-value="(val) => (expiryMenuOpen[index] = val)"
@@ -276,23 +256,6 @@ const marginPercent = computed(() => {
                 density="compact"
                 hide-details
               />
-            </v-col>
-
-            <v-col cols="1" class="pl-2">
-              <v-text-field
-                v-model.number="item.offer_per_unit"
-                type="number"
-                placeholder="0.00"
-                variant="outlined"
-                density="compact"
-                hide-details
-              />
-            </v-col>
-
-            <v-col cols="1" class="text-right pr-4">
-              <span class="text-body-2">
-                {{ formatCurrency((item.qty || 0) * (item.offer_per_unit || 0)) }}
-              </span>
             </v-col>
 
             <v-col cols="1" class="pl-2">
@@ -454,19 +417,7 @@ const marginPercent = computed(() => {
               </v-col>
             </v-row>
 
-            <!-- Offer/unit + Cost/unit side by side -->
             <v-row no-gutters class="mb-3" style="gap: 8px">
-              <v-col>
-                <div class="field-label">Offer / Unit</div>
-                <v-text-field
-                  v-model.number="item.offer_per_unit"
-                  type="number"
-                  placeholder="0.00"
-                  variant="outlined"
-                  density="compact"
-                  hide-details
-                />
-              </v-col>
               <v-col>
                 <div class="field-label">Cost / Unit</div>
                 <v-text-field
@@ -482,13 +433,7 @@ const marginPercent = computed(() => {
 
             <!-- Computed totals row -->
             <v-divider class="mb-2" />
-            <div class="d-flex justify-space-between align-center">
-              <div class="text-caption">
-                <span class="text-medium-emphasis">Offer Total </span>
-                <span class="font-weight-bold">
-                  {{ formatCurrency((item.qty || 0) * (item.offer_per_unit || 0)) }}
-                </span>
-              </div>
+            <div class="d-flex justify-end align-center">
               <div class="text-caption">
                 <span class="text-medium-emphasis">Cost Total </span>
                 <span class="font-weight-bold text-blue-darken-2">
@@ -528,45 +473,9 @@ const marginPercent = computed(() => {
         <v-row align="end">
           <v-col cols="12" md="6" :order="mobile ? 1 : 2">
             <v-card variant="flat" rounded="lg" class="pa-4 border mb-4 mb-md-0">
-              <div class="d-flex justify-space-between align-center mb-2">
-                <span class="text-body-2">Customer Offer Total</span>
-                <span class="text-h6 font-weight-bold">{{
-                  formatCurrency(customerOfferTotal)
-                }}</span>
-              </div>
-
-              <div class="d-flex justify-space-between align-center mb-4">
-                <span class="text-body-2">Company Cost Total</span>
-                <span class="text-h6 font-weight-bold">{{ formatCurrency(companyCostTotal) }}</span>
-              </div>
-
-              <v-divider class="mb-4" />
-
-              <div class="d-flex justify-space-between align-center mb-2">
-                <span class="text-body-2">Profit / (Loss)</span>
-                <div class="d-flex align-center" style="gap: 8px">
-                  <span
-                    class="text-h6 font-weight-bold"
-                    :class="isProfitable ? 'text-green-darken-2' : 'text-red-darken-2'"
-                  >
-                    {{ formatCurrency(profit) }}
-                  </span>
-                  <v-chip
-                    :color="isProfitable ? 'green-lighten-4' : 'red-lighten-4'"
-                    size="small"
-                    class="font-weight-bold"
-                    :class="isProfitable ? 'text-green-darken-3' : 'text-red-darken-3'"
-                  >
-                    {{ isProfitable ? '● Profitable' : '● Loss' }}
-                  </v-chip>
-                </div>
-              </div>
-
               <div class="d-flex justify-space-between align-center">
-                <span class="text-body-2">Offer : Cost Ratio</span>
-                <span class="text-body-2 font-weight-bold">
-                  {{ offerCostRatio }}x · {{ marginPercent }}% margin
-                </span>
+                <span class="text-body-2">Total Cost</span>
+                <span class="text-h6 font-weight-bold">{{ formatCurrency(companyCostTotal) }}</span>
               </div>
             </v-card>
           </v-col>

@@ -13,7 +13,6 @@ type PRFormItem = {
   item_description: string
   supplier_id: number | null
   qty: number
-  offer_per_unit: number
   cost_per_unit: number
   expiry_date: Date | null
   product_id?: number | null // NEW
@@ -31,7 +30,6 @@ export type ReorderPrefillItem = {
   unit: string
   supplier_id: number | null
   cost_per_unit: number
-  offer_per_unit: number
 }
 
 // Add near the top of usePurchaseRequisition.ts
@@ -61,11 +59,11 @@ export function usePurchaseRequisition() {
   // restore or the datepicker's .getFullYear()/.getMonth() calls would crash.
   const draft = useFormDraft({
     key: 'purchasing-requisition',
-    version: 1,
+    version: 2,
     refs: { currentPR, items },
     isEmpty: () => !currentPR.value.remarks
       && !items.value.some((i) => i.item_description.trim() || i.supplier_id != null
-        || i.qty > 0 || i.offer_per_unit > 0 || i.cost_per_unit > 0 || i.expiry_date != null),
+        || i.qty > 0 || i.cost_per_unit > 0 || i.expiry_date != null),
     deserialize: (data) => ({
       ...data,
       items: Array.isArray(data.items)
@@ -78,27 +76,8 @@ export function usePurchaseRequisition() {
   })
 
   // ─── Computed ─────────────────────────────────────────────────────
-  const customerOfferTotal = computed(() =>
-    items.value.reduce((sum, i) => sum + i.qty * i.offer_per_unit, 0)
-  )
-
   const companyCostTotal = computed(() =>
     items.value.reduce((sum, i) => sum + i.qty * i.cost_per_unit, 0)
-  )
-
-  const profit        = computed(() => customerOfferTotal.value - companyCostTotal.value)
-  const isProfitable  = computed(() => profit.value > 0)
-
-  const offerCostRatio = computed(() =>
-    companyCostTotal.value === 0
-      ? '0.00'
-      : (customerOfferTotal.value / companyCostTotal.value).toFixed(2)
-  )
-
-  const marginPercent = computed(() =>
-    customerOfferTotal.value === 0
-      ? '0'
-      : Math.floor((profit.value / customerOfferTotal.value) * 100)
   )
 
   // ─── Item Actions ─────────────────────────────────────────────────
@@ -108,7 +87,6 @@ export function usePurchaseRequisition() {
       unit:             'Box',
       item_description: '',
       qty:              0,
-      offer_per_unit:   0,
       cost_per_unit:    0,
       supplier_id:      null,
       expiry_date:      null,
@@ -136,7 +114,6 @@ export function usePurchaseRequisition() {
         unit:               entry.unit || 'Box',
         item_description:   entry.item_description,
         qty:                0,
-        offer_per_unit:     entry.offer_per_unit,
         cost_per_unit:      entry.cost_per_unit,
         supplier_id:        entry.supplier_id,
         expiry_date:        null, // still needs to be picked — batch-specific
@@ -160,7 +137,6 @@ export function usePurchaseRequisition() {
       { check: i => !i.supplier_id, message: 'supplier' },
       { check: i => !i.expiry_date, message: 'expiry date' },
       { check: i => i.qty <= 0, message: 'quantity greater than zero' },
-      { check: i => i.offer_per_unit <= 0, message: 'offer per unit greater than zero' },
       { check: i => i.cost_per_unit <= 0, message: 'cost per unit greater than zero' },
     ]
 
@@ -197,7 +173,6 @@ export function usePurchaseRequisition() {
       unit:             i.unit,
       item_description: i.item_description,
       qty:              i.qty,
-      offer_per_unit:   i.offer_per_unit,
       cost_per_unit:    i.cost_per_unit,
       supplier_id:      i.supplier_id != null ? String(i.supplier_id) : null,
       expiry_date:      i.expiry_date ? toLocalISODate(i.expiry_date) : null,
@@ -258,12 +233,7 @@ if (!draftWasRestored && items.value.length === 0) addItem()
     currentPR,
     items,
     loading,
-    customerOfferTotal,
     companyCostTotal,
-    profit,
-    isProfitable,
-    offerCostRatio,
-    marginPercent,
     addReorderItems,
     addItem,
     removeItem,
