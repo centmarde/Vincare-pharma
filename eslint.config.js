@@ -36,7 +36,7 @@ export default [
     plugins: {
       vue: pluginVue,
       '@typescript-eslint': tseslint,
-  prettier,
+      prettier,
     },
     rules: {
       // Only essential rules - very lenient
@@ -66,9 +66,9 @@ export default [
       '@typescript-eslint/no-non-null-assertion': 'off',
 
       // Turn off all formatting
-      'indent': 'off',
-      'quotes': 'off',
-      'semi': 'off',
+      indent: 'off',
+      quotes: 'off',
+      semi: 'off',
       'comma-dangle': 'off',
       'vue/html-indent': 'off',
       'vue/max-attributes-per-line': 'off',
@@ -77,9 +77,9 @@ export default [
       'vue/multiline-html-element-content-newline': 'off',
       'vue/attributes-order': 'off',
 
-  // Prettier formatting as an ESLint rule (auto-fixable)
-  // Use "warn" so it doesn't fail the command / show as errors.
-  'prettier/prettier': 'off',
+      // Prettier formatting as an ESLint rule (auto-fixable)
+      // Use "warn" so it doesn't fail the command / show as errors.
+      'prettier/prettier': 'off',
     },
   },
   {
@@ -93,8 +93,8 @@ export default [
       'auto-imports.d.ts',
       'components.d.ts',
       'typed-router.d.ts',
-  'vite.config.*',
-  'eslint.config.*',
+      'vite.config.*',
+      'eslint.config.*',
     ],
   },
 ]

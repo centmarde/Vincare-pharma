@@ -6,9 +6,19 @@ import ARDetailDialog from './dialogs/ARDetailDialog.vue'
 import SOADialog from './dialogs/SOADialog.vue'
 
 const {
-  loading, totalReceivable, termTotals, overdueReceivable, customerJackets,
-  detailOpen, detailLoading, selectedDetail, openDetail,
-  soaOpen, soaLoading, soaData, openSOA,
+  loading,
+  totalReceivable,
+  termTotals,
+  overdueReceivable,
+  customerJackets,
+  detailOpen,
+  detailLoading,
+  selectedDetail,
+  openDetail,
+  soaOpen,
+  soaLoading,
+  soaData,
+  openSOA,
 } = useAccountsReceivable()
 
 // v-data-table @click:row passes (pointerEvent, { item }); typing lives here in
@@ -41,7 +51,6 @@ const termLabels: Record<string, string> = {
 <template>
   <v-container fluid class="pa-2 fill-height align-start">
     <div class="mx-auto w-100">
-
       <!-- KPI cards -->
       <v-row dense class="mb-1">
         <v-col cols="12" sm="6" md="3">
@@ -54,8 +63,12 @@ const termLabels: Record<string, string> = {
         <v-col cols="12" sm="6" md="3">
           <v-card rounded="lg" elevation="1" class="pa-4">
             <div class="text-caption text-medium-emphasis">Overdue</div>
-            <div class="text-h5 font-weight-bold text-error">{{ formatCurrency(overdueReceivable) }}</div>
-            <div class="text-caption text-medium-emphasis">Past due date (1-30 through over 6 months)</div>
+            <div class="text-h5 font-weight-bold text-error">
+              {{ formatCurrency(overdueReceivable) }}
+            </div>
+            <div class="text-caption text-medium-emphasis">
+              Past due date (1-30 through over 6 months)
+            </div>
           </v-card>
         </v-col>
         <v-col cols="12" sm="6" md="6">
@@ -73,13 +86,18 @@ const termLabels: Record<string, string> = {
 
       <!-- AR ledger, grouped into per-customer jackets -->
       <v-card rounded="lg" elevation="1">
-        <v-card-title class="pa-4 pa-sm-5 text-h6 font-weight-bold">Accounts Receivable</v-card-title>
+        <v-card-title class="pa-4 pa-sm-5 text-h6 font-weight-bold"
+          >Accounts Receivable</v-card-title
+        >
         <v-divider />
 
         <div v-if="loading" class="pa-6 text-center text-caption text-medium-emphasis">
           Loading accounts receivable...
         </div>
-        <div v-else-if="!customerJackets.length" class="pa-6 text-center text-caption text-medium-emphasis">
+        <div
+          v-else-if="!customerJackets.length"
+          class="pa-6 text-center text-caption text-medium-emphasis"
+        >
           No outstanding receivables.
         </div>
 
@@ -88,10 +106,15 @@ const termLabels: Record<string, string> = {
             <v-expansion-panel-title>
               <div class="d-flex align-center ga-3 flex-grow-1 pr-3">
                 <span class="font-weight-medium">{{ jacket.customerName }}</span>
-                <v-chip size="small" variant="tonal">{{ jacket.docCount }} open doc{{ jacket.docCount === 1 ? '' : 's' }}</v-chip>
+                <v-chip size="small" variant="tonal"
+                  >{{ jacket.docCount }} open doc{{ jacket.docCount === 1 ? '' : 's' }}</v-chip
+                >
                 <v-btn
                   v-if="jacket.customerId != null"
-                  size="small" variant="text" color="primary" class="text-none"
+                  size="small"
+                  variant="text"
+                  color="primary"
+                  class="text-none"
                   prepend-icon="mdi-file-document-outline"
                   @click.stop="openSOA(jacket.customerId)"
                 >
@@ -114,7 +137,9 @@ const termLabels: Record<string, string> = {
                 @click:row="onRowClick"
               >
                 <template #item.source="{ item }">
-                  <v-chip size="small" variant="tonal">{{ item.source === 'ethical_order' ? 'Ethical' : 'In-House' }}</v-chip>
+                  <v-chip size="small" variant="tonal">{{
+                    item.source === 'ethical_order' ? 'Ethical' : 'In-House'
+                  }}</v-chip>
                 </template>
 
                 <template #item.total_amount="{ item }">
@@ -144,18 +169,9 @@ const termLabels: Record<string, string> = {
         </v-expansion-panels>
       </v-card>
 
-      <ARDetailDialog
-        v-model="detailOpen"
-        :loading="detailLoading"
-        :detail="selectedDetail"
-      />
+      <ARDetailDialog v-model="detailOpen" :loading="detailLoading" :detail="selectedDetail" />
 
-      <SOADialog
-        v-model="soaOpen"
-        :loading="soaLoading"
-        :soa="soaData"
-      />
-
+      <SOADialog v-model="soaOpen" :loading="soaLoading" :soa="soaData" />
     </div>
   </v-container>
 </template>

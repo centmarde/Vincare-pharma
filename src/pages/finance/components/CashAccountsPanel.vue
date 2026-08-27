@@ -6,24 +6,58 @@ import CashAccountsManager from './CashAccountsManager.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
-  cashAccounts, pettyCashAccount, bankAccounts,
-  replenishmentRequests, loading,
-  showRequestDialog, fundingAccountId, remarks, canSubmitRequest,
-  requestPreview, requestPreviewTotal, requestPreviewLoading,
-  showReportDialog, reportItems, reportTotal, openReportDialog,
-  showRejectDialog, rejectReason,
+  cashAccounts,
+  pettyCashAccount,
+  bankAccounts,
+  replenishmentRequests,
+  loading,
+  showRequestDialog,
+  fundingAccountId,
+  remarks,
+  canSubmitRequest,
+  requestPreview,
+  requestPreviewTotal,
+  requestPreviewLoading,
+  showReportDialog,
+  reportItems,
+  reportTotal,
+  openReportDialog,
+  showRejectDialog,
+  rejectReason,
   isOwnRequest,
-  openRequestDialog, submitRequest, approve, openRejectDialog, confirmReject,
+  openRequestDialog,
+  submitRequest,
+  approve,
+  openRejectDialog,
+  confirmReject,
   createAccount,
 } = useCashAccounts()
 
 const {
-  deposits, showDepositDialog,
-  fromAccountId, toAccountId, amount: depositAmount, depositDate, validationNo, depositRemarks,
-  sourceOptions, destinationOptions, onHand, remainingOnHand, exceedsOnHand,
-  blockers: depositBlockers, canSubmit: canSubmitDeposit, statusMeta: depositStatusMeta, setupHint,
+  deposits,
+  showDepositDialog,
+  fromAccountId,
+  toAccountId,
+  amount: depositAmount,
+  depositDate,
+  validationNo,
+  depositRemarks,
+  sourceOptions,
+  destinationOptions,
+  onHand,
+  remainingOnHand,
+  exceedsOnHand,
+  blockers: depositBlockers,
+  canSubmit: canSubmitDeposit,
+  statusMeta: depositStatusMeta,
+  setupHint,
   depositReminder,
-  init: initDeposits, openDepositDialog, closeDepositDialog, submitDeposit, clearDeposit, warnSetup,
+  init: initDeposits,
+  openDepositDialog,
+  closeDepositDialog,
+  submitDeposit,
+  clearDeposit,
+  warnSetup,
 } = useBankDeposits()
 
 onMounted(initDeposits)
@@ -32,7 +66,6 @@ onMounted(initDeposits)
 <template>
   <v-container fluid class="pa-2 fill-height align-start">
     <div class="mx-auto w-100">
-
       <!-- Accounts grouped by classification (header + cards + add dialog) -->
       <CashAccountsManager :accounts="cashAccounts" :loading="loading" @create="createAccount" />
 
@@ -79,14 +112,22 @@ onMounted(initDeposits)
           </template>
 
           <template #item.remarks="{ item }">
-            <span class="text-truncate d-inline-block" style="max-width: 180px">{{ item.remarks || '—' }}</span>
+            <span class="text-truncate d-inline-block" style="max-width: 180px">{{
+              item.remarks || '—'
+            }}</span>
           </template>
 
           <template #item.status="{ item }">
             <v-chip
               size="small"
               variant="tonal"
-              :color="item.status === 'approved' ? 'success' : item.status === 'rejected' ? 'error' : 'warning'"
+              :color="
+                item.status === 'approved'
+                  ? 'success'
+                  : item.status === 'rejected'
+                    ? 'error'
+                    : 'warning'
+              "
             >
               {{ item.status }}
             </v-chip>
@@ -98,7 +139,10 @@ onMounted(initDeposits)
                 View Report
               </v-btn>
               <template v-if="item.status === 'pending_approval'">
-                <v-tooltip v-if="isOwnRequest(item)" text="You requested this — someone else must approve it.">
+                <v-tooltip
+                  v-if="isOwnRequest(item)"
+                  text="You requested this — someone else must approve it."
+                >
                   <template #activator="{ props: tooltipProps }">
                     <span v-bind="tooltipProps">
                       <v-btn size="small" color="success" variant="tonal" disabled>Approve</v-btn>
@@ -152,7 +196,13 @@ onMounted(initDeposits)
         </v-card-title>
         <v-divider />
 
-        <v-alert v-if="setupHint" type="info" variant="tonal" density="compact" class="ma-4 text-body-2">
+        <v-alert
+          v-if="setupHint"
+          type="info"
+          variant="tonal"
+          density="compact"
+          class="ma-4 text-body-2"
+        >
           {{ setupHint }}
         </v-alert>
 
@@ -220,13 +270,14 @@ onMounted(initDeposits)
           </template>
         </v-data-table>
       </v-card>
-
     </div>
 
     <!-- Request replenishment dialog -->
     <v-dialog v-model="showRequestDialog" max-width="520" persistent>
       <v-card rounded="lg">
-        <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold">Request Petty Cash Replenishment</v-card-title>
+        <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold"
+          >Request Petty Cash Replenishment</v-card-title
+        >
         <v-divider />
         <v-card-text class="pa-4 pa-sm-5">
           <label class="field-label">Funding Bank Account <span class="text-error">*</span></label>
@@ -242,14 +293,18 @@ onMounted(initDeposits)
             class="mb-3"
           />
 
-          <label class="field-label">
-            Liquidation Report — how the previous float was spent
-          </label>
+          <label class="field-label"> Liquidation Report — how the previous float was spent </label>
           <v-sheet rounded="lg" border class="mb-3" style="max-height: 220px; overflow-y: auto">
-            <div v-if="requestPreviewLoading" class="pa-4 text-center text-medium-emphasis text-caption">
+            <div
+              v-if="requestPreviewLoading"
+              class="pa-4 text-center text-medium-emphasis text-caption"
+            >
               Loading...
             </div>
-            <div v-else-if="!requestPreview.length" class="pa-4 text-center text-medium-emphasis text-caption">
+            <div
+              v-else-if="!requestPreview.length"
+              class="pa-4 text-center text-medium-emphasis text-caption"
+            >
               No expenses recorded against Petty Cash yet.
             </div>
             <v-table v-else density="compact">
@@ -286,7 +341,9 @@ onMounted(initDeposits)
         </v-card-text>
         <v-divider />
         <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end ga-2">
-          <v-btn variant="outlined" class="text-none" @click="showRequestDialog = false">Cancel</v-btn>
+          <v-btn variant="outlined" class="text-none" @click="showRequestDialog = false"
+            >Cancel</v-btn
+          >
           <v-btn
             color="primary"
             class="text-none font-weight-bold"
@@ -304,10 +361,15 @@ onMounted(initDeposits)
     <!-- View liquidation report dialog (already-submitted requests) -->
     <v-dialog v-model="showReportDialog" max-width="520">
       <v-card rounded="lg">
-        <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold">Liquidation Report</v-card-title>
+        <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold"
+          >Liquidation Report</v-card-title
+        >
         <v-divider />
         <v-card-text class="pa-4 pa-sm-5">
-          <div v-if="!reportItems.length" class="pa-4 text-center text-medium-emphasis text-caption">
+          <div
+            v-if="!reportItems.length"
+            class="pa-4 text-center text-medium-emphasis text-caption"
+          >
             No expense lines attached to this request.
           </div>
           <v-table v-else density="compact">
@@ -333,7 +395,9 @@ onMounted(initDeposits)
         </v-card-text>
         <v-divider />
         <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end ga-2">
-          <v-btn variant="outlined" class="text-none" @click="showReportDialog = false">Close</v-btn>
+          <v-btn variant="outlined" class="text-none" @click="showReportDialog = false"
+            >Close</v-btn
+          >
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -358,7 +422,9 @@ onMounted(initDeposits)
         </v-card-text>
         <v-card-actions class="pa-6 pt-0">
           <v-spacer />
-          <v-btn variant="outlined" :disabled="loading" @click="showRejectDialog = false">Cancel</v-btn>
+          <v-btn variant="outlined" :disabled="loading" @click="showRejectDialog = false"
+            >Cancel</v-btn
+          >
           <v-btn color="error" :loading="loading" @click="confirmReject">Reject</v-btn>
         </v-card-actions>
       </v-card>
@@ -369,7 +435,9 @@ onMounted(initDeposits)
          has no credit side. -->
     <v-dialog v-model="showDepositDialog" max-width="560" persistent>
       <v-card rounded="lg">
-        <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold">Record Bank Deposit</v-card-title>
+        <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold"
+          >Record Bank Deposit</v-card-title
+        >
         <v-divider />
         <v-card-text class="pa-4 pa-sm-5">
           <label class="field-label">Deposit From <span class="text-error">*</span></label>
@@ -406,8 +474,8 @@ onMounted(initDeposits)
             class="mb-1"
           />
           <div v-if="fromAccountId" class="text-caption text-medium-emphasis mb-4">
-            {{ formatCurrency(onHand) }} on hand —
-            {{ formatCurrency(remainingOnHand) }} left after this deposit.
+            {{ formatCurrency(onHand) }} on hand — {{ formatCurrency(remainingOnHand) }} left after
+            this deposit.
           </div>
 
           <label class="field-label">Deposit Date <span class="text-error">*</span></label>
@@ -420,11 +488,13 @@ onMounted(initDeposits)
             class="mb-1"
           />
           <div class="text-caption text-medium-emphasis mb-4">
-            The date the bank credits it. Until you mark the deposit cleared it counts
-            as a deposit in transit for reconciliation.
+            The date the bank credits it. Until you mark the deposit cleared it counts as a deposit
+            in transit for reconciliation.
           </div>
 
-          <label class="field-label">Bank Validation / Slip No. <span class="text-error">*</span></label>
+          <label class="field-label"
+            >Bank Validation / Slip No. <span class="text-error">*</span></label
+          >
           <v-text-field
             v-model="validationNo"
             placeholder="From the deposit slip"
@@ -446,7 +516,13 @@ onMounted(initDeposits)
             hide-details="auto"
           />
 
-          <v-alert v-if="exceedsOnHand" type="error" variant="tonal" density="compact" class="mt-4 text-body-2">
+          <v-alert
+            v-if="exceedsOnHand"
+            type="error"
+            variant="tonal"
+            density="compact"
+            class="mt-4 text-body-2"
+          >
             You cannot deposit more than the {{ formatCurrency(onHand) }} on hand.
           </v-alert>
         </v-card-text>
@@ -470,7 +546,6 @@ onMounted(initDeposits)
         </v-card-actions>
       </v-card>
     </v-dialog>
-
   </v-container>
 </template>
 

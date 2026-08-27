@@ -1,21 +1,32 @@
 <script setup lang="ts">
 import {
   useDiscrepancies,
-  remittanceHeaders, arAgingHeaders, commissionHeaders, stockReconHeaders, employeeReceivableHeaders,
+  remittanceHeaders,
+  arAgingHeaders,
+  commissionHeaders,
+  stockReconHeaders,
+  employeeReceivableHeaders,
 } from '../composables/useDiscrepancies'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
-  tab, onTabChange,
-  remittanceDiscrepancies, showResolvedRemittances, arAging, commissionLiability, stockReconciliation, loading,
-  receivables, receivablesLoading, markReceivablePaid,
+  tab,
+  onTabChange,
+  remittanceDiscrepancies,
+  showResolvedRemittances,
+  arAging,
+  commissionLiability,
+  stockReconciliation,
+  loading,
+  receivables,
+  receivablesLoading,
+  markReceivablePaid,
 } = useDiscrepancies()
 </script>
 
 <template>
   <v-container fluid class="pa-2 fill-height align-start">
     <v-card class="mx-auto w-100" rounded="lg" elevation="1">
-
       <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold">Discrepancies</v-card-title>
 
       <v-tabs :model-value="tab" color="primary" class="px-4" @update:model-value="onTabChange">
@@ -46,7 +57,11 @@ const {
             :items="remittanceDiscrepancies"
             :loading="loading"
             loading-text="Loading remittance discrepancies..."
-            :no-data-text="showResolvedRemittances ? 'No remittance discrepancies.' : 'No open remittance discrepancies — all balanced.'"
+            :no-data-text="
+              showResolvedRemittances
+                ? 'No remittance discrepancies.'
+                : 'No open remittance discrepancies — all balanced.'
+            "
             hover
           >
             <template #item.created_at="{ item }">
@@ -64,13 +79,24 @@ const {
               </v-chip>
             </template>
             <template #item.resolution="{ item }">
-              <v-chip v-if="item.resolution === 'paid_on_spot'" size="small" variant="tonal" color="success">Paid on spot — Balanced</v-chip>
+              <v-chip
+                v-if="item.resolution === 'paid_on_spot'"
+                size="small"
+                variant="tonal"
+                color="success"
+                >Paid on spot — Balanced</v-chip
+              >
               <v-chip
                 v-else-if="item.resolution === 'employee_receivable'"
-                size="small" variant="tonal"
+                size="small"
+                variant="tonal"
                 :color="item.receivable_status === 'paid' ? 'success' : 'warning'"
               >
-                {{ item.receivable_status === 'paid' ? 'Employee Receivable — Paid, Balanced' : 'Employee Receivable — Outstanding' }}
+                {{
+                  item.receivable_status === 'paid'
+                    ? 'Employee Receivable — Paid, Balanced'
+                    : 'Employee Receivable — Outstanding'
+                }}
               </v-chip>
               <span v-else class="text-medium-emphasis">—</span>
             </template>
@@ -103,14 +129,22 @@ const {
               <span class="text-caption">{{ item.remarks ?? '—' }}</span>
             </template>
             <template #item.status="{ item }">
-              <v-chip :color="item.status === 'paid' ? 'success' : 'warning'" size="small" variant="tonal" class="font-weight-bold">
+              <v-chip
+                :color="item.status === 'paid' ? 'success' : 'warning'"
+                size="small"
+                variant="tonal"
+                class="font-weight-bold"
+              >
                 {{ item.status === 'paid' ? 'Paid' : 'Outstanding' }}
               </v-chip>
             </template>
             <template #item.actions="{ item }">
               <v-btn
                 v-if="item.status === 'outstanding'"
-                size="small" color="success" variant="tonal" class="text-none"
+                size="small"
+                color="success"
+                variant="tonal"
+                class="text-none"
                 @click="markReceivablePaid(item.id)"
               >
                 Mark Paid
@@ -130,7 +164,9 @@ const {
             hover
           >
             <template #item.source="{ item }">
-              <v-chip size="small" variant="tonal">{{ item.source === 'ethical_order' ? 'Ethical' : 'In-House' }}</v-chip>
+              <v-chip size="small" variant="tonal">{{
+                item.source === 'ethical_order' ? 'Ethical' : 'In-House'
+              }}</v-chip>
             </template>
             <template #item.customer_name="{ item }">
               {{ item.customer_name ?? '—' }}
@@ -145,7 +181,9 @@ const {
               <v-chip
                 size="small"
                 variant="tonal"
-                :color="item.term === 'current' ? 'success' : item.term === 'no-term' ? 'grey' : 'warning'"
+                :color="
+                  item.term === 'current' ? 'success' : item.term === 'no-term' ? 'grey' : 'warning'
+                "
               >
                 {{ item.term }}
               </v-chip>
@@ -173,7 +211,9 @@ const {
               {{ item.oldest_unpaid_days ?? '—' }}
             </template>
             <template #item.flagged="{ item }">
-              <v-chip v-if="item.flagged" color="error" size="small" variant="tonal">Flagged</v-chip>
+              <v-chip v-if="item.flagged" color="error" size="small" variant="tonal"
+                >Flagged</v-chip
+              >
               <span v-else class="text-medium-emphasis">—</span>
             </template>
           </v-data-table>
@@ -181,7 +221,8 @@ const {
 
         <v-window-item value="stock">
           <v-alert type="info" variant="tonal" density="compact" class="ma-4">
-            Read-only check. Flags drift between recomputed expected stock and live on-hand quantities — it never auto-corrects.
+            Read-only check. Flags drift between recomputed expected stock and live on-hand
+            quantities — it never auto-corrects.
           </v-alert>
           <v-data-table
             mobile-breakpoint="md"
@@ -196,14 +237,18 @@ const {
               {{ item.product_name ?? '—' }}
             </template>
             <template #item.drift="{ item }">
-              <v-chip :color="item.drift > 0 ? 'warning' : 'error'" size="small" variant="tonal" class="font-weight-bold">
+              <v-chip
+                :color="item.drift > 0 ? 'warning' : 'error'"
+                size="small"
+                variant="tonal"
+                class="font-weight-bold"
+              >
                 {{ item.drift > 0 ? '+' : '' }}{{ item.drift }}
               </v-chip>
             </template>
           </v-data-table>
         </v-window-item>
       </v-window>
-
     </v-card>
   </v-container>
 </template>
