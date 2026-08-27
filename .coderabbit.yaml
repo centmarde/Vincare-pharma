@@ -2,6 +2,10 @@
 early_access: true
 
 reviews:
+  auto_review:
+    enabled: true
+    base_branches:
+      - ".*"
   changed_files_summary: false
   sequence_diagrams: false
   estimate_code_review_effort: false
