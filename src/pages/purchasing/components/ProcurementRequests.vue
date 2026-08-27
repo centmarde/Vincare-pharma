@@ -10,10 +10,10 @@ import DraftPRReview from './DraftPRReview.vue'
 const {
   queue, loading, selected, showDetail,
   showRFQ, rfqQuantities, openRFQ, onRFQQuantities,
-  canvassOrder, canvassShortfall, commitFn,
-  init, openDetail, closeDetail, onCanvassCreated, moduleLabel,
+  canvassOrder, canvassShortfall, commitFn, canvassRef, dismissing,
+  init, openDetail, dismissDetail, onCanvassCreated, moduleLabel,
   showDraftEdit, showDraftReview, activeDraftId,
-  startDraftPR, goToReview, onDraftSubmitted, onDraftSaved,
+  startDraftPR, goToReview, backToEdit, onDraftSubmitted, onDraftSaved,
   draftIdByOrder, openDraft,
 } = useProcurementRequests()
 
@@ -54,7 +54,7 @@ onMounted(init)
           </v-chip>
         </template>
         <template #item.actions="{ item }">
-          <v-btn size="small" color="primary" variant="tonal" class="text-none" @click="openDetail(item)">
+          <v-btn size="small" color="primary" variant="tonal" class="text-none mr-2" @click="openDetail(item)">
             Canvass
           </v-btn>
           <v-btn
@@ -68,7 +68,13 @@ onMounted(init)
       </v-data-table>
     </v-card>
 
-    <v-dialog v-model="showDetail" max-width="920" scrollable>
+    <v-dialog
+      :model-value="showDetail"
+      :persistent="dismissing"
+      max-width="920"
+      scrollable
+      @update:model-value="(v) => { if (!v) dismissDetail() }"
+    >
       <v-card v-if="selected" rounded="lg">
         <v-card-title class="pa-4 pa-sm-5 pb-2 d-flex justify-space-between align-center">
           <div>
@@ -81,8 +87,6 @@ onMounted(init)
             </div>
           </div>
           <div class="d-flex align-center ga-2">
-            <!-- Costing sheet for the shortfall. Prices are left blank — it asks
-                 suppliers what they'd charge, it doesn't order anything. -->
             <v-btn
               variant="tonal"
               size="small"
@@ -93,12 +97,13 @@ onMounted(init)
             >
               Print RFQ
             </v-btn>
-            <v-btn icon="mdi-close" variant="text" size="small" @click="closeDetail" />
+            <v-btn icon="mdi-close" variant="text" size="small" :loading="dismissing" @click="dismissDetail" />
           </div>
         </v-card-title>
         <v-divider />
         <v-card-text class="pa-4 pa-sm-5">
           <SupplierCanvass
+          ref="canvassRef"
           :order="canvassOrder" :shortfall="canvassShortfall" :commit-fn="commitFn"
           :order-type="selected?.order_type" :initial-qty="rfqQuantities"
           @created="onCanvassCreated" @draft-saved="onDraftSaved" />
@@ -114,5 +119,5 @@ onMounted(init)
   </v-container>
 
   <DraftPREditPage v-model="showDraftEdit" :draft-id="activeDraftId" @continue="goToReview" />
-  <DraftPRReview v-model="showDraftReview" :draft-id="activeDraftId" @submitted="onDraftSubmitted" />
+  <DraftPRReview v-model="showDraftReview" :draft-id="activeDraftId" @submitted="onDraftSubmitted" @edit="backToEdit" />
 </template>

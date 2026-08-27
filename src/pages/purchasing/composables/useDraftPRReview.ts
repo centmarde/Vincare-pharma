@@ -6,6 +6,9 @@ import {
   type ConvertWarning,
   type ConvertResult,
 } from '@/stores/draftPRData'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
+
+const { confirmDialog } = useConfirmDialog()
 
 export function useDraftPRReview(draftId: () => number | null) {
   const draftStore = useDraftPRDataStore()
@@ -14,14 +17,22 @@ export function useDraftPRReview(draftId: () => number | null) {
   const warnings = ref<ConvertWarning[]>([])
   const checking = ref(false)
   const submitting = ref(false)
-  const confirmedOnce = ref(false)
+  // Warnings are advisory only — anything that actually stops a submit shows up
+  // in hasBlockingIssues and on the row chip — so they're safe to fold away.
+  const warningsExpanded = ref(true)
 
   const totalEstimate = computed(() =>
     (draft.value?.items ?? []).reduce((sum, i) => sum + (i.unit_price ?? 0) * i.qty, 0),
   )
 
+  const disqualifiedItemIds = computed(() =>
+    warnings.value.filter((w) => w.kind === 'disqualified').map((w) => w.item_id),
+  )
+
   const hasBlockingIssues = computed(() =>
-    (draft.value?.items ?? []).some((i) => !i.selected_supplier_offer_id),
+    (draft.value?.items ?? []).some(
+      (i) => !i.selected_supplier_offer_id || disqualifiedItemIds.value.includes(i.id),
+    ),
   )
 
   const prCount = computed(() => {
@@ -37,7 +48,7 @@ export function useDraftPRReview(draftId: () => number | null) {
     const id = draftId()
     if (id == null) return
     draft.value = await draftStore.fetchDraft(id)
-    confirmedOnce.value = false
+    warningsExpanded.value = true
     if (draft.value) {
       checking.value = true
       warnings.value = await draftStore.precheckDraft(draft.value)
@@ -47,10 +58,20 @@ export function useDraftPRReview(draftId: () => number | null) {
 
   async function submit(): Promise<ConvertResult> {
     if (!draft.value) return { success: false }
-    if (warnings.value.length && !confirmedOnce.value) {
-      confirmedOnce.value = true
-      return { success: false }
-    }
+
+    // One plain confirmation about the conversion itself. Warnings are not what
+    // this asks about — they're on screen above, and the user can fold them away.
+    const count = prCount.value
+    const ok = await confirmDialog(
+      `This will raise ${count} purchase requisition${count > 1 ? 's' : ''} from Draft PR #${draft.value.id} and send ${count > 1 ? 'them' : 'it'} for approval.`,
+      {
+        title: 'Convert draft to purchase requisition',
+        confirmText: 'Convert',
+        cancelText: 'Cancel',
+      },
+    )
+    if (!ok) return { success: false }
+
     submitting.value = true
     const result = await draftStore.submitDraft(draft.value.id)
     submitting.value = false
@@ -62,9 +83,10 @@ export function useDraftPRReview(draftId: () => number | null) {
     warnings,
     checking,
     submitting,
-    confirmedOnce,
+    warningsExpanded,
     totalEstimate,
     hasBlockingIssues,
+    disqualifiedItemIds,
     prCount,
     load,
     submit,

@@ -24,8 +24,12 @@ export function useProcurementRequests() {
   const { queue, loading } = storeToRefs(procurementStore)
   const { draftIdByOrder } = storeToRefs(draftStore)
 
+  type CanvassExposed = { autoSaveDraft: () => Promise<{ success: boolean }>; hasSelections: boolean }
+
   const selected = ref<ProcurementRequestType | null>(null)
   const showDetail = ref(false)
+  const canvassRef = ref<CanvassExposed | null>(null)
+  const dismissing = ref(false)
   const showDraftEdit = ref(false)
   const showDraftReview = ref(false)
   const activeDraftId = ref<number | null>(null)
@@ -58,6 +62,18 @@ export function useProcurementRequests() {
     rfqQuantities.value = {}
   }
 
+  async function dismissDetail() {
+    if (dismissing.value) return
+    dismissing.value = true
+    try {
+      await canvassRef.value?.autoSaveDraft()
+      await draftStore.fetchDraftIdsByOrder() // light up "Resume Draft" on the row
+    } finally {
+      dismissing.value = false
+      closeDetail()
+    }
+  }
+
   const canvassOrder = computed<CanvassableOrder | null>(() => {
     const req = selected.value
     if (!req) return null
@@ -88,7 +104,7 @@ export function useProcurementRequests() {
       sourceOrderId: req.order_id,
       sourceOrderType: req.order_type,
       remarks: `Draft from ${moduleLabel(req.order_type)} ${req.order_no ?? ''}`,
-      lines: req.lines.map((l) => ({ product_id: l.product_id!, qty: l.needed })),
+      lines: req.lines.map((l) => ({ product_id: l.product_id!, qty: l.needed, shortfall_qty: l.needed })),
     })
     if (result.success) {
       activeDraftId.value = (result as any).draftId
@@ -99,6 +115,11 @@ export function useProcurementRequests() {
   function goToReview() {
     showDraftEdit.value = false
     showDraftReview.value = true
+  }
+
+  function backToEdit() {
+    showDraftReview.value = false
+    showDraftEdit.value = true
   }
 
   async function onDraftSubmitted() {
@@ -126,10 +147,10 @@ export function useProcurementRequests() {
   return {
     queue, loading, selected, showDetail,
     showRFQ, rfqQuantities, openRFQ, onRFQQuantities,
-    canvassOrder, canvassShortfall, commitFn,
-    init, openDetail, closeDetail, onCanvassCreated, moduleLabel,
+    canvassOrder, canvassShortfall, commitFn, canvassRef, dismissing,
+    init, openDetail, closeDetail, dismissDetail, onCanvassCreated, moduleLabel,
     showDraftEdit, showDraftReview, activeDraftId,
-    startDraftPR, goToReview, onDraftSubmitted, onDraftSaved,
+    startDraftPR, goToReview, backToEdit, onDraftSubmitted, onDraftSaved,
     draftIdByOrder, resumeDraft, openDraft,
   }
 }

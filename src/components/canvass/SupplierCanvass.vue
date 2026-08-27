@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useCanvass } from './useCanvass'
 import SupplierCompareDialog from '@/pages/purchasing/components/dialogs/SupplierCompareDialog.vue'
 import type { CanvassableOrder, Shortfall, CanvassCommitFn } from '@/utils/canvassTypes'
@@ -15,7 +15,7 @@ const props = defineProps<{
 const emit = defineEmits<{ (e: 'created'): void; (e: 'draft-saved', draftId: number): void }>()
 
 
-const { loading, rows, onOfferSelected, validateQty, bufferQty, lineTotal, canCommit, prPreview, commit, saveAsDraft, init } =
+const { loading, rows, onOfferSelected, validateQty, bufferQty, lineTotal, readyRows, canCommit, hasSelections, prPreview, commit, saveAsDraft, autoSaveDraft, init } =
   useCanvass(() => props.order, () => props.shortfall, props.commitFn, () => emit('created'), () => props.orderType, () => props.initialQty)
 
 onMounted(init)
@@ -24,6 +24,12 @@ const showCompare = ref(false)
 const activeRowIdx = ref<number | null>(null)
 
 function openCompare(idx: number) { activeRowIdx.value = idx; showCompare.value = true }
+
+const activeSelectedOffer = computed(() => {
+  const offer = activeRowIdx.value != null ? rows.value[activeRowIdx.value]?.selected_offer : null
+  if (!offer) return null
+  return { id: offer.id, supplier_id: offer.supplier_id, supplier_name: offer.supplier_name }
+})
 function onConfirm(payload: any) { if (activeRowIdx.value != null) onOfferSelected(activeRowIdx.value, payload) }
 function onCompareQtyChange(value: number) {
   if (activeRowIdx.value == null) return
@@ -34,6 +40,8 @@ async function onSaveAsDraft() {
   const result = await saveAsDraft()
   if (result.success && (result as any).draftId) emit('draft-saved', (result as any).draftId)
 }
+
+defineExpose({ autoSaveDraft, hasSelections })
 </script>
 
 <template>
@@ -79,7 +87,10 @@ async function onSaveAsDraft() {
       </v-card-text>
     </v-card>
 
-    <div class="d-flex justify-end" style="gap:8px">
+    <div class="d-flex justify-end align-center" style="gap:8px">
+      <span v-if="!canCommit && rows.length" class="text-caption text-medium-emphasis">
+        {{ readyRows.length }} of {{ rows.length }} product(s) have a supplier
+      </span>
       <v-btn variant="tonal" color="secondary" size="small" class="text-none font-weight-bold" :loading="loading" @click="onSaveAsDraft">
         Save as Draft PR
       </v-btn>
@@ -94,6 +105,8 @@ async function onSaveAsDraft() {
       :required-by-date="activeRowIdx != null ? rows[activeRowIdx].required_by_date : new Date().toISOString().slice(0,10)"
       :qty="activeRowIdx != null ? rows[activeRowIdx].order_qty : 1"
       :min-qty="activeRowIdx != null ? rows[activeRowIdx].shortfall_qty : undefined"
+      :selected-offer="activeSelectedOffer"
+      :initial-justification="activeRowIdx != null ? rows[activeRowIdx].justification : null"
       @confirm="onConfirm"
       @update:qty="onCompareQtyChange" />
   </div>

@@ -8,7 +8,7 @@ import { useAuthUserStore } from '@/stores/authUser'
 import { qualifyOffers } from '@/utils/qualification'
 import { useSupplierOffersDataStore } from '@/stores/supplierOffersData'
 import type { SupplierOfferType } from '@/stores/supplierOffersData'
-import { maxDocSeq, insertWithDocRetry } from '@/utils/helpers'
+import { maxDocSeq, insertWithDocRetry, formatCurrency } from '@/utils/helpers'
 
 const toast = useToast()
 
@@ -18,11 +18,12 @@ export type DraftPRItemType = {
   product_id: number
   product_name?: string | null
   qty: number
+  shortfall_qty: number | null
   required_by_date: string | null
   selected_supplier_offer_id: number | null
   justification: string | null
   considered_offers: any[] | null
-  supplier_id?: number | null // NEW — needed to group draft items by supplier exactly (not by display name)
+  supplier_id?: number | null 
   supplier_name?: string | null
   unit_price?: number | null
   expiry_date?: string | null
@@ -41,7 +42,18 @@ export type DraftPRType = {
   items: DraftPRItemType[]
 }
 
-export type ConvertWarning = { item_id: number; message: string }
+export type DraftLineInput = {
+  product_id: number
+  qty: number
+  shortfall_qty?: number | null
+  required_by_date?: string | null
+}
+
+export type ConvertWarning = {
+  item_id: number
+  message: string
+  kind: 'disqualified' | 'cheaper'
+}
 export type ConvertResult = {
   success: boolean
   pr_id?: number
@@ -50,7 +62,6 @@ export type ConvertResult = {
   error?: string
 }
 
-// NEW — offer's own supplier_id pulled in alongside the existing joined fields.
 const ITEM_SELECT =
   '*, product:product_id(product_name), offer:selected_supplier_offer_id(supplier_id, cost_price_per_unit, expiry_date, supplier:supplier_id(name))'
 
@@ -79,6 +90,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       product_id: row.product_id,
       product_name: row.product?.product_name ?? null,
       qty: row.qty,
+      shortfall_qty: row.shortfall_qty ?? null,
       required_by_date: row.required_by_date,
       selected_supplier_offer_id: row.selected_supplier_offer_id,
       justification: row.justification,
@@ -94,7 +106,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     remarks?: string
     sourceOrderId?: number | null
     sourceOrderType?: string | null
-    lines: { product_id: number; qty: number; required_by_date?: string | null }[]
+    lines: DraftLineInput[]
   }) {
     loading.value = true
     const { user, error: authError } = await authStore.getCurrentUser()
@@ -128,6 +140,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
           draft_pr_id: draft.id,
           product_id: l.product_id,
           qty: l.qty,
+          shortfall_qty: l.shortfall_qty ?? null,
           required_by_date: l.required_by_date ?? null,
         })),
       )
@@ -144,14 +157,11 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return { success: true, draftId: draft.id }
   }
 
-  // Find-or-create: at most one open draft per source order. Reuses an
-  // existing 'draft' row for the same source_order_id if present, reconciling
-  // its items to match payload.lines, instead of inserting a new header.
   async function getOrCreateDraft(payload: {
     remarks?: string
     sourceOrderId?: number | null
     sourceOrderType?: string | null
-    lines: { product_id: number; qty: number; required_by_date?: string | null }[]
+    lines: DraftLineInput[]
   }) {
     if (payload.sourceOrderId == null) return createDraft(payload)
 
@@ -184,7 +194,11 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       const line = linesByProduct.get(item.product_id)!
       const { error: updateError } = await supabase
         .from('draft_pr_items')
-        .update({ qty: line.qty, required_by_date: line.required_by_date ?? null })
+        .update({
+          qty: line.qty,
+          shortfall_qty: line.shortfall_qty ?? null,
+          required_by_date: line.required_by_date ?? null,
+        })
         .eq('id', item.id)
       if (updateError) {
         handleError(updateError, 'Failed to update draft items.')
@@ -200,6 +214,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
           draft_pr_id: existing.id,
           product_id: l.product_id,
           qty: l.qty,
+          shortfall_qty: l.shortfall_qty ?? null,
           required_by_date: l.required_by_date ?? null,
         })),
       )
@@ -269,16 +284,14 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return currentDraft.value
   }
 
-  async function addItem(
-    draftId: number,
-    line: { product_id: number; qty: number; required_by_date?: string | null },
-  ) {
+  async function addItem(draftId: number, line: DraftLineInput) {
     const { data, error: insertError } = await supabase
       .from('draft_pr_items')
       .insert({
         draft_pr_id: draftId,
         product_id: line.product_id,
         qty: line.qty,
+        shortfall_qty: line.shortfall_qty ?? null,
         required_by_date: line.required_by_date ?? null,
       })
       .select(ITEM_SELECT)
@@ -332,9 +345,6 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return true
   }
 
-  // Persists a choice already validated as qualifying by the compare UI, plus
-  // the full considered-offer snapshot for audit and an optional justification
-  // when the user overrode the system's recommendation.
   async function selectOffer(payload: {
     itemId: number
     offer: SupplierOfferType
@@ -393,44 +403,47 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return true
   }
 
-  // Advisory client-side mirror of submitDraft's checks — lets the review screen
-  // surface warnings before the user hits submit. submitDraft re-validates
-  // everything again round-trip-by-round-trip and remains authoritative.
   async function precheckDraft(draft: DraftPRType) {
     const warnings: ConvertWarning[] = []
+
     for (const item of draft.items) {
-      if (!item.selected_supplier_offer_id) {
-        warnings.push({ item_id: item.id, message: 'No supplier selected.' })
-        continue
-      }
+      if (!item.selected_supplier_offer_id) continue
+
+      // Falls back to the id so a product with no name still reads sensibly.
+      const label = item.product_name ?? `Item ${item.id}`
       const offers = await offersStore.fetchOffersForProduct(item.product_id, true)
       const { qualified, recommended } = qualifyOffers(
         offers,
         requiredByOrToday(item.required_by_date),
       )
       const selected = qualified.find((o) => o.id === item.selected_supplier_offer_id)
+
       if (!selected) {
-        warnings.push({ item_id: item.id, message: 'Selected supplier no longer qualifies.' })
-      } else if (recommended && recommended.cost_price_per_unit < selected.cost_price_per_unit) {
-        // Strictly cheaper only — an equally-priced rival (or a duplicate row of
-        // the selected offer itself) is not an upgrade worth warning about.
+        const supplier = item.supplier_name ?? 'the selected supplier'
         warnings.push({
           item_id: item.id,
-          message: `A cheaper qualifying offer is now available (${recommended.supplier_name}).`,
+          kind: 'disqualified',
+          message: `${label}: ${supplier} no longer qualifies — use Back to Edit → Compare to pick another.`,
+        })
+        continue
+      }
+
+      if (
+        recommended &&
+        recommended.cost_price_per_unit < selected.cost_price_per_unit &&
+        !item.justification
+      ) {
+        warnings.push({
+          item_id: item.id,
+          kind: 'cheaper',
+          message: `${label}: ${recommended.supplier_name} is cheaper at ${formatCurrency(recommended.cost_price_per_unit)} — Back to Edit → Compare to switch.`,
         })
       }
     }
+
     return warnings
   }
 
-  // Converts a draft into one real PR PER WINNING SUPPLIER — items sharing a
-  // supplier are grouped onto the same PR, a different supplier gets its own.
-  // JS-over-RPC (matches canvassData.commitToPRs's own convention): re-queries
-  // live supplier_offers per line before writing anything, then mints PR
-  // numbers the same dual-scan way (reference_no + requisition_no), and rolls
-  // back every PR created so far if a later one fails. Not atomic across the
-  // whole batch — a crash mid-loop can leave some PRs created and others not,
-  // same accepted trade-off as commitToPRs; see that store for precedent.
   async function submitDraft(draftId: number): Promise<ConvertResult> {
     loading.value = true
     const { user, error: authError } = await authStore.getCurrentUser()
@@ -500,6 +513,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       if (recommended && recommended.cost_price_per_unit < offer.cost_price_per_unit) {
         warnings.push({
           item_id: item.id,
+          kind: 'cheaper',
           message: `A cheaper qualifying offer is now available (${recommended.supplier_name}).`,
         })
       }
@@ -615,6 +629,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     rows: {
       product_id: number
       qty: number
+      shortfall_qty: number
       required_by_date: string
       offer: SupplierOfferType | null
       consideredOffers: SupplierOfferType[]
@@ -628,6 +643,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       lines: payload.rows.map((r) => ({
         product_id: r.product_id,
         qty: r.qty,
+        shortfall_qty: r.shortfall_qty,
         required_by_date: r.required_by_date,
       })),
     })
@@ -635,9 +651,6 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
 
     const draft = await fetchDraft((created as any).draftId)
     if (draft) {
-      // Two rows/items can share a product_id (same product needed on
-      // separate lines) — pair items to rows per product_id, in order,
-      // instead of .find()'s always-first match, so each keeps its own offer.
       const rowsByProduct = new Map<number, typeof payload.rows>()
       for (const row of payload.rows) {
         const arr = rowsByProduct.get(row.product_id) ?? []
@@ -667,9 +680,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     }
     return created
   }
-
-  // At most one open draft per source order now, so this maps order_id -> that
-  // draft's id (rather than a count) for direct "Resume Draft" navigation.
+  
   async function fetchDraftIdsByOrder(): Promise<Record<number, number>> {
     const { data, error: fetchError } = await supabase
       .from('draft_purchase_requisitions')

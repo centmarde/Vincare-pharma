@@ -4,10 +4,10 @@ import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { useDraftPRDataStore } from '@/stores/draftPRData'
 import type { SupplierOfferType } from '@/stores/supplierOffersData'
 import type { CanvassableOrder, Shortfall, CanvassSelection, CanvassCommitFn, CanvassQuote } from '@/utils/canvassTypes'
+import { checkQtyAgainstShortfall, bufferOver, MAX_QTY_MULTIPLE } from '@/utils/shortfall'
 
 const toast = useToast()
 const { confirmDialog } = useConfirmDialog()
-const MAX_QTY_MULTIPLE = 3
 
 export type CanvassRow = {
   product_id: number
@@ -60,23 +60,25 @@ export function useCanvass(
   async function validateQty(rowIdx: number) {
     const row = rows.value[rowIdx]
     if (!row) return
-    if (row.order_qty < row.shortfall_qty) {
-      toast.warning(`Quantity can't be below the shortfall (${row.shortfall_qty}).`)
-      row.order_qty = row.shortfall_qty
-    } else if (row.order_qty > row.shortfall_qty * MAX_QTY_MULTIPLE) {
+    const check = checkQtyAgainstShortfall(row.order_qty, row.shortfall_qty)
+    if (check.status === 'below') {
+      toast.warning(`Quantity can't be below the shortfall (${check.floor}).`)
+      row.order_qty = check.floor
+    } else if (check.status === 'over') {
       const ok = await confirmDialog(
-        `Order ${row.order_qty} (over ${MAX_QTY_MULTIPLE}x the shortfall of ${row.shortfall_qty})?`,
+        `Order ${row.order_qty} (over ${MAX_QTY_MULTIPLE}x the shortfall of ${check.floor})?`,
         { title: 'Confirm large order quantity', confirmText: 'Order it', cancelText: 'Cancel' },
       )
-      if (!ok) row.order_qty = row.shortfall_qty
+      if (!ok) row.order_qty = check.floor
     }
   }
 
-  function bufferQty(row: CanvassRow) { return Math.max(0, row.order_qty - row.shortfall_qty) }
+  function bufferQty(row: CanvassRow) { return bufferOver(row.order_qty, row.shortfall_qty) }
   function lineTotal(row: CanvassRow) { return row.selected_offer ? row.selected_offer.cost_price_per_unit * row.order_qty : 0 }
 
   const readyRows = computed(() => rows.value.filter((r) => r.selected_offer != null && r.item_id > 0 && r.order_qty >= r.shortfall_qty))
-  const canCommit = computed(() => readyRows.value.length > 0)
+  const canCommit = computed(() => rows.value.length > 0 && readyRows.value.length === rows.value.length)
+  const hasSelections = computed(() => rows.value.some((r) => r.selected_offer != null))
 
   const prPreview = computed(() => {
     const bySupplier = new Map<number, { name: string; items: number; total: number }>()
@@ -92,7 +94,7 @@ export function useCanvass(
 
   async function commit() {
     const o = order()
-    if (!o || !canCommit.value) { toast.warning('Select at least one supplier.'); return }
+    if (!o || !canCommit.value) { toast.warning('Select a supplier for every product before submitting.'); return }
 
     const selections: CanvassSelection[] = readyRows.value.map((row) => ({
       item_id: row.item_id, product_id: row.product_id,
@@ -121,7 +123,8 @@ export function useCanvass(
     const result = await draftStore.createDraftWithSelections({
       sourceOrderId: o.id, sourceOrderType: orderType(),
       rows: rows.value.map((r) => ({
-        product_id: r.product_id, qty: r.order_qty, required_by_date: r.required_by_date,
+        product_id: r.product_id, qty: r.order_qty, shortfall_qty: r.shortfall_qty,
+        required_by_date: r.required_by_date,
         offer: r.selected_offer, consideredOffers: r.considered_offers, justification: r.justification,
       })),
     })
@@ -130,10 +133,15 @@ export function useCanvass(
     return result // { success, draftId }
   }
 
+  async function autoSaveDraft() {
+    if (!hasSelections.value) return { success: false }
+    return saveAsDraft()
+  }
+
   async function init() {} // supplier_offers are fetched lazily per-compare-dialog now
 
   return {
     loading, rows, onOfferSelected, validateQty, bufferQty, lineTotal,
-    readyRows, canCommit, prPreview, commit, saveAsDraft, init,
+    readyRows, canCommit, hasSelections, prPreview, commit, saveAsDraft, autoSaveDraft, init,
   }
 }

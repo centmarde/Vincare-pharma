@@ -1,8 +1,14 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useToast } from 'vue-toastification'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { useDraftPRDataStore, type DraftPRItemType } from '@/stores/draftPRData'
 import SupplierCompareDialog from './dialogs/SupplierCompareDialog.vue'
 import { formatCurrency } from '@/utils/helpers'
+import { checkQtyAgainstShortfall, bufferOver, MAX_QTY_MULTIPLE } from '@/utils/shortfall'
+
+const toast = useToast()
+const { confirmDialog } = useConfirmDialog()
 
 const props = defineProps<{ modelValue: boolean; draftId: number | null }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: boolean): void; (e: 'continue'): void }>()
@@ -20,6 +26,16 @@ function openCompare(item: DraftPRItemType) {
   showCompare.value = true
 }
 
+const activeSelectedOffer = computed(() => {
+  const item = activeItem.value
+  if (!item?.selected_supplier_offer_id || item.supplier_id == null) return null
+  return {
+    id: item.selected_supplier_offer_id,
+    supplier_id: item.supplier_id,
+    supplier_name: item.supplier_name,
+  }
+})
+
 async function onConfirm(payload: any) {
   if (!activeItem.value) return
   await draftStore.selectOffer({
@@ -28,8 +44,6 @@ async function onConfirm(payload: any) {
   })
 }
 
-// Qty/date edits are held here and only pushed to Supabase on save/close —
-// typing used to fire an UPDATE per keystroke, which spammed the API.
 type ItemEdit = { qty: number; required_by_date: string | null }
 const edits = ref<Record<number, ItemEdit>>({})
 const saving = ref(false)
@@ -50,21 +64,39 @@ function onQtyChange(item: DraftPRItemType, value: number | string) {
   if (buf) buf.qty = qty
 }
 
+async function validateQty(item: DraftPRItemType) {
+  const buf = edits.value[item.id]
+  if (!buf) return
+  const check = checkQtyAgainstShortfall(buf.qty, item.shortfall_qty)
+  if (check.status === 'below') {
+    toast.warning(`Quantity can't be below the shortfall (${check.floor}).`)
+    buf.qty = check.floor
+  } else if (check.status === 'over') {
+    const ok = await confirmDialog(
+      `Order ${buf.qty} (over ${MAX_QTY_MULTIPLE}x the shortfall of ${check.floor})?`,
+      { title: 'Confirm large order quantity', confirmText: 'Order it', cancelText: 'Cancel' },
+    )
+    if (!ok) buf.qty = check.floor
+  }
+}
+
+const bufferQty = (item: DraftPRItemType) =>
+  bufferOver(edits.value[item.id]?.qty ?? item.qty, item.shortfall_qty)
+
 async function flushEdits() {
   const items = draftStore.currentDraft?.items ?? []
   saving.value = true
   for (const item of items) {
     const buf = edits.value[item.id]
     if (!buf) continue
+    const check = checkQtyAgainstShortfall(buf.qty, item.shortfall_qty)
+    if (check.status === 'below') buf.qty = check.floor
     if (buf.qty !== item.qty) await draftStore.setQty(item.id, buf.qty)
     if (buf.required_by_date !== item.required_by_date) await draftStore.setRequiredByDate(item.id, buf.required_by_date)
   }
   saving.value = false
 }
 
-// Every way of leaving this dialog (X, click-outside/ESC, Save & Close,
-// Continue to Review) saves pending edits first — same as before, when every
-// keystroke was already persisted, just batched into one flush instead.
 async function onDialogUpdate(open: boolean) {
   if (open) { emit('update:modelValue', true); return }
   await flushEdits()
@@ -84,7 +116,7 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
     <v-card v-if="draftStore.currentDraft" rounded="lg">
       <v-card-title class="pa-4 pb-2 d-flex justify-space-between align-center">
         <div>
-          <div class="text-h6 font-weight-bold">Draft PR #{{ draftStore.currentDraft.id }}</div>
+          <div class="text-h6 font-weight-bold">Edit Draft PR #{{ draftStore.currentDraft.id }}</div>
           <div class="text-caption text-medium-emphasis">{{ draftStore.currentDraft.remarks }}</div>
         </div>
         <v-btn icon="mdi-close" variant="text" size="small" :loading="saving" @click="onDialogUpdate(false)" />
@@ -94,7 +126,9 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
         <v-table density="comfortable">
           <thead>
             <tr>
-              <th class="text-left">Product</th><th class="text-right" style="width:110px">Qty</th>
+              <th class="text-left">Product</th>
+              <th class="text-right" style="width:90px">Shortfall</th>
+              <th class="text-right" style="width:140px">Qty</th>
               <th style="width:160px">Required by</th><th class="text-left">Supplier</th>
               <th class="text-right">Unit Price</th><th class="text-right">Line Total</th><th style="width:110px"></th>
             </tr>
@@ -102,10 +136,17 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
           <tbody>
             <tr v-for="item in draftStore.currentDraft.items" :key="item.id">
               <td>{{ item.product_name }}</td>
+              <td class="text-right">{{ item.shortfall_qty ?? '—' }}</td>
               <td class="text-right">
-                <v-text-field :model-value="edits[item.id]?.qty ?? item.qty" type="number" min="1" density="compact"
-                  variant="outlined" hide-details style="width:100%; min-width:0"
-                  @update:model-value="onQtyChange(item, $event)" />
+                <div class="d-flex align-center justify-end" style="gap:6px">
+                  <v-text-field :model-value="edits[item.id]?.qty ?? item.qty" type="number"
+                    :min="item.shortfall_qty ?? 1" density="compact"
+                    variant="outlined" hide-details style="width:100%; min-width:0"
+                    @update:model-value="onQtyChange(item, $event)" @blur="validateQty(item)" />
+                  <v-chip v-if="bufferQty(item) > 0" color="info" variant="tonal" size="x-small" label>
+                    +{{ bufferQty(item) }}
+                  </v-chip>
+                </div>
               </td>
               <td>
                 <v-text-field :model-value="edits[item.id]?.required_by_date ?? item.required_by_date" type="date" density="compact"
@@ -140,6 +181,9 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
     :product="activeItem ? { id: activeItem.product_id, name: activeItem.product_name } : null"
     :required-by-date="activeItem?.required_by_date ?? new Date().toISOString().slice(0,10)"
     :qty="activeItem ? (edits[activeItem.id]?.qty ?? activeItem.qty) : 1"
+    :min-qty="activeItem?.shortfall_qty ?? undefined"
+    :selected-offer="activeSelectedOffer"
+    :initial-justification="activeItem?.justification"
     @confirm="onConfirm"
     @update:qty="activeItem && onQtyChange(activeItem, $event)" />
 </template>

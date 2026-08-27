@@ -13,6 +13,8 @@ const props = defineProps<{
   requiredByDate: string
   qty: number
   minQty?: number
+  selectedOffer?: { id: number; supplier_id: number; supplier_name?: string | null } | null
+  initialJustification?: string | null
 }>()
 const emit = defineEmits<{
   (e: 'update:modelValue', v: boolean): void
@@ -27,13 +29,38 @@ const { suppliers } = storeToRefs(suppliersStore)
 const pendingRowIdx = ref<number | null>(null)
 const justification = ref('')
 
-// Draft rows — the user fills these in freely, one supplier quote per row.
-// Nothing is persisted or fetched from prior canvasses on open: qualification
-// and the recommendation are computed live from whatever is typed here, and
-// the user can select any row regardless of what's "recommended".
 type DraftRow = { supplier_id: number | null; price: number | null; expiry: string }
 const draftRows = ref<DraftRow[]>([])
 const saving = ref(false)
+const loadingRows = ref(false)
+
+const blankRow = (): DraftRow => ({ supplier_id: null, price: null, expiry: '' })
+
+function dateToMonthYear(date: string | null): string {
+  if (!date) return ''
+  const [year, month] = date.split('-')
+  return year && month ? `${month}/${year}` : ''
+}
+
+async function prefillRows(productId: number): Promise<DraftRow[]> {
+  const offers = await offersStore.fetchOffersForProduct(productId, true)
+
+  const pinnedId = props.selectedOffer?.id
+  const newestBySupplier = new Map<number, SupplierOfferType>()
+  for (const offer of offers) {
+    const kept = newestBySupplier.get(offer.supplier_id)
+    if (kept && kept.id === pinnedId) continue
+    if (!kept || offer.id === pinnedId || offer.created_at > kept.created_at) {
+      newestBySupplier.set(offer.supplier_id, offer)
+    }
+  }
+
+  return [...newestBySupplier.values()].map((offer) => ({
+    supplier_id: offer.supplier_id,
+    price: offer.cost_price_per_unit,
+    expiry: dateToMonthYear(offer.expiry_date),
+  }))
+}
 
 function addDraftRow() {
   draftRows.value.push({ supplier_id: null, price: null, expiry: '' })
@@ -47,13 +74,18 @@ function removeDraftRow(idx: number) {
 const supplierOptions = () =>
   suppliers.value.filter((s) => s.is_active !== false).map((s) => ({ title: s.name ?? `Supplier ${s.id}`, value: s.id }))
 
-// A supplier already used in another draft row is hidden from later rows —
-// same "no duplicate supplier per item" rule the old canvass enforced.
 function availableSupplierOptions(rowIdx: number) {
   const takenElsewhere = new Set(
     draftRows.value.filter((_, i) => i !== rowIdx).map((r) => r.supplier_id).filter((id): id is number => id != null),
   )
-  return supplierOptions().filter((o) => !takenElsewhere.has(o.value))
+  const options = supplierOptions().filter((o) => !takenElsewhere.has(o.value))
+
+  const own = draftRows.value[rowIdx]?.supplier_id
+  if (own != null && !options.some((o) => o.value === own)) {
+    const name = supplierName(own) ?? props.selectedOffer?.supplier_name ?? `Supplier ${own}`
+    options.unshift({ title: name, value: own })
+  }
+  return options
 }
 
 function supplierName(id: number | null): string | null {
@@ -67,11 +99,9 @@ function monthYearToDate(mmYYYY: string): string | null {
   return lastDay.toISOString().slice(0, 10)
 }
 
-// Rows with enough entered to evaluate, keyed by row index — negative ids mark
-// them as "not yet saved" so they never collide with real supplier_offers ids.
 const candidateOffers = computed<Map<number, SupplierOfferType>>(() => {
   const byRow = new Map<number, SupplierOfferType>()
-  const product = props.product // captured: narrowing doesn't survive the closure
+  const product = props.product
   if (!product) return byRow
   draftRows.value.forEach((row, idx) => {
     if (row.supplier_id == null || !row.price) return
@@ -98,10 +128,23 @@ const candidateFor = (idx: number): SupplierOfferType | null => candidateOffers.
 
 watch(() => props.modelValue, async (open) => {
   if (!open) return
-  if (!suppliers.value.length) await suppliersStore.fetchSuppliers({ activeOnly: true })
   pendingRowIdx.value = null
-  justification.value = ''
-  draftRows.value = [{ supplier_id: null, price: null, expiry: '' }, { supplier_id: null, price: null, expiry: '' }]
+  justification.value = props.initialJustification ?? ''
+  draftRows.value = []
+
+  loadingRows.value = true
+  if (!suppliers.value.length) await suppliersStore.fetchSuppliers({ activeOnly: true })
+  const product = props.product
+  const existing = product ? await prefillRows(product.id) : []
+  draftRows.value = existing
+
+  const supplierId = props.selectedOffer?.supplier_id
+  const idx = supplierId == null
+    ? -1
+    : draftRows.value.findIndex((r) => r.supplier_id === supplierId)
+  pendingRowIdx.value = idx === -1 ? null : idx
+
+  loadingRows.value = false
 })
 
 const pendingOffer = computed(() => (pendingRowIdx.value != null ? candidateFor(pendingRowIdx.value) : null))
@@ -118,9 +161,6 @@ function onExpiryInput(row: DraftRow, raw: string) {
   row.expiry = maskMonthYearInput(raw)
 }
 
-// Typing here must never write through to the caller (SupplierCanvass keeps
-// it in-memory, DraftPREditPage persists it) on every keystroke — only once
-// the user is done, on blur or confirm.
 const localQty = ref(props.qty)
 watch(() => props.qty, (v) => { localQty.value = v })
 function commitQty() {
@@ -139,8 +179,6 @@ function monthsUntilQualifying(idx: number): number | null {
 function formatMonths(mo: number): string {
   return `${mo > 0 ? '+' : ''}${mo} mo`
 }
-// Resolved in script rather than the template: Vue parses template expressions
-// as plain JS, where TS's non-null `!` is a syntax error (vue/no-parsing-error).
 type RowStatus = 'recommended' | 'qualifies' | 'too-soon'
 
 function rowStatus(idx: number): RowStatus | null {
@@ -153,15 +191,12 @@ function monthsLabel(idx: number): string | null {
   const mo = monthsUntilQualifying(idx)
   return mo == null ? null : formatMonths(mo)
 }
-// Green when it clears the 18-month minimum, amber when it falls short — mirrors chip colors.
 function monthsClass(idx: number): string {
   const mo = monthsUntilQualifying(idx)
   return mo == null ? '' : mo >= 0 ? 'text-success' : 'text-warning'
 }
 
 
-// Only now — on confirm — do the entered quotes actually get written to
-// supplier_offers. The user never has to "save" before comparing/picking.
 async function onConfirm() {
   const product = props.product
   if (pendingRowIdx.value == null || !product) return
@@ -191,7 +226,7 @@ async function onConfirm() {
 </script>
 
 <template>
-  <v-dialog :model-value="modelValue" max-width="820" scrollable @update:model-value="emit('update:modelValue', $event)">
+  <v-dialog :model-value="modelValue" max-width="850" scrollable @update:model-value="emit('update:modelValue', $event)">
     <v-card v-if="product" rounded="lg">
       <v-card-title class="pa-4 pb-2">
         <div class="text-h6 font-weight-bold">Compare Suppliers — {{ product.name }}</div>
@@ -199,8 +234,7 @@ async function onConfirm() {
           <div class="text-caption text-medium-emphasis">
             Required by {{ requiredByDate }} · min. qualifying expiry is 18 months after that date
           </div>
-          <v-text-field v-model.number="localQty" type="number" min="1" label="Quantity" density="compact"
-            variant="outlined" hide-details style="max-width:120px" @blur="commitQty" />
+          <v-text-field v-model.number="localQty" type="number" :min="minQty ?? 1" label="Quantity" density="compact" variant="outlined" hide-details style="max-width:120px" @blur="commitQty" />
         </div>
         <v-alert v-if="belowShortfall" type="warning" density="compact" variant="tonal" class="mt-2">
           Quantity is below the shortfall ({{ minQty }}).
@@ -209,17 +243,19 @@ async function onConfirm() {
       <v-divider />
       <v-card-text class="pa-4">
         <div class="text-caption font-weight-bold mb-2">
-          Enter supplier quotes to compare — pick any of them, the cheapest qualifying offer is only a recommendation.
+          Quotes already on file are filled in — edit them or add another supplier. Pick any row;
+          the cheapest qualifying offer is only a recommendation.
         </div>
+        <v-progress-linear v-if="loadingRows" indeterminate class="mb-2" />
 
-        <v-table density="compact" class="mb-2" style="table-layout:fixed; width:100%">
+        <v-table density="compact" class="mb-2" style="width:100%">
           <colgroup>
-            <col style="width:auto" />
-            <col style="width:130px" />
-            <col style="width:150px" />
-            <col style="width:130px" />
-            <col style="width:90px" />
-            <col style="width:40px" />
+            <col style="width:auto; min-width:200px" />   
+            <col style="width:auto; min-width:150px" />   
+            <col style="width:auto; min-width:130px" />                 
+            <col style="width:130px" />                   
+            <col style="width:90px" />                     
+            <col style="width:40px" />                     
           </colgroup>
           <thead>
             <tr>
@@ -285,7 +321,7 @@ async function onConfirm() {
         <v-spacer />
         <v-btn variant="text" class="text-none" @click="emit('update:modelValue', false)">Cancel</v-btn>
         <v-btn color="primary" variant="flat" class="text-none font-weight-bold" :loading="saving"
-          :disabled="pendingRowIdx == null" @click="onConfirm">
+          :disabled="pendingRowIdx == null || belowShortfall" @click="onConfirm">
           Confirm Selection
         </v-btn>
       </v-card-actions>
