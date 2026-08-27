@@ -11,3 +11,11 @@ reviews:
   finishing_touches:
     unit_tests:
       enabled: false
+  path_instructions:
+    - path: "stores/**/*.ts"
+      instructions: |
+        These files intentionally do NOT wrap Supabase calls in try/catch blocks.
+        Supabase query chains (.select, .insert, .update, .delete, .rpc) throw on
+        error, and here errors are handled through Supabase's returned error objects
+        and existing patterns. Never suggest adding try/catch around Supabase
+        database queries in these files.
