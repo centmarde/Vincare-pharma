@@ -22,7 +22,7 @@ export function useProcurementRequests() {
   const ethicalStore = useEthicalDataStore()
   const draftStore = useDraftPRDataStore()
   const { queue, loading } = storeToRefs(procurementStore)
-  const { draftIdByOrder } = storeToRefs(draftStore)
+  const { draftByOrder } = storeToRefs(draftStore)
 
   type CanvassExposed = { autoSaveDraft: () => Promise<{ success: boolean }>; hasSelections: boolean }
 
@@ -33,6 +33,7 @@ export function useProcurementRequests() {
   const showDraftEdit = ref(false)
   const showDraftReview = ref(false)
   const activeDraftId = ref<number | null>(null)
+  const draftReadonly = ref(false)
 
   const showRFQ = ref(false)
   const rfqQuantities = ref<Record<number, number>>({})
@@ -50,7 +51,11 @@ export function useProcurementRequests() {
     await draftStore.fetchDraftIdsByOrder()
   }
 
+  // Canvassing a request that a live PR already covers would raise a duplicate
+  // PR for the same shortfall. The button is disabled for this; the guard is
+  // here so a stale row can't slip past it either.
   function openDetail(req: ProcurementRequestType) {
+    if (req.already_canvassed) return
     selected.value = req
     showDetail.value = true
   }
@@ -124,24 +129,29 @@ export function useProcurementRequests() {
 
   async function onDraftSubmitted() {
     activeDraftId.value = null
+    draftReadonly.value = false
     await init()
   }
 
   function onDraftSaved(draftId: number) {
     activeDraftId.value = draftId
+    draftReadonly.value = false
     showDraftEdit.value = true
     closeDetail()
     draftStore.fetchDraftIdsByOrder() // keep the badge in sync right away
   }
 
-  function resumeDraft(draftId: number) {
+  function resumeDraft(draftId: number, readonly = false) {
     activeDraftId.value = draftId
+    draftReadonly.value = readonly
     showDraftEdit.value = true
   }
 
+  // Once a PR covers the order the draft is a record, not a work item — it opens
+  // read-only. A rejected PR lifts that, so the purchaser can fix it and resubmit.
   function openDraft(req: ProcurementRequestType) {
-    const draftId = draftIdByOrder.value[req.order_id]
-    if (draftId != null) resumeDraft(draftId)
+    const draft = draftByOrder.value[req.order_id]
+    if (draft) resumeDraft(draft.id, req.already_canvassed)
   }
 
   return {
@@ -149,8 +159,8 @@ export function useProcurementRequests() {
     showRFQ, rfqQuantities, openRFQ, onRFQQuantities,
     canvassOrder, canvassShortfall, commitFn, canvassRef, dismissing,
     init, openDetail, closeDetail, dismissDetail, onCanvassCreated, moduleLabel,
-    showDraftEdit, showDraftReview, activeDraftId,
+    showDraftEdit, showDraftReview, activeDraftId, draftReadonly,
     startDraftPR, goToReview, backToEdit, onDraftSubmitted, onDraftSaved,
-    draftIdByOrder, resumeDraft, openDraft,
+    draftByOrder, resumeDraft, openDraft,
   }
 }

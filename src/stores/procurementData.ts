@@ -3,7 +3,7 @@ import type { Ref } from 'vue'
 import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
-import type { Shortfall } from '@/utils/canvassTypes'
+import { prIdFromCoverage, isPRCoverageLive, type Shortfall } from '@/utils/canvassTypes'
 
 const toast = useToast()
 
@@ -33,7 +33,9 @@ export type ProcurementRequestType = {
   customer_name: string | null
   requested_at: string
   note: string | null
-  already_canvassed: boolean   // any line already carries a supplier_quotes audit trail
+  already_canvassed: boolean   // any line is covered by a PR that hasn't been rejected
+  has_rejected_pr: boolean     // a PR was raised for this order and rejected — re-canvass it
+  raised_pr_ids: number[]      // every PR mirrored onto this order's lines, live or not
   lines: ProcurementLineType[]
   // Minimal shape SupplierCanvass/useCanvass need (CanvassableOrder)
   items: { id: number; product_id: number | null; product?: { product_name?: string | null } | null }[]
@@ -176,20 +178,42 @@ export const useProcurementDataStore = defineStore('procurementData', () => {
       const productIds = Array.from(new Set(
         candidates.flatMap((c) => c.items.map((i) => i.product_id).filter((id): id is number => id != null)),
       ))
+      // Coverage is derived, not stored: a line counts as handled only while the
+      // PR mirrored onto it is still alive. A rejected PR means the shortfall is
+      // real again, so the order returns to the queue as actionable.
+      const coveringPRIds = Array.from(new Set(
+        candidates.flatMap((c) => c.items.map((i) => prIdFromCoverage(i.supplier_quotes)).filter((id): id is number => id != null)),
+      ))
+
+      const [productsRes, prsRes] = await Promise.all([
+        productIds.length
+          ? supabase.from('products').select('id, current_stock').in('id', productIds)
+          : Promise.resolve({ data: [], error: null }),
+        coveringPRIds.length
+          ? supabase.from('transactions').select('id, status').in('id', coveringPRIds)
+          : Promise.resolve({ data: [], error: null }),
+      ])
+      if (productsRes.error) throw productsRes.error
+      if (prsRes.error) throw prsRes.error
+
       const onHand = new Map<number, number>()
-      if (productIds.length) {
-        const { data: products, error: productsError } = await supabase
-          .from('products').select('id, current_stock').in('id', productIds)
-        if (productsError) throw productsError
-        for (const p of (products ?? []) as any[]) onHand.set(p.id, p.current_stock ?? 0)
-      }
+      for (const p of (productsRes.data ?? []) as any[]) onHand.set(p.id, p.current_stock ?? 0)
+      const prStatus = new Map<number, string | null>()
+      for (const pr of (prsRes.data ?? []) as any[]) prStatus.set(pr.id, pr.status)
 
       const rows: ProcurementRequestType[] = []
       for (const c of candidates) {
         const lines: ProcurementLineType[] = []
         let alreadyCanvassed = false
+        let hasRejectedPR = false
+        const raisedPRIds: number[] = []
         for (const it of c.items) {
-          if (it.supplier_quotes != null) alreadyCanvassed = true
+          const prId = prIdFromCoverage(it.supplier_quotes)
+          if (prId != null) {
+            raisedPRIds.push(prId)
+            if (isPRCoverageLive(prStatus.get(prId))) alreadyCanvassed = true
+            else hasRejectedPR = true
+          }
           const remaining = (it.qty_stock_out ?? 0) - (it.actual_count_stock_out ?? 0)
           if (remaining <= 0) continue
           const stock = it.product_id != null ? (onHand.get(it.product_id) ?? 0) : 0
@@ -206,7 +230,10 @@ export const useProcurementDataStore = defineStore('procurementData', () => {
         rows.push({
           order_id: c.id, order_type: c.order_type, order_no: c.order_no, customer_name: c.customer_name,
           requested_at: req.created_at, note: req.description,
-          already_canvassed: alreadyCanvassed, lines,
+          already_canvassed: alreadyCanvassed,
+          has_rejected_pr: hasRejectedPR && !alreadyCanvassed,
+          raised_pr_ids: Array.from(new Set(raisedPRIds)),
+          lines,
           items: c.items.map((i) => ({ id: i.id, product_id: i.product_id, product: i.product })),
         })
       }

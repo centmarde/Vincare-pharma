@@ -4,8 +4,10 @@ import { useDraftPRReview } from '../composables/useDraftPRReview'
 import { useTheme } from '@/stores/useTheme'
 import type { DraftPRItemType } from '@/stores/draftPRData'
 import { formatCurrency, formatExpiryMonthYear } from '@/utils/helpers'
+import { useDisplay } from 'vuetify'
 
-const props = defineProps<{ modelValue: boolean; draftId: number | null }>()
+const { mobile } = useDisplay()
+const props = defineProps<{ modelValue: boolean; draftId: number | null; readonly?: boolean }>()
 const emit = defineEmits<{
   (e: 'update:modelValue', v: boolean): void
   (e: 'submitted', prId: number): void
@@ -41,12 +43,14 @@ async function onSubmit() {
 </script>
 
 <template>
-  <v-dialog :model-value="modelValue" max-width="960" scrollable @update:model-value="emit('update:modelValue', $event)">
+  <v-dialog
+    :model-value="modelValue" :max-width="mobile ? undefined : 960" :fullscreen="mobile"
+    scrollable @update:model-value="emit('update:modelValue', $event)">
     <v-card v-if="draft" rounded="lg">
-      <v-card-title class="pa-4 pb-2 d-flex justify-space-between align-center">
-        <div>
-          <div class="text-h6 font-weight-bold">Review Draft PR #{{ draft.id }}</div>
-          <div class="text-caption text-medium-emphasis">{{ draft.remarks }}</div>
+      <v-card-title class="pa-4 pb-2 d-flex justify-space-between align-start" style="gap:8px">
+        <div style="min-width:0">
+          <div class="text-h6 font-weight-bold text-truncate">Review Draft PR #{{ draft.id }}</div>
+          <div class="text-caption text-medium-emphasis" :class="{ 'text-truncate': mobile }">{{ draft.remarks }}</div>
         </div>
         <v-btn icon="mdi-close" variant="text" size="small" @click="emit('update:modelValue', false)" />
       </v-card-title>
@@ -77,6 +81,7 @@ async function onSubmit() {
           </div>
         </v-alert>
 
+        <div class="table-scroll">
         <v-table density="compact">
           <thead>
             <tr>
@@ -107,21 +112,22 @@ async function onSubmit() {
             </tr>
           </tbody>
         </v-table>
+        </div>
 
         <div class="text-right mt-4 text-h6 font-weight-bold">
           Total Estimate: {{ formatCurrency(totalEstimate) }}
         </div>
       </v-card-text>
       <v-divider />
-      <v-card-actions class="pa-4">
+      <v-card-actions class="pa-4" :class="mobile ? 'flex-column-reverse ga-2' : ''">
         <!-- Compare lives on the edit page — this is how a warning gets acted on. -->
-        <v-btn variant="text" class="text-none" prepend-icon="mdi-arrow-left" @click="emit('edit')">
+        <v-btn variant="text" class="text-none" :block="mobile" prepend-icon="mdi-arrow-left" @click="emit('edit')">
           Back to Edit
         </v-btn>
-        <v-spacer />
+        <v-spacer v-if="!mobile" />
         <v-btn
-          color="success" variant="flat" class="text-none font-weight-bold"
-          :loading="submitting" :disabled="hasBlockingIssues || checking" @click="onSubmit">
+          color="success" variant="flat" class="text-none font-weight-bold" :block="mobile"
+          :loading="submitting" :disabled="hasBlockingIssues || checking || readonly" @click="onSubmit">
           Submit Purchase Requisition
         </v-btn>
       </v-card-actions>
@@ -133,5 +139,9 @@ async function onSubmit() {
   white-space: normal;
   min-width: 110px;
   line-height: 1.3;
+}
+
+.table-scroll {
+  overflow-x: auto;
 }
 </style>

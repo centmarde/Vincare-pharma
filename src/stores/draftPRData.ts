@@ -9,6 +9,7 @@ import { qualifyOffers } from '@/utils/qualification'
 import { useSupplierOffersDataStore } from '@/stores/supplierOffersData'
 import type { SupplierOfferType } from '@/stores/supplierOffersData'
 import { maxDocSeq, insertWithDocRetry, formatCurrency } from '@/utils/helpers'
+import { prIdFromCoverage, isPRCoverageLive, type PRCoverage } from '@/utils/canvassTypes'
 
 const toast = useToast()
 
@@ -41,6 +42,8 @@ export type DraftPRType = {
   converted_pr_id: number | null
   items: DraftPRItemType[]
 }
+
+export type DraftByOrderEntry = { id: number; status: DraftPRType['status'] }
 
 export type DraftLineInput = {
   product_id: number
@@ -128,7 +131,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
   const error: Ref<string> = ref('')
   const drafts: Ref<DraftPRType[]> = ref([])
   const currentDraft: Ref<DraftPRType | null> = ref(null)
-  const draftIdByOrder: Ref<Record<number, number>> = ref({})
+  const draftByOrder: Ref<Record<number, DraftByOrderEntry>> = ref({})
 
   const handleError = (err: unknown, msg: string) => {
     error.value = err instanceof Error ? err.message : msg
@@ -496,6 +499,21 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return warnings
   }
 
+  // Does this order still have at least one line covered by a non-rejected PR?
+  async function hasLiveCoverage(sourceOrderId: number): Promise<boolean> {
+    const { data: items } = await supabase
+      .from('transaction_items')
+      .select('supplier_quotes')
+      .eq('transaction_id', sourceOrderId)
+    const prIds = Array.from(new Set(
+      (items ?? []).map((i) => prIdFromCoverage(i.supplier_quotes)).filter((id): id is number => id != null),
+    ))
+    if (!prIds.length) return false
+
+    const { data: prs } = await supabase.from('transactions').select('id, status').in('id', prIds)
+    return (prs ?? []).some((pr) => isPRCoverageLive(pr.status))
+  }
+
   async function submitDraft(draftId: number): Promise<ConvertResult> {
     loading.value = true
     const { user, error: authError } = await authStore.getCurrentUser()
@@ -514,9 +532,19 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       loading.value = false
       return { success: false, error: 'Draft not found.' }
     }
+    // A converted draft is normally spent — but if every PR it raised was
+    // rejected, the shortfall is live again and the purchaser must be able to
+    // fix the draft and resubmit it. Coverage is read off the source order's
+    // mirror rather than converted_pr_id, which only ever holds the FIRST of a
+    // multi-supplier conversion's PRs.
     if (draftRow.status === 'converted') {
-      loading.value = false
-      return { success: false, error: 'Draft already converted.' }
+      const stillCovered = draftRow.source_order_id != null
+        ? await hasLiveCoverage(draftRow.source_order_id)
+        : true
+      if (stillCovered) {
+        loading.value = false
+        return { success: false, error: 'Draft already converted.' }
+      }
     }
 
     const warnings: ConvertWarning[] = []
@@ -661,14 +689,63 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       }
     }
 
-    // ── Phase C: every PR written — log + mark draft converted. Best-effort,
-    // doesn't roll back the PRs on failure (matches commitToPRs's own convention).
+    // ── Phase C: every PR written — mirror onto the source order, log, mark the
+    // draft converted. Best-effort, doesn't roll back the PRs on failure
+    // (matches commitToPRs's own convention).
+    const sourceOrderId: number | null = draftRow.source_order_id ?? null
+    const decidedAt = new Date().toISOString()
+
+    // Mirror the decision back onto the SOURCE order's own lines, the same way
+    // commitToPRs Phase B does. Without this the procurement queue has no way to
+    // know a PR was raised — it reads coverage off these rows, not off the PR's.
+    if (sourceOrderId != null) {
+      const { data: orderItems, error: orderItemsError } = await supabase
+        .from('transaction_items')
+        .select('id, product_id')
+        .eq('transaction_id', sourceOrderId)
+      if (orderItemsError) {
+        console.warn('submitDraft: source order lines fetch failed:', orderItemsError.message)
+      } else {
+        // Matched on product_id — draft_pr_items carries no source line id, and
+        // DraftPREditPage can't add products that aren't already on the order.
+        for (const line of resolvedLines) {
+          const pr = createdPRs.find((p) => p.supplier_id === line.supplier_id)
+          if (!pr) continue
+          const targets = (orderItems ?? []).filter((oi) => oi.product_id === line.product_id)
+          for (const target of targets) {
+            const coverage: PRCoverage = {
+              source: 'draft_pr', pr_id: pr.pr_id, pr_no: pr.pr_no,
+              winner_supplier_id: line.supplier_id, unit_price: line.unit_price,
+              order_qty: line.qty, quotes: line.considered_offers ?? [], decided_at: decidedAt,
+            }
+            const { error: mirrorError } = await supabase
+              .from('transaction_items')
+              .update({ supplier_quotes: coverage })
+              .eq('id', target.id)
+            if (mirrorError) console.warn('submitDraft: source order mirror update failed:', mirrorError.message)
+          }
+        }
+      }
+    }
+
+    const sourceModule = draftRow.source_order_type === 'ethical_order' ? 'ethical' : 'inhouse'
     for (const pr of createdPRs) {
       const { error: logError } = await supabase.from('logs').insert({
         created_by: user.id, action: 'draft_pr_converted',
         description: `Converted draft #${draftId} to ${pr.pr_no}`, module: 'purchasing', transaction_id: pr.pr_id,
       })
       if (logError) console.warn('submitDraft: activity log insert failed:', logError.message)
+
+      // Second row against the ORDER, so the conversion shows up in the order's
+      // own audit trail too — the PR-side row above is invisible from there.
+      if (sourceOrderId != null) {
+        const { error: orderLogError } = await supabase.from('logs').insert({
+          created_by: user.id, action: 'canvass_pr',
+          description: `Raised ${pr.pr_no} from draft PR #${draftId} (supplier ${pr.supplier_id})`,
+          module: sourceModule, transaction_id: sourceOrderId,
+        })
+        if (orderLogError) console.warn('submitDraft: order activity log insert failed:', orderLogError.message)
+      }
     }
 
     await supabase
@@ -747,22 +824,28 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return created
   }
   
-  async function fetchDraftIdsByOrder(): Promise<Record<number, number>> {
+  // Converted drafts are included, not filtered out: once a PR has been raised
+  // the row's button becomes a read-only "View Draft", so the draft still has to
+  // be reachable. An order with both an open and a converted draft resolves to
+  // the open one — that's the one the purchaser can still act on.
+  async function fetchDraftIdsByOrder(): Promise<Record<number, DraftByOrderEntry>> {
     const { data, error: fetchError } = await supabase
       .from('draft_purchase_requisitions')
-      .select('id, source_order_id')
-      .eq('status', 'draft')
+      .select('id, source_order_id, status')
       .not('source_order_id', 'is', null)
+      .order('id', { ascending: true })
     if (fetchError) {
       handleError(fetchError, 'Failed to fetch drafts.')
       return {}
     }
-    const ids: Record<number, number> = {}
+    const byOrder: Record<number, DraftByOrderEntry> = {}
     for (const row of data ?? []) {
-      ids[row.source_order_id] = row.id
+      const existing = byOrder[row.source_order_id]
+      if (existing && existing.status === 'draft' && row.status !== 'draft') continue
+      byOrder[row.source_order_id] = { id: row.id, status: row.status }
     }
-    draftIdByOrder.value = ids
-    return ids
+    draftByOrder.value = byOrder
+    return byOrder
   }
 
   return {
@@ -770,7 +853,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     error,
     drafts,
     currentDraft,
-    draftIdByOrder,
+    draftByOrder,
     createDraft,
     getOrCreateDraft,
     fetchDrafts,

@@ -6,11 +6,13 @@ import { useDraftPRDataStore, type DraftPRItemType } from '@/stores/draftPRData'
 import SupplierCompareDialog from './dialogs/SupplierCompareDialog.vue'
 import { formatCurrency } from '@/utils/helpers'
 import { checkQtyAgainstShortfall, bufferOver, MAX_QTY_MULTIPLE } from '@/utils/shortfall'
+import { useDisplay } from 'vuetify'
 
+const { mobile } = useDisplay()
 const toast = useToast()
 const { confirmDialog } = useConfirmDialog()
 
-const props = defineProps<{ modelValue: boolean; draftId: number | null }>()
+const props = defineProps<{ modelValue: boolean; draftId: number | null; readonly?: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: boolean): void; (e: 'continue'): void }>()
 
 const draftStore = useDraftPRDataStore()
@@ -99,7 +101,7 @@ async function flushEdits() {
 
 async function onDialogUpdate(open: boolean) {
   if (open) { emit('update:modelValue', true); return }
-  await flushEdits()
+  if (!props.readonly) await flushEdits()
   emit('update:modelValue', false)
 }
 
@@ -112,17 +114,28 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
 </script>
 
 <template>
-  <v-dialog :model-value="modelValue" max-width="960" scrollable @update:model-value="onDialogUpdate">
+  <v-dialog
+    :model-value="modelValue" :max-width="mobile ? undefined : 960" :fullscreen="mobile"
+    scrollable @update:model-value="onDialogUpdate">
     <v-card v-if="draftStore.currentDraft" rounded="lg">
-      <v-card-title class="pa-4 pb-2 d-flex justify-space-between align-center">
-        <div>
-          <div class="text-h6 font-weight-bold">Edit Draft PR #{{ draftStore.currentDraft.id }}</div>
-          <div class="text-caption text-medium-emphasis">{{ draftStore.currentDraft.remarks }}</div>
+      <v-card-title class="pa-4 pb-2 d-flex justify-space-between align-start" style="gap:8px">
+        <div style="min-width:0">
+          <div class="text-h6 font-weight-bold text-truncate">
+            {{ readonly ? 'Draft PR' : 'Edit Draft PR' }} #{{ draftStore.currentDraft.id }}
+          </div>
+          <div class="text-caption text-medium-emphasis" :class="{ 'text-truncate': mobile }">
+            {{ draftStore.currentDraft.remarks }}
+          </div>
         </div>
         <v-btn icon="mdi-close" variant="text" size="small" :loading="saving" @click="onDialogUpdate(false)" />
       </v-card-title>
       <v-divider />
       <v-card-text class="pa-4">
+        <v-alert v-if="readonly" type="info" variant="tonal" density="compact" class="mb-3">
+          A purchase requisition has already been raised from this draft — it's read-only
+          unless that requisition is rejected.
+        </v-alert>
+        <div class="table-scroll">
         <v-table density="comfortable">
           <thead>
             <tr>
@@ -140,7 +153,7 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
               <td class="text-right">
                 <div class="d-flex align-center justify-end" style="gap:6px">
                   <v-text-field :model-value="edits[item.id]?.qty ?? item.qty" type="number"
-                    :min="item.shortfall_qty ?? 1" density="compact"
+                    :min="item.shortfall_qty ?? 1" density="compact" :readonly="readonly"
                     variant="outlined" hide-details style="width:100%; min-width:0"
                     @update:model-value="onQtyChange(item, $event)" @blur="validateQty(item)" />
                   <v-chip v-if="bufferQty(item) > 0" color="info" variant="tonal" size="x-small" label>
@@ -150,7 +163,7 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
               </td>
               <td>
                 <v-text-field :model-value="edits[item.id]?.required_by_date ?? item.required_by_date" type="date" density="compact"
-                  variant="outlined" hide-details @update:model-value="onDateChange(item, $event)" />
+                  variant="outlined" hide-details :readonly="readonly" @update:model-value="onDateChange(item, $event)" />
               </td>
               <td>
                 <span v-if="item.supplier_name">{{ item.supplier_name }}</span>
@@ -158,18 +171,30 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
               </td>
               <td class="text-right">{{ item.unit_price ? formatCurrency(item.unit_price) : '—' }}</td>
               <td class="text-right font-weight-bold">{{ item.unit_price ? formatCurrency(lineTotal(item)) : '—' }}</td>
-              <td><v-btn size="small" variant="tonal" color="primary" class="text-none" @click="openCompare(item)">Compare</v-btn></td>
+              <td>
+                <v-btn
+                  size="small" variant="tonal" color="primary" class="text-none"
+                  :disabled="readonly" @click="openCompare(item)">
+                  Compare
+                </v-btn>
+              </td>
             </tr>
           </tbody>
         </v-table>
+        </div>
       </v-card-text>
       <v-divider />
-      <v-card-actions class="pa-4">
-        <v-spacer />
-        <v-btn variant="tonal" class="text-none font-weight-bold" :loading="saving" @click="onDialogUpdate(false)">
-          Save &amp; Close
+      <v-card-actions class="pa-4" :class="mobile ? 'flex-column ga-2' : ''">
+        <v-spacer v-if="!mobile" />
+        <v-btn
+          variant="tonal" class="text-none font-weight-bold" :block="mobile"
+          :loading="saving" @click="onDialogUpdate(false)">
+          {{ readonly ? 'Close' : 'Save & Close' }}
         </v-btn>
-        <v-btn color="primary" variant="flat" class="text-none font-weight-bold" :loading="saving" @click="continueToReview">
+        <v-btn
+          v-if="!readonly"
+          color="primary" variant="flat" class="text-none font-weight-bold" :block="mobile"
+          :loading="saving" @click="continueToReview">
           Continue to Review
         </v-btn>
       </v-card-actions>
@@ -187,3 +212,9 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
     @confirm="onConfirm"
     @update:qty="activeItem && onQtyChange(activeItem, $event)" />
 </template>
+
+<style scoped>
+.table-scroll {
+  overflow-x: auto;
+}
+</style>

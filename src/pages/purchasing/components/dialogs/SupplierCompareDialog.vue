@@ -6,6 +6,9 @@ import { useSuppliersDataStore } from '@/stores/suppliersData'
 import type { SupplierOfferType } from '@/stores/supplierOffersData'
 import { qualifyOffers, minQualifyingExpiry, type QualifiedOffer } from '@/utils/qualification'
 import { maskMonthYearInput, parseMonthYear } from '@/utils/helpers'
+import { useDisplay } from 'vuetify'
+
+const { mobile } = useDisplay()
 
 const props = defineProps<{
   modelValue: boolean
@@ -226,11 +229,13 @@ async function onConfirm() {
 </script>
 
 <template>
-  <v-dialog :model-value="modelValue" max-width="850" scrollable @update:model-value="emit('update:modelValue', $event)">
+  <v-dialog
+    :model-value="modelValue" :max-width="mobile ? undefined : 850" :fullscreen="mobile"
+    scrollable @update:model-value="emit('update:modelValue', $event)">
     <v-card v-if="product" rounded="lg">
       <v-card-title class="pa-4 pb-2">
         <div class="text-h6 font-weight-bold">Compare Suppliers — {{ product.name }}</div>
-        <div class="d-flex align-center flex-wrap mt-2" style="gap:16px">
+        <div class="d-flex flex-wrap mt-2" :class="mobile ? 'flex-column align-start' : 'align-center'" style="gap:16px">
           <div class="text-caption text-medium-emphasis">
             Required by {{ requiredByDate }} · min. qualifying expiry is 18 months after that date
           </div>
@@ -248,7 +253,8 @@ async function onConfirm() {
         </div>
         <v-progress-linear v-if="loadingRows" indeterminate class="mb-2" />
 
-        <v-table density="compact" class="mb-2" style="width:100%">
+        <div class="table-scroll mb-2">
+        <v-table density="compact" style="width:100%">
           <colgroup>
             <col style="width:auto; min-width:200px" />   
             <col style="width:auto; min-width:150px" />   
@@ -307,6 +313,7 @@ async function onConfirm() {
             </tr>
           </tbody>
         </v-table>
+        </div>
 
         <v-btn variant="text" size="small" color="info" class="text-none" prepend-icon="mdi-plus" @click="addDraftRow">
           Add another supplier
@@ -317,10 +324,10 @@ async function onConfirm() {
           rows="2" variant="outlined" density="compact" class="mt-4" hide-details />
       </v-card-text>
       <v-divider />
-      <v-card-actions class="pa-4">
-        <v-spacer />
-        <v-btn variant="text" class="text-none" @click="emit('update:modelValue', false)">Cancel</v-btn>
-        <v-btn color="primary" variant="flat" class="text-none font-weight-bold" :loading="saving"
+      <v-card-actions class="pa-4" :class="mobile ? 'flex-column-reverse ga-2' : ''">
+        <v-spacer v-if="!mobile" />
+        <v-btn variant="text" class="text-none" :block="mobile" @click="emit('update:modelValue', false)">Cancel</v-btn>
+        <v-btn color="primary" variant="flat" class="text-none font-weight-bold" :block="mobile" :loading="saving"
           :disabled="pendingRowIdx == null || belowShortfall" @click="onConfirm">
           Confirm Selection
         </v-btn>
@@ -328,3 +335,9 @@ async function onConfirm() {
     </v-card>
   </v-dialog>
 </template>
+
+<style scoped>
+.table-scroll {
+  overflow-x: auto;
+}
+</style>

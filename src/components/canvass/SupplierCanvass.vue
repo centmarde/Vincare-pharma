@@ -4,7 +4,9 @@ import { useCanvass } from './useCanvass'
 import SupplierCompareDialog from '@/pages/purchasing/components/dialogs/SupplierCompareDialog.vue'
 import type { CanvassableOrder, Shortfall, CanvassCommitFn } from '@/utils/canvassTypes'
 import { formatCurrency } from '@/utils/helpers'
+import { useDisplay } from 'vuetify'
 
+const { mobile } = useDisplay()
 const props = defineProps<{
   order: CanvassableOrder | null
   shortfall: Shortfall[]
@@ -51,7 +53,8 @@ defineExpose({ autoSaveDraft, hasSelections })
       One Purchase Requisition is raised per winning supplier, or save this as a Draft PR to finish later.
     </div>
 
-    <v-table density="comfortable" class="mb-3">
+    <div class="table-scroll mb-3">
+    <v-table density="comfortable">
       <thead>
         <tr>
           <th class="text-left">Product</th><th class="text-right" style="width:90px">Shortfall</th>
@@ -77,6 +80,7 @@ defineExpose({ autoSaveDraft, hasSelections })
         </tr>
       </tbody>
     </v-table>
+    </div>
 
     <v-card v-if="prPreview.length" variant="tonal" color="success" rounded="lg" class="mb-3">
       <v-card-text class="pa-3">
@@ -87,14 +91,14 @@ defineExpose({ autoSaveDraft, hasSelections })
       </v-card-text>
     </v-card>
 
-    <div class="d-flex justify-end align-center" style="gap:8px">
-      <span v-if="!canCommit && rows.length" class="text-caption text-medium-emphasis">
+    <div class="d-flex" :class="mobile ? 'flex-column ga-2' : 'justify-end align-center'" :style="mobile ? '' : 'gap:8px'">
+      <span v-if="!canCommit && rows.length" class="text-caption text-medium-emphasis" :class="{ 'text-center': mobile }">
         {{ readyRows.length }} of {{ rows.length }} product(s) have a supplier
       </span>
-      <v-btn variant="tonal" color="secondary" size="small" class="text-none font-weight-bold" :loading="loading" @click="onSaveAsDraft">
+      <v-btn variant="tonal" color="secondary" size="small" class="text-none font-weight-bold" :block="mobile" :loading="loading" @click="onSaveAsDraft">
         Save as Draft PR
       </v-btn>
-      <v-btn color="success" size="small" class="text-none font-weight-bold" elevation="0" :loading="loading" :disabled="!canCommit" @click="commit">
+      <v-btn color="success" size="small" class="text-none font-weight-bold" elevation="0" :block="mobile" :loading="loading" :disabled="!canCommit" @click="commit">
         Submit Purchase Requisition(s)
       </v-btn>
     </div>
@@ -111,3 +115,9 @@ defineExpose({ autoSaveDraft, hasSelections })
       @update:qty="onCompareQtyChange" />
   </div>
 </template>
+
+<style scoped>
+.table-scroll {
+  overflow-x: auto;
+}
+</style>
