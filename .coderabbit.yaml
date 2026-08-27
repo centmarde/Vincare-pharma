@@ -12,7 +12,7 @@ reviews:
     unit_tests:
       enabled: false
   path_instructions:
-    - path: "stores/**/*.ts"
+    - path: 'stores/**/*.ts'
       instructions: |
         These files intentionally do NOT wrap Supabase calls in try/catch blocks.
         Supabase query chains (.select, .insert, .update, .delete, .rpc) throw on
