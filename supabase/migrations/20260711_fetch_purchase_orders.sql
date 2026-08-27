@@ -33,6 +33,7 @@ declare
 begin
   v_order_by := case p_order_by
     when 'created_at'   then 'created_at'
+    when 'updated_at'   then 'updated_at'
     when 'total_amount' then 'total_amount'
     when 'status'       then 'status'
     when 'po_no'        then 'po_no'

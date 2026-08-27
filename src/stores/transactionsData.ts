@@ -71,7 +71,7 @@ export type FetchTransactionsOptions = {
   search?: string
   transaction_type?: string | null
   status?: string | string[] | null
-  orderBy?: keyof Pick<TransactionType, 'created_at' | 'total_amount' | 'status'>
+  orderBy?: keyof Pick<TransactionType, 'created_at' | 'updated_at' | 'total_amount' | 'status'>
   ascending?: boolean
   limit?: number
   offset?: number
