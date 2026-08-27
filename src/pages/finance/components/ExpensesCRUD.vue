@@ -6,10 +6,19 @@ import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
-  expenses, loading,
-  showChangeDialog, changeTarget, changeFields, voidSummary, isPending, isEdited, editTooltip,
+  expenses,
+  loading,
+  showChangeDialog,
+  changeTarget,
+  changeFields,
+  voidSummary,
+  isPending,
+  isEdited,
+  editTooltip,
   voucherFor,
-  init, openChangeDialog, submitChangeRequest,
+  init,
+  openChangeDialog,
+  submitChangeRequest,
 } = useExpenses()
 
 const router = useRouter()
@@ -29,7 +38,6 @@ onMounted(init)
 <template>
   <v-container fluid class="pa-2 fill-height align-start">
     <v-card class="mx-auto w-100" rounded="lg" elevation="1">
-
       <v-card-title class="d-flex justify-space-between align-center pa-5">
         <span class="text-h6 font-weight-bold">Operational Expenses</span>
         <v-btn
@@ -55,7 +63,12 @@ onMounted(init)
         hover
       >
         <template #item.reference_no="{ item }">
-          <span class="font-weight-medium" :class="{ 'text-decoration-line-through text-medium-emphasis': item.status === 'voided' }">
+          <span
+            class="font-weight-medium"
+            :class="{
+              'text-decoration-line-through text-medium-emphasis': item.status === 'voided',
+            }"
+          >
             {{ item.reference_no }}
           </span>
           <v-chip
@@ -97,7 +110,9 @@ onMounted(init)
         </template>
 
         <template #item.remarks="{ item }">
-          <span class="text-truncate d-inline-block" style="max-width: 200px">{{ item.remarks ?? '—' }}</span>
+          <span class="text-truncate d-inline-block" style="max-width: 200px">{{
+            item.remarks ?? '—'
+          }}</span>
         </template>
 
         <!-- Blank is a valid state: an expense entered directly here has no
@@ -134,7 +149,13 @@ onMounted(init)
 
         <template #item.actions="{ item }">
           <span v-if="item.status === 'voided'" class="text-caption text-medium-emphasis">—</span>
-          <v-chip v-else-if="isPending(item.id)" size="x-small" color="warning" variant="tonal" label>
+          <v-chip
+            v-else-if="isPending(item.id)"
+            size="x-small"
+            color="warning"
+            variant="tonal"
+            label
+          >
             Change pending
           </v-chip>
           <v-btn
@@ -151,7 +172,6 @@ onMounted(init)
           </v-btn>
         </template>
       </v-data-table>
-
     </v-card>
 
     <ChangeRequestDialog
@@ -164,7 +184,6 @@ onMounted(init)
       :loading="loading"
       @submit="submitChangeRequest"
     />
-
   </v-container>
 </template>
 
