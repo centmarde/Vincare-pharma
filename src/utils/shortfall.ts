@@ -1,6 +1,6 @@
 
 
-export const MAX_QTY_MULTIPLE = 3
+export const maxQtyMultiple = 3
 
 export type QtyCheck =
   | { status: 'ok' }
@@ -14,7 +14,7 @@ export function checkQtyAgainstShortfall(qty: number, shortfall: number | null |
   const q = Number(qty)
   if (!Number.isFinite(q)) return { status: 'ok' }
   if (q < floor) return { status: 'below', floor }
-  if (q > floor * MAX_QTY_MULTIPLE) return { status: 'over', floor }
+  if (q > floor * maxQtyMultiple) return { status: 'over', floor }
   return { status: 'ok' }
 }
 

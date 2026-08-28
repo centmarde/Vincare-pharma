@@ -5,7 +5,7 @@ import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { useDraftPRDataStore, type DraftPRItemType } from '@/stores/draftPRData'
 import SupplierCompareDialog from './dialogs/SupplierCompareDialog.vue'
 import { formatCurrency } from '@/utils/helpers'
-import { checkQtyAgainstShortfall, bufferOver, MAX_QTY_MULTIPLE } from '@/utils/shortfall'
+import { checkQtyAgainstShortfall, bufferOver, maxQtyMultiple } from '@/utils/shortfall'
 import { useDisplay } from 'vuetify'
 
 const { mobile } = useDisplay()
@@ -75,7 +75,7 @@ async function validateQty(item: DraftPRItemType) {
     buf.qty = check.floor
   } else if (check.status === 'over') {
     const ok = await confirmDialog(
-      `Order ${buf.qty} (over ${MAX_QTY_MULTIPLE}x the shortfall of ${check.floor})?`,
+      `Order ${buf.qty} (over ${maxQtyMultiple}x the shortfall of ${check.floor})?`,
       { title: 'Confirm large order quantity', confirmText: 'Order it', cancelText: 'Cancel' },
     )
     if (!ok) buf.qty = check.floor

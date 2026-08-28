@@ -4,7 +4,7 @@ import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { useDraftPRDataStore } from '@/stores/draftPRData'
 import type { SupplierOfferType } from '@/stores/supplierOffersData'
 import type { CanvassableOrder, Shortfall, CanvassSelection, CanvassCommitFn, CanvassQuote } from '@/utils/canvassTypes'
-import { checkQtyAgainstShortfall, bufferOver, MAX_QTY_MULTIPLE } from '@/utils/shortfall'
+import { checkQtyAgainstShortfall, bufferOver, maxQtyMultiple } from '@/utils/shortfall'
 
 const toast = useToast()
 const { confirmDialog } = useConfirmDialog()
@@ -66,7 +66,7 @@ export function useCanvass(
       row.order_qty = check.floor
     } else if (check.status === 'over') {
       const ok = await confirmDialog(
-        `Order ${row.order_qty} (over ${MAX_QTY_MULTIPLE}x the shortfall of ${check.floor})?`,
+        `Order ${row.order_qty} (over ${maxQtyMultiple}x the shortfall of ${check.floor})?`,
         { title: 'Confirm large order quantity', confirmText: 'Order it', cancelText: 'Cancel' },
       )
       if (!ok) row.order_qty = check.floor
