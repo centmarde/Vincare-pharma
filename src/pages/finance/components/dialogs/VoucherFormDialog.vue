@@ -22,10 +22,10 @@ const emit = defineEmits<{
 
 const {
   isEditing,
-  payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, department, remarks, items,
+  payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, department, particulars, remarks, items,
   categoryOptions, departmentOptions, accountOptions, metaForAccount, selectedAccount,
   voucherTotal, insufficientFunds, canSubmit, blockers, signatories,
-  resetForm, loadFrom, addItem, removeItem, buildPayload, restoreDraft,
+  canAddItem, resetForm, loadFrom, addItem, removeItem, buildPayload, restoreDraft,
   setSignatory, applyCachedSignatories,
 } = useVoucherForm(() => props.accounts)
 
@@ -235,6 +235,25 @@ function handleSubmit() {
 
           <v-row no-gutters class="border-b">
             <v-col cols="12" class="pa-2">
+              <!-- One particulars for the whole voucher: a voucher describes a
+                   single purpose, so this was retyped on every line before. -->
+              <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis">
+                Particulars
+              </div>
+              <v-textarea
+                v-model="particulars"
+                placeholder="What this disbursement is for"
+                variant="plain"
+                density="compact"
+                rows="2"
+                auto-grow
+                hide-details
+              />
+            </v-col>
+          </v-row>
+
+          <v-row no-gutters class="border-b">
+            <v-col cols="12" class="pa-2">
               <!-- One department for the whole voucher. It used to be a select
                    on every line, which meant picking the same value over and
                    over; it is still saved onto each line, where the generated
@@ -273,21 +292,9 @@ function handleSubmit() {
 
           <v-row v-for="(line, index) in items" :key="index" no-gutters class="border-b">
             <v-col cols="12" sm="8" class="pa-2" :class="smAndUp ? 'border-e' : 'border-b'">
-              <!-- Purpose of THIS line. Prints beside the category, which is
-                   the split the accountant asked for: what it is charged to on
-                   one side, what it was actually for on the other. -->
+              <!-- A line is only what the spend is charged to and how much;
+                   the purpose is written once on the header. -->
               <v-row dense>
-                <v-col cols="12">
-                  <v-text-field
-                    v-model="line.particular"
-                    label="Purpose / Explanation"
-                    placeholder="e.g. Butuan–Zamboanga round trip"
-                    variant="outlined"
-                    density="compact"
-                    hide-details
-                    class="mb-2"
-                  />
-                </v-col>
                 <v-col cols="12">
                   <v-select
                     v-model="line.category"
@@ -326,16 +333,23 @@ function handleSubmit() {
 
           <v-row no-gutters class="border-b">
             <v-col cols="12" sm="8" class="pa-2" :class="smAndUp ? 'border-e' : 'border-b'">
+              <!-- Five accounts maximum: the printed voucher has a fixed five
+                   rows so the RECORDED stamp lands in the same place every
+                   time. A sixth goes on a second voucher. -->
               <v-btn
                 size="small"
                 variant="text"
                 color="primary"
                 class="text-none"
                 prepend-icon="mdi-plus"
+                :disabled="!canAddItem"
                 @click="addItem"
               >
-                Add Particular
+                Add Account
               </v-btn>
+              <span v-if="!canAddItem" class="text-caption text-medium-emphasis ms-2">
+                Five per voucher &mdash; record the rest on another voucher.
+              </span>
             </v-col>
             <v-col cols="12" sm="4" class="pa-2" />
           </v-row>
