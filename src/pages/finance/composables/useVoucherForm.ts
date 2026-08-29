@@ -43,6 +43,22 @@ type VoucherFormLine = {
  */
 export const MAX_VOUCHER_ACCOUNTS = 5
 
+/**
+ * How many lines of particulars fit beside the account rows.
+ *
+ * Derived, not chosen: the particulars cell sits BESIDE the account block in the
+ * printed sheet, so its height budget is that block's height —
+ * MAX_VOUCHER_ACCOUNTS rows at the 22px min-height each `.dv-cell` carries,
+ * about 110px, which is ~7 lines at the sheet's line height. Anything longer
+ * stretches the cell, pushes the signature row down, and breaks the one thing
+ * the layout must hold: the signature row's distance from the top of the sheet
+ * stays constant, because the RECORDED stamp is overprinted against it.
+ *
+ * Capped at entry rather than clipped at print — silently dropping part of a
+ * description off a financial document is not an option.
+ */
+export const MAX_PARTICULARS_LINES = 7
+
 const emptyItem = (): VoucherFormLine => ({
   category: 'other',
   amount: null,
@@ -169,6 +185,17 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
   // What's still stopping a save. Drives a visible hint next to the submit
   // button — a disabled button with no explanation is unusable, since nothing
   // on the form says which cell it's waiting on.
+  // Both of these guard the printed sheet's fixed height rather than the data.
+  // A voucher loaded from an older shape can carry more accounts than the form
+  // would now let anyone add, so the cap has to be checked on save too, not
+  // only in addItem().
+  const particularsLines = computed(() => particulars.value.split('\n').length)
+  // Counted on what actually saves, not on the rows on screen: clearing the
+  // amounts off an over-long legacy voucher until it fits is a valid way to
+  // resolve one, and counting blank rows would block that.
+  const tooManyAccounts = computed(() => validItems.value.length > MAX_VOUCHER_ACCOUNTS)
+  const particularsTooTall = computed(() => particularsLines.value > MAX_PARTICULARS_LINES)
+
   const blockers = computed(() => {
     const missing: string[] = []
     if (!payee.value.trim()) missing.push('Payee')
@@ -176,6 +203,12 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
     if (cashAccountId.value === null) missing.push('Payment Mode')
     if (!validItems.value.length) missing.push('an account with an amount')
     if (insufficientFunds.value) missing.push('a total within the account balance')
+    if (tooManyAccounts.value) {
+      missing.push(`no more than ${MAX_VOUCHER_ACCOUNTS} accounts (move the rest to a second voucher)`)
+    }
+    if (particularsTooTall.value) {
+      missing.push(`a particulars of ${MAX_PARTICULARS_LINES} lines or fewer`)
+    }
     return missing
   })
 
@@ -286,7 +319,8 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
     payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, department, particulars, remarks, signatories, items,
     categoryOptions, departmentOptions, accountOptions, metaForAccount, selectedAccount,
     voucherTotal, insufficientFunds, canSubmit, blockers,
-    canAddItem, resetForm, loadFrom, addItem, removeItem, buildPayload, setSignatory, applyCachedSignatories,
+    canAddItem, particularsLines, tooManyAccounts, particularsTooTall,
+    resetForm, loadFrom, addItem, removeItem, buildPayload, setSignatory, applyCachedSignatories,
     restoreDraft: draft.restore,
     clearDraft: draft.clear,
   }

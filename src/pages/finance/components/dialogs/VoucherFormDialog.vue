@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { watch } from 'vue'
 import { useDisplay } from 'vuetify'
-import { useVoucherForm } from '../../composables/useVoucherForm'
+import { MAX_PARTICULARS_LINES, useVoucherForm } from '../../composables/useVoucherForm'
 import { voucherSignatories } from '@/stores/disbursementVouchersData'
 import type { VoucherType, VoucherInput } from '@/stores/disbursementVouchersData'
 import type { ClassifiedCashAccount } from '@/utils/cashAccountTypes'
@@ -25,7 +25,8 @@ const {
   payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, department, particulars, remarks, items,
   categoryOptions, departmentOptions, accountOptions, metaForAccount, selectedAccount,
   voucherTotal, insufficientFunds, canSubmit, blockers, signatories,
-  canAddItem, resetForm, loadFrom, addItem, removeItem, buildPayload, restoreDraft,
+  canAddItem, particularsLines, particularsTooTall,
+  resetForm, loadFrom, addItem, removeItem, buildPayload, restoreDraft,
   setSignatory, applyCachedSignatories,
 } = useVoucherForm(() => props.accounts)
 
@@ -240,6 +241,9 @@ function handleSubmit() {
               <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis">
                 Particulars
               </div>
+              <!-- Line-capped, not free-growing: the printed cell sits beside
+                   the account rows and a taller one pushes the signature row
+                   down, which is what the stamp is aimed at. -->
               <v-textarea
                 v-model="particulars"
                 placeholder="What this disbursement is for"
@@ -249,6 +253,16 @@ function handleSubmit() {
                 auto-grow
                 hide-details
               />
+              <div
+                v-if="particularsLines > 1"
+                class="text-caption"
+                :class="particularsTooTall ? 'text-error' : 'text-medium-emphasis'"
+              >
+                {{ particularsLines }} / {{ MAX_PARTICULARS_LINES }} lines
+                <span v-if="particularsTooTall">
+                  &mdash; too tall for the printed voucher, shorten it or use a second voucher.
+                </span>
+              </div>
             </v-col>
           </v-row>
 

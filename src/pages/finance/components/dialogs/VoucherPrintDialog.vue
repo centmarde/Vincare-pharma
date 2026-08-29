@@ -5,6 +5,7 @@ import { useToast } from 'vue-toastification'
 import { voucherSignatories } from '@/stores/disbursementVouchersData'
 import type { VoucherItemType, VoucherType } from '@/stores/disbursementVouchersData'
 import { categoryTitle } from '@/stores/financeData'
+import { MAX_VOUCHER_ACCOUNTS } from '../../composables/useVoucherForm'
 import { companyFor, companyOptions, defaultCompanyFor } from '@/utils/companyProfiles'
 import type { CompanyKey } from '@/utils/companyProfiles'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
@@ -59,21 +60,37 @@ const company = computed(() => companyFor(companyKey.value))
 // passed off as the original signed voucher.
 const isReprint = computed(() => props.copyNo > 1)
 
-// FIXED five account rows, padded with blanks when the voucher has fewer.
-// This is deliberate and load-bearing: a constant number of rows means a
-// constant sheet height, which means the RECORDED stamp can be overprinted at
-// one calibrated position on every voucher. The form caps entry at five
-// (MAX_VOUCHER_ACCOUNTS) so this is never exceeded -- a sixth account goes on a
-// second voucher. Do not make this adaptive without re-solving the stamp.
-const MIN_ROWS = 5
+// A FIXED number of account rows, padded with blanks when the voucher has
+// fewer. This is deliberate and load-bearing: a constant row count means a
+// constant sheet height, which keeps the signature row a constant distance from
+// the top -- and the RECORDED stamp is overprinted against that row. Do not
+// make this adaptive without re-solving the stamp.
+//
+// The count comes from the form's own cap rather than a second literal here, so
+// the two can never drift apart.
 const fillerRows = computed(() =>
-  Math.max(0, MIN_ROWS - (props.voucher?.items.length ?? 0)),
+  Math.max(0, MAX_VOUCHER_ACCOUNTS - (props.voucher?.items.length ?? 0)),
+)
+
+// A voucher saved under an older shape can still carry more accounts than the
+// form now allows. Printing it would push the signature row down and land the
+// stamp in the wrong place, so refuse rather than print a miscalibrated sheet.
+// Never truncate: dropping an account line would hide money off the document.
+const tooManyAccounts = computed(
+  () => (props.voucher?.items.length ?? 0) > MAX_VOUCHER_ACCOUNTS,
 )
 
 async function handlePrint() {
   await nextTick()
   const el = printArea.value
   if (!el || !props.voucher) return
+
+  if (tooManyAccounts.value) {
+    toast.error(
+      `This voucher has ${props.voucher.items.length} accounts; the printed form holds ${MAX_VOUCHER_ACCOUNTS}. Split the extra accounts onto a second voucher before printing.`,
+    )
+    return
+  }
 
   // html2canvas renders computed colours literally, so force the whole document
   // to black text regardless of the app theme the user is currently in.
