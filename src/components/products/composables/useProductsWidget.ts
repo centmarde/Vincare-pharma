@@ -351,8 +351,9 @@ export function useProductsWidget() {
       warehouseProductIds.value = []
       warehouseStockMap.value = new Map()
       warehouseProductDetails.value = new Map()
-      reservedProductsMap.value = new Map()
       warehouseProductsIdToProductId.value = new Map()
+      // Fetch main-warehouse reservations (rows tied to is_main_warehouse products)
+      fetchMainWarehouseReservations()
       fetchProducts()
     }
   }
@@ -379,6 +380,18 @@ export function useProductsWidget() {
     productId: number,
   ): { id: number; customer_name: string; reserved_qty: number }[] {
     return reservedProductsMap.value.get(productId) || []
+  }
+
+  /**
+   * Get the main-warehouse available stock for a product: its current stock minus
+   * the sum of all quantities reserved to customers.
+   */
+  function getMainWarehouseStock(product: ProductType): number {
+    const reserved = (reservedProductsMap.value.get(product.id) || []).reduce(
+      (sum, r) => sum + (r.reserved_qty ?? 0),
+      0,
+    )
+    return Math.max(0, (product.current_stock ?? 0) - reserved)
   }
 
   /**
@@ -420,6 +433,9 @@ export function useProductsWidget() {
       if (selectedWarehouseId.value) {
         console.log('[ProductsWidget] Refreshing warehouse filter:', selectedWarehouseId.value)
         await setWarehouseFilter(selectedWarehouseId.value)
+      } else {
+        console.log('[ProductsWidget] Refreshing main warehouse reservations')
+        await fetchMainWarehouseReservations()
       }
     } else {
       toast.error('Failed to remove reservation')
@@ -428,6 +444,62 @@ export function useProductsWidget() {
         reservedProductsStore.error,
       )
     }
+  }
+
+  /**
+   * Fetch reservations for the main warehouse. Main-warehouse products live in
+   * warehouse_products rows where warehouse_id is NULL and is_main_warehouse is
+   * true; their reservation rows reference those warehouse_products ids. Populate
+   * reservedProductsMap keyed by product_id.
+   */
+  async function fetchMainWarehouseReservations() {
+    const warehouseProductsStore = useWarehouseProductsDataStore()
+    const reservedProductsStore = useReservedProductsDataStore()
+    const customersStore = useCustomersDataStore()
+
+    if (customersStore.customers.length === 0) {
+      await customersStore.fetchCustomers()
+    }
+
+    const mainProducts = await warehouseProductsStore.fetchMainWarehouseProducts()
+
+    // warehouse_products.id -> product.id for main-warehouse rows
+    const wpIdToProductId = new Map<number, number>()
+    for (const wp of mainProducts) {
+      if (wp.id != null && wp.product_id != null) {
+        wpIdToProductId.set(wp.id, wp.product_id)
+      }
+    }
+
+    const rows =
+      wpIdToProductId.size > 0
+        ? await reservedProductsStore.fetchReservedProductsByWarehouseProductIds(
+            Array.from(wpIdToProductId.keys()),
+          )
+        : []
+
+    const map = new Map<
+      number,
+      { id: number; customer_name: string; reserved_qty: number }[]
+    >()
+
+    for (const rp of rows) {
+      if (rp.warehouse_products_id == null) continue
+      const productId = wpIdToProductId.get(rp.warehouse_products_id)
+      if (productId == null) continue
+
+      const existing = map.get(productId) || []
+      existing.push({
+        id: rp.id,
+        customer_name:
+          customersStore.customers.find((c) => c.id === rp.customer_id)?.name ||
+          `Customer #${rp.customer_id}`,
+        reserved_qty: rp.reserved_qty ?? 0,
+      })
+      map.set(productId, existing)
+    }
+
+    reservedProductsMap.value = map
   }
 
   function openCreateDialog() {
@@ -735,31 +807,78 @@ export function useProductsWidget() {
     }
 
     const reservedProductsStore = useReservedProductsDataStore()
-    const warehouseProductsStore = useWarehouseProductsDataStore()
 
-    const warehouseProduct = warehouseProductsStore.warehouseProducts.find(
-      (wp) =>
-        wp.product_id === selectedProductForReservation.value?.id &&
-        wp.warehouse_id === selectedWarehouseId.value,
-    )
+    const product = selectedProductForReservation.value
 
-    if (!warehouseProduct || warehouseProduct.id == null) {
-      toast.error('Product not found in selected warehouse')
-      return
+    let result
+
+    if (selectedWarehouseId.value) {
+      const warehouseProductsStore = useWarehouseProductsDataStore()
+
+      const warehouseProduct = warehouseProductsStore.warehouseProducts.find(
+        (wp) =>
+          wp.product_id === product.id &&
+          wp.warehouse_id === selectedWarehouseId.value,
+      )
+
+      if (!warehouseProduct || warehouseProduct.id == null) {
+        toast.error('Product not found in selected warehouse')
+        return
+      }
+
+      result = await reservedProductsStore.createReservedProduct({
+        warehouse_products_id: warehouseProduct.id,
+        customer_id: reservationCustomerId.value,
+        reserved_qty: reservationQuantity.value,
+      })
+    } else {
+      // Main warehouse (no specific warehouse selected): ensure a main-warehouse
+      // warehouse_products row exists (warehouse_id NULL, is_main_warehouse true),
+      // then reference it from the reservation.
+      const warehouseProductsStore = useWarehouseProductsDataStore()
+
+      // Refresh the main-warehouse product rows so we can reuse an existing row.
+      const mainProducts = await warehouseProductsStore.fetchMainWarehouseProducts()
+      let warehouseProduct = mainProducts.find(
+        (wp) => wp.product_id === product.id && wp.warehouse_id == null && wp.is_main_warehouse,
+      )
+
+      if (!warehouseProduct) {
+        warehouseProduct = await warehouseProductsStore.createWarehouseProduct({
+          product_id: product.id,
+          warehouse_id: null,
+          is_main_warehouse: true,
+          total_qty: product.current_stock ?? null,
+        })
+
+        if (!warehouseProduct || warehouseProduct.id == null) {
+          toast.error('Failed to set up main warehouse product')
+          return
+        }
+      }
+
+      if (warehouseProduct.id == null) {
+        toast.error('Product not found in main warehouse')
+        return
+      }
+
+      result = await reservedProductsStore.createReservedProduct({
+        warehouse_products_id: warehouseProduct.id,
+        customer_id: reservationCustomerId.value,
+        reserved_qty: reservationQuantity.value,
+      })
     }
-
-    const result = await reservedProductsStore.createReservedProduct({
-      warehouse_products_id: warehouseProduct.id,
-      customer_id: reservationCustomerId.value,
-      reserved_qty: reservationQuantity.value,
-    })
 
     if (result) {
       toast.success('Reservation added successfully')
       showAddReservationDialog.value = false
 
       // Refresh warehouse stock and reservations
-      await setWarehouseFilter(selectedWarehouseId.value)
+      if (selectedWarehouseId.value) {
+        await setWarehouseFilter(selectedWarehouseId.value)
+      } else {
+        await fetchMainWarehouseReservations()
+      }
     } else {
       toast.error('Failed to add reservation')
     }
@@ -769,6 +888,7 @@ export function useProductsWidget() {
   onMounted(async () => {
     await refreshStockStatusCounts()
     await fetchProducts()
+    await fetchMainWarehouseReservations()
     productsStore.startRealtime()
   })
 
@@ -870,8 +990,10 @@ export function useProductsWidget() {
     getWarehouseStock,
     getWarehouseProductDetail,
     getProductReservations,
+    getMainWarehouseStock,
     removeReservation,
     addReservation,
+    fetchMainWarehouseReservations,
     openAddReservationDialog,
     handleTableOptions,
     //Stock order for Purchaser

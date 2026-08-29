@@ -6,8 +6,12 @@ import { formatCurrency } from '@/utils/helpers'
 const { asOf, sheet, loading, tiesOut, load } = useBalanceSheet()
 
 const assetSections = computed(() => sheet.value?.sections.filter((s) => s.class === 'asset') ?? [])
-const liabilitySections = computed(() => sheet.value?.sections.filter((s) => s.class === 'liability') ?? [])
-const equitySections = computed(() => sheet.value?.sections.filter((s) => s.class === 'equity') ?? [])
+const liabilitySections = computed(
+  () => sheet.value?.sections.filter((s) => s.class === 'liability') ?? [],
+)
+const equitySections = computed(
+  () => sheet.value?.sections.filter((s) => s.class === 'equity') ?? [],
+)
 
 onMounted(load)
 </script>
@@ -22,8 +26,15 @@ onMounted(load)
         </v-chip>
         <v-spacer />
         <v-text-field
-          v-model="asOf" type="date" label="As of" density="compact" variant="outlined"
-          hide-details style="max-width: 180px" @update:model-value="load" />
+          v-model="asOf"
+          type="date"
+          label="As of"
+          density="compact"
+          variant="outlined"
+          hide-details
+          style="max-width: 180px"
+          @update:model-value="load"
+        />
       </v-card-title>
 
       <v-card-text>
@@ -32,7 +43,9 @@ onMounted(load)
         <template v-if="sheet">
           <div class="text-subtitle-1 font-weight-bold mb-2">Assets</div>
           <div v-for="section in assetSections" :key="section.subsection" class="mb-3">
-            <div class="text-body-2 font-weight-medium text-medium-emphasis mb-1">{{ section.subsection }}</div>
+            <div class="text-body-2 font-weight-medium text-medium-emphasis mb-1">
+              {{ section.subsection }}
+            </div>
             <v-table density="compact">
               <tbody>
                 <tr v-for="a in section.accounts" :key="a.code">
@@ -48,13 +61,18 @@ onMounted(load)
               </tfoot>
             </v-table>
           </div>
-          <div class="d-flex justify-space-between font-weight-bold text-h6 mb-4" style="border-top: 2px solid currentColor">
+          <div
+            class="d-flex justify-space-between font-weight-bold text-h6 mb-4"
+            style="border-top: 2px solid currentColor"
+          >
             <span>Total Assets</span><span>{{ formatCurrency(sheet.totalAssets) }}</span>
           </div>
 
           <div class="text-subtitle-1 font-weight-bold mb-2">Liabilities</div>
           <div v-for="section in liabilitySections" :key="section.subsection" class="mb-3">
-            <div class="text-body-2 font-weight-medium text-medium-emphasis mb-1">{{ section.subsection }}</div>
+            <div class="text-body-2 font-weight-medium text-medium-emphasis mb-1">
+              {{ section.subsection }}
+            </div>
             <v-table density="compact">
               <tbody>
                 <tr v-for="a in section.accounts" :key="a.code">

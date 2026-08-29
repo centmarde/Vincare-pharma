@@ -8,26 +8,41 @@ const { pnl, loading, dateFrom, dateTo, applyFilter, clearFilter } = useFinanceD
 <template>
   <v-container fluid class="pa-2 fill-height align-start">
     <div class="mx-auto w-100">
-
       <div class="d-flex align-center ga-2 mb-2">
         <span class="text-h6 font-weight-bold">Cash Flow (management view)</span>
         <v-chip color="grey" size="x-small" label>Cash basis — not the authoritative GL</v-chip>
       </div>
       <div class="text-caption text-medium-emphasis mb-3">
-        Revenue recognized when cash is actually received. For accrual-basis financials, see
-        Income Statement / Balance Sheet / Trial Balance under Finance Controls.
+        Revenue recognized when cash is actually received. For accrual-basis financials, see Income
+        Statement / Balance Sheet / Trial Balance under Finance Controls.
       </div>
 
       <!-- Date range filter -->
       <v-row dense class="mb-1">
         <v-col cols="12" sm="4">
-          <v-text-field v-model="dateFrom" type="date" label="From" density="compact" variant="outlined" hide-details />
+          <v-text-field
+            v-model="dateFrom"
+            type="date"
+            label="From"
+            density="compact"
+            variant="outlined"
+            hide-details
+          />
         </v-col>
         <v-col cols="12" sm="4">
-          <v-text-field v-model="dateTo" type="date" label="To" density="compact" variant="outlined" hide-details />
+          <v-text-field
+            v-model="dateTo"
+            type="date"
+            label="To"
+            density="compact"
+            variant="outlined"
+            hide-details
+          />
         </v-col>
         <v-col cols="12" sm="4" class="d-flex align-center ga-2">
-          <v-btn color="primary" variant="flat" :loading="loading" @click="applyFilter">Apply</v-btn>
+          <v-btn color="primary" variant="flat" :loading="loading" @click="applyFilter"
+            >Apply</v-btn
+          >
           <v-btn variant="text" @click="clearFilter">Clear</v-btn>
         </v-col>
       </v-row>
@@ -37,7 +52,9 @@ const { pnl, loading, dateFrom, dateTo, applyFilter, clearFilter } = useFinanceD
         <v-col cols="12" sm="6" md="3">
           <v-card rounded="lg" elevation="1" class="pa-4">
             <div class="text-caption text-medium-emphasis">Revenue</div>
-            <div class="text-h5 font-weight-bold text-success">{{ formatCurrency(pnl?.revenueTotal ?? 0) }}</div>
+            <div class="text-h5 font-weight-bold text-success">
+              {{ formatCurrency(pnl?.revenueTotal ?? 0) }}
+            </div>
             <div class="text-caption text-medium-emphasis">POS + Ethical + In-House</div>
           </v-card>
         </v-col>
@@ -58,7 +75,10 @@ const { pnl, loading, dateFrom, dateTo, applyFilter, clearFilter } = useFinanceD
         <v-col cols="12" sm="6" md="3">
           <v-card rounded="lg" elevation="1" class="pa-4">
             <div class="text-caption text-medium-emphasis">Net</div>
-            <div class="text-h5 font-weight-bold" :class="(pnl?.net ?? 0) >= 0 ? 'text-success' : 'text-error'">
+            <div
+              class="text-h5 font-weight-bold"
+              :class="(pnl?.net ?? 0) >= 0 ? 'text-success' : 'text-error'"
+            >
               {{ formatCurrency(pnl?.net ?? 0) }}
             </div>
             <div class="text-caption text-medium-emphasis">Revenue − COGS − Opex</div>
@@ -70,7 +90,9 @@ const { pnl, loading, dateFrom, dateTo, applyFilter, clearFilter } = useFinanceD
       <v-row dense>
         <v-col cols="12">
           <v-card rounded="lg" elevation="1">
-            <v-card-title class="text-subtitle-1 font-weight-bold pa-4">Revenue by Outlet</v-card-title>
+            <v-card-title class="text-subtitle-1 font-weight-bold pa-4"
+              >Revenue by Outlet</v-card-title
+            >
             <v-divider />
             <v-table density="compact">
               <thead>
@@ -85,7 +107,9 @@ const { pnl, loading, dateFrom, dateTo, applyFilter, clearFilter } = useFinanceD
                   <td class="text-right">{{ formatCurrency(row.revenue) }}</td>
                 </tr>
                 <tr v-if="!pnl?.byOutlet?.length">
-                  <td colspan="2" class="text-center text-medium-emphasis pa-4">No revenue recorded yet.</td>
+                  <td colspan="2" class="text-center text-medium-emphasis pa-4">
+                    No revenue recorded yet.
+                  </td>
                 </tr>
               </tbody>
             </v-table>

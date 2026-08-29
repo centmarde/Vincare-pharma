@@ -3,25 +3,47 @@ import { useExpenseReport } from '../composables/useExpenseReport'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
-  loading, dateFrom, dateTo, applyFilter, clearFilter,
-  usedCategories, departmentGroups, grandTotals, categoryTitle,
+  loading,
+  dateFrom,
+  dateTo,
+  applyFilter,
+  clearFilter,
+  usedCategories,
+  departmentGroups,
+  grandTotals,
+  categoryTitle,
 } = useExpenseReport()
 </script>
 
 <template>
   <v-container fluid class="pa-2 fill-height align-start">
     <div class="mx-auto w-100">
-
       <!-- Date range filter -->
       <v-row dense class="mb-1">
         <v-col cols="12" sm="4">
-          <v-text-field v-model="dateFrom" type="date" label="From" density="compact" variant="outlined" hide-details />
+          <v-text-field
+            v-model="dateFrom"
+            type="date"
+            label="From"
+            density="compact"
+            variant="outlined"
+            hide-details
+          />
         </v-col>
         <v-col cols="12" sm="4">
-          <v-text-field v-model="dateTo" type="date" label="To" density="compact" variant="outlined" hide-details />
+          <v-text-field
+            v-model="dateTo"
+            type="date"
+            label="To"
+            density="compact"
+            variant="outlined"
+            hide-details
+          />
         </v-col>
         <v-col cols="12" sm="4" class="d-flex align-center ga-2">
-          <v-btn color="primary" variant="flat" :loading="loading" @click="applyFilter">Apply</v-btn>
+          <v-btn color="primary" variant="flat" :loading="loading" @click="applyFilter"
+            >Apply</v-btn
+          >
           <v-btn variant="text" @click="clearFilter">Clear</v-btn>
         </v-col>
       </v-row>
@@ -40,7 +62,9 @@ const {
               <th class="text-left">Date</th>
               <th class="text-left">Particulars</th>
               <th class="text-left">OR/SI No.</th>
-              <th v-for="cat in usedCategories" :key="cat" class="text-right">{{ categoryTitle(cat) }}</th>
+              <th v-for="cat in usedCategories" :key="cat" class="text-right">
+                {{ categoryTitle(cat) }}
+              </th>
               <th class="text-right">Total</th>
             </tr>
           </thead>
@@ -52,7 +76,11 @@ const {
                 </td>
               </tr>
               <tr v-for="row in group.rows" :key="row.id">
-                <td class="text-left">{{ row.paid_at ? formatDatePR_ISO(row.paid_at) : formatDatePR_ISO(row.created_at) }}</td>
+                <td class="text-left">
+                  {{
+                    row.paid_at ? formatDatePR_ISO(row.paid_at) : formatDatePR_ISO(row.created_at)
+                  }}
+                </td>
                 <td class="text-left">{{ row.paid_to ?? '—' }}</td>
                 <td class="text-left">{{ row.or_si_no ?? '—' }}</td>
                 <td v-for="cat in usedCategories" :key="cat" class="text-right">
@@ -78,7 +106,6 @@ const {
           </tbody>
         </v-table>
       </v-card>
-
     </div>
   </v-container>
 </template>

@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+early_access: true
+
+reviews:
+  changed_files_summary: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  related_issues: false
+  related_prs: false
+  suggested_labels: false
+  finishing_touches:
+    unit_tests:
+      enabled: false
+  path_instructions:
+    - path: 'stores/**/*.ts'
+      instructions: |
+        These files intentionally do NOT wrap Supabase calls in try/catch blocks.
+        Supabase query chains (.select, .insert, .update, .delete, .rpc) throw on
+        error, and here errors are handled through Supabase's returned error objects
+        and existing patterns. Never suggest adding try/catch around Supabase
+        database queries in these files.
