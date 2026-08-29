@@ -224,6 +224,10 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       .select('id, items:draft_pr_items(id, product_id)')
       .eq('status', 'draft')
       .eq('source_order_id', payload.sourceOrderId)
+      // Nothing stops a second open draft per order at the DB level, and
+      // maybeSingle() errors on more than one row — take the newest.
+      .order('id', { ascending: false })
+      .limit(1)
       .maybeSingle()
     if (findError) {
       handleError(findError, 'Failed to look up existing draft.')

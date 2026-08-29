@@ -67,7 +67,7 @@ async function onSubmit() {
         <v-alert v-if="warnings.length" type="info" variant="tonal" density="compact" class="mb-3">
           <div class="d-flex align-center justify-space-between" style="gap:8px">
             <span class="font-weight-bold">
-              {{ warnings.length }} suggestion(s){{ warnings.length > 1 ? 's' : '' }}
+              {{ warnings.length }} suggestion(s)
             </span>
             <v-btn
               variant="text" size="small" :color="toggleButtonColor"
@@ -81,7 +81,7 @@ async function onSubmit() {
           </div>
         </v-alert>
 
-        <div class="table-scroll">
+        <div v-if="!mobile" class="table-scroll">
         <v-table density="compact">
           <thead>
             <tr>
@@ -112,6 +112,29 @@ async function onSubmit() {
             </tr>
           </tbody>
         </v-table>
+        </div>
+
+        <!-- ── Mobile: Items as Cards ──────────────────────────── -->
+        <div v-else>
+          <v-card v-for="item in draft.items" :key="item.id" class="mb-2" variant="outlined" rounded="lg">
+            <v-card-text class="pa-3">
+              <div class="d-flex justify-space-between align-start mb-1" style="gap:8px">
+                <span class="text-body-2 font-weight-medium">{{ item.product_name }}</span>
+                <v-chip :color="rowStatus(item).color" size="small" label>
+                  {{ rowStatus(item).text }}
+                </v-chip>
+              </div>
+              <v-divider class="my-1" />
+              <div class="d-flex flex-wrap ga-3 text-caption">
+                <div><span class="text-medium-emphasis">Shortfall: </span>{{ item.shortfall_qty ?? '—' }}</div>
+                <div><span class="text-medium-emphasis">Qty: </span>{{ item.qty }}</div>
+                <div><span class="text-medium-emphasis">Supplier: </span>{{ item.supplier_name ?? '—' }}</div>
+                <div><span class="text-medium-emphasis">Unit Cost: </span>{{ item.unit_price ? formatCurrency(item.unit_price) : '—' }}</div>
+                <div><span class="text-medium-emphasis">Expiry: </span>{{ formatExpiryMonthYear(item.expiry_date) }}</div>
+                <div><span class="text-medium-emphasis">Total: </span><span class="font-weight-medium">{{ item.unit_price ? formatCurrency(item.unit_price * item.qty) : '—' }}</span></div>
+              </div>
+            </v-card-text>
+          </v-card>
         </div>
 
         <div class="text-right mt-4 text-h6 font-weight-bold">

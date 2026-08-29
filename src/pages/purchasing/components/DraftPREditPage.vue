@@ -59,16 +59,22 @@ function onDateChange(item: DraftPRItemType, date: string) {
   if (buf) buf.required_by_date = date || null
 }
 
+// The field is bound one-way, so the buffer has to take whatever was typed —
+// dropping an empty/invalid value here would leave the box blank while the old
+// qty silently stays saved. Clamping happens on blur and again before save.
+const qtyFloor = (item: DraftPRItemType) => item.shortfall_qty ?? 1
+
 function onQtyChange(item: DraftPRItemType, value: number | string) {
-  const qty = Number(value)
-  if (!qty || qty <= 0) return
   const buf = edits.value[item.id]
-  if (buf) buf.qty = qty
+  if (!buf) return
+  const qty = Number(value)
+  buf.qty = Number.isFinite(qty) ? qty : 0
 }
 
 async function validateQty(item: DraftPRItemType) {
   const buf = edits.value[item.id]
   if (!buf) return
+  if (!(buf.qty > 0)) buf.qty = qtyFloor(item)
   const check = checkQtyAgainstShortfall(buf.qty, item.shortfall_qty)
   if (check.status === 'below') {
     toast.warning(`Quantity can't be below the shortfall (${check.floor}).`)
@@ -91,6 +97,7 @@ async function flushEdits() {
   for (const item of items) {
     const buf = edits.value[item.id]
     if (!buf) continue
+    if (!(buf.qty > 0)) buf.qty = qtyFloor(item)
     const check = checkQtyAgainstShortfall(buf.qty, item.shortfall_qty)
     if (check.status === 'below') buf.qty = check.floor
     if (buf.qty !== item.qty) await draftStore.setQty(item.id, buf.qty)
@@ -135,7 +142,7 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
           A purchase requisition has already been raised from this draft — it's read-only
           unless that requisition is rejected.
         </v-alert>
-        <div class="table-scroll">
+        <div v-if="!mobile" class="table-scroll">
         <v-table density="comfortable">
           <thead>
             <tr>
@@ -181,6 +188,46 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
             </tr>
           </tbody>
         </v-table>
+        </div>
+
+        <!-- ── Mobile: Items as Cards ──────────────────────────── -->
+        <div v-else>
+          <v-card
+            v-for="item in draftStore.currentDraft.items" :key="item.id"
+            class="mb-3" variant="outlined" rounded="lg">
+            <v-card-text class="pa-3">
+              <div class="d-flex justify-space-between align-start mb-2" style="gap:8px">
+                <div style="min-width:0">
+                  <div class="text-body-2 font-weight-medium">{{ item.product_name }}</div>
+                  <div class="text-caption text-medium-emphasis">Shortfall: {{ item.shortfall_qty ?? '—' }}</div>
+                </div>
+                <v-btn
+                  size="small" variant="tonal" color="primary" class="text-none"
+                  :disabled="readonly" @click="openCompare(item)">
+                  Compare
+                </v-btn>
+              </div>
+              <v-divider class="mb-2" />
+              <div class="d-flex align-center mb-2" style="gap:6px">
+                <v-text-field :model-value="edits[item.id]?.qty ?? item.qty" type="number" label="Qty"
+                  :min="item.shortfall_qty ?? 1" density="compact" :readonly="readonly"
+                  variant="outlined" hide-details style="max-width:140px"
+                  @update:model-value="onQtyChange(item, $event)" @blur="validateQty(item)" />
+                <v-chip v-if="bufferQty(item) > 0" color="info" variant="tonal" size="x-small" label>
+                  +{{ bufferQty(item) }}
+                </v-chip>
+              </div>
+              <v-text-field
+                :model-value="edits[item.id]?.required_by_date ?? item.required_by_date" type="date" label="Required by"
+                density="compact" variant="outlined" hide-details class="mb-2"
+                :readonly="readonly" @update:model-value="onDateChange(item, $event)" />
+              <div class="d-flex flex-wrap ga-3 text-caption">
+                <div><span class="text-medium-emphasis">Supplier: </span>{{ item.supplier_name ?? 'Not selected' }}</div>
+                <div><span class="text-medium-emphasis">Unit Price: </span>{{ item.unit_price ? formatCurrency(item.unit_price) : '—' }}</div>
+                <div><span class="text-medium-emphasis">Total: </span><span class="font-weight-medium">{{ item.unit_price ? formatCurrency(lineTotal(item)) : '—' }}</span></div>
+              </div>
+            </v-card-text>
+          </v-card>
         </div>
       </v-card-text>
       <v-divider />

@@ -541,6 +541,7 @@ export {
   parseMonthYear,
   formatMonthYear,
   maskMonthYearInput,
+  endOfMonthISODate,
   formatDatePR_ISO,
   formatDatePO_Written,
 } from './dateFormats'

@@ -133,7 +133,7 @@ defineExpose({ handlePrint })
         </tbody>
         <tfoot>
           <tr class="bg-grey-lighten-3">
-            <td :colspan="showActualQty ? 6 : 5" class="text-black font-weight-bold" style="text-align:right;">TOTAL</td>
+            <td :colspan="showActualQty ? 7 : 6" class="text-black font-weight-bold" style="text-align:right;">TOTAL</td>
             <td style="text-align:right; font-weight:700; padding: 10px 12px; color: #000;">
               {{ formatCurrency(po?.total_amount ?? 0) }}
             </td>

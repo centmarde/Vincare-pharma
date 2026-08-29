@@ -5,6 +5,7 @@ import { useDraftPRDataStore } from '@/stores/draftPRData'
 import type { SupplierOfferType } from '@/stores/supplierOffersData'
 import type { CanvassableOrder, Shortfall, CanvassSelection, CanvassCommitFn, CanvassQuote } from '@/utils/canvassTypes'
 import { checkQtyAgainstShortfall, bufferOver, maxQtyMultiple } from '@/utils/shortfall'
+import { qualifyOffers } from '@/utils/qualification'
 
 const toast = useToast()
 const { confirmDialog } = useConfirmDialog()
@@ -96,15 +97,23 @@ export function useCanvass(
     const o = order()
     if (!o || !canCommit.value) { toast.warning('Select a supplier for every product before submitting.'); return }
 
-    const selections: CanvassSelection[] = readyRows.value.map((row) => ({
-      item_id: row.item_id, product_id: row.product_id,
-      supplier_id: row.selected_offer!.supplier_id, unit_price: row.selected_offer!.cost_price_per_unit,
-      qty: row.order_qty,
-      canvass: row.considered_offers.map((o): CanvassQuote => ({
-        supplier_id: o.supplier_id, supplier_name: o.supplier_name ?? '', price: o.cost_price_per_unit,
-        expiry_date: o.expiry_date ?? '', months_to_expiry: 0, is_valid: o.id === row.selected_offer!.id || row.considered_offers.includes(o),
-      })),
-    }))
+    const selections: CanvassSelection[] = readyRows.value.map((row) => {
+      const { qualified, disqualified } = qualifyOffers(row.considered_offers, row.required_by_date)
+      const qualifiedIds = new Set(qualified.map((o) => o.id))
+      const monthsById = new Map([...qualified, ...disqualified].map((o) => [o.id, o.months_to_expiry]))
+
+      return {
+        item_id: row.item_id, product_id: row.product_id,
+        supplier_id: row.selected_offer!.supplier_id, unit_price: row.selected_offer!.cost_price_per_unit,
+        qty: row.order_qty,
+        canvass: row.considered_offers.map((o): CanvassQuote => ({
+          supplier_id: o.supplier_id, supplier_name: o.supplier_name ?? '', price: o.cost_price_per_unit,
+          expiry_date: o.expiry_date ?? '',
+          months_to_expiry: monthsById.get(o.id) ?? 0,
+          is_valid: qualifiedIds.has(o.id),
+        })),
+      }
+    })
 
     loading.value = true
     const result = await commitFn(o.id, selections)

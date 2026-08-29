@@ -110,6 +110,17 @@ export const formatMonthYear = (value: string | Date): string => {
   }).format(date)
 }
 
+// Last calendar day of a month as a local "YYYY-MM-DD".
+// Built from local Y/M/D parts on purpose: toISOString() converts to UTC first,
+// which at UTC+8 rolls the date back a day (Jan 31 -> "2026-01-30") and at
+// negative offsets rolls it into the next month.
+export const endOfMonthISODate = (year: number, monthIndex: number): string => {
+  const lastDay = new Date(year, monthIndex + 1, 0)
+  const month = String(lastDay.getMonth() + 1).padStart(2, '0')
+  const day = String(lastDay.getDate()).padStart(2, '0')
+  return `${lastDay.getFullYear()}-${month}-${day}`
+}
+
 // Live input mask: keep digits only, auto-insert the slash -> "MM/YYYY" (capped).
 export const maskMonthYearInput = (raw: string): string => {
   const digits = raw.replace(/\D/g, '').slice(0, 6)

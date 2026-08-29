@@ -5,7 +5,7 @@ import { useSupplierOffersDataStore } from '@/stores/supplierOffersData'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
 import type { SupplierOfferType } from '@/stores/supplierOffersData'
 import { qualifyOffers, minQualifyingExpiry, type QualifiedOffer } from '@/utils/qualification'
-import { maskMonthYearInput, parseMonthYear } from '@/utils/helpers'
+import { endOfMonthISODate, maskMonthYearInput, parseMonthYear } from '@/utils/helpers'
 import { useDisplay } from 'vuetify'
 
 const { mobile } = useDisplay()
@@ -98,8 +98,7 @@ function supplierName(id: number | null): string | null {
 function monthYearToDate(mmYYYY: string): string | null {
   const parsed = parseMonthYear(mmYYYY)
   if (!parsed) return null
-  const lastDay = new Date(parsed.getFullYear(), parsed.getMonth() + 1, 0)
-  return lastDay.toISOString().slice(0, 10)
+  return endOfMonthISODate(parsed.getFullYear(), parsed.getMonth())
 }
 
 const candidateOffers = computed<Map<number, SupplierOfferType>>(() => {
@@ -205,8 +204,8 @@ async function onConfirm() {
   if (pendingRowIdx.value == null || !product) return
   commitQty()
   saving.value = true
-  const considered: QualifiedOffer[] = []
-  let confirmedOffer: SupplierOfferType | null = null
+  const created: SupplierOfferType[] = []
+  let confirmedId: number | null = null
   for (const [idx, row] of draftRows.value.entries()) {
     if (row.supplier_id == null || !row.price) continue
     const offer = await offersStore.createOffer({
@@ -214,14 +213,20 @@ async function onConfirm() {
       costPricePerUnit: row.price, expiryDate: monthYearToDate(row.expiry), source: 'canvass',
     })
     if (!offer) continue
-    considered.push({ ...offer, months_to_expiry: 0 })
-    if (idx === pendingRowIdx.value) confirmedOffer = offer
+    created.push(offer)
+    if (idx === pendingRowIdx.value) confirmedId = offer.id
   }
   saving.value = false
-  if (!confirmedOffer) return
+  if (confirmedId == null) return
+
+  const { qualified, disqualified } = qualifyOffers(created, props.requiredByDate)
+  const scored = new Map([...qualified, ...disqualified].map((o) => [o.id, o]))
+  const confirmed = scored.get(confirmedId)
+  if (!confirmed) return
+
   emit('confirm', {
-    offer: { ...confirmedOffer, months_to_expiry: 0 },
-    consideredOffers: considered,
+    offer: confirmed,
+    consideredOffers: created.map((o) => scored.get(o.id)!),
     justification: needsJustification.value ? (justification.value || null) : null,
   })
   emit('update:modelValue', false)

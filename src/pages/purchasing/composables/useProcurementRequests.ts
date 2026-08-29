@@ -105,7 +105,7 @@ export function useProcurementRequests() {
   const moduleLabel = (t: ProcurementRequestType['order_type']) => (t === 'inhouse_order' ? 'In-House' : 'Ethical')
 
   async function startDraftPR(req: ProcurementRequestType) {
-    const result = await draftStore.createDraft({
+    const result = await draftStore.getOrCreateDraft({
       sourceOrderId: req.order_id,
       sourceOrderType: req.order_type,
       remarks: `Draft from ${moduleLabel(req.order_type)} ${req.order_no ?? ''}`,

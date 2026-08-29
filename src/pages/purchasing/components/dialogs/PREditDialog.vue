@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import { endOfMonthISODate, formatCurrency } from '@/utils/helpers'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import { useDisplay } from 'vuetify'
 import { ref, watch, computed } from 'vue'
@@ -92,14 +92,14 @@ function removeItem(index: number) {
 function onExpiryMonthSelect(item: any, index: number, month: number) {
   const current = item.expiry_date ? new Date(item.expiry_date) : new Date()
   const year = current.getFullYear()
-  item.expiry_date = new Date(year, month + 1, 0).toISOString()
+  item.expiry_date = endOfMonthISODate(year, month)
   expiryMenuOpen.value[index] = false
 }
 
 function onExpiryYearSelect(item: any, index: number, year: number) {
   const current = item.expiry_date ? new Date(item.expiry_date) : new Date()
   const month = current.getMonth()
-  item.expiry_date = new Date(year, month + 1, 0).toISOString()
+  item.expiry_date = endOfMonthISODate(year, month)
 }
 
 function formatMonthYear(value: string | Date | null | undefined): string {
@@ -137,12 +137,7 @@ const companyCostTotal = computed(() => {
             >Edit PR - {{ pr?.requisition_no }}</span
           >
         </div>
-        <div class="d-flex align-center" style="gap: 12px">
-          <span v-if="!mobile" class="text-caption text-medium-emphasis">
-            Customer offer vs. company cost
-          </span>
-          <v-btn icon="mdi-close" variant="text" size="small" @click="close" />
-        </div>
+        <v-btn icon="mdi-close" variant="text" size="small" @click="close" />
       </v-card-title>
 
       <v-divider />

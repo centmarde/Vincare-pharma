@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useCanvass } from './useCanvass'
 import SupplierCompareDialog from '@/pages/purchasing/components/dialogs/SupplierCompareDialog.vue'
 import type { CanvassableOrder, Shortfall, CanvassCommitFn } from '@/utils/canvassTypes'
@@ -27,16 +27,23 @@ const activeRowIdx = ref<number | null>(null)
 
 function openCompare(idx: number) { activeRowIdx.value = idx; showCompare.value = true }
 
+// A refetch can replace `rows` while an index is still held, so every read goes
+// through this — a stale index resolves to null instead of throwing.
+const activeRow = computed(() => (activeRowIdx.value == null ? null : rows.value[activeRowIdx.value] ?? null))
+
+watch(showCompare, (open) => { if (!open) activeRowIdx.value = null })
+
 const activeSelectedOffer = computed(() => {
-  const offer = activeRowIdx.value != null ? rows.value[activeRowIdx.value]?.selected_offer : null
+  const offer = activeRow.value?.selected_offer
   if (!offer) return null
   return { id: offer.id, supplier_id: offer.supplier_id, supplier_name: offer.supplier_name }
 })
-function onConfirm(payload: any) { if (activeRowIdx.value != null) onOfferSelected(activeRowIdx.value, payload) }
+function onConfirm(payload: any) { if (activeRow.value) onOfferSelected(activeRowIdx.value!, payload) }
 function onCompareQtyChange(value: number) {
-  if (activeRowIdx.value == null) return
-  rows.value[activeRowIdx.value].order_qty = value
-  validateQty(activeRowIdx.value)
+  const row = activeRow.value
+  if (!row) return
+  row.order_qty = value
+  validateQty(activeRowIdx.value!)
 }
 async function onSaveAsDraft() {
   const result = await saveAsDraft()
@@ -105,12 +112,12 @@ defineExpose({ autoSaveDraft, hasSelections })
 
     <SupplierCompareDialog
       v-model="showCompare"
-      :product="activeRowIdx != null ? { id: rows[activeRowIdx].product_id, name: rows[activeRowIdx].product_name } : null"
-      :required-by-date="activeRowIdx != null ? rows[activeRowIdx].required_by_date : new Date().toISOString().slice(0,10)"
-      :qty="activeRowIdx != null ? rows[activeRowIdx].order_qty : 1"
-      :min-qty="activeRowIdx != null ? rows[activeRowIdx].shortfall_qty : undefined"
+      :product="activeRow ? { id: activeRow.product_id, name: activeRow.product_name } : null"
+      :required-by-date="activeRow?.required_by_date ?? new Date().toISOString().slice(0,10)"
+      :qty="activeRow?.order_qty ?? 1"
+      :min-qty="activeRow?.shortfall_qty"
       :selected-offer="activeSelectedOffer"
-      :initial-justification="activeRowIdx != null ? rows[activeRowIdx].justification : null"
+      :initial-justification="activeRow?.justification ?? null"
       @confirm="onConfirm"
       @update:qty="onCompareQtyChange" />
   </div>
