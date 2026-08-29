@@ -26,7 +26,7 @@ export type ProductType = {
   current_stock: number | null
   reorder_level: number | null
   supplier_id: number | null
-  batch_no: number | null
+  batch_no: string | null
   expiry_date: string | null
   status: string | null
   brand: string | null
@@ -46,7 +46,7 @@ export type CreateProductData = {
   current_stock?: number | null
   reorder_level?: number | null
   supplier_id?: number | null
-  batch_no?: number | null
+  batch_no?: string | null
   expiry_date?: string | null
   status?: string | null
   brand?: string | null

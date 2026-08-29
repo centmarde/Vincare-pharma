@@ -10,7 +10,7 @@ const toast = useToast()
 export type ReceiptLine = {
   product_name: string
   unit: string | null
-  batch_no: number | null
+  batch_no: string | null
   expiry_date: string | null
   quantity: number
   unit_price: number
