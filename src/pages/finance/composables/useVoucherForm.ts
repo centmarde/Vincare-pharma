@@ -91,7 +91,7 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
     version: 5,
     refs: { payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, department, particulars, remarks, signatories, items },
     isEmpty: () => !payee.value && !payeeAddress.value && !payeeTin.value && cashAccountId.value == null
-      && !checkNo.value && !orSiNo.value && !remarks.value
+      && !checkNo.value && !orSiNo.value && !particulars.value.trim() && !remarks.value
       && !hasAnySignatory()
       && items.value.every((line) => !line.amount),
   })
@@ -218,11 +218,13 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
     department.value = voucher.items.find((line) => line.department)?.department ?? null
     // Every line carries the same particular; older vouchers stored the
     // category's own title there, which is not a description worth restoring.
-    const firstParticular = voucher.items.find((line) => line.particular)
-    particulars.value =
-      firstParticular && firstParticular.particular !== categoryTitle(firstParticular.category)
-        ? firstParticular.particular
-        : ''
+    // Scan for the first line holding a REAL one rather than stopping at the
+    // first non-empty: a voucher from the per-line era can have the fallback
+    // title on line 1 and the actual description further down, and stopping
+    // early would blank it here and then overwrite it with titles on save.
+    particulars.value = voucher.items.find(
+      (line) => line.particular.trim() && line.particular !== categoryTitle(line.category),
+    )?.particular ?? ''
     remarks.value = voucher.remarks ?? ''
     signatories.value = { ...emptySignatories(), ...voucher.signatories }
     items.value = voucher.items.length

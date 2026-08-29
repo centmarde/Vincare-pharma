@@ -37,9 +37,14 @@ const voucherDepartment = computed(() =>
  * there, which is not a description — those print blank.
  */
 const voucherParticulars = computed(() => {
-  const line = (props.voucher?.items ?? []).find((i: VoucherItemType) => i.particular)
-  if (!line) return ''
-  return line.particular === categoryTitle(line.category) ? '' : line.particular
+  // Same scan as the form's loadFrom: find the first line holding a REAL
+  // particular, not merely the first non-empty one. A voucher from the per-line
+  // era can carry the category-title fallback on line 1 and the description
+  // further down, and stopping early would print it blank.
+  const line = (props.voucher?.items ?? []).find(
+    (i: VoucherItemType) => i.particular.trim() && i.particular !== categoryTitle(i.category),
+  )
+  return line?.particular ?? ''
 })
 const printArea = ref<HTMLElement | null>(null)
 
