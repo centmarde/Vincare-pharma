@@ -3,17 +3,34 @@ import type { SupplierOfferType } from '@/stores/supplierOffersData'
 export type QualifiedOffer = SupplierOfferType & { months_to_expiry: number }
 export const QUALIFICATION_MONTHS = 18
 
+/**
+ * Adds a number of months to a given date
+ * @param date - The starting date
+ * @param months - Number of months to add
+ * @returns New date with months added
+ */
 function addMonths(date: Date, months: number): Date {
   const d = new Date(date)
   d.setMonth(d.getMonth() + months)
   return d
 }
 
+/**
+ * Calculates the minimum expiry date for a supplier offer to qualify
+ * @param requiredByDate - The required-by date for the order
+ * @returns Minimum expiry date (required-by + 18 months)
+ */
 export function minQualifyingExpiry(requiredByDate: string): Date {
   return addMonths(new Date(requiredByDate), QUALIFICATION_MONTHS)
 }
 
-// supplier expiry >= required-by + 18mo; recommendation = cheapest qualifying.
+/**
+ * Qualifies supplier offers based on expiry date requirements and recommends the cheapest
+ * supplier expiry >= required-by + 18mo; recommendation = cheapest qualifying.
+ * @param offers - Array of supplier offers to evaluate
+ * @param requiredByDate - The required-by date for the order
+ * @returns Object with qualified, disqualified, and recommended offers
+ */
 export function qualifyOffers(offers: SupplierOfferType[], requiredByDate: string) {
   const minExpiry = minQualifyingExpiry(requiredByDate)
   const qualified: QualifiedOffer[] = []

@@ -110,10 +110,16 @@ export const formatMonthYear = (value: string | Date): string => {
   }).format(date)
 }
 
-// Last calendar day of a month as a local "YYYY-MM-DD".
-// Built from local Y/M/D parts on purpose: toISOString() converts to UTC first,
-// which at UTC+8 rolls the date back a day (Jan 31 -> "2026-01-30") and at
-// negative offsets rolls it into the next month.
+/**
+ * Returns the last calendar day of a month as a local ISO date string (YYYY-MM-DD)
+ * Last calendar day of a month as a local "YYYY-MM-DD".
+ * Built from local Y/M/D parts on purpose: toISOString() converts to UTC first,
+ * which at UTC+8 rolls the date back a day (Jan 31 -> "2026-01-30") and at
+ * negative offsets rolls it into the next month.
+ * @param year - The year
+ * @param monthIndex - The month index (0-11, where 0 is January)
+ * @returns ISO date string for the last day of the month
+ */
 export const endOfMonthISODate = (year: number, monthIndex: number): string => {
   const lastDay = new Date(year, monthIndex + 1, 0)
   const month = String(lastDay.getMonth() + 1).padStart(2, '0')

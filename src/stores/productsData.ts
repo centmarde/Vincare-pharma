@@ -534,6 +534,11 @@ export const useProductsDataStore = defineStore('productsData', () => {
     return { success: true, id: txData.id }
   }
 
+  /**
+   * Fetches the reorder request IDs associated with a transaction's line items
+   * @param transactionId - The transaction ID to fetch reorder request IDs for
+   * @returns Array of reorder request IDs
+   */
   async function fetchReorderRequestIdsForTransaction(transactionId: number): Promise<number[]> {
     const { data, error } = await supabase
       .from('transaction_items')
@@ -652,6 +657,10 @@ export const useProductsDataStore = defineStore('productsData', () => {
     reorderCount.value = reorderRequests.value.filter(r => r.status === 'pending').length
   }
 
+  /**
+   * Approves reorder requests by their IDs, transitioning them from pending to approved status
+   * @param reorderRequestIds - Array of reorder request IDs to approve
+   */
   async function approveReorderRequestsById(reorderRequestIds: number[]) {
     await transitionReorderRequestsById(
       reorderRequestIds, 'pending', 'approved', 'reorder_approved',
@@ -659,6 +668,10 @@ export const useProductsDataStore = defineStore('productsData', () => {
     )
   }
 
+  /**
+   * Rejects reorder requests by their IDs, transitioning them from pending to rejected status
+   * @param reorderRequestIds - Array of reorder request IDs to reject
+   */
   async function rejectReorderRequestsById(reorderRequestIds: number[]) {
     await transitionReorderRequestsById(
       reorderRequestIds, 'pending', 'rejected', 'reorder_rejected',
@@ -666,6 +679,10 @@ export const useProductsDataStore = defineStore('productsData', () => {
     )
   }
 
+  /**
+   * Marks reorder requests as awaiting stock by their IDs, transitioning from approved to awaiting_stock
+   * @param reorderRequestIds - Array of reorder request IDs to mark as awaiting stock
+   */
   async function markReorderRequestsAwaitingStockById(reorderRequestIds: number[]) {
     await transitionReorderRequestsById(
       reorderRequestIds, 'approved', 'awaiting_stock', 'reorder_awaiting_stock',
@@ -673,6 +690,10 @@ export const useProductsDataStore = defineStore('productsData', () => {
     )
   }
 
+  /**
+   * Completes reorder requests by their IDs, transitioning from awaiting_stock to complete status
+   * @param reorderRequestIds - Array of reorder request IDs to mark as complete
+   */
   async function completeReorderRequestsById(reorderRequestIds: number[]) {
     if (!reorderRequestIds.length) return
 

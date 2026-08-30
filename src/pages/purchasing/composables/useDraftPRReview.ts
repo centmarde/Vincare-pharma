@@ -10,6 +10,11 @@ import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
 const { confirmDialog } = useConfirmDialog()
 
+/**
+ * Composable for reviewing and submitting a draft purchase requisition
+ * @param draftId - Function returning the draft PR ID to review
+ * @returns Draft review state and actions including load and submit functions
+ */
 export function useDraftPRReview(draftId: () => number | null) {
   const draftStore = useDraftPRDataStore()
 
@@ -45,6 +50,9 @@ export function useDraftPRReview(draftId: () => number | null) {
     return supplierIds.size
   })
 
+  /**
+   * Loads the draft PR and pre-checks it for validation warnings
+   */
   async function load() {
     const id = draftId()
     if (id == null) return
@@ -58,6 +66,10 @@ export function useDraftPRReview(draftId: () => number | null) {
     }
   }
 
+  /**
+   * Submits the draft PR for conversion to purchase requisition(s) after user confirmation
+   * @returns Conversion result with success status, PR details, and any warnings or errors
+   */
   async function submit(): Promise<ConvertResult> {
     if (!draft.value) return { success: false }
     submitError.value = null

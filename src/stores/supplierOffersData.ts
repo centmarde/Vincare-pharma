@@ -28,6 +28,11 @@ export const useSupplierOffersDataStore = defineStore('supplierOffersData', () =
 
   const handleError = (err: unknown, msg: string) => { error.value = err instanceof Error ? err.message : msg }
 
+  /**
+   * Maps a database row to a SupplierOfferType object
+   * @param r - The raw database row
+   * @returns Mapped supplier offer with all required fields
+   */
   const mapOffer = (r: any): SupplierOfferType => ({
     id: r.id, supplier_id: r.supplier_id, supplier_name: r.supplier?.name ?? null,
     product_id: r.product_id, cost_price_per_unit: r.cost_price_per_unit,
@@ -35,6 +40,12 @@ export const useSupplierOffersDataStore = defineStore('supplierOffersData', () =
     created_by: r.created_by, created_at: r.created_at,
   })
 
+  /**
+   * Fetches all supplier offers for a given product, with caching
+   * @param productId - The product ID to fetch offers for
+   * @param force - If true, bypasses cache and refetches from database
+   * @returns Array of supplier offers sorted by price (cheapest first)
+   */
   const fetchOffersForProduct = async (productId: number, force = false): Promise<SupplierOfferType[]> => {
     if (!force && offersByProduct.value[productId]) return offersByProduct.value[productId]
     loading.value = true
@@ -50,12 +61,17 @@ export const useSupplierOffersDataStore = defineStore('supplierOffersData', () =
     return mapped
   }
 
-  // Re-confirming an unchanged quote must NOT mint a second row: duplicates of
-  // the same offer make qualifyOffers pick an arbitrary one as "recommended",
-  // which surfaces as a bogus "a cheaper offer is available" warning naming the
-  // supplier that's already selected. Same supplier/product/price/expiry is the
-  // same commercial offer, so reuse it — source is deliberately not part of the
-  // match key (a 'canvass' and a 'manual' entry of one quote are still one quote).
+  /**
+   * Finds an existing supplier offer matching the exact supplier, product, price, and expiry
+   * Re-confirming an unchanged quote must NOT mint a second row: duplicates of
+   * the same offer make qualifyOffers pick an arbitrary one as "recommended",
+   * which surfaces as a bogus "a cheaper offer is available" warning naming the
+   * supplier that's already selected. Same supplier/product/price/expiry is the
+   * same commercial offer, so reuse it — source is deliberately not part of the
+   * match key (a 'canvass' and a 'manual' entry of one quote are still one quote).
+   * @param payload - The offer details to match
+   * @returns The existing offer if found, otherwise null
+   */
   const findIdenticalOffer = async (payload: {
     supplierId: number; productId: number; costPricePerUnit: number; expiryDate: string | null
   }): Promise<SupplierOfferType | null> => {
@@ -72,6 +88,11 @@ export const useSupplierOffersDataStore = defineStore('supplierOffersData', () =
     return mapOffer(data)
   }
 
+  /**
+   * Creates a new supplier offer or returns an existing identical one to avoid duplicates
+   * @param payload - The offer details including supplier, product, price, and expiry
+   * @returns The created or existing offer, or null if creation failed
+   */
   const createOffer = async (payload: {
     supplierId: number; productId: number; costPricePerUnit: number
     expiryDate: string | null; currency?: string; source?: string

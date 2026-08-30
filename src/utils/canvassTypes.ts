@@ -52,13 +52,23 @@ export type PRCoverage = {
   decided_at: string
 }
 
+/**
+ * Extracts the PR ID from a supplier quotes coverage object
+ * @param supplierQuotes - The supplier quotes object (may be any shape)
+ * @returns The PR ID if present, otherwise null
+ */
 export const prIdFromCoverage = (supplierQuotes: unknown): number | null => {
   const id = (supplierQuotes as { pr_id?: unknown } | null)?.pr_id
   return typeof id === 'number' ? id : null
 }
 
-// A rejected PR covers nothing: the shortfall is real again, so the line
-// returns to the procurement queue and its draft becomes editable/resubmittable.
-// A missing status (PR row deleted outright) is treated the same way.
+/**
+ * Determines if a PR status represents live coverage for an order
+ * A rejected PR covers nothing: the shortfall is real again, so the line
+ * returns to the procurement queue and its draft becomes editable/resubmittable.
+ * A missing status (PR row deleted outright) is treated the same way.
+ * @param prStatus - The PR status to check
+ * @returns True if the PR is live (not rejected or missing)
+ */
 export const isPRCoverageLive = (prStatus: string | null | undefined): boolean =>
   prStatus != null && prStatus !== 'rejected'

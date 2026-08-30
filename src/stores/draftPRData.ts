@@ -70,11 +70,22 @@ type CoverageCheck = { covered: boolean; error?: string }
 const ITEM_SELECT =
   '*, product:product_id(product_name), offer:selected_supplier_offer_id(supplier_id, cost_price_per_unit, expiry_date, supplier:supplier_id(name))'
 
+/**
+ * Returns the required-by date or today's date if none is provided
+ * @param date - The required-by date string or null/undefined
+ * @returns ISO date string (YYYY-MM-DD format)
+ */
 function requiredByOrToday(date: string | null | undefined): string {
   return date ?? new Date().toISOString().slice(0, 10)
 }
 
-// PostgREST returns a timestamptz with an offset and a plain timestamp without one — both are read as the same instant.
+/**
+ * Compares two timestamps for equality, accounting for timezone differences
+ * PostgREST returns a timestamptz with an offset and a plain timestamp without one — both are read as the same instant.
+ * @param stored - The stored timestamp string (may or may not have timezone)
+ * @param written - The written timestamp string to compare against
+ * @returns True if timestamps represent the same instant
+ */
 function sameTimestamp(stored: string | null, written: string): boolean {
   if (!stored) return false
   const hasZone = /(Z|[+-]\d{2}:?\d{2})$/.test(stored)
@@ -89,8 +100,15 @@ type BatchProduct = {
   expiry_date: string | null
 }
 
-// products.expiry_date is BATCH identity, so a different supplier/expiry is a
-// different row — never an in-place edit of the one the draft happened to point at.
+/**
+ * Resolves or creates a batch-specific product row based on supplier and expiry date
+ * products.expiry_date is BATCH identity, so a different supplier/expiry is a
+ * different row — never an in-place edit of the one the draft happened to point at.
+ * @param product - The base product information
+ * @param supplierId - The supplier ID for this batch
+ * @param expiryDate - The expiry date for this batch (null if not expiring)
+ * @returns Object containing the resolved product ID or an error message
+ */
 async function resolveBatchProduct(
   product: BatchProduct,
   supplierId: number,
@@ -146,6 +164,11 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     error.value = err instanceof Error ? err.message : msg
   }
 
+  /**
+   * Maps a database row to a DraftPRItemType object
+   * @param row - The raw database row
+   * @returns Mapped draft PR item with product and supplier details
+   */
   function mapItem(row: any): DraftPRItemType {
     return {
       id: row.id,
@@ -165,6 +188,11 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     }
   }
 
+  /**
+   * Creates a new draft purchase requisition with line items
+   * @param payload - Draft details including remarks, source order info, and line items
+   * @returns Success status and draft ID if successful
+   */
   async function createDraft(payload: {
     remarks?: string
     sourceOrderId?: number | null
@@ -220,6 +248,11 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return { success: true, draftId: draft.id }
   }
 
+  /**
+   * Gets an existing draft for a source order or creates a new one, updating items as needed
+   * @param payload - Draft details including source order info and line items
+   * @returns Success status, draft ID, and whether an existing draft was reused
+   */
   async function getOrCreateDraft(payload: {
     remarks?: string
     sourceOrderId?: number | null
@@ -318,6 +351,12 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return { success: true, draftId: existing.id, reused: true }
   }
 
+  /**
+   * Fetches draft purchase requisitions with optional filtering
+   * @param status - Optional status filter ('draft' or 'converted')
+   * @param sourceOrderId - Optional source order ID filter
+   * @returns Array of draft PRs with their items
+   */
   async function fetchDrafts(status?: 'draft' | 'converted', sourceOrderId?: number) {
     loading.value = true
     let q = supabase
@@ -335,6 +374,11 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return drafts.value
   }
 
+  /**
+   * Fetches a single draft purchase requisition by ID
+   * @param draftId - The draft PR ID to fetch
+   * @returns The draft PR with items, or null if not found
+   */
   async function fetchDraft(draftId: number): Promise<DraftPRType | null> {
     loading.value = true
     const { data, error: fetchError } = await supabase
@@ -351,6 +395,12 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return currentDraft.value
   }
 
+  /**
+   * Adds a new item to an existing draft PR
+   * @param draftId - The draft PR ID
+   * @param line - The line item details to add
+   * @returns The created item or null if failed
+   */
   async function addItem(draftId: number, line: DraftLineInput) {
     const { data, error: insertError } = await supabase
       .from('draft_pr_items')
@@ -372,6 +422,12 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return item
   }
 
+  /**
+   * Removes an item from a draft PR
+   * @param draftId - The draft PR ID
+   * @param itemId - The item ID to remove
+   * @returns True if successful, false otherwise
+   */
   async function removeItem(draftId: number, itemId: number) {
     const { error: deleteError } = await supabase.from('draft_pr_items').delete().eq('id', itemId)
     if (deleteError) {
@@ -384,6 +440,12 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return true
   }
 
+  /**
+   * Updates the quantity for a draft item
+   * @param itemId - The item ID to update
+   * @param qty - The new quantity
+   * @returns True if successful, false otherwise
+   */
   async function setQty(itemId: number, qty: number) {
     const { error: updateError } = await supabase
       .from('draft_pr_items')
@@ -398,6 +460,12 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return true
   }
 
+  /**
+   * Updates the required-by date for a draft item
+   * @param itemId - The item ID to update
+   * @param date - The new required-by date (null to clear)
+   * @returns True if successful, false otherwise
+   */
   async function setRequiredByDate(itemId: number, date: string | null) {
     const { error: updateError } = await supabase
       .from('draft_pr_items')
@@ -412,6 +480,11 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return true
   }
 
+  /**
+   * Selects a supplier offer for a draft item with justification
+   * @param payload - Contains item ID, selected offer, considered offers, and optional justification
+   * @returns True if successful, false otherwise
+   */
   async function selectOffer(payload: {
     itemId: number
     offer: SupplierOfferType
@@ -444,6 +517,11 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return true
   }
 
+  /**
+   * Clears the supplier offer selection for a draft item
+   * @param itemId - The item ID to clear selection from
+   * @returns True if successful, false otherwise
+   */
   async function clearOfferSelection(itemId: number) {
     const { error: updateError } = await supabase
       .from('draft_pr_items')
@@ -471,6 +549,12 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return true
   }
 
+  /**
+   * Updates the remarks/notes for a draft PR
+   * @param draftId - The draft PR ID
+   * @param remarks - The new remarks text
+   * @returns True if successful, false otherwise
+   */
   async function updateRemarks(draftId: number, remarks: string) {
     const { error: updateError } = await supabase
       .from('draft_purchase_requisitions')
@@ -484,6 +568,11 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return true
   }
 
+  /**
+   * Deletes a draft PR and all its items
+   * @param draftId - The draft PR ID to delete
+   * @returns True if successful, false otherwise
+   */
   async function deleteDraft(draftId: number) {
     const { error: deleteError } = await supabase
       .from('draft_purchase_requisitions')
@@ -498,6 +587,11 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return true
   }
 
+  /**
+   * Pre-validates a draft before conversion, checking for disqualified suppliers and cheaper alternatives
+   * @param draft - The draft PR to validate
+   * @returns Array of warning messages for the user to review
+   */
   async function precheckDraft(draft: DraftPRType) {
     const warnings: ConvertWarning[] = []
 
@@ -539,7 +633,12 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return warnings
   }
 
-  // Does this order still have at least one line covered by a non-rejected PR?
+  /**
+   * Checks if a source order still has at least one line covered by a non-rejected PR
+   * Does this order still have at least one line covered by a non-rejected PR?
+   * @param sourceOrderId - The source order ID to check coverage for
+   * @returns Coverage check result indicating if order is covered
+   */
   async function hasLiveCoverage(sourceOrderId: number): Promise<CoverageCheck> {
     const { data: items, error: itemsError } = await supabase
       .from('transaction_items')
@@ -556,7 +655,13 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return { covered: (prs ?? []).some((pr) => isPRCoverageLive(pr.status)) }
   }
 
-  // An UPDATE's own RETURNING can come back empty under a narrow RLS select policy, so an empty claim is confirmed against the stamp it wrote.
+  /**
+   * Verifies that a conversion claim successfully landed in the database
+   * An UPDATE's own RETURNING can come back empty under a narrow RLS select policy, so an empty claim is confirmed against the stamp it wrote.
+   * @param draftId - The draft PR ID
+   * @param claimStamp - The timestamp stamp written during the claim
+   * @returns True if the claim landed successfully
+   */
   async function claimLanded(draftId: number, claimStamp: string): Promise<boolean> {
     const { data, error: readError } = await supabase
       .from('draft_purchase_requisitions')
@@ -567,7 +672,12 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return data.status === 'converted' && sameTimestamp(data.updated_at, claimStamp)
   }
 
-  // Backstop for the coverage mirror — a live or unreadable converted_pr_id blocks a second conversion.
+  /**
+   * Checks if a previously converted PR is still live (prevents duplicate conversions)
+   * Backstop for the coverage mirror — a live or unreadable converted_pr_id blocks a second conversion.
+   * @param prId - The converted PR ID to check, or null
+   * @returns True if the PR is still live or cannot be read
+   */
   async function convertedPRStillLive(prId: number | null): Promise<boolean> {
     if (prId == null) return false
     const { data, error: prError } = await supabase
@@ -579,6 +689,11 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return data ? isPRCoverageLive(data.status) : false
   }
 
+  /**
+   * Converts a draft PR into one or more purchase requisitions, grouped by supplier
+   * @param draftId - The draft PR ID to submit
+   * @returns Conversion result with PR details, warnings, and any errors
+   */
   async function submitDraft(draftId: number): Promise<ConvertResult> {
     loading.value = true
     const { user, error: authError } = await authStore.getCurrentUser()
@@ -903,6 +1018,11 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     }
   }
 
+  /**
+   * Creates or updates a draft PR with pre-selected supplier offers for each item
+   * @param payload - Draft details with source order, remarks, and rows with supplier selections
+   * @returns Success status and draft ID if successful
+   */
   async function createDraftWithSelections(payload: {
     sourceOrderId: number
     sourceOrderType: string
@@ -964,11 +1084,15 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     }
     return created
   }
-  
-  // Converted drafts are included, not filtered out: once a PR has been raised
-  // the row's button becomes a read-only "View Draft", so the draft still has to
-  // be reachable. An order with both an open and a converted draft resolves to
-  // the open one — that's the one the purchaser can still act on.
+
+  /**
+   * Fetches draft PR IDs indexed by their source order ID for quick lookup
+   * Converted drafts are included, not filtered out: once a PR has been raised
+   * the row's button becomes a read-only "View Draft", so the draft still has to
+   * be reachable. An order with both an open and a converted draft resolves to
+   * the open one — that's the one the purchaser can still act on.
+   * @returns Record mapping order IDs to draft entries with status
+   */
   async function fetchDraftIdsByOrder(): Promise<Record<number, DraftByOrderEntry>> {
     const { data, error: fetchError } = await supabase
       .from('draft_purchase_requisitions')
