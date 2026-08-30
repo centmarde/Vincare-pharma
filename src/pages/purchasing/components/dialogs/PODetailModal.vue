@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { usePODetailModal, company } from '../../composables/usePODetailModal'
-import { formatCurrency, formatDatePO_Written } from '@/utils/helpers'
+import { formatCurrency, formatDatePO_Written, formatExpiryMonthYear } from '@/utils/helpers'
 import type { PurchaseOrder } from '../../composables/usePODetailModal'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import { useDisplay } from 'vuetify'
@@ -147,6 +147,7 @@ const { printArea, poNumber, emptyRows, uniqueSuppliers, showActualQty, handlePr
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">QTY</th>
                 <th v-if="showActualQty" style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">ACTUAL QTY</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">SUPPLIER</th>
+                <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">EXPIRY</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">UNIT PRICE</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">TOTAL</th>
               </tr>
@@ -158,16 +159,17 @@ const { printArea, poNumber, emptyRows, uniqueSuppliers, showActualQty, handlePr
                 <td class="text-right">{{ item.qty }}</td>
                 <td v-if="showActualQty" class="text-right">{{ item.actual_count_stock_in ?? '—' }}</td>
                 <td class="text-right">{{ item.supplier_name }}</td>
+                <td class="text-right">{{ formatExpiryMonthYear(item.expiry_date) }}</td>
                 <td class="text-right">{{ formatCurrency(item.cost_per_unit) }}</td>
                 <td class="text-right">{{ formatCurrency(item.qty * item.cost_per_unit) }}</td>
               </tr>
               <tr v-for="n in emptyRows" :key="`empty-${n}`" class="empty-row">
-                <td :colspan="showActualQty ? 7 : 6">&nbsp;</td>
+                <td :colspan="showActualQty ? 8 : 7">&nbsp;</td>
               </tr>
             </tbody>
             <tfoot>
               <tr class="bg-grey-lighten-3">
-                <td :colspan="showActualQty ? 6 : 5" class="text-black font-weight-bold" style="text-align:right;">TOTAL</td>
+                <td :colspan="showActualQty ? 7 : 6" class="text-black font-weight-bold" style="text-align:right;">TOTAL</td>
                 <td style="text-align:right; font-weight:700; padding: 10px 12px; color: #000;">
                   {{ formatCurrency(po?.total_amount ?? 0) }}
                 </td>
@@ -212,6 +214,7 @@ const { printArea, poNumber, emptyRows, uniqueSuppliers, showActualQty, handlePr
                   <div><span class="text-medium-emphasis">Qty: </span>{{ item.qty }}</div>
                   <div v-if="showActualQty"><span class="text-medium-emphasis">Actual: </span>{{ item.actual_count_stock_in ?? '—' }}</div>
                   <div><span class="text-medium-emphasis">Supplier: </span>{{ item.supplier_name }}</div>
+                  <div><span class="text-medium-emphasis">Expiry: </span>{{ formatExpiryMonthYear(item.expiry_date) }}</div>
                   <div><span class="text-medium-emphasis">Price: </span>{{ formatCurrency(item.cost_per_unit) }}</div>
                   <div><span class="text-medium-emphasis">Total: </span><span class="font-weight-medium">{{ formatCurrency(item.qty * item.cost_per_unit) }}</span></div>
                 </div>

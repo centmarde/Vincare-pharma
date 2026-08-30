@@ -11,7 +11,7 @@ export type CartLine = {
   product_name: string
   sku: string | null
   unit: string | null
-  batch_no: number | null
+  batch_no: string | null
   expiry_date: string | null
   unit_price: number
   /**
@@ -43,7 +43,7 @@ export type PosProduct = {
   barcode: string | null
   sku: string | null
   unit: string | null
-  batch_no: number | null
+  batch_no: string | null
   expiry_date: string | null
   unit_price: number
   available: number

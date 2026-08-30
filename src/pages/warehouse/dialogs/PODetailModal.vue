@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { usePODetailModal, company } from '@/pages/purchasing/composables/usePODetailModal'
 import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
-import { formatCurrency, formatDatePO_Written } from '@/utils/helpers'
+import { formatCurrency, formatDatePO_Written, formatExpiryMonthYear } from '@/utils/helpers'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import { useDisplay } from 'vuetify'
 
@@ -124,6 +124,7 @@ const { poNumber, emptyRows, uniqueSuppliers } = usePODetailModal(props, emit)
                 <th style="color:#fff; font-weight:600; padding: 10px 12px;">ITEM #</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px;">DESCRIPTION</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">QTY</th>
+                <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">EXPIRY</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">UNIT PRICE</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">TOTAL</th>
               </tr>
@@ -133,16 +134,17 @@ const { poNumber, emptyRows, uniqueSuppliers } = usePODetailModal(props, emit)
                 <td>{{ item.no }}</td>
                 <td>{{ item.item_description }}</td>
                 <td class="text-right">{{ item.actual_count_stock_in ?? '—' }}</td>
+                <td class="text-right">{{ formatExpiryMonthYear(item.expiry_date) }}</td>
                 <td class="text-right">{{ formatCurrency(item.cost_per_unit) }}</td>
                 <td class="text-right">{{ formatCurrency(item.qty * item.cost_per_unit) }}</td>
               </tr>
               <tr v-for="n in emptyRows" :key="`empty-${n}`" class="empty-row">
-                <td colspan="4">&nbsp;</td>
+                <td colspan="6">&nbsp;</td>
               </tr>
             </tbody>
             <tfoot>
               <tr class="bg-grey-lighten-3">
-                <td colspan="4" class="text-black font-weight-bold" style="text-align:right;">TOTAL</td>
+                <td colspan="5" class="text-black font-weight-bold" style="text-align:right;">TOTAL</td>
                 <td style="text-align:right; font-weight:700; padding: 10px 12px; color: #000;">
                   {{ formatCurrency(po?.total_amount ?? 0) }}
                 </td>
@@ -171,6 +173,7 @@ const { poNumber, emptyRows, uniqueSuppliers } = usePODetailModal(props, emit)
                 <div class="d-flex flex-wrap ga-3 text-caption">
                   <div><span class="text-medium-emphasis">Supplier: </span>{{ item.supplier_name ?? '—' }}</div>
                   <div><span class="text-medium-emphasis">Qty: </span>{{ item.actual_count_stock_in ?? '—' }}</div>
+                  <div><span class="text-medium-emphasis">Expiry: </span>{{ formatExpiryMonthYear(item.expiry_date) }}</div>
                   <div><span class="text-medium-emphasis">Price: </span>{{ formatCurrency(item.cost_per_unit) }}</div>
                   <div><span class="text-medium-emphasis">Total: </span><span class="font-weight-medium">{{ formatCurrency(item.qty * item.cost_per_unit) }}</span></div>
                 </div>

@@ -56,6 +56,7 @@ export function usePODetailView(
         product_id: item.product_id!,
         sku: item.sku!.toString().trim(),
         actual_count_stock_in: Number(item.actual_count_stock_in),
+        expiry_date: item.expiry_date ?? null,
       }))
 
       const skuSuccess = await productsStore.updateProductSkuAndCount(updates)

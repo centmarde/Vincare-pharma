@@ -699,7 +699,6 @@ export function useProductsWidget() {
         unit: p.unit ?? 'Box',
         supplier_id: p.supplier_id ?? null,
         cost_per_unit: p.cost_price ?? 0,
-        offer_per_unit: p.selling_price ?? 0,
       }))
 
     showStockDialog.value = false

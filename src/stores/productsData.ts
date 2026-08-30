@@ -26,7 +26,7 @@ export type ProductType = {
   current_stock: number | null
   reorder_level: number | null
   supplier_id: number | null
-  batch_no: number | null
+  batch_no: string | null
   expiry_date: string | null
   status: string | null
   brand: string | null
@@ -46,7 +46,7 @@ export type CreateProductData = {
   current_stock?: number | null
   reorder_level?: number | null
   supplier_id?: number | null
-  batch_no?: number | null
+  batch_no?: string | null
   expiry_date?: string | null
   status?: string | null
   brand?: string | null
@@ -93,6 +93,7 @@ export type ReceiveStockUpdate ={
   product_id: number
   sku: string | null
   actual_count_stock_in: number
+  expiry_date?: string | null
 }
 
 export type StockStatusBucket =
@@ -533,6 +534,11 @@ export const useProductsDataStore = defineStore('productsData', () => {
     return { success: true, id: txData.id }
   }
 
+  /**
+   * Fetches the reorder request IDs associated with a transaction's line items
+   * @param transactionId - The transaction ID to fetch reorder request IDs for
+   * @returns Array of reorder request IDs
+   */
   async function fetchReorderRequestIdsForTransaction(transactionId: number): Promise<number[]> {
     const { data, error } = await supabase
       .from('transaction_items')
@@ -561,7 +567,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
         id, transaction_type, status, created_at, created_by, remarks,
         transaction_items!transaction_items_transaction_id_fkey (
           id, product_id,
-          products ( id, product_name, sku, unit, current_stock, reorder_level, expiry_date, supplier_id, cost_price, selling_price, suppliers ( name ) )
+          products ( id, product_name, sku, unit, current_stock, reorder_level, expiry_date, supplier_id, cost_price, suppliers ( name ) )
         )
       `)
       .in('transaction_type', REORDER_TYPES)
@@ -651,6 +657,10 @@ export const useProductsDataStore = defineStore('productsData', () => {
     reorderCount.value = reorderRequests.value.filter(r => r.status === 'pending').length
   }
 
+  /**
+   * Approves reorder requests by their IDs, transitioning them from pending to approved status
+   * @param reorderRequestIds - Array of reorder request IDs to approve
+   */
   async function approveReorderRequestsById(reorderRequestIds: number[]) {
     await transitionReorderRequestsById(
       reorderRequestIds, 'pending', 'approved', 'reorder_approved',
@@ -658,6 +668,10 @@ export const useProductsDataStore = defineStore('productsData', () => {
     )
   }
 
+  /**
+   * Rejects reorder requests by their IDs, transitioning them from pending to rejected status
+   * @param reorderRequestIds - Array of reorder request IDs to reject
+   */
   async function rejectReorderRequestsById(reorderRequestIds: number[]) {
     await transitionReorderRequestsById(
       reorderRequestIds, 'pending', 'rejected', 'reorder_rejected',
@@ -665,6 +679,10 @@ export const useProductsDataStore = defineStore('productsData', () => {
     )
   }
 
+  /**
+   * Marks reorder requests as awaiting stock by their IDs, transitioning from approved to awaiting_stock
+   * @param reorderRequestIds - Array of reorder request IDs to mark as awaiting stock
+   */
   async function markReorderRequestsAwaitingStockById(reorderRequestIds: number[]) {
     await transitionReorderRequestsById(
       reorderRequestIds, 'approved', 'awaiting_stock', 'reorder_awaiting_stock',
@@ -672,6 +690,10 @@ export const useProductsDataStore = defineStore('productsData', () => {
     )
   }
 
+  /**
+   * Completes reorder requests by their IDs, transitioning from awaiting_stock to complete status
+   * @param reorderRequestIds - Array of reorder request IDs to mark as complete
+   */
   async function completeReorderRequestsById(reorderRequestIds: number[]) {
     if (!reorderRequestIds.length) return
 
@@ -783,20 +805,37 @@ export const useProductsDataStore = defineStore('productsData', () => {
     }
   }
 
-  // The caller (PODetailViewModal.vue's saveAllItems) rebuilds `updates` from
-  // local form state on every call, including "Mark as Received" retries
-  // after a partial failure — it has no way to know which lines already
-  // landed. Without a guard, retrying re-applies `current_stock + actual_count`
-  // for lines that already succeeded, double-counting real physical stock.
-  // Fix: skip a line entirely if its transaction_item already carries a
-  // non-null actual_count_stock_in (only the SKU can still be corrected).
-  // Within a not-yet-applied line, the stock increment is written BEFORE the
-  // actual_count_stock_in marker (reverse of the old order) so that "marker
-  // is set" reliably implies "stock was applied" — matching every other
-  // premature-marker fix in this sweep. This isn't fully atomic (a failure
-  // between those two writes is still possible, same best-effort trade-off
-  // accepted project-wide for JS-over-RPC) but it closes the actual retry
-  // scenario that caused double-counting.
+  // A batch row back at zero stock can still be a spent batch, so any receipt or issue on it rules out re-dating.
+  const hasStockHistory = async (productId: number, exceptTransactionItemId: number) => {
+    const readHistory = async () => supabase
+      .from('transaction_items')
+      .select('id')
+      .eq('product_id', productId)
+      .neq('id', exceptTransactionItemId)
+      .or('actual_count_stock_in.not.is.null,actual_count_stock_out.not.is.null')
+      .limit(1)
+
+    let result = await readHistory()
+    if (result.error) result = await readHistory()
+    if (result.error) throw result.error
+    return (result.data ?? []).length > 0
+  }
+
+  const assertExpiryEditable = async (product: ProductType, transactionItemId: number) => {
+    const priorStock = product.current_stock ?? 0
+    if (priorStock > 0) {
+      throw new Error(
+        `Cannot change expiry on product ID ${product.id}: it already holds ${priorStock} in stock from an earlier batch.`,
+      )
+    }
+    if (await hasStockHistory(product.id, transactionItemId)) {
+      throw new Error(
+        `Cannot change expiry on product ID ${product.id}: it has already been received or issued against an earlier batch.`,
+      )
+    }
+  }
+
+  
   const updateProductSkuAndCount = async (
     updates: ReceiveStockUpdate[]
   ): Promise<boolean> => {
@@ -804,7 +843,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     clearError()
 
     try {
-      for (const { transaction_item_id, product_id, sku, actual_count_stock_in } of updates) {
+      for (const { transaction_item_id, product_id, sku, actual_count_stock_in, expiry_date } of updates) {
         const { data: existingItem, error: existingError } = await supabase
           .from('transaction_items')
           .select('actual_count_stock_in')
@@ -814,9 +853,19 @@ export const useProductsDataStore = defineStore('productsData', () => {
 
         if (existingItem?.actual_count_stock_in != null) {
           // Already applied in a prior attempt — stock was already
-          // incremented, so only the SKU can still be corrected here.
-          if (sku) {
-            const result = await updateProduct(product_id, { sku })
+          // incremented, so only the SKU and an expiry the row can still
+          // take are corrected here.
+          const applied = await fetchProductById(product_id)
+          if (!applied) throw new Error(`Failed to fetch product ID ${product_id}`)
+
+          const appliedExpiryChanged = expiry_date != null && expiry_date !== applied.expiry_date
+          if (appliedExpiryChanged) await assertExpiryEditable(applied, transaction_item_id)
+
+          if (sku || appliedExpiryChanged) {
+            const result = await updateProduct(product_id, {
+              ...(sku ? { sku } : {}),
+              ...(appliedExpiryChanged ? { expiry_date } : {}),
+            })
             if (!result) throw new Error(`Failed to update product ID ${product_id}`)
           }
           continue
@@ -826,12 +875,19 @@ export const useProductsDataStore = defineStore('productsData', () => {
         const product = await fetchProductById(product_id)
         if (!product) throw new Error(`Failed to fetch product ID ${product_id}`)
 
-        const newStock = (product.current_stock ?? 0) + actual_count_stock_in
+        const priorStock = product.current_stock ?? 0
+        const newStock = priorStock + actual_count_stock_in
+
+        // Correcting expiry is only safe on an empty row — the batch row the PR
+        // created. Re-dating a row that already holds stock would mis-date it.
+        const expiryChanged = expiry_date != null && expiry_date !== product.expiry_date
+        if (expiryChanged) await assertExpiryEditable(product, transaction_item_id)
 
         // 2. Apply the stock increment first
         const result = await updateProduct(product_id, {
           current_stock: newStock,
           ...(sku ? { sku } : {}),
+          ...(expiryChanged ? { expiry_date } : {}),
         })
         if (!result) throw new Error(`Failed to update product ID ${product_id}`)
 

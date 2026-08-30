@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { company } from '@/pages/purchasing/composables/usePODetailModal'
 import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
-import { formatCurrency, formatDatePO_Written } from '@/utils/helpers'
+import { formatCurrency, formatDatePO_Written, formatExpiryMonthYear } from '@/utils/helpers'
 import type { PR, PRItem } from '@/stores/purchaseRequisitionData'
 import { useProductsDataStore } from '@/stores/productsData'
+import { ref } from 'vue'
 
 const props = defineProps<{
   po: PurchaseOrder | null
@@ -25,6 +26,35 @@ function productSkuFor(item: PRItem): string {
   console.log('[PODetailViewBody] Retrieved SKU for product', item.product_id, '=>', sku)
   return sku
 }
+
+// Track which expiry month picker menu is currently open (keyed by item row).
+const expiryMenuOpen = ref<Record<number, boolean>>({})
+
+// Text shown in the read-only expiry field. Empty returns '' so the MM/YYYY
+// placeholder is visible, otherwise renders as MM/YYYY (e.g. "09/2031").
+function expiryFieldText(item: PRItem): string {
+  return formatExpiryMonthYear(item.expiry_date) === '—' ? '' : formatExpiryMonthYear(item.expiry_date)
+}
+
+// Build a local-timezone-safe "YYYY-MM-DD" string for the last day of the
+// selected month (the same expiry storage convention used elsewhere in the app).
+function expiryDateString(year: number, month0: number): string {
+  const lastDay = new Date(year, month0 + 1, 0).getDate()
+  return `${year}-${String(month0 + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+}
+
+function onExpiryMonthSelect(item: PRItem, index: number, month: number) {
+  const year = item.expiry_date ? new Date(item.expiry_date).getFullYear() : new Date().getFullYear()
+  item.expiry_date = expiryDateString(year, month)
+  expiryMenuOpen.value[index] = false
+}
+
+function onExpiryYearSelect(item: PRItem, index: number, year: number) {
+  const current = item.expiry_date ? new Date(item.expiry_date) : new Date()
+  item.expiry_date = expiryDateString(year, current.getMonth())
+  expiryMenuOpen.value[index] = false
+}
+
 </script>
 
 <template>
@@ -91,12 +121,13 @@ function productSkuFor(item: PRItem): string {
           <th class="text-white text-right">TOTAL</th>
           <th class="text-white text-center" style="width: 130px">ACTUAL COUNT</th>
           <th class="text-white text-center" style="width: 130px">SKU</th>
+          <th class="text-white text-center" style="width: 150px">EXPIRY</th>
         </tr>
       </thead>
 
       <tbody>
         <tr v-if="transactionItems.length === 0">
-          <td colspan="6" class="text-center pa-4">No items found.</td>
+          <td colspan="7" class="text-center pa-4">No items found.</td>
         </tr>
 
         <tr v-for="(item, index) in transactionItems" :key="item.id">
@@ -132,16 +163,45 @@ function productSkuFor(item: PRItem): string {
             />
             <span v-else>{{ item.sku ?? '—' }}</span>
           </td>
+          <td class="text-center" style="width: 150px">
+            <v-menu
+              v-if="skuEditMode"
+              :model-value="expiryMenuOpen[index] ?? false"
+              @update:model-value="(val) => (expiryMenuOpen[index] = val)"
+              :close-on-content-click="false"
+              location="bottom"
+            >
+              <template #activator="{ props: menuProps }">
+                <v-text-field
+                  v-bind="menuProps"
+                  :model-value="expiryFieldText(item)"
+                  placeholder="MM/YYYY"
+                  density="compact"
+                  variant="outlined"
+                  hide-details
+                  readonly
+                  prepend-inner-icon="mdi-calendar-month-outline"
+                  style="width: 140px"
+                />
+              </template>
+              <v-date-picker
+                view-mode="months"
+                @update:month="(m) => onExpiryMonthSelect(item, index, m)"
+                @update:year="(y) => onExpiryYearSelect(item, index, y)"
+              />
+            </v-menu>
+            <span v-else>{{ formatExpiryMonthYear(item.expiry_date) }}</span>
+          </td>
         </tr>
 
         <tr v-for="n in effectiveEmptyRows" :key="`empty-${n}`">
-          <td colspan="6">&nbsp;</td>
+          <td colspan="7">&nbsp;</td>
         </tr>
       </tbody>
 
       <tfoot>
         <tr class="bg-grey-lighten-3">
-          <td colspan="5" class="text-right font-weight-bold">TOTAL</td>
+          <td colspan="6" class="text-right font-weight-bold">TOTAL</td>
           <td class="text-center font-weight-bold">
             {{ formatCurrency(po?.total_amount ?? 0) }}
           </td>
@@ -182,29 +242,59 @@ function productSkuFor(item: PRItem): string {
           </div>
 
           <!-- Actual count + SKU inputs (always visible when in edit mode) -->
-          <div v-if="skuEditMode" class="d-flex ga-3">
-            <div style="flex: 1; min-width: 0;">
-              <div class="text-caption text-medium-emphasis mb-1">Actual count</div>
-              <v-text-field
-                v-model.number="item.actual_count_stock_in"
-                type="number"
-                density="compact"
-                variant="outlined"
-                hide-details
-                min="1"
-                style="width: 100%"
-              />
+          <div v-if="skuEditMode">
+            <div class="d-flex ga-3">
+              <div style="flex: 1; min-width: 0;">
+                <div class="text-caption text-medium-emphasis mb-1">Actual count</div>
+                <v-text-field
+                  v-model.number="item.actual_count_stock_in"
+                  type="number"
+                  density="compact"
+                  variant="outlined"
+                  hide-details
+                  min="1"
+                  style="width: 100%"
+                />
+              </div>
+              <div style="flex: 1; min-width: 0;">
+                <div class="text-caption text-medium-emphasis mb-1">SKU</div>
+                <v-text-field
+                  v-model="item.sku"
+                  density="compact"
+                  variant="outlined"
+                  hide-details
+                  :placeholder="productSkuFor(item) || 'SKU'"
+                  style="width: 100%"
+                />
+              </div>
             </div>
-            <div style="flex: 1; min-width: 0;">
-              <div class="text-caption text-medium-emphasis mb-1">SKU</div>
-              <v-text-field
-                v-model="item.sku"
-                density="compact"
-                variant="outlined"
-                hide-details
-                :placeholder="productSkuFor(item) || 'SKU'"
-                style="width: 100%"
-              />
+            <div class="mt-3">
+              <div class="text-caption text-medium-emphasis mb-1">Expiry</div>
+              <v-menu
+                :model-value="expiryMenuOpen[index] ?? false"
+                @update:model-value="(val) => (expiryMenuOpen[index] = val)"
+                :close-on-content-click="false"
+                location="bottom"
+              >
+                <template #activator="{ props: menuProps }">
+                  <v-text-field
+                    v-bind="menuProps"
+                    :model-value="expiryFieldText(item)"
+                    placeholder="MM/YYYY"
+                    density="compact"
+                    variant="outlined"
+                    hide-details
+                    readonly
+                    prepend-inner-icon="mdi-calendar-month-outline"
+                    style="width: 100%"
+                  />
+                </template>
+                <v-date-picker
+                  view-mode="months"
+                  @update:month="(m) => onExpiryMonthSelect(item, index, m)"
+                  @update:year="(y) => onExpiryYearSelect(item, index, y)"
+                />
+              </v-menu>
             </div>
           </div>
           <!-- Read-only display -->
@@ -216,6 +306,10 @@ function productSkuFor(item: PRItem): string {
             <div>
               <span class="text-medium-emphasis">SKU: </span>
               <span class="font-weight-medium">{{ item.sku ?? '—' }}</span>
+            </div>
+            <div>
+              <span class="text-medium-emphasis">Expiry: </span>
+              <span class="font-weight-medium">{{ formatExpiryMonthYear(item.expiry_date) }}</span>
             </div>
           </div>
         </v-card-text>

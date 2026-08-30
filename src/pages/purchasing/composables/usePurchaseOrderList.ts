@@ -64,7 +64,7 @@ export function usePurchaseOrderList() {
   const totalItems       = ref(0)
   const page             = ref(1)
   const itemsPerPage     = ref(10)
-  const sortKey          = ref('created_at')
+  const sortKey          = ref('updated_at')
   const sortOrder        = ref<'asc' | 'desc'>('desc')
   const searchInput      = ref(search.value)
   const stats = ref({ total: 0, pending: 0, complete: 0, totalCost: 0 })

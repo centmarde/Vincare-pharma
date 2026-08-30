@@ -14,8 +14,8 @@ export type ProductPurchaseRow = {
   requisition_no: string
   unit: string
   qty: number
+  expiry_date: string | null
   cost_per_unit: number
-  offer_per_unit: number
   total_cost: number
   supplier_name: string
   created_at: string
@@ -28,8 +28,8 @@ export const historyHeaders = [
   { title: 'PR #',        key: 'requisition_no',  sortable: true,  align: 'center' as const },
   { title: 'UNIT',        key: 'unit',            sortable: false, align: 'center' as const },
   { title: 'QTY',         key: 'qty',             sortable: true,  align: 'center' as const },
+  { title: 'EXPIRY',      key: 'expiry_date',     sortable: true,  align: 'center' as const },
   { title: 'COST/UNIT',   key: 'cost_per_unit',   sortable: true,  align: 'center' as const },
-  { title: 'PR PRICE',  key: 'offer_per_unit',  sortable: true,  align: 'center' as const },
   { title: 'TOTAL COST',  key: 'total_cost',      sortable: true,  align: 'center' as const },
   { title: 'SUPPLIER',    key: 'supplier_name',   sortable: true,  align: 'center' as const },
   { title: 'DATE',        key: 'created_at',      sortable: true,  align: 'center' as const },
@@ -55,8 +55,8 @@ export function usePRHistory() {
       requisition_no: pr.requisition_no,
       unit:           item.unit,
       qty:            item.qty,
+      expiry_date:    item.expiry_date ?? null,
       cost_per_unit:  item.cost_per_unit,
-      offer_per_unit: item.offer_per_unit,
       total_cost:     item.qty * item.cost_per_unit,
       supplier_name:  item.supplier_name ?? '—',
       created_at:     pr.created_at,

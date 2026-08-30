@@ -16,7 +16,6 @@ export type PRItem = {
   unit: string
   item_description: string
   qty: number
-  offer_per_unit: number
   cost_per_unit: number
   product_id?: number
   sku?: string | null
@@ -32,7 +31,6 @@ export type RequisitionItemType = {
   unit: string
   item_description: string
   qty: number
-  offer_per_unit: number
   cost_per_unit: number
   supplier_id: string | null
   actual_count_stock_in?: number | null
@@ -118,8 +116,8 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       unit: ti.products?.unit ?? '—',
       item_description: ti.products?.product_name ?? '—',
       qty: ti.qty_stock_in ?? 0,
-      offer_per_unit: ti.products?.selling_price ?? 0,
-      cost_per_unit: ti.products?.cost_price ?? 0,
+      // Line snapshot wins over the product master, per gl_sum_cost's convention.
+      cost_per_unit: ti.cost_price ?? ti.unit_price ?? ti.products?.cost_price ?? 0,
       product_id: ti.product_id,
       sku: ti.products?.sku ?? null,
       supplier_name: ti.products?.suppliers?.name ?? '—',
@@ -171,7 +169,6 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       unit: it.unit ?? '—',
       item_description: it.product_name ?? '—',
       qty: it.qty_stock_in ?? 0,
-      offer_per_unit: it.selling_price ?? 0,
       cost_per_unit: it.cost_price ?? 0,
       product_id: it.product_id,
       sku: it.sku ?? null,
@@ -255,7 +252,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     const { data: existingItems, error: fetchItemsError } = await supabase
       .from('transaction_items')
       .select(
-        'id, product_id, products ( product_name, unit, supplier_id, expiry_date, sku, cost_price, selling_price )',
+        'id, product_id, products ( product_name, unit, supplier_id, expiry_date, sku )',
       )
       .eq('transaction_id', payload.prId)
 
@@ -292,11 +289,8 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       (i) => !(typeof i.id === 'number' && i.id > 0 && existingItemIds.includes(i.id)),
     )
 
-    // 5. Existing items whose product identity OR pricing changed vs. what's
-    //    on file. Price edits must be routed through the product-resolution
-    //    path so they propagate back to the products table — otherwise a
-    //    price-only edit is silently dropped (it's classified "unchanged"
-    //    and only qty gets written).
+    // 5. Existing items whose product identity changed vs. what's on file.
+    //    Price is not part of this — it lives on the line, not the product.
     const existingToUpdate = payload.items.filter((i) => existingItemIds.includes(i.id))
 
     const changedExistingItems = existingToUpdate.filter((item) => {
@@ -304,33 +298,18 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       const product = Array.isArray(onFile?.products) ? onFile?.products[0] : onFile?.products
       if (!product) return true // no linked product on file — treat as changed
       const supplierId = item.supplier_id ? Number(item.supplier_id) : null
-      const priceDiffers =
-        Math.abs(Number(product.cost_price ?? 0) - Number(item.cost_per_unit ?? 0)) > 0.001 ||
-        Math.abs(Number(product.selling_price ?? 0) - Number(item.offer_per_unit ?? 0)) > 0.001
       return (
         product.product_name !== item.item_description ||
         product.unit !== item.unit ||
         (product.supplier_id ?? null) !== supplierId ||
-        (product.expiry_date ?? null) !== (item.expiry_date ?? null) ||
-        priceDiffers
+        (product.expiry_date ?? null) !== (item.expiry_date ?? null)
       )
     })
 
-    // Unchanged existing items — qty-only update.
+    // Existing items keeping their product — qty/price-only update.
     const unchangedExistingItems = existingToUpdate.filter(
       (item) => !changedExistingItems.includes(item),
     )
-
-    // ── Track price edits so they can be synced back to the underlying
-    // product rows after items are persisted.
-    const priceSyncByProduct = new Map<number, { cost: number; offer: number }>()
-    const recordPrice = (productId: number | undefined | null, item: PRItem) => {
-      if (productId == null || productId <= 0) return
-      priceSyncByProduct.set(productId, {
-        cost: Number(item.cost_per_unit ?? 0),
-        offer: Number(item.offer_per_unit ?? 0),
-      })
-    }
 
     // ── Resolve products for BOTH brand-new items and changed-existing
     // items in one combined pass.
@@ -483,8 +462,6 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
           return {
             product_name: item.item_description,
             unit: item.unit,
-            cost_price: item.cost_per_unit,
-            selling_price: item.offer_per_unit,
             supplier_id: item.supplier_id ? Number(item.supplier_id) : null,
             status: 'active',
             expiry_date: item.expiry_date ?? null,
@@ -512,21 +489,15 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       const newItemsProductIds = productIdByIndex.slice(0, newItems.length)
       const changedItemsProductIds = productIdByIndex.slice(newItems.length)
 
-      // Record price edits for every item whose product was resolved this
-      // pass (new items resolved to a reused batch, or existing items
-      // re-linked/re-batched). Newly-created products already carry the
-      // prices from their insert, but re-recording them is harmless.
-      newItems.forEach((item, index) => recordPrice(newItemsProductIds[index], item))
-      changedExistingItems.forEach((item, index) =>
-        recordPrice(changedItemsProductIds[index], item),
-      )
-
       if (newItems.length) {
         const { error: insertError } = await supabase.from('transaction_items').insert(
           newItems.map((item, index) => ({
             transaction_id: payload.prId,
             product_id: newItemsProductIds[index]!,
             qty_stock_in: item.qty,
+            unit_price: item.cost_per_unit,
+            cost_price: item.cost_per_unit,
+            line_total: item.qty * item.cost_per_unit,
           })),
         )
         if (insertError) {
@@ -541,7 +512,13 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         const item = changedExistingItems[index]
         const { error: updateItemError } = await supabase
           .from('transaction_items')
-          .update({ product_id: changedItemsProductIds[index]!, qty_stock_in: item.qty })
+          .update({
+            product_id: changedItemsProductIds[index]!,
+            qty_stock_in: item.qty,
+            unit_price: item.cost_per_unit,
+            cost_price: item.cost_per_unit,
+            line_total: item.qty * item.cost_per_unit,
+          })
           .eq('id', item.id)
 
         if (updateItemError) {
@@ -553,11 +530,16 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       }
     }
 
-    // 6. Unchanged existing items — qty-only.
+    // 6. Items keeping their product — qty and price only.
     for (const item of unchangedExistingItems) {
       const { error: updateItemError } = await supabase
         .from('transaction_items')
-        .update({ qty_stock_in: item.qty })
+        .update({
+          qty_stock_in: item.qty,
+          unit_price: item.cost_per_unit,
+          cost_price: item.cost_per_unit,
+          line_total: item.qty * item.cost_per_unit,
+        })
         .eq('id', item.id)
 
       if (updateItemError) {
@@ -565,25 +547,6 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         toast.error(`Failed to update item ${item.id}.`)
         loading.value = false
         return false
-      }
-    }
-
-    // 7. Sync edited prices back to the underlying product rows. PR line
-    //    items read qty from transaction_items but unit prices from
-    //    products.cost_price / products.selling_price (join in
-    //    mapTransactionItems), so edits must land on the products table or
-    //    the PR would still display the old prices after saving.
-    for (const [productId, { cost, offer }] of priceSyncByProduct) {
-      const { error: priceError } = await supabase
-        .from('products')
-        .update({ cost_price: cost, selling_price: offer })
-        .eq('id', productId)
-
-      if (priceError) {
-        console.warn(
-          `updatePR: failed to sync product ${productId} prices (${cost}/${offer}):`,
-          priceError.message,
-        )
       }
     }
 
@@ -723,8 +686,6 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         return {
           product_name: item.item_description,
           unit: item.unit,
-          cost_price: item.cost_per_unit,
-          selling_price: item.offer_per_unit,
           supplier_id: item.supplier_id ? Number(item.supplier_id) : null,
           status: 'active',
           expiry_date: item.expiry_date ?? null,
@@ -755,6 +716,9 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         transaction_id: txData.id,
         product_id: productIdByIndex[index]!,
         qty_stock_in: item.qty,
+        unit_price: item.cost_per_unit,
+        cost_price: item.cost_per_unit,
+        line_total: item.qty * item.cost_per_unit,
         reorder_request_id: item.reorder_request_id ?? null, // NEW
       })),
     )
@@ -785,8 +749,8 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         `
         *,
         transaction_items!transaction_items_transaction_id_fkey (
-          id, product_id, qty_stock_in, actual_count_stock_in,
-          products ( id, product_name, unit, cost_price, selling_price, sku, supplier_id, expiry_date, suppliers ( name ) )
+          id, product_id, qty_stock_in, actual_count_stock_in, unit_price, cost_price,
+          products ( id, product_name, unit, cost_price, sku, supplier_id, expiry_date, suppliers ( name ) )
         )
       `,
       )
@@ -817,8 +781,8 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         `
         *,
         transaction_items!transaction_items_transaction_id_fkey (
-          id, product_id, qty_stock_in, actual_count_stock_in,
-          products ( id, product_name, unit, cost_price, selling_price, sku, supplier_id, expiry_date, suppliers ( name ) )
+          id, product_id, qty_stock_in, actual_count_stock_in, unit_price, cost_price,
+          products ( id, product_name, unit, cost_price, sku, supplier_id, expiry_date, suppliers ( name ) )
         )
       `,
       )

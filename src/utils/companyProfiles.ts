@@ -79,10 +79,20 @@ const DEFAULTS: Record<PrintedDocumentKind, CompanyKey> = {
   purchase_order: 'vincare',
 }
 
+/**
+ * Returns the default company entity for a given document type
+ * @param kind - The type of document being printed
+ * @returns The company key that should issue this document type
+ */
 export function defaultCompanyFor(kind: PrintedDocumentKind): CompanyKey {
   return DEFAULTS[kind]
 }
 
+/**
+ * Retrieves the company profile for a given company key
+ * @param key - The company key ('exelmed' or 'vincare')
+ * @returns The company profile with full details (falls back to exelmed if key not found)
+ */
 export function companyFor(key: CompanyKey): CompanyProfile {
   return companyProfiles[key] ?? companyProfiles.exelmed
 }
