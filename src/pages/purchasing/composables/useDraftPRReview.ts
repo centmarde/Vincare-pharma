@@ -17,6 +17,7 @@ export function useDraftPRReview(draftId: () => number | null) {
   const warnings = ref<ConvertWarning[]>([])
   const checking = ref(false)
   const submitting = ref(false)
+  const submitError = ref<string | null>(null)
   // Warnings are advisory only — anything that actually stops a submit shows up
   // in hasBlockingIssues and on the row chip — so they're safe to fold away.
   const warningsExpanded = ref(true)
@@ -49,6 +50,7 @@ export function useDraftPRReview(draftId: () => number | null) {
     if (id == null) return
     draft.value = await draftStore.fetchDraft(id)
     warningsExpanded.value = true
+    submitError.value = null
     if (draft.value) {
       checking.value = true
       warnings.value = await draftStore.precheckDraft(draft.value)
@@ -58,6 +60,7 @@ export function useDraftPRReview(draftId: () => number | null) {
 
   async function submit(): Promise<ConvertResult> {
     if (!draft.value) return { success: false }
+    submitError.value = null
 
     // One plain confirmation about the conversion itself. Warnings are not what
     // this asks about — they're on screen above, and the user can fold them away.
@@ -75,6 +78,7 @@ export function useDraftPRReview(draftId: () => number | null) {
     submitting.value = true
     const result = await draftStore.submitDraft(draft.value.id)
     submitting.value = false
+    if (!result.success && result.error) submitError.value = result.error
     return result
   }
 
@@ -83,6 +87,7 @@ export function useDraftPRReview(draftId: () => number | null) {
     warnings,
     checking,
     submitting,
+    submitError,
     warningsExpanded,
     totalEstimate,
     hasBlockingIssues,

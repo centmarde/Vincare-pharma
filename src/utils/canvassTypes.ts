@@ -32,7 +32,7 @@ export type CanvassableOrder = {
   items?: { id: number; product_id: number | null; product?: { product_name?: string | null } | null }[]
 }
 
-export type CanvassCommitResult = { success: boolean; prs?: CanvassPRResult[] }
+export type CanvassCommitResult = { success: boolean; prs?: CanvassPRResult[]; error?: string }
 export type CanvassCommitFn = (orderId: number, selections: CanvassSelection[]) => Promise<CanvassCommitResult>
 
 // Both PR-raising paths (canvassData.commitToPRs and draftPRData.submitDraft)

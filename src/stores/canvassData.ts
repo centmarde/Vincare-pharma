@@ -172,13 +172,14 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
 
     // ── Phase B: every PR is fully written. Now mirror the canvass decision
     //    back onto the order's own lines (drives the "PRs raised" sub-status)
-    //    + log. Best-effort audit writes — a failure here doesn't invalidate
-    //    the PRs, so it warns rather than rolling back.
+    //    + log. The PRs are never rolled back here, but the mirror is the only
+    //    record that they exist, so a failed one is reported rather than warned.
+    let mirrorFailure: string | null = null
     for (const supplierId of supplierIds) {
       const pr = results.find(r => r.supplier_id === supplierId)!
       const supplierSelections = selections.filter(s => s.supplier_id === supplierId)
       for (const sel of supplierSelections) {
-        const { error: mirrorError } = await supabase
+        const writeCoverage = async () => supabase
           .from('transaction_items')
           .update({
             supplier_quotes: {
@@ -188,7 +189,10 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
             },
           })
           .eq('id', sel.item_id)
-        if (mirrorError) console.warn('commitToPRs: canvass mirror update failed:', mirrorError.message)
+
+        let mirrorResult = await writeCoverage()
+        if (mirrorResult.error) mirrorResult = await writeCoverage()
+        if (mirrorResult.error && mirrorFailure == null) mirrorFailure = mirrorResult.error.message
       }
 
       const { error: logError } = await supabase.from('logs').insert({
@@ -197,6 +201,20 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
         module: logModule, transaction_id: orderId,
       })
       if (logError) console.warn('commitToPRs: activity log insert failed:', logError.message)
+    }
+
+    if (mirrorFailure) {
+      const raisedPRNos = results.map(r => r.pr_no).join(', ')
+      const { error: mirrorLogError } = await supabase.from('logs').insert({
+        created_by: userId, action: 'canvass_coverage_mirror_failed',
+        description: `${raisedPRNos} raised from ${logModule} ${orderNo ?? `#${orderId}`} but the order coverage could not be written: ${mirrorFailure}`,
+        module: logModule, transaction_id: orderId,
+      })
+      if (mirrorLogError) console.warn('commitToPRs: mirror failure log insert failed:', mirrorLogError.message)
+      const message = `${raisedPRNos} raised, but this order could not be marked as covered — do not canvass it again, report it so the link can be repaired.`
+      handleError(mirrorFailure, message)
+      loading.value = false
+      return { success: false, prs: results, error: message }
     }
 
     loading.value = false

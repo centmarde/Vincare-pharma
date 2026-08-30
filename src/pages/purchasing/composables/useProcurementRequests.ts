@@ -1,5 +1,6 @@
 import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useToast } from 'vue-toastification'
 import { useProcurementDataStore, type ProcurementRequestType } from '@/stores/procurementData'
 import { useInhouseDataStore } from '@/stores/inhouseData'
 import { useEthicalDataStore } from '@/stores/ethicalData'
@@ -15,6 +16,8 @@ export const headers = [
   { title: 'STATUS',      key: 'already_canvassed', sortable: false, align: 'center' as const },
   { title: 'ACTIONS',     key: 'actions',        sortable: false, align: 'center' as const },
 ]
+
+const toast = useToast()
 
 export function useProcurementRequests() {
   const procurementStore = useProcurementDataStore()
@@ -67,15 +70,24 @@ export function useProcurementRequests() {
     rfqQuantities.value = {}
   }
 
+  // Closing on a failed autosave would throw away the canvass the purchaser just
+  // did, so the panel stays open and selected until the draft is actually saved.
   async function dismissDetail() {
     if (dismissing.value) return
     dismissing.value = true
     try {
-      await canvassRef.value?.autoSaveDraft()
-      await draftStore.fetchDraftIdsByOrder() // light up "Resume Draft" on the row
+      const canvass = canvassRef.value
+      if (canvass?.hasSelections) {
+        const result = await canvass.autoSaveDraft()
+        if (!result.success) {
+          toast.error('Draft not saved — your supplier picks are still here, try closing again.')
+          return
+        }
+        await draftStore.fetchDraftIdsByOrder() // light up "Resume Draft" on the row
+      }
+      closeDetail()
     } finally {
       dismissing.value = false
-      closeDetail()
     }
   }
 

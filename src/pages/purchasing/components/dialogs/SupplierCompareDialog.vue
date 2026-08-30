@@ -6,9 +6,11 @@ import { useSuppliersDataStore } from '@/stores/suppliersData'
 import type { SupplierOfferType } from '@/stores/supplierOffersData'
 import { qualifyOffers, minQualifyingExpiry, type QualifiedOffer } from '@/utils/qualification'
 import { endOfMonthISODate, maskMonthYearInput, parseMonthYear } from '@/utils/helpers'
+import { useToast } from 'vue-toastification'
 import { useDisplay } from 'vuetify'
 
 const { mobile } = useDisplay()
+const toast = useToast()
 
 const props = defineProps<{
   modelValue: boolean
@@ -198,10 +200,27 @@ function monthsClass(idx: number): string {
   return mo == null ? '' : mo >= 0 ? 'text-success' : 'text-warning'
 }
 
+const pendingDisqualified = computed(
+  () => pendingRowIdx.value != null && rowStatus(pendingRowIdx.value) === 'too-soon',
+)
+
+const pendingExpiryMissing = computed(
+  () => pendingRowIdx.value != null && candidateFor(pendingRowIdx.value)?.expiry_date == null,
+)
+
+const blockedMessage = computed(() =>
+  pendingExpiryMissing.value
+    ? "Enter that supplier's batch expiry (MM/YYYY) before selecting it — a purchase requisition can't be raised without one."
+    : `That supplier's expiry is too soon for ${props.requiredByDate} — it would be rejected when the draft converts. Pick another row or correct its expiry.`,
+)
 
 async function onConfirm() {
   const product = props.product
   if (pendingRowIdx.value == null || !product) return
+  if (pendingDisqualified.value) {
+    toast.error(blockedMessage.value)
+    return
+  }
   commitQty()
   saving.value = true
   const created: SupplierOfferType[] = []
@@ -223,6 +242,10 @@ async function onConfirm() {
   const scored = new Map([...qualified, ...disqualified].map((o) => [o.id, o]))
   const confirmed = scored.get(confirmedId)
   if (!confirmed) return
+  if (!qualified.some((o) => o.id === confirmedId)) {
+    toast.error(blockedMessage.value)
+    return
+  }
 
   emit('confirm', {
     offer: confirmed,
@@ -248,6 +271,9 @@ async function onConfirm() {
         </div>
         <v-alert v-if="belowShortfall" type="warning" density="compact" variant="tonal" class="mt-2">
           Quantity is below the shortfall ({{ minQty }}).
+        </v-alert>
+        <v-alert v-if="pendingDisqualified" type="warning" density="compact" variant="tonal" class="mt-2">
+          {{ blockedMessage }}
         </v-alert>
       </v-card-title>
       <v-divider />
@@ -333,7 +359,7 @@ async function onConfirm() {
         <v-spacer v-if="!mobile" />
         <v-btn variant="text" class="text-none" :block="mobile" @click="emit('update:modelValue', false)">Cancel</v-btn>
         <v-btn color="primary" variant="flat" class="text-none font-weight-bold" :block="mobile" :loading="saving"
-          :disabled="pendingRowIdx == null || belowShortfall" @click="onConfirm">
+          :disabled="pendingRowIdx == null || belowShortfall || pendingDisqualified" @click="onConfirm">
           Confirm Selection
         </v-btn>
       </v-card-actions>

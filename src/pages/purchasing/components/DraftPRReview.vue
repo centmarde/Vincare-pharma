@@ -14,7 +14,7 @@ const emit = defineEmits<{
   (e: 'edit'): void
 }>()
 
-const { draft, warnings, checking, submitting, warningsExpanded, totalEstimate, hasBlockingIssues,
+const { draft, warnings, checking, submitting, submitError, warningsExpanded, totalEstimate, hasBlockingIssues,
   disqualifiedItemIds, load, submit } = useDraftPRReview(() => props.draftId)
 
 const { getCurrentTheme } = useTheme()
@@ -60,6 +60,10 @@ async function onSubmit() {
 
         <v-alert v-if="hasBlockingIssues" type="error" variant="tonal" density="compact" class="mb-3">
           Every item needs a selected, qualifying supplier before this can be submitted.
+        </v-alert>
+
+        <v-alert v-if="submitError" type="error" variant="tonal" density="compact" class="mb-3">
+          {{ submitError }}
         </v-alert>
 
         <!-- Foldable: these are advisory. The red alert above is not, because it

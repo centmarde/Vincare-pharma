@@ -65,11 +65,20 @@ export type ConvertResult = {
   error?: string
 }
 
+type CoverageCheck = { covered: boolean; error?: string }
+
 const ITEM_SELECT =
   '*, product:product_id(product_name), offer:selected_supplier_offer_id(supplier_id, cost_price_per_unit, expiry_date, supplier:supplier_id(name))'
 
 function requiredByOrToday(date: string | null | undefined): string {
   return date ?? new Date().toISOString().slice(0, 10)
+}
+
+// PostgREST returns a timestamptz with an offset and a plain timestamp without one — both are read as the same instant.
+function sameTimestamp(stored: string | null, written: string): boolean {
+  if (!stored) return false
+  const hasZone = /(Z|[+-]\d{2}:?\d{2})$/.test(stored)
+  return new Date(hasZone ? stored : `${stored}Z`).getTime() === new Date(written).getTime()
 }
 
 type BatchProduct = {
@@ -435,6 +444,33 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return true
   }
 
+  async function clearOfferSelection(itemId: number) {
+    const { error: updateError } = await supabase
+      .from('draft_pr_items')
+      .update({
+        selected_supplier_offer_id: null,
+        supplier_id: null,
+        justification: null,
+        considered_offers: null,
+      })
+      .eq('id', itemId)
+    if (updateError) {
+      toast.error('Failed to clear supplier selection.')
+      return false
+    }
+    const item = currentDraft.value?.items.find((i) => i.id === itemId)
+    if (item) {
+      item.selected_supplier_offer_id = null
+      item.justification = null
+      item.considered_offers = []
+      item.supplier_id = null
+      item.supplier_name = null
+      item.unit_price = null
+      item.expiry_date = null
+    }
+    return true
+  }
+
   async function updateRemarks(draftId: number, remarks: string) {
     const { error: updateError } = await supabase
       .from('draft_purchase_requisitions')
@@ -504,18 +540,43 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
   }
 
   // Does this order still have at least one line covered by a non-rejected PR?
-  async function hasLiveCoverage(sourceOrderId: number): Promise<boolean> {
-    const { data: items } = await supabase
+  async function hasLiveCoverage(sourceOrderId: number): Promise<CoverageCheck> {
+    const { data: items, error: itemsError } = await supabase
       .from('transaction_items')
       .select('supplier_quotes')
       .eq('transaction_id', sourceOrderId)
+    if (itemsError) return { covered: false, error: itemsError.message }
     const prIds = Array.from(new Set(
       (items ?? []).map((i) => prIdFromCoverage(i.supplier_quotes)).filter((id): id is number => id != null),
     ))
-    if (!prIds.length) return false
+    if (!prIds.length) return { covered: false }
 
-    const { data: prs } = await supabase.from('transactions').select('id, status').in('id', prIds)
-    return (prs ?? []).some((pr) => isPRCoverageLive(pr.status))
+    const { data: prs, error: prsError } = await supabase.from('transactions').select('id, status').in('id', prIds)
+    if (prsError) return { covered: false, error: prsError.message }
+    return { covered: (prs ?? []).some((pr) => isPRCoverageLive(pr.status)) }
+  }
+
+  // An UPDATE's own RETURNING can come back empty under a narrow RLS select policy, so an empty claim is confirmed against the stamp it wrote.
+  async function claimLanded(draftId: number, claimStamp: string): Promise<boolean> {
+    const { data, error: readError } = await supabase
+      .from('draft_purchase_requisitions')
+      .select('status, updated_at')
+      .eq('id', draftId)
+      .maybeSingle()
+    if (readError || !data) return false
+    return data.status === 'converted' && sameTimestamp(data.updated_at, claimStamp)
+  }
+
+  // Backstop for the coverage mirror — a live or unreadable converted_pr_id blocks a second conversion.
+  async function convertedPRStillLive(prId: number | null): Promise<boolean> {
+    if (prId == null) return false
+    const { data, error: prError } = await supabase
+      .from('transactions')
+      .select('status')
+      .eq('id', prId)
+      .maybeSingle()
+    if (prError) return true
+    return data ? isPRCoverageLive(data.status) : false
   }
 
   async function submitDraft(draftId: number): Promise<ConvertResult> {
@@ -539,12 +600,20 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     // A converted draft is normally spent — but if every PR it raised was
     // rejected, the shortfall is live again and the purchaser must be able to
     // fix the draft and resubmit it. Coverage is read off the source order's
-    // mirror rather than converted_pr_id, which only ever holds the FIRST of a
-    // multi-supplier conversion's PRs.
+    // mirror, with converted_pr_id — which only ever holds the FIRST of a
+    // multi-supplier conversion's PRs — as the backstop when that mirror is missing.
     if (draftRow.status === 'converted') {
-      const stillCovered = draftRow.source_order_id != null
+      const coverage: CoverageCheck = draftRow.source_order_id != null
         ? await hasLiveCoverage(draftRow.source_order_id)
-        : true
+        : { covered: true }
+      if (coverage.error) {
+        loading.value = false
+        return {
+          success: false,
+          error: 'Could not check whether this draft is still covered by a purchase requisition. Try again.',
+        }
+      }
+      const stillCovered = coverage.covered || await convertedPRStillLive(draftRow.converted_pr_id ?? null)
       if (stillCovered) {
         loading.value = false
         return { success: false, error: 'Draft already converted.' }
@@ -643,11 +712,41 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     const supplierIds = Array.from(new Set(resolvedLines.map((l) => l.supplier_id))).sort((a, b) => a - b)
     const createdPRs: { pr_id: number; pr_no: string; supplier_id: number }[] = []
 
+    // One conditional UPDATE claims the draft — two racing submits can't both raise PRs.
+    const claimedFromStatus: DraftPRType['status'] = draftRow.status
+    const claimedFromUpdatedAt: string | null = draftRow.updated_at ?? null
+    const claimStamp = new Date().toISOString()
+    let claimQuery = supabase
+      .from('draft_purchase_requisitions')
+      .update({ status: 'converted', updated_at: claimStamp })
+      .eq('id', draftId)
+      .eq('status', claimedFromStatus)
+    claimQuery = claimedFromUpdatedAt == null
+      ? claimQuery.is('updated_at', null)
+      : claimQuery.eq('updated_at', claimedFromUpdatedAt)
+    const { data: claimed, error: claimError } = await claimQuery.select('id')
+    if (claimError) {
+      loading.value = false
+      return { success: false, error: claimError.message }
+    }
+    if (!claimed?.length && !(await claimLanded(draftId, claimStamp))) {
+      loading.value = false
+      return { success: false, error: 'This draft changed in another session — reopen it and submit again.' }
+    }
+
+    const releaseClaim = async () => {
+      await supabase
+        .from('draft_purchase_requisitions')
+        .update({ status: claimedFromStatus, updated_at: new Date().toISOString() })
+        .eq('id', draftId)
+    }
+
     const rollback = async () => {
       for (const pr of createdPRs) {
         await supabase.from('transaction_items').delete().eq('transaction_id', pr.pr_id)
         await supabase.from('transactions').delete().eq('id', pr.pr_id).eq('transaction_type', 'purchase_requisition')
       }
+      await releaseClaim()
     }
 
     for (const supplierId of supplierIds) {
@@ -694,40 +793,54 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     }
 
     // ── Phase C: every PR written — mirror onto the source order, log, mark the
-    // draft converted. Best-effort, doesn't roll back the PRs on failure
-    // (matches commitToPRs's own convention).
+    // draft converted. The PRs are never rolled back here (matches commitToPRs's
+    // own convention), but a failed mirror is reported instead of swallowed.
     const sourceOrderId: number | null = draftRow.source_order_id ?? null
     const decidedAt = new Date().toISOString()
+    let mirrorFailure: string | null = null
 
     // Mirror the decision back onto the SOURCE order's own lines, the same way
     // commitToPRs Phase B does. Without this the procurement queue has no way to
     // know a PR was raised — it reads coverage off these rows, not off the PR's.
     if (sourceOrderId != null) {
-      const { data: orderItems, error: orderItemsError } = await supabase
+      const readOrderItems = async () => supabase
         .from('transaction_items')
         .select('id, product_id')
         .eq('transaction_id', sourceOrderId)
-      if (orderItemsError) {
-        console.warn('submitDraft: source order lines fetch failed:', orderItemsError.message)
+
+      let orderItemsResult = await readOrderItems()
+      if (orderItemsResult.error) orderItemsResult = await readOrderItems()
+
+      if (orderItemsResult.error) {
+        mirrorFailure = orderItemsResult.error.message
       } else {
+        const orderItems = orderItemsResult.data ?? []
+        let coverageWrites = 0
         // Matched on product_id — draft_pr_items carries no source line id, and
         // DraftPREditPage can't add products that aren't already on the order.
         for (const line of resolvedLines) {
           const pr = createdPRs.find((p) => p.supplier_id === line.supplier_id)
           if (!pr) continue
-          const targets = (orderItems ?? []).filter((oi) => oi.product_id === line.product_id)
+          const targets = orderItems.filter((oi) => oi.product_id === line.product_id)
           for (const target of targets) {
             const coverage: PRCoverage = {
               source: 'draft_pr', pr_id: pr.pr_id, pr_no: pr.pr_no,
               winner_supplier_id: line.supplier_id, unit_price: line.unit_price,
               order_qty: line.qty, quotes: line.considered_offers ?? [], decided_at: decidedAt,
             }
-            const { error: mirrorError } = await supabase
+            const writeCoverage = async () => supabase
               .from('transaction_items')
               .update({ supplier_quotes: coverage })
               .eq('id', target.id)
-            if (mirrorError) console.warn('submitDraft: source order mirror update failed:', mirrorError.message)
+
+            let mirrorResult = await writeCoverage()
+            if (mirrorResult.error) mirrorResult = await writeCoverage()
+            if (mirrorResult.error && mirrorFailure == null) mirrorFailure = mirrorResult.error.message
+            if (!mirrorResult.error) coverageWrites += 1
           }
+        }
+        if (coverageWrites === 0 && mirrorFailure == null) {
+          mirrorFailure = 'no line on the source order matched the converted products'
         }
       }
     }
@@ -754,8 +867,29 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
 
     await supabase
       .from('draft_purchase_requisitions')
-      .update({ status: 'converted', converted_pr_id: createdPRs[0]?.pr_id ?? null, updated_at: new Date().toISOString() })
+      .update({ converted_pr_id: createdPRs[0]?.pr_id ?? null, updated_at: new Date().toISOString() })
       .eq('id', draftId)
+
+    const raisedPRNos = createdPRs.map((p) => p.pr_no).join(', ')
+
+    // An unmirrored conversion still reads as un-canvassed in the procurement queue, so it is not a success.
+    if (mirrorFailure) {
+      const { error: mirrorLogError } = await supabase.from('logs').insert({
+        created_by: user.id, action: 'draft_pr_coverage_mirror_failed',
+        description: `Draft #${draftId} raised ${raisedPRNos} but the source order coverage could not be written: ${mirrorFailure}`,
+        module: 'purchasing', transaction_id: sourceOrderId,
+      })
+      if (mirrorLogError) console.warn('submitDraft: mirror failure log insert failed:', mirrorLogError.message)
+      toast.error(`${raisedPRNos} raised, but the order could not be marked as covered — report this before submitting again.`)
+      loading.value = false
+      return {
+        success: false,
+        pr_id: createdPRs[0]?.pr_id,
+        pr_no: raisedPRNos,
+        warnings,
+        error: `${raisedPRNos} raised, but writing coverage back to the source order failed: ${mirrorFailure}`,
+      }
+    }
 
     toast[warnings.length ? 'warning' : 'success'](
       createdPRs.length === 1 ? `${createdPRs[0].pr_no} raised.` : `${createdPRs.length} purchase requisitions raised.`,
@@ -764,7 +898,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return {
       success: true,
       pr_id: createdPRs[0]?.pr_id,
-      pr_no: createdPRs.map((p) => p.pr_no).join(', '),
+      pr_no: raisedPRNos,
       warnings,
     }
   }
@@ -814,13 +948,16 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
         const rows = rowsByProduct.get(productId) ?? []
         for (let i = 0; i < items.length; i++) {
           const row = rows[i]
-          if (row?.offer) {
+          if (!row) continue
+          if (row.offer) {
             await selectOffer({
               itemId: items[i].id,
               offer: row.offer,
               consideredOffers: row.consideredOffers,
               justification: row.justification,
             })
+          } else if (items[i].selected_supplier_offer_id != null) {
+            await clearOfferSelection(items[i].id)
           }
         }
       }
@@ -867,6 +1004,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     setQty,
     setRequiredByDate,
     selectOffer,
+    clearOfferSelection,
     updateRemarks,
     deleteDraft,
     precheckDraft,

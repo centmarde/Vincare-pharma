@@ -62,7 +62,7 @@ function onDateChange(item: DraftPRItemType, date: string) {
 // The field is bound one-way, so the buffer has to take whatever was typed —
 // dropping an empty/invalid value here would leave the box blank while the old
 // qty silently stays saved. Clamping happens on blur and again before save.
-const qtyFloor = (item: DraftPRItemType) => item.shortfall_qty ?? 1
+const qtyFloor = (item: DraftPRItemType) => Math.max(1, item.shortfall_qty ?? 1)
 
 function onQtyChange(item: DraftPRItemType, value: number | string) {
   const buf = edits.value[item.id]

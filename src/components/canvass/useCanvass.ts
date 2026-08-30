@@ -93,9 +93,23 @@ export function useCanvass(
     return Array.from(bySupplier.entries()).map(([supplier_id, v]) => ({ supplier_id, ...v }))
   })
 
+  function rowOfferQualifies(row: CanvassRow) {
+    const { qualified } = qualifyOffers(row.considered_offers, row.required_by_date)
+    return qualified.some((offer) => offer.id === row.selected_offer?.id)
+  }
+
   async function commit() {
     const o = order()
     if (!o || !canCommit.value) { toast.warning('Select a supplier for every product before submitting.'); return }
+
+    const disqualifiedRow = readyRows.value.find((row) => !rowOfferQualifies(row))
+    if (disqualifiedRow) {
+      const reason = disqualifiedRow.selected_offer?.expiry_date
+        ? `that supplier's expiry is too soon for ${disqualifiedRow.required_by_date}`
+        : 'that supplier has no batch expiry on file'
+      toast.error(`${disqualifiedRow.product_name}: ${reason} — re-open Compare and fix it before submitting.`)
+      return
+    }
 
     const selections: CanvassSelection[] = readyRows.value.map((row) => {
       const { qualified, disqualified } = qualifyOffers(row.considered_offers, row.required_by_date)
@@ -119,7 +133,7 @@ export function useCanvass(
     const result = await commitFn(o.id, selections)
     loading.value = false
     if (result.success) onCreated()
-    else toast.error('Failed to raise purchase requisitions. Please try again.')
+    else if (!result.error) toast.error('Failed to raise purchase requisitions. Please try again.')
   }
 
   async function saveAsDraft() {
