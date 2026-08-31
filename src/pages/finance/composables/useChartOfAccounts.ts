@@ -2,7 +2,7 @@ import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useGLDataStore, ACCOUNT_CATEGORIES, nextAccountCode } from '@/stores/glData'
-import type { AccountCategoryKey } from '@/stores/glData'
+import type { AccountCategoryKey, AccountLedgerLine, GLAccount } from '@/stores/glData'
 
 const toast = useToast()
 
@@ -84,6 +84,46 @@ export function useChartOfAccounts() {
       }))
   })
 
+  // --- Account drill-down -------------------------------------------------
+  // Clicking any account opens its ledger: every movement through it, with a
+  // running balance. Works for all 73 accounts with no per-account code — an
+  // expense line and a cash account read the same way, because for most
+  // accounts the transactions ARE the whole story.
+  //
+  // Accounts backed by an operational table (cash, AR, AP, inventory) can also
+  // show WHAT MAKES UP the balance. That breakdown is deliberately not built
+  // here yet: the generic view is useful on its own and each sub-ledger is
+  // additive, so they can land one at a time without touching this.
+  const openAccount = ref<GLAccount | null>(null)
+  const ledger = ref<AccountLedgerLine[]>([])
+  const ledgerLoading = ref(false)
+
+  // The closing balance IS the last line's running balance, rather than a
+  // separately-queried figure — so the total on screen always equals the sum of
+  // the lines on screen, and the two can never disagree in front of the
+  // accountant.
+  const ledgerBalance = computed(() => ledger.value[ledger.value.length - 1]?.runningBalance ?? 0)
+
+  async function showAccount(account: GLAccount) {
+    openAccount.value = account
+    ledgerLoading.value = true
+    ledger.value = []
+    ledger.value = await gl.fetchAccountLedger(account.code, account.normal_balance)
+    ledgerLoading.value = false
+  }
+
+  /** Open by code, for call sites that only carry the row's code. */
+  async function showAccountByCode(code: string) {
+    const account = accounts.value.find((a) => a.code === code)
+    if (!account) return
+    await showAccount(account)
+  }
+
+  function closeAccount() {
+    openAccount.value = null
+    ledger.value = []
+  }
+
   const selectedCategory = computed(() => ACCOUNT_CATEGORIES.find((c) => c.key === newCategory.value) ?? null)
 
   // Live preview of the code the system will assign — the accountant never
@@ -129,5 +169,7 @@ export function useChartOfAccounts() {
     showCreateDialog, creating, newCategory, newName, newIsContra,
     previewCode, canCreate, categoryOptions,
     openCreateDialog, cancelCreate, submitCreate, init,
+    openAccount, ledger, ledgerLoading, ledgerBalance,
+    showAccount, showAccountByCode, closeAccount,
   }
 }

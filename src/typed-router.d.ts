@@ -82,6 +82,7 @@ declare module 'vue-router/auto-routes' {
     '/finance/components/CashAccountsManager': RouteRecordInfo<'/finance/components/CashAccountsManager', '/finance/components/CashAccountsManager', Record<never, never>, Record<never, never>>,
     '/finance/components/CashAccountsPanel': RouteRecordInfo<'/finance/components/CashAccountsPanel', '/finance/components/CashAccountsPanel', Record<never, never>, Record<never, never>>,
     '/finance/components/ChartOfAccounts': RouteRecordInfo<'/finance/components/ChartOfAccounts', '/finance/components/ChartOfAccounts', Record<never, never>, Record<never, never>>,
+    '/finance/components/dialogs/AccountLedgerDialog': RouteRecordInfo<'/finance/components/dialogs/AccountLedgerDialog', '/finance/components/dialogs/AccountLedgerDialog', Record<never, never>, Record<never, never>>,
     '/finance/components/dialogs/AddExpenseDialog': RouteRecordInfo<'/finance/components/dialogs/AddExpenseDialog', '/finance/components/dialogs/AddExpenseDialog', Record<never, never>, Record<never, never>>,
     '/finance/components/dialogs/ARDetailDialog': RouteRecordInfo<'/finance/components/dialogs/ARDetailDialog', '/finance/components/dialogs/ARDetailDialog', Record<never, never>, Record<never, never>>,
     '/finance/components/dialogs/ManualEntryDialog': RouteRecordInfo<'/finance/components/dialogs/ManualEntryDialog', '/finance/components/dialogs/ManualEntryDialog', Record<never, never>, Record<never, never>>,

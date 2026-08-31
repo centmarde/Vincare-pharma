@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useChartOfAccounts, headers } from '../composables/useChartOfAccounts'
 import NewAccountDialog from './dialogs/NewAccountDialog.vue'
+import AccountLedgerDialog from './dialogs/AccountLedgerDialog.vue'
 
 const {
   loading,
@@ -20,9 +21,23 @@ const {
   cancelCreate,
   submitCreate,
   init,
+  openAccount,
+  ledger,
+  ledgerLoading,
+  ledgerBalance,
+  showAccount,
+  showAccountByCode,
+  closeAccount,
 } = useChartOfAccounts()
 
 const view = ref<'table' | 'cheatsheet'>('cheatsheet')
+
+// v-data-table's row-click hands back (event, { item }). Unpacked here rather
+// than inline in the template: template expressions are parsed as plain JS, so
+// a type annotation on the handler's args is a parse error, not a type error.
+function onRowClick(_event: unknown, row: { item: { code: string } }) {
+  showAccountByCode(row.item.code)
+}
 
 onMounted(init)
 </script>
@@ -94,7 +109,12 @@ onMounted(init)
                   <v-divider />
                   <v-table density="compact">
                     <tbody>
-                      <tr v-for="a in group.items" :key="a.code">
+                      <tr
+                        v-for="a in group.items"
+                        :key="a.code"
+                        class="cursor-pointer"
+                        @click="showAccount(a)"
+                      >
                         <td class="font-weight-bold" style="width: 70px">{{ a.code }}</td>
                         <td>
                           {{ a.name }}
@@ -131,6 +151,7 @@ onMounted(init)
             item-value="code"
             no-data-text="No accounts found."
             hover
+            @click:row="onRowClick"
           >
             <template #item.is_contra="{ item }">
               <v-chip v-if="item.is_contra" size="small" variant="tonal" color="warning"
@@ -157,6 +178,15 @@ onMounted(init)
       :loading="creating"
       @submit="submitCreate"
       @cancel="cancelCreate"
+    />
+
+    <AccountLedgerDialog
+      :model-value="openAccount !== null"
+      :account="openAccount"
+      :lines="ledger"
+      :balance="ledgerBalance"
+      :loading="ledgerLoading"
+      @update:model-value="closeAccount"
     />
   </v-container>
 </template>
