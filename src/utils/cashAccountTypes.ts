@@ -66,24 +66,24 @@ export type CreateCashAccountPayload = {
  * owner -- not cash anyone can spend from. Offering them here would let someone
  * pay an expense "out of" a cash advance, which is not a thing.
  */
-export const CASH_GL_RANGE = { floor: 1000, ceiling: 1059 }
+export const cashGLRange = { floor: 1000, ceiling: 1059 }
 
 /**
  * Inside that range but NOT cash: a receivable and stock, neither of which
  * anyone can pay an expense out of. Excluded by code rather than by narrowing
  * the range, so a future '1055 Cash in Bank - BPI' is offered automatically.
  */
-export const CASH_GL_EXCLUDED = ['1030', '1035', '1040']
+export const cashGLExcluded = ['1030', '1035', '1040']
 
 /** Outside the range but genuinely cash-like: where time deposits are filed. */
-export const CASH_GL_EXTRA = ['1100']
+export const cashGLExtra = ['1100']
 
 /** Is this chart account somewhere a cash account's money can sit? */
 export function isCashGLAccount(code: string): boolean {
-  if (CASH_GL_EXCLUDED.includes(code)) return false
-  if (CASH_GL_EXTRA.includes(code)) return true
+  if (cashGLExcluded.includes(code)) return false
+  if (cashGLExtra.includes(code)) return true
   const n = parseInt(code, 10)
-  return !isNaN(n) && n >= CASH_GL_RANGE.floor && n <= CASH_GL_RANGE.ceiling
+  return !isNaN(n) && n >= cashGLRange.floor && n <= cashGLRange.ceiling
 }
 
 export type AddExpensePayload = {
