@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useDisplay } from 'vuetify'
-import { formatCurrency, formatMonthYear } from '@/utils/helpers'
+import { formatCurrency, formatMonthYear, isBlank, NOT_SET } from '@/utils/helpers'
 import { useProductsWidget } from '@/components/products/composables/useProductsWidget.ts'
 import { useTheme } from '@/stores/useTheme'
 import { useLogsDataStore, type LogType } from '@/stores/logsData'
@@ -370,9 +370,17 @@ function stockColor(item: any, stock: number) {
         show-expand
         @update:options="handleTableOptions"
       >
-        <template #[`item.cost_price`]="{ value }">
-          <span v-if="value != null">{{ formatCurrency(Number(value)) }}</span>
-          <span v-else class="text-grey">-</span>
+        <template #[`item.cost_price`]="{ item }">
+          <span v-if="!isBlank(item.cost_price)">
+            {{ formatCurrency(Number(item.cost_price)) }}
+          </span>
+          <span v-else class="text-medium-emphasis font-italic">{{ NOT_SET }}</span>
+        </template>
+        <template #[`item.selling_price`]="{ item }">
+          <span v-if="!isBlank(item.selling_price)">
+            {{ formatCurrency(Number(item.selling_price)) }}
+          </span>
+          <span v-else class="text-medium-emphasis font-italic">{{ NOT_SET }}</span>
         </template>
         <template #[`item.unit`]="{ item }">
           <span>{{ item.unit || 'N/A' }}</span>

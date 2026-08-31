@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import CustomerTermsChips from '@/components/customers/CustomerTermsChips.vue'
 import { businessStructures } from '../composables/useCustomers'
+import { NOT_SET } from '@/utils/helpers'
 
 interface Props {
   customers: any[]
@@ -21,7 +22,7 @@ const emit = defineEmits<{
 function structureLabel(value: string | null): string {
   return (
     businessStructures.find((structure) => structure.value === value)?.title ??
-    'not set yet'
+    NOT_SET
   )
 }
 

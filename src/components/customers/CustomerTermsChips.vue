@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { DiscountProfile } from '@/stores/discountsData'
+import { NOT_SET } from '@/utils/helpers'
 
 /**
  * A customer's agreed rates, compact enough for a table cell.
@@ -37,5 +38,5 @@ const unreconciled = computed(() => !!p.value && p.value.rows.length > 0 && !p.v
       </template>
     </v-tooltip>
   </div>
-  <span v-else class="text-medium-emphasis font-italic">not set yet</span>
+  <span v-else class="text-medium-emphasis font-italic">{{ NOT_SET }}</span>
 </template>

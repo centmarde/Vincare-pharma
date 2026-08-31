@@ -440,13 +440,19 @@ export const organizationValidationRules = {
   title: [(v: string) => !!v || 'Organization name is required'],
 }
 
-export const formatCurrency = (value: number): string =>
-  new Intl.NumberFormat('en-PH', {
+export const formatCurrency = (value: number): string => {
+  // Guard against NaN / Infinity / non-numeric input leaking a "₱NaN" (or
+  // "₱∞") onto the screen. Finite numbers — including 0 — render normally.
+  if (!Number.isFinite(value)) return NOT_SET
+  return new Intl.NumberFormat('en-PH', {
     style: 'currency',
     currency: 'PHP',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(value).replace('PHP', '₱')
+  })
+    .format(value)
+    .replace('PHP', '₱')
+}
 
 /**
  * Batch expiry as MM/YYYY — the pharma convention, and how expiry is entered
