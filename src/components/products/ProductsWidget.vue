@@ -370,9 +370,11 @@ function stockColor(item: any, stock: number) {
         show-expand
         @update:options="handleTableOptions"
       >
-        <template #[`item.cost_price`]="{ value }">
-          <span v-if="value != null">{{ formatCurrency(Number(value)) }}</span>
-          <span v-else class="text-grey">-</span>
+        <template #[`item.cost_price`]="{ item }">
+          <span v-if="!isBlank(item.cost_price)">
+            {{ formatCurrency(Number(item.cost_price)) }}
+          </span>
+          <span v-else class="text-medium-emphasis font-italic">{{ NOT_SET }}</span>
         </template>
         <template #[`item.selling_price`]="{ item }">
           <span v-if="!isBlank(item.selling_price)">

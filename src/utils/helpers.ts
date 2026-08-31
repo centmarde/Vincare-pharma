@@ -440,13 +440,19 @@ export const organizationValidationRules = {
   title: [(v: string) => !!v || 'Organization name is required'],
 }
 
-export const formatCurrency = (value: number): string =>
-  new Intl.NumberFormat('en-PH', {
+export const formatCurrency = (value: number): string => {
+  // Guard against NaN / Infinity / non-numeric input leaking a "₱NaN" (or
+  // "₱∞") onto the screen. Finite numbers — including 0 — render normally.
+  if (!Number.isFinite(value)) return NOT_SET
+  return new Intl.NumberFormat('en-PH', {
     style: 'currency',
     currency: 'PHP',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(value).replace('PHP', '₱')
+  })
+    .format(value)
+    .replace('PHP', '₱')
+}
 
 /**
  * Batch expiry as MM/YYYY — the pharma convention, and how expiry is entered
@@ -475,21 +481,9 @@ export function label(value: string | number | null | undefined): string {
   return isBlank(value) ? NOT_SET : String(value).trim()
 }
 
-/**
- * True when a field has never been filled in.
- *
- * Treats null, empty/whitespace-only strings, a literal `undefined`, and NaN
- * (both the number and the "NaN" string a failed parse produces) as un-filled.
- * This is what lets a numeric field like a missing selling price render as
- * "not set yet" instead of "NaN".
- */
+/** True when a field has never been filled in. */
 export function isBlank(value: string | number | null | undefined): boolean {
-  if (value == null) return true
-  const text = String(value).trim()
-  if (text === '') return true
-  if (typeof value === 'number' && Number.isNaN(value)) return true
-  if (/^(nan|undefined)$/i.test(text)) return true
-  return false
+  return value == null || String(value).trim() === ''
 }
 
 /**
