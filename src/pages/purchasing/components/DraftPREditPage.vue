@@ -6,6 +6,7 @@ import { useDraftPRDataStore, type DraftPRItemType } from '@/stores/draftPRData'
 import SupplierCompareDialog from './dialogs/SupplierCompareDialog.vue'
 import { formatCurrency } from '@/utils/helpers'
 import { checkQtyAgainstShortfall, bufferOver, maxQtyMultiple } from '@/utils/shortfall'
+import { formatDatePR_ISO } from '@/utils/helpers'
 import { useDisplay } from 'vuetify'
 
 const { mobile } = useDisplay()
@@ -117,6 +118,12 @@ async function continueToReview() {
   emit('continue')
 }
 
+const convertedDate = computed(() => {
+  const draft = draftStore.currentDraft
+  return draft?.status === 'converted' ? formatDatePR_ISO(draft.converted_at ?? draft.updated_at) : null
+})
+
+
 const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.value[item.id]?.qty ?? item.qty)
 </script>
 
@@ -133,6 +140,9 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
           <div class="text-caption text-medium-emphasis" :class="{ 'text-truncate': mobile }">
             {{ draftStore.currentDraft.remarks }}
           </div>
+          <div v-if="convertedDate" class="text-caption text-medium-emphasis text-wrap">
+            Submitted draft to Purchase Requisition on {{ convertedDate }}
+          </div>
         </div>
         <v-btn icon="mdi-close" variant="text" size="small" :loading="saving" @click="onDialogUpdate(false)" />
       </v-card-title>
@@ -146,7 +156,7 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
         <v-table density="comfortable">
           <thead>
             <tr>
-              <th class="text-left">Product</th>
+              <th class="text-left" style="max-width:220px">Product</th>
               <th class="text-right" style="width:90px">Shortfall</th>
               <th class="text-right" style="width:140px">Qty</th>
               <th style="width:160px">Required by</th><th class="text-left">Supplier</th>
@@ -155,10 +165,10 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
           </thead>
           <tbody>
             <tr v-for="item in draftStore.currentDraft.items" :key="item.id">
-              <td>{{ item.product_name }}</td>
+              <td style="max-width:220px; white-space:normal; overflow-wrap:anywhere">{{ item.product_name }}</td>
               <td class="text-right">{{ item.shortfall_qty ?? '—' }}</td>
               <td class="text-right">
-                <div class="d-flex align-center justify-end" style="gap:6px">
+                <div class="d-flex align-center justify-end" style="gap:6px; max-width:140px;">
                   <v-text-field :model-value="edits[item.id]?.qty ?? item.qty" type="number"
                     :min="item.shortfall_qty ?? 1" density="compact" :readonly="readonly"
                     variant="outlined" hide-details style="width:100%; min-width:0"

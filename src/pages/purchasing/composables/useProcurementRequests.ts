@@ -14,6 +14,7 @@ export const headers = [
   { title: 'REQUESTED',   key: 'requested_at',   sortable: true,  align: 'center' as const },
   { title: 'ITEMS SHORT', key: 'lines',          sortable: false, align: 'center' as const },
   { title: 'STATUS',      key: 'already_canvassed', sortable: false, align: 'center' as const },
+  { title: 'SUBMITTED TO PR', key: 'converted_at', sortable: false, align: 'center' as const },
   { title: 'ACTIONS',     key: 'actions',        sortable: false, align: 'center' as const },
 ]
 
@@ -116,6 +117,13 @@ export function useProcurementRequests() {
 
   const moduleLabel = (t: ProcurementRequestType['order_type']) => (t === 'inhouse_order' ? 'In-House' : 'Ethical')
 
+  function convertedAtFor(orderId: number): string | null {
+    const draft = draftByOrder.value[orderId]
+    if (!draft) return null
+    if (draft.status === 'converted') return draft.updated_at
+    return draft.converted_at ?? null
+  }
+
   async function startDraftPR(req: ProcurementRequestType) {
     const result = await draftStore.getOrCreateDraft({
       sourceOrderId: req.order_id,
@@ -173,6 +181,6 @@ export function useProcurementRequests() {
     init, openDetail, closeDetail, dismissDetail, onCanvassCreated, moduleLabel,
     showDraftEdit, showDraftReview, activeDraftId, draftReadonly,
     startDraftPR, goToReview, backToEdit, onDraftSubmitted, onDraftSaved,
-    draftByOrder, resumeDraft, openDraft,
+    draftByOrder, resumeDraft, openDraft, convertedAtFor,
   }
 }
