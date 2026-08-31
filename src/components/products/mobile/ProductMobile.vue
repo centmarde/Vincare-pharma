@@ -132,7 +132,10 @@ function nextPage() {
             <v-col cols="6">
               <div class="text-caption text-grey-darken-1">Cost Price</div>
               <div class="text-body-2 font-weight-medium">
-                {{ product.cost_price != null ? formatCurrency(Number(product.cost_price)) : '—' }}
+                <span v-if="!isBlank(product.cost_price)">
+                  {{ formatCurrency(Number(product.cost_price)) }}
+                </span>
+                <span v-else class="text-medium-emphasis font-italic">{{ NOT_SET }}</span>
               </div>
             </v-col>
             <v-col cols="6">
