@@ -41,14 +41,14 @@ type VoucherFormLine = {
  * the signature row and the stamp would miss. A sixth account goes on a second
  * voucher.
  */
-export const MAX_VOUCHER_ACCOUNTS = 5
+export const maxVoucherAccounts = 5
 
 /**
  * How many lines of particulars fit beside the account rows.
  *
  * Derived, not chosen: the particulars cell sits BESIDE the account block in the
  * printed sheet, so its height budget is that block's height —
- * MAX_VOUCHER_ACCOUNTS rows at the 22px min-height each `.dv-cell` carries,
+ * maxVoucherAccounts rows at the 22px min-height each `.dv-cell` carries,
  * about 110px, which is ~7 lines at the sheet's line height. Anything longer
  * stretches the cell, pushes the signature row down, and breaks the one thing
  * the layout must hold: the signature row's distance from the top of the sheet
@@ -57,7 +57,7 @@ export const MAX_VOUCHER_ACCOUNTS = 5
  * Capped at entry rather than clipped at print — silently dropping part of a
  * description off a financial document is not an option.
  */
-export const MAX_PARTICULARS_LINES = 7
+export const maxParticularsLines = 7
 
 const emptyItem = (): VoucherFormLine => ({
   category: 'other',
@@ -193,8 +193,8 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
   // Counted on what actually saves, not on the rows on screen: clearing the
   // amounts off an over-long legacy voucher until it fits is a valid way to
   // resolve one, and counting blank rows would block that.
-  const tooManyAccounts = computed(() => validItems.value.length > MAX_VOUCHER_ACCOUNTS)
-  const particularsTooTall = computed(() => particularsLines.value > MAX_PARTICULARS_LINES)
+  const tooManyAccounts = computed(() => validItems.value.length > maxVoucherAccounts)
+  const particularsTooTall = computed(() => particularsLines.value > maxParticularsLines)
 
   const blockers = computed(() => {
     const missing: string[] = []
@@ -204,10 +204,10 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
     if (!validItems.value.length) missing.push('an account with an amount')
     if (insufficientFunds.value) missing.push('a total within the account balance')
     if (tooManyAccounts.value) {
-      missing.push(`no more than ${MAX_VOUCHER_ACCOUNTS} accounts (move the rest to a second voucher)`)
+      missing.push(`no more than ${maxVoucherAccounts} accounts (move the rest to a second voucher)`)
     }
     if (particularsTooTall.value) {
-      missing.push(`a particulars of ${MAX_PARTICULARS_LINES} lines or fewer`)
+      missing.push(`a particulars of ${maxParticularsLines} lines or fewer`)
     }
     return missing
   })
@@ -268,12 +268,12 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
       : [emptyItem()]
   }
 
-  const canAddItem = computed(() => items.value.length < MAX_VOUCHER_ACCOUNTS)
+  const canAddItem = computed(() => items.value.length < maxVoucherAccounts)
 
   function addItem() {
     if (!canAddItem.value) {
       toast.warning(
-        `A voucher holds ${MAX_VOUCHER_ACCOUNTS} accounts. Record the rest on a second voucher.`,
+        `A voucher holds ${maxVoucherAccounts} accounts. Record the rest on a second voucher.`,
       )
       return
     }

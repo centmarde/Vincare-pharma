@@ -5,7 +5,7 @@ import { useToast } from 'vue-toastification'
 import { voucherSignatories } from '@/stores/disbursementVouchersData'
 import type { VoucherItemType, VoucherType } from '@/stores/disbursementVouchersData'
 import { categoryTitle } from '@/stores/financeData'
-import { MAX_VOUCHER_ACCOUNTS } from '../../composables/useVoucherForm'
+import { maxVoucherAccounts } from '../../composables/useVoucherForm'
 import { companyFor, companyOptions, defaultCompanyFor } from '@/utils/companyProfiles'
 import type { CompanyKey } from '@/utils/companyProfiles'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
@@ -69,7 +69,7 @@ const isReprint = computed(() => props.copyNo > 1)
 // The count comes from the form's own cap rather than a second literal here, so
 // the two can never drift apart.
 const fillerRows = computed(() =>
-  Math.max(0, MAX_VOUCHER_ACCOUNTS - (props.voucher?.items.length ?? 0)),
+  Math.max(0, maxVoucherAccounts - (props.voucher?.items.length ?? 0)),
 )
 
 // A voucher saved under an older shape can still carry more accounts than the
@@ -77,7 +77,7 @@ const fillerRows = computed(() =>
 // stamp in the wrong place, so refuse rather than print a miscalibrated sheet.
 // Never truncate: dropping an account line would hide money off the document.
 const tooManyAccounts = computed(
-  () => (props.voucher?.items.length ?? 0) > MAX_VOUCHER_ACCOUNTS,
+  () => (props.voucher?.items.length ?? 0) > maxVoucherAccounts,
 )
 
 async function handlePrint() {
@@ -87,7 +87,7 @@ async function handlePrint() {
 
   if (tooManyAccounts.value) {
     toast.error(
-      `This voucher has ${props.voucher.items.length} accounts; the printed form holds ${MAX_VOUCHER_ACCOUNTS}. Split the extra accounts onto a second voucher before printing.`,
+      `This voucher has ${props.voucher.items.length} accounts; the printed form holds ${maxVoucherAccounts}. Split the extra accounts onto a second voucher before printing.`,
     )
     return
   }

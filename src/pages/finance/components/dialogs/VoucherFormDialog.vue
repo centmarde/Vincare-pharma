@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { watch } from 'vue'
 import { useDisplay } from 'vuetify'
-import { MAX_PARTICULARS_LINES, useVoucherForm } from '../../composables/useVoucherForm'
+import { maxParticularsLines, useVoucherForm } from '../../composables/useVoucherForm'
 import { voucherSignatories } from '@/stores/disbursementVouchersData'
 import type { VoucherType, VoucherInput } from '@/stores/disbursementVouchersData'
 import type { ClassifiedCashAccount } from '@/utils/cashAccountTypes'
@@ -258,7 +258,7 @@ function handleSubmit() {
                 class="text-caption"
                 :class="particularsTooTall ? 'text-error' : 'text-medium-emphasis'"
               >
-                {{ particularsLines }} / {{ MAX_PARTICULARS_LINES }} lines
+                {{ particularsLines }} / {{ maxParticularsLines }} lines
                 <span v-if="particularsTooTall">
                   &mdash; too tall for the printed voucher, shorten it or use a second voucher.
                 </span>
