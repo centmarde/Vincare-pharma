@@ -1,7 +1,7 @@
 <!-- src/pages/executive/dialogs/PRHistoryDialog.vue -->
 <script setup lang="ts">
 import { usePRHistory, historyHeaders } from '../composables/usePRHistory'
-import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import { formatCurrency, formatDatePR_ISO, formatExpiryMonthYear } from '@/utils/helpers'
 import { watch } from 'vue'
 import { useDisplay } from 'vuetify'
 
@@ -69,12 +69,12 @@ watch(model, (open) => {
           {{ item.qty.toLocaleString() }}
         </template>
 
-        <template #item.cost_per_unit="{ item }">
-          {{ formatCurrency(item.cost_per_unit) }}
+        <template #item.expiry_date="{ item }">
+          {{ formatExpiryMonthYear(item.expiry_date) }}
         </template>
 
-        <template #item.offer_per_unit="{ item }">
-          {{ formatCurrency(item.offer_per_unit) }}
+        <template #item.cost_per_unit="{ item }">
+          {{ formatCurrency(item.cost_per_unit) }}
         </template>
 
         <template #item.total_cost="{ item }">
@@ -125,12 +125,12 @@ watch(model, (open) => {
                 <span class="text-medium-emphasis"> {{ item.unit }}</span>
               </div>
               <div>
-                <span class="text-medium-emphasis">Cost/Unit: </span
-                >{{ formatCurrency(item.cost_per_unit) }}
+                <span class="text-medium-emphasis">Expiry: </span
+                >{{ formatExpiryMonthYear(item.expiry_date) }}
               </div>
               <div>
-                <span class="text-medium-emphasis">Offer/Unit: </span
-                >{{ formatCurrency(item.offer_per_unit) }}
+                <span class="text-medium-emphasis">Cost/Unit: </span
+                >{{ formatCurrency(item.cost_per_unit) }}
               </div>
               <div>
                 <span class="text-medium-emphasis">Total: </span

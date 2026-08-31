@@ -19,25 +19,18 @@ export type ProductType = {
   barcode: string | null
   sku: string | null
   product_name: string | null
-  generic_name: string | null
   category: string | null
   unit: string | null
   cost_price: number | null
   selling_price: number | null
-  qty_stock_in: number | null
   current_stock: number | null
   reorder_level: number | null
   supplier_id: number | null
-  batch_no: number | null
+  batch_no: string | null
   expiry_date: string | null
   status: string | null
-  physical_inventory: number | null
-  lot_number: string | null
-  type: string | null
-  item_description: string | null
-  offer_per_unit: number | null
-  cost_per_unit: number | null
-  no: number | null
+  brand: string | null
+  remarks: string | null
   // Joined supplier data (via FK)
   suppliers: SupplierType | null
 }
@@ -46,7 +39,6 @@ export type CreateProductData = {
   barcode?: string | null
   sku?: string | null
   product_name?: string | null
-  generic_name?: string | null
   category?: string | null
   unit?: string | null
   cost_price?: number | null
@@ -54,13 +46,11 @@ export type CreateProductData = {
   current_stock?: number | null
   reorder_level?: number | null
   supplier_id?: number | null
-  batch_no?: number | null
+  batch_no?: string | null
   expiry_date?: string | null
   status?: string | null
-  item_description?: string | null
-  offer_per_unit?: number | null
-  cost_per_unit?: number | null
-  no?: number | null
+  brand?: string | null
+  remarks?: string | null
 }
 
 export type UpdateProductData = CreateProductData
@@ -69,7 +59,6 @@ type FetchProductsOptions = {
   search?: string
   category?: string | null
   supplier_id?: number | null
-  type?: string | null
   orderBy?: keyof Pick<
     ProductType,
     'created_at' | 'product_name' | 'current_stock' | 'selling_price' | 'cost_price'
@@ -82,17 +71,20 @@ type FetchProductsOptions = {
   expiryEnd?: string   // 'YYYY-MM-DD'
 }
 
+// Mirrors search_products_with_sku's RETURNS TABLE exactly (see
+// supabase/migrations/20260823_search_products_with_sku_brand.sql).
+// supplier_name / supplier_is_active are deliberately NOT here: the RPC stopped
+// returning them because supplier identity is confidential. supplier_id stays —
+// Purchasing's PR dialogs set the line's supplier from it.
 export type ProductPickerResult = {
   id: number
   product_name: string | null
+  brand: string | null
   unit: string | null
   current_stock: number | null
-  reorder_level: number | null
   cost_price: number | null
   selling_price: number | null
   supplier_id: number | null
-  supplier_name: string | null
-  supplier_is_active: boolean | null
   total_count: number
 }
 
@@ -101,6 +93,7 @@ export type ReceiveStockUpdate ={
   product_id: number
   sku: string | null
   actual_count_stock_in: number
+  expiry_date?: string | null
 }
 
 export type StockStatusBucket =
@@ -120,6 +113,9 @@ export const useProductsDataStore = defineStore('productsData', () => {
   const error: Ref<string> = ref('')
   const pickerProducts = ref<ProductPickerResult[]>([])
   const pickerTotalCount = ref(0)
+  // Search now fires per keystroke, so a slow earlier response can land after a
+  // later one. Stamped at store scope so the counter survives between calls.
+  let pickerRequestId = 0
   const reorderRequests: Ref<any[]> = ref([])
   const reorderCount:    Ref<number> = ref(0)
   // const statusProductExpiry: Ref<ProductType[]> = ref([])
@@ -317,7 +313,6 @@ export const useProductsDataStore = defineStore('productsData', () => {
     try {
       const {
         search, category, supplier_id,
-        type,
         orderBy = 'current_stock', ascending = true,
         limit, offset, eligibleIds, expiryStart, expiryEnd,
       } = options
@@ -330,13 +325,11 @@ export const useProductsDataStore = defineStore('productsData', () => {
       if (typeof supplier_id === 'number') q = q.eq('supplier_id', supplier_id)
       if (search && search.trim()) {
         const s = search.trim().replace(/,/g, '')
-        q = q.or(`product_name.ilike.%${s}%,generic_name.ilike.%${s}%,barcode.ilike.%${s}%,sku.ilike.%${s}%`)
+        q = q.or(`product_name.ilike.%${s}%,barcode.ilike.%${s}%,sku.ilike.%${s}%`)
       }
       // eligibleIds is now warehouse-scoped only (see useProductsWidget.fetchProducts)
       if (eligibleIds && eligibleIds.length > 0) q = q.in('id', eligibleIds)
       if (expiryStart && expiryEnd) q = q.gte('expiry_date', expiryStart).lte('expiry_date', expiryEnd)
-      // Apply product-type filter (e.g. "injectibles", "oral medicine"); "All" means no filter
-      if (type && type !== 'All') q = q.eq('type', type)
 
       if (orderBy === 'current_stock') {
         
@@ -400,22 +393,31 @@ export const useProductsDataStore = defineStore('productsData', () => {
   }
 
   async function fetchProductPicker({ search = '', limit = 15 }: { search?: string; limit?: number }) {
+    const requestId = ++pickerRequestId
     loading.value = true
 
-    const { data, error } = await supabase.rpc('search_products_with_sku', {
-      search_term: search,
-      page_limit: limit,
-    })
+    try {
+      const { data, error } = await supabase.rpc('search_products_with_sku', {
+        search_term: search,
+        page_limit: limit,
+      })
 
-    loading.value = false
+      if (error) {
+        console.error(error)
+        return
+      }
 
-    if (error) {
-      console.error(error)
-      return
+      // A newer keystroke already fired — discard this result rather than
+      // clobbering the list with matches for a term the user has moved past.
+      if (requestId !== pickerRequestId) return
+
+      // current_stock and brand now come straight off the RPC — the second
+      // round-trip that used to fetch stock per search is gone.
+      pickerProducts.value = (data ?? []) as ProductPickerResult[]
+      pickerTotalCount.value = data?.[0]?.total_count ?? 0
+    } finally {
+      if (requestId === pickerRequestId) loading.value = false
     }
-
-    pickerProducts.value = (data ?? []) as ProductPickerResult[]
-    pickerTotalCount.value = data?.[0]?.total_count ?? 0
   }
 
 
@@ -459,7 +461,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
 
     const { data: existing } = await supabase
       .from('transactions')
-      .select('id, transaction_items!inner(product_id)')
+      .select('id, transaction_items!transaction_items_transaction_id_fkey!inner(product_id)')
       .in('transaction_type', REORDER_TYPES)
       .eq('status', 'pending')
       .eq('transaction_items.product_id', payload.product_id)
@@ -529,7 +531,28 @@ export const useProductsDataStore = defineStore('productsData', () => {
 
     loading.value = false
     toast.success('Reorder request submitted.')
-    return { success: true }
+    return { success: true, id: txData.id }
+  }
+
+  /**
+   * Fetches the reorder request IDs associated with a transaction's line items
+   * @param transactionId - The transaction ID to fetch reorder request IDs for
+   * @returns Array of reorder request IDs
+   */
+  async function fetchReorderRequestIdsForTransaction(transactionId: number): Promise<number[]> {
+    const { data, error } = await supabase
+      .from('transaction_items')
+      .select('reorder_request_id')
+      .eq('transaction_id', transactionId)
+      .not('reorder_request_id', 'is', null)
+
+    if (error) {
+      console.error('Failed to fetch reorder_request_id list for transaction', transactionId, error)
+      return []
+    }
+    return (data || [])
+      .map((r: any) => r.reorder_request_id)
+      .filter((id: number | null): id is number => id != null)
   }
 
   async function fetchReorderRequests(includeResolved = false) {
@@ -542,9 +565,9 @@ export const useProductsDataStore = defineStore('productsData', () => {
       .from('transactions')
       .select(`
         id, transaction_type, status, created_at, created_by, remarks,
-        transaction_items (
+        transaction_items!transaction_items_transaction_id_fkey (
           id, product_id,
-          products ( id, product_name, sku, unit, current_stock, reorder_level, expiry_date, supplier_id, cost_price, selling_price, suppliers ( name ) )
+          products ( id, product_name, sku, unit, current_stock, reorder_level, expiry_date, supplier_id, cost_price, suppliers ( name ) )
         )
       `)
       .in('transaction_type', REORDER_TYPES)
@@ -582,24 +605,24 @@ export const useProductsDataStore = defineStore('productsData', () => {
     reorderCount.value = count ?? 0
   }
 
-  async function transitionReorderRequestsByProduct(
-    productIds: number[],
+  async function transitionReorderRequestsById(
+    reorderRequestIds: number[],
     fromStatus: string,
     toStatus: string,
     logAction: string,
     describe: (productName: string) => string,
   ) {
-    if (!productIds.length) return
+    if (!reorderRequestIds.length) return
 
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) return
 
     const { data: matches, error: fetchError } = await supabase
       .from('transactions')
-      .select(`id, transaction_items!inner ( product_id, products ( product_name ) )`)
+      .select(`id, transaction_items!transaction_items_transaction_id_fkey!inner ( product_id, products ( product_name ) )`)
+      .in('id', reorderRequestIds)
       .in('transaction_type', REORDER_TYPES)
       .eq('status', fromStatus)
-      .in('transaction_items.product_id', productIds)
 
     if (fetchError || !matches?.length) return
 
@@ -628,94 +651,92 @@ export const useProductsDataStore = defineStore('productsData', () => {
       })
     })).catch(err => console.error('Failed to log reorder transition:', err))
 
-    // Keep any already-loaded cache in sync (e.g. Products stock dialog open
-    // elsewhere) rather than dropping rows, so a rejected-but-visible row
-    // doesn't disappear from view.
     reorderRequests.value = reorderRequests.value.map(r =>
       ids.includes(r.id) ? { ...r, status: toStatus } : r
     )
-    // CHANGED (see reorderCount fix in fetchReorderRequests below) — always
-    // recompute from pending only, since that's what the badge represents.
     reorderCount.value = reorderRequests.value.filter(r => r.status === 'pending').length
   }
 
-  // NEW — pending -> approved, triggered when a PM approves the PR that
-  // carries this product (see purchaseRequisitionData.approvePR).
-  async function approveReorderRequestsByProduct(productIds: number[]) {
-    await transitionReorderRequestsByProduct(
-      productIds, 'pending', 'approved', 'reorder_approved',
+  /**
+   * Approves reorder requests by their IDs, transitioning them from pending to approved status
+   * @param reorderRequestIds - Array of reorder request IDs to approve
+   */
+  async function approveReorderRequestsById(reorderRequestIds: number[]) {
+    await transitionReorderRequestsById(
+      reorderRequestIds, 'pending', 'approved', 'reorder_approved',
       productName => `Reorder approved for "${productName}" (Purchase Requisition approved)`,
     )
   }
 
-  // NEW — pending -> rejected, triggered when a PM rejects the PR (see
-  // purchaseRequisitionData.rejectPR). Stays visible/logged rather than being
-  // deleted — createReorderRequest's duplicate-guard only blocks on
-  // status='pending', so the product can immediately be re-flagged.
-  async function rejectReorderRequestsByProduct(productIds: number[]) {
-    await transitionReorderRequestsByProduct(
-      productIds, 'pending', 'rejected', 'reorder_rejected',
+  /**
+   * Rejects reorder requests by their IDs, transitioning them from pending to rejected status
+   * @param reorderRequestIds - Array of reorder request IDs to reject
+   */
+  async function rejectReorderRequestsById(reorderRequestIds: number[]) {
+    await transitionReorderRequestsById(
+      reorderRequestIds, 'pending', 'rejected', 'reorder_rejected',
       productName => `Reorder rejected for "${productName}" (Purchase Requisition rejected)`,
     )
   }
 
-  // NEW — approved -> awaiting_stock, triggered when a PO is issued for the
-  // approved PR (see purchaseRequisitionData.issuePurchaseOrder).
-  async function markReorderRequestsAwaitingStock(productIds: number[]) {
-    await transitionReorderRequestsByProduct(
-      productIds, 'approved', 'awaiting_stock', 'reorder_awaiting_stock',
+  /**
+   * Marks reorder requests as awaiting stock by their IDs, transitioning from approved to awaiting_stock
+   * @param reorderRequestIds - Array of reorder request IDs to mark as awaiting stock
+   */
+  async function markReorderRequestsAwaitingStockById(reorderRequestIds: number[]) {
+    await transitionReorderRequestsById(
+      reorderRequestIds, 'approved', 'awaiting_stock', 'reorder_awaiting_stock',
       productName => `Reorder awaiting stock for "${productName}" (Purchase Order issued)`,
     )
   }
 
-  async function completeReorderRequests(productIds: number[]) {
-  if (!productIds.length) return
+  /**
+   * Completes reorder requests by their IDs, transitioning from awaiting_stock to complete status
+   * @param reorderRequestIds - Array of reorder request IDs to mark as complete
+   */
+  async function completeReorderRequestsById(reorderRequestIds: number[]) {
+    if (!reorderRequestIds.length) return
 
-  loading.value = true
+    loading.value = true
 
-  const { user, error: authError } = await authStore.getCurrentUser()
-  if (authError || !user) {
-    toast.error('User not authenticated.')
-    loading.value = false
-    return
-  }
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) {
+      toast.error('User not authenticated.')
+      loading.value = false
+      return
+    }
 
-  // Find approved reorder requests whose product was just received
-  const { data: matches, error: fetchError } = await supabase
-    .from('transactions')
-    .select(`
-      id,
-      transaction_items!inner ( product_id, products ( product_name ) )
-    `)
-    .in('transaction_type', REORDER_TYPES)
-    .eq('status', 'awaiting_stock')
-    .in('transaction_items.product_id', productIds)
+    const { data: matches, error: fetchError } = await supabase
+      .from('transactions')
+      .select(`id, transaction_items!transaction_items_transaction_id_fkey!inner ( product_id, products ( product_name ) )`)
+      .in('id', reorderRequestIds)
+      .in('transaction_type', REORDER_TYPES)
+      .eq('status', 'awaiting_stock')
 
-  if (fetchError) {
-    toast.error('Failed to look up reorder requests.')
-    loading.value = false
-    return
-  }
+    if (fetchError) {
+      toast.error('Failed to look up reorder requests.')
+      loading.value = false
+      return
+    }
 
-  const ids = (matches || []).map((m: any) => m.id)
-  if (!ids.length) {
-    loading.value = false
-    return
-  }
+    const ids = (matches || []).map((m: any) => m.id)
+    if (!ids.length) {
+      loading.value = false
+      return
+    }
 
-  const { error: updateError } = await supabase
-    .from('transactions')
-    .update({ status: 'complete' })
-    .in('id', ids)
+    const { error: updateError } = await supabase
+      .from('transactions')
+      .update({ status: 'complete' })
+      .in('id', ids)
 
-  if (updateError) {
-    toast.error('Failed to complete reorder requests.')
-    loading.value = false
-    return
-  }
+    if (updateError) {
+      toast.error('Failed to complete reorder requests.')
+      loading.value = false
+      return
+    }
 
-  // Log each completion — mirrors resolveReorderRequests' logging pattern
-  const logsStore = useLogsDataStore()
+    const logsStore = useLogsDataStore()
     await Promise.all((matches || []).map((m: any) => {
       const productName = m.transaction_items?.[0]?.products?.product_name
         ?? `Product #${m.transaction_items?.[0]?.product_id}`
@@ -730,7 +751,6 @@ export const useProductsDataStore = defineStore('productsData', () => {
       console.error('Failed to log reorder completion:', err)
     })
 
-    // Drop locally if present (relevant if the reorder dialog was fetched with includeResolved)
     reorderRequests.value = reorderRequests.value.filter(r => !ids.includes(r.id))
     reorderCount.value = reorderRequests.value.length
 
@@ -785,20 +805,37 @@ export const useProductsDataStore = defineStore('productsData', () => {
     }
   }
 
-  // The caller (PODetailViewModal.vue's saveAllItems) rebuilds `updates` from
-  // local form state on every call, including "Mark as Received" retries
-  // after a partial failure — it has no way to know which lines already
-  // landed. Without a guard, retrying re-applies `current_stock + actual_count`
-  // for lines that already succeeded, double-counting real physical stock.
-  // Fix: skip a line entirely if its transaction_item already carries a
-  // non-null actual_count_stock_in (only the SKU can still be corrected).
-  // Within a not-yet-applied line, the stock increment is written BEFORE the
-  // actual_count_stock_in marker (reverse of the old order) so that "marker
-  // is set" reliably implies "stock was applied" — matching every other
-  // premature-marker fix in this sweep. This isn't fully atomic (a failure
-  // between those two writes is still possible, same best-effort trade-off
-  // accepted project-wide for JS-over-RPC) but it closes the actual retry
-  // scenario that caused double-counting.
+  // A batch row back at zero stock can still be a spent batch, so any receipt or issue on it rules out re-dating.
+  const hasStockHistory = async (productId: number, exceptTransactionItemId: number) => {
+    const readHistory = async () => supabase
+      .from('transaction_items')
+      .select('id')
+      .eq('product_id', productId)
+      .neq('id', exceptTransactionItemId)
+      .or('actual_count_stock_in.not.is.null,actual_count_stock_out.not.is.null')
+      .limit(1)
+
+    let result = await readHistory()
+    if (result.error) result = await readHistory()
+    if (result.error) throw result.error
+    return (result.data ?? []).length > 0
+  }
+
+  const assertExpiryEditable = async (product: ProductType, transactionItemId: number) => {
+    const priorStock = product.current_stock ?? 0
+    if (priorStock > 0) {
+      throw new Error(
+        `Cannot change expiry on product ID ${product.id}: it already holds ${priorStock} in stock from an earlier batch.`,
+      )
+    }
+    if (await hasStockHistory(product.id, transactionItemId)) {
+      throw new Error(
+        `Cannot change expiry on product ID ${product.id}: it has already been received or issued against an earlier batch.`,
+      )
+    }
+  }
+
+  
   const updateProductSkuAndCount = async (
     updates: ReceiveStockUpdate[]
   ): Promise<boolean> => {
@@ -806,7 +843,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     clearError()
 
     try {
-      for (const { transaction_item_id, product_id, sku, actual_count_stock_in } of updates) {
+      for (const { transaction_item_id, product_id, sku, actual_count_stock_in, expiry_date } of updates) {
         const { data: existingItem, error: existingError } = await supabase
           .from('transaction_items')
           .select('actual_count_stock_in')
@@ -816,9 +853,19 @@ export const useProductsDataStore = defineStore('productsData', () => {
 
         if (existingItem?.actual_count_stock_in != null) {
           // Already applied in a prior attempt — stock was already
-          // incremented, so only the SKU can still be corrected here.
-          if (sku) {
-            const result = await updateProduct(product_id, { sku })
+          // incremented, so only the SKU and an expiry the row can still
+          // take are corrected here.
+          const applied = await fetchProductById(product_id)
+          if (!applied) throw new Error(`Failed to fetch product ID ${product_id}`)
+
+          const appliedExpiryChanged = expiry_date != null && expiry_date !== applied.expiry_date
+          if (appliedExpiryChanged) await assertExpiryEditable(applied, transaction_item_id)
+
+          if (sku || appliedExpiryChanged) {
+            const result = await updateProduct(product_id, {
+              ...(sku ? { sku } : {}),
+              ...(appliedExpiryChanged ? { expiry_date } : {}),
+            })
             if (!result) throw new Error(`Failed to update product ID ${product_id}`)
           }
           continue
@@ -828,12 +875,19 @@ export const useProductsDataStore = defineStore('productsData', () => {
         const product = await fetchProductById(product_id)
         if (!product) throw new Error(`Failed to fetch product ID ${product_id}`)
 
-        const newStock = (product.current_stock ?? 0) + actual_count_stock_in
+        const priorStock = product.current_stock ?? 0
+        const newStock = priorStock + actual_count_stock_in
+
+        // Correcting expiry is only safe on an empty row — the batch row the PR
+        // created. Re-dating a row that already holds stock would mis-date it.
+        const expiryChanged = expiry_date != null && expiry_date !== product.expiry_date
+        if (expiryChanged) await assertExpiryEditable(product, transaction_item_id)
 
         // 2. Apply the stock increment first
         const result = await updateProduct(product_id, {
           current_stock: newStock,
           ...(sku ? { sku } : {}),
+          ...(expiryChanged ? { expiry_date } : {}),
         })
         if (!result) throw new Error(`Failed to update product ID ${product_id}`)
 
@@ -913,10 +967,11 @@ export const useProductsDataStore = defineStore('productsData', () => {
     fetchReorderRequests,
     fetchReorderCount,
     createReorderRequest,
-    approveReorderRequestsByProduct,   // NEW
-    rejectReorderRequestsByProduct,    // NEW
-    markReorderRequestsAwaitingStock,  // NEW
-    completeReorderRequests,
+    fetchReorderRequestIdsForTransaction, // NEW
+    approveReorderRequestsById,   // RENAMED
+    rejectReorderRequestsById,    // RENAMED
+    markReorderRequestsAwaitingStockById,  // RENAMED
+    completeReorderRequestsById,  // RENAMED
     reorderRequests,
     reorderCount,
     // Realtime

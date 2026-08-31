@@ -1,7 +1,7 @@
 {
-  "title": "Vincare-Pharma Supply Chain Platform",
-  "description": "Vincare-Pharma is a pharmaceutical supply chain platform that connects manufacturers, distributors, pharmacies, and healthcare providers. The system streamlines product sourcing, inventory coordination, and distribution management, ensuring efficient, reliable, and compliant delivery of healthcare products.",
-  "subtitle": "Connect. Coordinate. Deliver healthcare products compliantly.",
+  "title": "One system from purchase order to collection",
+  "description": "Vincare Pharma runs the distribution business end to end: procurement and supplier canvassing, warehouse and branch stock, institutional and retail sales, deliveries, collections and a general ledger that every financial report is produced from.",
+  "subtitle": "Sourcing, stock, delivery and settlement handled in a single record, so nothing is reconciled twice or lost between departments.",
   "backgroundImage": {
     "src": "/images/markup.png",
     "alt": "Abstract healthcare supply chain background with geometric patterns",
@@ -13,27 +13,22 @@
   },
   "features": [
     {
-      "title": "Multi-Partner Access",
-      "description": "Role-based access for manufacturers, distributors, pharmacies, and healthcare providers to collaborate with clear permissions and secure authentication.",
-      "icon": "mdi-shield-account"
+      "title": "Sourcing and procurement",
+      "description": "Shortfalls raise a costing request to purchasing, suppliers are canvassed on price and batch expiry, and the winning quote becomes a purchase order without re-keying.",
+      "icon": "mdi-clipboard-text-search-outline"
     },
     {
-      "title": "Compliance & Auditability",
-      "description": "Designed for regulated workflows with traceable actions, controlled access, and process visibility to support compliance expectations.",
-      "icon": "mdi-security"
+      "title": "Stock with batch and expiry",
+      "description": "Warehouse and branch stock are tracked per batch and expiry date, so what is dispensed can always be traced back to what was received.",
+      "icon": "mdi-package-variant-closed"
     },
     {
-      "title": "Smart Sourcing & Coordination",
-      "description": "Streamline product sourcing and procurement coordination across partners to reduce delays and prevent stockouts.",
-      "icon": "mdi-router-wireless"
-    },
-    {
-      "title": "Inventory & Distribution Management",
-      "description": "Coordinate inventory availability, allocation, and distribution workflows for efficient, reliable delivery of healthcare products.",
-      "icon": "mdi-auto-fix"
+      "title": "Ledger-backed reporting",
+      "description": "Income statement, balance sheet and trial balance are computed from posted journal entries, not assembled from operational tables.",
+      "icon": "mdi-chart-box-outline"
     }
   ],
-  "author": "Vincare-Pharma",
+  "author": "Vincare Pharma",
   "lastUpdated": "2026-06-02",
   "theme": {
     "primaryColor": "#9d0f0f",
@@ -47,11 +42,11 @@
     "_footerComment": "Select the footer component to use: 1 or 2",
     "footerComponent": "1",
     "navbar": {
-      "title": "Vincare-Pharma",
+      "title": "Vincare Pharma",
       "icon": "mdi-hospital-box-outline",
       "logo": {
         "src": "/vincare.png",
-        "alt": "Vincare-Pharma Logo",
+        "alt": "Vincare Pharma Logo",
         "width": 32,
         "height": 32
       },
@@ -76,11 +71,11 @@
       }
     },
     "footer": {
-      "companyName": "Vincare-Pharma",
+      "companyName": "Vincare Pharma",
       "tagline": "Connecting partners for compliant pharmaceutical delivery",
       "icon": "mdi-truck-delivery-outline",
       "color": "grey-darken-3",
-      "copyright": "Vincare-Pharma. All rights reserved.",
+      "copyright": "Vincare Pharma. All rights reserved.",
       "socialLinks": [
         {
           "platform": "github",
@@ -124,7 +119,7 @@
         }
       ],
       "thesisTeam": {
-        "enabled": true,
+        "enabled": false,
         "title": "Platform Team",
         "subtitle": "Meet the team building reliable pharmaceutical supply-chain workflows",
         "members": [
@@ -148,7 +143,7 @@
     }
   },
   "authPage": {
-    "title": "Welcome to Vincare-Pharma",
+    "title": "Welcome to Vincare Pharma",
     "subtitle": "Access your supply chain workspace with secure authentication",
     "layout": {
       "quotePosition": "right"

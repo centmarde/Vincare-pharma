@@ -67,9 +67,9 @@ export const useExecutiveApproveStore = defineStore('executiveApproveData', () =
       .select(
         `
         *,
-        transaction_items (
-          id, product_id, qty_stock_in, actual_count_stock_in,
-          products ( id, product_name, unit, cost_price, selling_price, sku, supplier_id, expiry_date, suppliers ( name ) )
+        transaction_items!transaction_items_transaction_id_fkey (
+          id, product_id, qty_stock_in, actual_count_stock_in, unit_price, cost_price,
+          products ( id, product_name, unit, cost_price, sku, supplier_id, expiry_date, suppliers ( name ) )
         )
       `,
       )
@@ -118,19 +118,10 @@ export const useExecutiveApproveStore = defineStore('executiveApproveData', () =
       return { success: false }
     }
 
-    // Resolve any reorder requests that fed into this PR.
-    const { data: prItems } = await supabase
-      .from('transaction_items')
-      .select('product_id')
-      .eq('transaction_id', prId)
-
-    const productIds = (prItems || [])
-      .map((i) => i.product_id)
-      .filter((id): id is number => id != null)
-
-    if (productIds.length) {
-      const productsStore = useProductsDataStore()
-      await productsStore.approveReorderRequestsByProduct(productIds)
+    const productsStore = useProductsDataStore()
+    const reorderRequestIds = await productsStore.fetchReorderRequestIdsForTransaction(prId)
+    if (reorderRequestIds.length) {
+      await productsStore.approveReorderRequestsById(reorderRequestIds)  // or rejectReorderRequestsById
     }
 
     if (pr) await logApprovalEvent(ACTION_APPROVE, pr, user.id)
@@ -167,18 +158,10 @@ export const useExecutiveApproveStore = defineStore('executiveApproveData', () =
       return { success: false }
     }
 
-    const { data: prItems } = await supabase
-      .from('transaction_items')
-      .select('product_id')
-      .eq('transaction_id', prId)
-
-    const productIds = (prItems || [])
-      .map((i) => i.product_id)
-      .filter((id): id is number => id != null)
-
-    if (productIds.length) {
-      const productsStore = useProductsDataStore()
-      await productsStore.rejectReorderRequestsByProduct(productIds)
+    const productsStore = useProductsDataStore()
+    const reorderRequestIds = await productsStore.fetchReorderRequestIdsForTransaction(prId)
+    if (reorderRequestIds.length) {
+      await productsStore.rejectReorderRequestsById(reorderRequestIds)  // or rejectReorderRequestsById
     }
 
     if (pr) await logApprovalEvent(ACTION_REJECT, pr, user.id, reason || 'Rejected by approver.')

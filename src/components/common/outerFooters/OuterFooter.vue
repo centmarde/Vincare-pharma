@@ -3,7 +3,7 @@
     v-if="config?.showFooter && footerConfig"
     app
     class="text-white"
-    :color="footerConfig.color"
+    style="background-color: #bb1212"
   >
     <v-container>
       <!-- Compact/minimal footer for inner layouts -->
@@ -127,14 +127,14 @@
 
         <v-row>
           <v-col class="text-center" cols="12">
-            <div class="text-caption">
+            <!--  <div class="text-caption">
               Built with
               <template v-for="(tech, index) in footerConfig.technologies" :key="tech.name">
                 <v-icon class="mx-1" :color="tech.color" :icon="tech.icon" size="small" />
                 {{ tech.name }}
                 <span v-if="index < footerConfig.technologies.length - 1"> & </span>
               </template>
-            </div>
+            </div> -->
           </v-col>
         </v-row>
       </template>

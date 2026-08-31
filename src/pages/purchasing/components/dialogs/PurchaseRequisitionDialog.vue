@@ -3,7 +3,7 @@ import { usePurchaseRequisition, unitOptions } from '../../composables/usePurcha
 import type { ReorderPrefillItem } from '../../composables/usePurchaseRequisition'
 import type { ProductPickerResult } from '@/stores/productsData'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
-import ProductPickerDialog from './ProductPicker.vue'
+import ProductPickerDialog from '@/components/products/ProductPicker.vue'
 import { formatCurrency } from '@/utils/helpers'
 import { useDisplay } from 'vuetify'
 import { storeToRefs } from 'pinia'
@@ -26,12 +26,7 @@ const {
   currentPR,
   items,
   loading,
-  customerOfferTotal,
   companyCostTotal,
-  profit,
-  isProfitable,
-  offerCostRatio,
-  marginPercent,
   addItem,
   removeItem,
   handleSubmit,
@@ -57,8 +52,6 @@ function onProductSelected(product: ProductPickerResult) {
   item.item_description = product.product_name || item.item_description
   if (product.unit) item.unit = product.unit
   item.cost_per_unit = product.cost_price ?? item.cost_per_unit
-  // Starting value only — the person can still override per line item
-  item.offer_per_unit = product.selling_price ?? item.offer_per_unit
   if (product.supplier_id != null) item.supplier_id = product.supplier_id
   item.product_id = product.id ?? null
 
@@ -140,9 +133,6 @@ watch(
           >
         </div>
         <div class="d-flex align-center" style="gap: 12px">
-          <span v-if="!mobile" class="text-caption text-medium-emphasis">
-            Customer offer vs. company cost
-          </span>
           <v-btn icon="mdi-close" variant="text" size="small" @click="close" />
         </div>
       </v-card-title>
@@ -156,12 +146,10 @@ watch(
           <v-row class="text-caption font-weight-bold mb-1 px-1" no-gutters>
             <v-col cols="auto" style="width: 36px" class="text-center">NO.</v-col>
             <v-col cols="1" class="pl-2">UNIT</v-col>
-            <v-col cols="2" class="pl-2">PRODUCT</v-col>
-            <v-col cols="1.5" class="pl-2">SUPPLIER</v-col>
-            <v-col cols="1.5" class="pl-2">EXPIRY</v-col>
+            <v-col cols="3" class="pl-2">PRODUCT</v-col>
+            <v-col cols="2" class="pl-2">SUPPLIER</v-col>
+            <v-col cols="2" class="pl-2">EXPIRY</v-col>
             <v-col cols="1" class="pl-2">QTY</v-col>
-            <v-col cols="1" class="pl-2">OFFER/UNIT</v-col>
-            <v-col cols="1" class="text-right pr-4">OFFER TOTAL</v-col>
             <v-col cols="1" class="pl-2">COST/UNIT</v-col>
             <v-col cols="1" class="text-right pr-2">COST TOTAL</v-col>
             <v-col cols="auto" style="width: 40px" />
@@ -188,7 +176,7 @@ watch(
               />
             </v-col>
 
-            <v-col cols="2" class="pl-2">
+            <v-col cols="3" class="pl-2">
               <v-text-field
                 v-model="item.item_description"
                 placeholder="Item description"
@@ -200,7 +188,7 @@ watch(
               />
             </v-col>
 
-            <v-col cols="1.5" class="pl-2">
+            <v-col cols="2" class="pl-2">
               <v-select
                 v-model="item.supplier_id"
                 :items="activeSuppliers"
@@ -214,7 +202,7 @@ watch(
               />
             </v-col>
 
-            <v-col cols="1.5" class="pl-2">
+            <v-col cols="2" class="pl-2">
               <v-menu
                     :model-value="expiryMenuOpen[index] ?? false"
                     @update:model-value="(val) => (expiryMenuOpen[index] = val)"
@@ -250,23 +238,6 @@ watch(
                 density="compact"
                 hide-details
               />
-            </v-col>
-
-            <v-col cols="1" class="pl-2">
-              <v-text-field
-                v-model.number="item.offer_per_unit"
-                type="number"
-                placeholder="0.00"
-                variant="outlined"
-                density="compact"
-                hide-details
-              />
-            </v-col>
-
-            <v-col cols="1" class="text-right pr-4">
-              <span class="text-body-2">
-                {{ formatCurrency((item.qty || 0) * (item.offer_per_unit || 0)) }}
-              </span>
             </v-col>
 
             <v-col cols="1" class="pl-2">
@@ -403,19 +374,7 @@ watch(
               </v-col>
             </v-row>
 
-            <!-- Offer/unit + Cost/unit side by side -->
             <v-row no-gutters class="mb-3" style="gap: 8px">
-              <v-col>
-                <div class="field-label">Offer / Unit</div>
-                <v-text-field
-                  v-model.number="item.offer_per_unit"
-                  type="number"
-                  placeholder="0.00"
-                  variant="outlined"
-                  density="compact"
-                  hide-details
-                />
-              </v-col>
               <v-col>
                 <div class="field-label">Cost / Unit</div>
                 <v-text-field
@@ -431,13 +390,7 @@ watch(
 
             <!-- Computed totals row -->
             <v-divider class="mb-2" />
-            <div class="d-flex justify-space-between align-center">
-              <div class="text-caption">
-                <span class="text-medium-emphasis">Offer Total </span>
-                <span class="font-weight-bold">
-                  {{ formatCurrency((item.qty || 0) * (item.offer_per_unit || 0)) }}
-                </span>
-              </div>
+            <div class="d-flex justify-end align-center">
               <div class="text-caption">
                 <span class="text-medium-emphasis">Cost Total </span>
                 <span class="font-weight-bold text-blue-darken-2">
@@ -474,7 +427,7 @@ watch(
         </div>
 
         <div class="text-caption mt-3 font-italic text-medium-emphasis">
-          "Offer" = what the customer offered · "Cost" = the item's actual cost in inventory
+          "Cost" = the agreed supplier price for this line
         </div>
 
         <v-divider class="my-6" />
@@ -494,45 +447,9 @@ watch(
         <v-row align="end">
           <v-col cols="12" md="6" :order="mobile ? 1 : 2">
             <v-card variant="flat" rounded="lg" class="pa-4 border mb-4 mb-md-0">
-              <div class="d-flex justify-space-between align-center mb-2">
-                <span class="text-body-2">Customer Offer Total</span>
-                <span class="text-h6 font-weight-bold">{{
-                  formatCurrency(customerOfferTotal)
-                }}</span>
-              </div>
-
-              <div class="d-flex justify-space-between align-center mb-4">
-                <span class="text-body-2">Company Cost Total</span>
-                <span class="text-h6 font-weight-bold">{{ formatCurrency(companyCostTotal) }}</span>
-              </div>
-
-              <v-divider class="mb-4" />
-
-              <div class="d-flex justify-space-between align-center mb-2">
-                <span class="text-body-2">Profit / (Loss)</span>
-                <div class="d-flex align-center" style="gap: 8px">
-                  <span
-                    class="text-h6 font-weight-bold"
-                    :class="isProfitable ? 'text-green-darken-2' : 'text-red-darken-2'"
-                  >
-                    {{ formatCurrency(profit) }}
-                  </span>
-                  <v-chip
-                    :color="isProfitable ? 'green-lighten-4' : 'red-lighten-4'"
-                    size="small"
-                    class="font-weight-bold"
-                    :class="isProfitable ? 'text-green-darken-3' : 'text-red-darken-3'"
-                  >
-                    {{ isProfitable ? '● Profitable' : '● Loss' }}
-                  </v-chip>
-                </div>
-              </div>
-
               <div class="d-flex justify-space-between align-center">
-                <span class="text-body-2">Offer : Cost Ratio</span>
-                <span class="text-body-2 font-weight-bold">
-                  {{ offerCostRatio }}x · {{ marginPercent }}% margin
-                </span>
+                <span class="text-body-2">Total Cost</span>
+                <span class="text-h6 font-weight-bold">{{ formatCurrency(companyCostTotal) }}</span>
               </div>
             </v-card>
           </v-col>
@@ -551,8 +468,7 @@ watch(
               Submit for Approval
             </v-btn>
             <div class="text-caption text-medium-emphasis">
-              Saved as one record <strong>(Pending Approval)</strong> even if not profitable — the
-              admin decides. → Manager approves → Issue PO.
+              Saved as one record <strong>(Pending Approval)</strong> → Manager approves → Issue PO.
             </div>
           </v-col>
         </v-row>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { usePRDetailModal } from '../../composables/usePRDetailModal'
-import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import { formatCurrency, formatDatePR_ISO, formatExpiryMonthYear } from '@/utils/helpers'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import { useDisplay } from 'vuetify'
 import { ref } from 'vue'
@@ -20,15 +20,7 @@ const emit = defineEmits<{
 
 const showEditDialog = ref<boolean>(false)
 
-const {
-  statusConfig,
-  customerOfferTotal,
-  companyCostTotal,
-  profit,
-  isProfitable,
-  offerCostRatio,
-  marginPercent,
-} = usePRDetailModal(props)
+const { statusConfig, companyCostTotal } = usePRDetailModal(props)
 
 const { confirmDialog: showUnapproveDialog, inputValue } = useConfirmDialog()
 
@@ -95,7 +87,7 @@ async function onUnapprove() {
             v-if="
               pr.status === 'approved' ||
               pr.status === 'rejected' ||
-              pr.status === 'issued' ||
+              pr.status === 'ordered' ||
               pr.status === 'complete'
             "
           >
@@ -116,8 +108,7 @@ async function onUnapprove() {
               <th class="table-header text-caption">ITEM DESCRIPTION</th>
               <th class="table-header text-caption">QTY</th>
               <th class="table-header text-caption">SUPPLIER</th>
-              <th class="table-header text-caption">OFFER/UNIT</th>
-              <th class="table-header text-caption">OFFER TOTAL</th>
+              <th class="table-header text-caption">EXPIRY</th>
               <th class="table-header text-caption">COST/UNIT</th>
               <th class="table-header text-caption">COST TOTAL</th>
             </tr>
@@ -129,10 +120,7 @@ async function onUnapprove() {
               <td class="text-body-2">{{ item.item_description }}</td>
               <td class="text-body-2">{{ item.qty.toLocaleString() }}</td>
               <td class="text-body-2">{{ item.supplier_name ?? '—' }}</td>
-              <td class="text-body-2">{{ formatCurrency(item.offer_per_unit ?? 0) }}</td>
-              <td class="text-body-2">
-                {{ formatCurrency(item.qty * (item.offer_per_unit ?? 0)) }}
-              </td>
+              <td class="text-body-2">{{ formatExpiryMonthYear(item.expiry_date) }}</td>
               <td class="text-body-2">{{ formatCurrency(item.cost_per_unit ?? 0) }}</td>
               <td class="text-body-2">
                 {{ formatCurrency(item.qty * (item.cost_per_unit ?? 0)) }}
@@ -171,12 +159,8 @@ async function onUnapprove() {
                   >{{ item.supplier_name ?? '—' }}
                 </div>
                 <div>
-                  <span class="text-medium-emphasis">Offer/Unit: </span
-                  >{{ formatCurrency(item.offer_per_unit ?? 0) }}
-                </div>
-                <div>
-                  <span class="text-medium-emphasis">Offer Total: </span
-                  >{{ formatCurrency(item.qty * (item.offer_per_unit ?? 0)) }}
+                  <span class="text-medium-emphasis">Expiry: </span
+                  >{{ formatExpiryMonthYear(item.expiry_date) }}
                 </div>
                 <div>
                   <span class="text-medium-emphasis">Cost/Unit: </span
@@ -201,73 +185,17 @@ async function onUnapprove() {
             :class="mobile ? 'pa-3 border' : 'pa-4 border'"
             :min-width="mobile ? '100%' : '340'"
           >
-            <div class="d-flex justify-space-between align-center mb-2">
-              <span
-                :class="
-                  mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'
-                "
-                >Customer Offer Total</span
-              >
-              <span
-                :class="mobile ? 'text-body-2 font-weight-bold' : 'text-body-1 font-weight-bold'"
-                >{{ formatCurrency(customerOfferTotal) }}</span
-              >
-            </div>
-
-            <div class="d-flex justify-space-between align-center mb-3">
-              <span
-                :class="
-                  mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'
-                "
-                >Company Cost Total</span
-              >
-              <span
-                :class="mobile ? 'text-body-2 font-weight-bold' : 'text-body-1 font-weight-bold'"
-                >{{ formatCurrency(companyCostTotal) }}</span
-              >
-            </div>
-
-            <v-divider class="mb-3" />
-
-            <div class="d-flex justify-space-between align-center mb-2">
-              <span
-                :class="
-                  mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'
-                "
-                >Profit / (Loss)</span
-              >
-              <div class="d-flex align-center ga-2">
-                <span
-                  :class="[
-                    mobile ? 'text-caption font-weight-bold' : 'text-body-1 font-weight-bold',
-                    isProfitable ? 'text-green-darken-2' : 'text-red-darken-2',
-                  ]"
-                >
-                  {{ formatCurrency(profit) }}
-                </span>
-                <v-chip
-                  :color="isProfitable ? 'green' : 'red'"
-                  variant="tonal"
-                  size="x-small"
-                  class="font-weight-bold"
-                >
-                  {{ isProfitable ? '● Profitable' : '● Loss' }}
-                </v-chip>
-              </div>
-            </div>
-
             <div class="d-flex justify-space-between align-center">
               <span
                 :class="
                   mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'
                 "
-                >Offer : Cost Ratio</span
+                >Total Cost</span
               >
               <span
-                :class="mobile ? 'text-caption font-weight-bold' : 'text-body-2 font-weight-bold'"
+                :class="mobile ? 'text-body-2 font-weight-bold' : 'text-body-1 font-weight-bold'"
+                >{{ formatCurrency(companyCostTotal) }}</span
               >
-                {{ offerCostRatio }}x · {{ marginPercent }}% margin
-              </span>
             </div>
           </v-card>
         </div>
@@ -290,7 +218,7 @@ async function onUnapprove() {
             v-if="
               pr.status !== 'approved' &&
               pr.status !== 'rejected' &&
-              pr.status !== 'issued' &&
+              pr.status !== 'ordered' &&
               pr.status !== 'complete' &&
               pr.status !== 'change_request'
             "
@@ -359,7 +287,7 @@ async function onUnapprove() {
 .status-chip--pending_approval { color: #A16207; background: rgba(183, 121, 31, 0.12); }
 .status-chip--approved { color: #2563EB; background: rgba(51, 102, 204, 0.12); }
 .status-chip--rejected { color: #DC2626; background: rgba(197, 48, 48, 0.12); }
-.status-chip--issued { color: #7C3AED; background: rgba(79, 70, 229, 0.12); }
+.status-chip--ordered { color: #7C3AED; background: rgba(79, 70, 229, 0.12); }
 .status-chip--complete { color: #15803D; background: rgba(47, 133, 90, 0.12); }
 .status-chip--change_request    { color: #fb8c00; background: rgba(255, 152, 0,  0.12); }
 

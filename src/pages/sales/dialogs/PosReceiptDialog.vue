@@ -3,7 +3,9 @@ import type { Receipt } from '../composables/usePosCheckout'
 import { formatCurrency } from '@/utils/helpers'
 import { useToast } from 'vue-toastification'
 import { useDisplay } from 'vuetify'
-import { ref, nextTick } from 'vue'
+import { computed, nextTick, ref } from 'vue'
+import { companyFor, companyOptions, defaultCompanyFor } from '@/utils/companyProfiles'
+import type { CompanyKey } from '@/utils/companyProfiles'
 import html2pdf from 'html2pdf.js'
 
 const { mobile } = useDisplay()
@@ -20,13 +22,8 @@ const toast = useToast()
 const printArea = ref<HTMLElement | null>(null)
 
 // Exelmed Pharma Trade — from the official delivery receipt.
-const company = {
-  name:    'EXELMED PHARMA TRADE',
-  line1:   'Ground Floor NB Building, Ochoa Avenue, Butuan City',
-  line2:   '8600 Agusan del Norte, Philippines (Tel: 085-3000-460)',
-  license: 'License Number: 3000001108883 - VAT Reg: TIN: 178-845-363-000',
-  contact: 'Mobile: 09090734525 - Email Address: exelmedshop@gmail.com',
-} as const
+const companyKey = ref<CompanyKey>(defaultCompanyFor('pos_receipt'))
+const company = computed(() => companyFor(companyKey.value))
 
 function formatReceiptDate(iso: string): string {
   const d = new Date(iso)
@@ -73,7 +70,7 @@ async function handlePrint() {
             <div class="text-h5 font-weight-bold" style="letter-spacing: 2px;">{{ company.name }}</div>
             <div class="text-caption text-medium-emphasis">{{ company.line1 }}</div>
             <div class="text-caption text-medium-emphasis">{{ company.line2 }}</div>
-            <div class="text-caption text-medium-emphasis">{{ company.license }}</div>
+            <div v-if="company.license" class="text-caption text-medium-emphasis">{{ company.license }}</div>
             <div class="text-caption text-medium-emphasis">{{ company.contact }}</div>
           </div>
 
@@ -159,6 +156,16 @@ async function handlePrint() {
       <v-divider />
 
       <v-card-actions class="px-4 px-sm-5 pb-4 pb-sm-5 pt-3 d-flex ga-2" :class="mobile ? 'flex-column-reverse' : 'justify-end'">
+        <v-select
+          v-model="companyKey"
+          :items="companyOptions"
+          label="Issuing company"
+          variant="outlined"
+          density="compact"
+          hide-details
+          class="flex-grow-0 mr-auto"
+          style="max-width: 230px"
+        />
         <v-btn variant="text" color="error" class="text-none" prepend-icon="mdi-printer" :block="mobile" @click="handlePrint">
           Print
         </v-btn>

@@ -14,9 +14,18 @@ const emit = defineEmits<{
 }>()
 
 const {
-  groupedAccounts, totalActiveBalance, selectedClassificationMeta,
-  showAddDialog, name, classification, openingBalance, isActive, canSubmit,
-  openAddDialog, cancelAdd, buildPayload,
+  groupedAccounts,
+  totalActiveBalance,
+  selectedClassificationMeta,
+  showAddDialog,
+  name,
+  classification,
+  openingBalance,
+  isActive,
+  canSubmit,
+  openAddDialog,
+  cancelAdd,
+  buildPayload,
 } = useCashAccountsManager(() => props.accounts)
 
 const submitNewAccount = () => {
@@ -30,68 +39,89 @@ const submitNewAccount = () => {
 <template>
   <!-- Embeddable section — the parent (CashAccountsPanel) owns the page container. -->
   <div class="w-100">
-
-      <!-- Page header -->
-      <div class="d-flex justify-space-between align-center mb-4">
-        <div>
-          <div class="text-h6 font-weight-bold">Cash Accounts</div>
-          <div class="text-caption text-medium-emphasis">
-            {{ accounts.length }} account{{ accounts.length === 1 ? '' : 's' }}
-            · {{ formatCurrency(totalActiveBalance) }} total active balance
-          </div>
+    <!-- Page header -->
+    <div class="d-flex justify-space-between align-center mb-4">
+      <div>
+        <div class="text-h6 font-weight-bold">Cash Accounts</div>
+        <div class="text-caption text-medium-emphasis">
+          {{ accounts.length }} account{{ accounts.length === 1 ? '' : 's' }} ·
+          {{ formatCurrency(totalActiveBalance) }} total active balance
         </div>
-        <v-btn class="text-none" color="primary" variant="flat" elevation="0" prepend-icon="mdi-plus" @click="openAddDialog">
-          Add Cash Account
-        </v-btn>
+      </div>
+      <v-btn
+        class="text-none"
+        color="primary"
+        variant="flat"
+        elevation="0"
+        prepend-icon="mdi-plus"
+        @click="openAddDialog"
+      >
+        Add Cash Account
+      </v-btn>
+    </div>
+
+    <!-- Accounts grouped by classification -->
+    <div v-for="group in groupedAccounts" :key="group.meta.value" class="mb-5">
+      <div class="d-flex align-center mb-2 ga-2">
+        <v-chip
+          :color="group.meta.color"
+          size="small"
+          variant="flat"
+          :prepend-icon="group.meta.icon"
+        >
+          {{ group.meta.title }}
+        </v-chip>
+        <span class="text-caption text-medium-emphasis">{{ group.meta.description }}</span>
+        <v-spacer />
+        <span class="text-caption font-weight-bold">{{ formatCurrency(group.activeTotal) }}</span>
       </div>
 
-      <!-- Accounts grouped by classification -->
-      <div v-for="group in groupedAccounts" :key="group.meta.value" class="mb-5">
-        <div class="d-flex align-center mb-2 ga-2">
-          <v-chip :color="group.meta.color" size="small" variant="flat" :prepend-icon="group.meta.icon">
-            {{ group.meta.title }}
-          </v-chip>
-          <span class="text-caption text-medium-emphasis">{{ group.meta.description }}</span>
-          <v-spacer />
-          <span class="text-caption font-weight-bold">{{ formatCurrency(group.activeTotal) }}</span>
-        </div>
+      <v-card
+        v-if="!group.accounts.length"
+        rounded="lg"
+        elevation="0"
+        border
+        class="pa-4 text-center text-caption text-medium-emphasis"
+      >
+        No {{ group.meta.title }} accounts yet.
+      </v-card>
 
-        <v-card v-if="!group.accounts.length" rounded="lg" elevation="0" border class="pa-4 text-center text-caption text-medium-emphasis">
-          No {{ group.meta.title }} accounts yet.
-        </v-card>
-
-        <v-card v-else rounded="lg" elevation="1" border>
-          <v-list lines="two" density="comfortable" class="py-0">
-            <template v-for="(account, i) in group.accounts" :key="account.id">
-              <v-divider v-if="i > 0" />
-              <v-list-item
-                :class="{ 'account-inactive': !account.is_active }"
-                :title="account.name"
-                :subtitle="`Opening balance: ${formatCurrency(account.opening_balance)}`"
-              >
-                <template #prepend>
-                  <v-avatar size="32" :color="`${group.meta.color}-lighten-5`" rounded="lg">
-                    <v-icon :icon="group.meta.icon" :color="group.meta.color" size="18" />
-                  </v-avatar>
-                </template>
-                <template #append>
-                  <div class="d-flex align-center ga-3">
-                    <v-chip v-if="!account.is_active" color="grey" size="small" variant="tonal">
-                      Inactive
-                    </v-chip>
-                    <span class="text-h6 font-weight-bold">{{ formatCurrency(account.balance) }}</span>
-                  </div>
-                </template>
-              </v-list-item>
-            </template>
-          </v-list>
-        </v-card>
-      </div>
+      <v-card v-else rounded="lg" elevation="1" border>
+        <v-list lines="two" density="comfortable" class="py-0">
+          <template v-for="(account, i) in group.accounts" :key="account.id">
+            <v-divider v-if="i > 0" />
+            <v-list-item
+              :class="{ 'account-inactive': !account.is_active }"
+              :title="account.name"
+              :subtitle="`Opening balance: ${formatCurrency(account.opening_balance)}`"
+            >
+              <template #prepend>
+                <v-avatar size="32" :color="`${group.meta.color}-lighten-5`" rounded="lg">
+                  <v-icon :icon="group.meta.icon" :color="group.meta.color" size="18" />
+                </v-avatar>
+              </template>
+              <template #append>
+                <div class="d-flex align-center ga-3">
+                  <v-chip v-if="!account.is_active" color="grey" size="small" variant="tonal">
+                    Inactive
+                  </v-chip>
+                  <span class="text-h6 font-weight-bold">{{
+                    formatCurrency(account.balance)
+                  }}</span>
+                </div>
+              </template>
+            </v-list-item>
+          </template>
+        </v-list>
+      </v-card>
+    </div>
 
     <!-- Add cash account dialog -->
     <v-dialog v-model="showAddDialog" max-width="440" persistent>
       <v-card rounded="lg">
-        <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold">Add Cash Account</v-card-title>
+        <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold"
+          >Add Cash Account</v-card-title
+        >
         <v-divider />
         <v-card-text class="pa-4 pa-sm-5">
           <label class="field-label">Account Name <span class="text-error">*</span></label>
@@ -117,7 +147,10 @@ const submitNewAccount = () => {
             class="mb-3"
           >
             <template #item="{ props: itemProps, item }">
-              <v-list-item v-bind="itemProps" :subtitle="classificationMeta(item.value).description">
+              <v-list-item
+                v-bind="itemProps"
+                :subtitle="classificationMeta(item.value).description"
+              >
                 <template #prepend>
                   <v-icon
                     :icon="classificationMeta(item.value).icon"
@@ -180,7 +213,6 @@ const submitNewAccount = () => {
         </v-card-actions>
       </v-card>
     </v-dialog>
-
   </div>
 </template>
 

@@ -56,7 +56,7 @@ type FetchTransfersOptions = {
 // merged back in). A transfer is outbound from the warehouse, so the requested
 // quantity is qty_stock_out and the actually-received count is
 // actual_count_stock_out (the "actual quantity that moved out").
-const SELECT_TRANSFER = '*, transaction_items(id, product_id, qty_stock_out, actual_count_stock_out, product:product_id(*)), outlet:outlet_id(*)'
+const SELECT_TRANSFER = '*, transaction_items!transaction_items_transaction_id_fkey(id, product_id, qty_stock_out, actual_count_stock_out, product:product_id(*)), outlet:outlet_id(*)'
 
 function mapRowToTransfer(row: any): StockTransferType {
   return {
@@ -251,7 +251,7 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
 
     const { data: transfer, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, transaction_items(product_id, qty_stock_out)')
+      .select('id, status, transaction_items!transaction_items_transaction_id_fkey(product_id, qty_stock_out)')
       .eq('id', transferId)
       .eq('transaction_type', 'stock_transfer')
       .maybeSingle()

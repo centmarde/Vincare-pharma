@@ -4,16 +4,40 @@ import { useRoute } from 'vue-router'
 import { useDisbursementVouchers, headers } from '../composables/useDisbursementVouchers'
 import VoucherFormDialog from './dialogs/VoucherFormDialog.vue'
 import VoucherPrintDialog from './dialogs/VoucherPrintDialog.vue'
+import VoucherStampDialog from './dialogs/VoucherStampDialog.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
-  vouchers, cashAccounts, loading,
-  showFormDialog, editTarget,
-  showPrintDialog, printTarget, printCopyNo,
-  showCancelDialog, cancelTarget, cancelReason,
-  statusMeta, canEdit, canPrint, canRecord, canCancel, recordBlockedReason, particularsSummary,
-  init, openCreateDialog, openEditDialog, handleSubmit,
-  openPrint, handleRecord, openCancelDialog, closeCancelDialog, handleCancel,
+  vouchers,
+  cashAccounts,
+  loading,
+  showFormDialog,
+  editTarget,
+  showPrintDialog,
+  printTarget,
+  printCopyNo,
+  showCancelDialog,
+  cancelTarget,
+  cancelReason,
+  statusMeta,
+  canEdit,
+  canPrint,
+  canRecord,
+  canCancel,
+  recordBlockedReason,
+  particularsSummary,
+  init,
+  openCreateDialog,
+  openEditDialog,
+  handleSubmit,
+  openPrint,
+  handleRecord,
+  openCancelDialog,
+  closeCancelDialog,
+  handleCancel,
+  showStampDialog,
+  stampTarget,
+  openStamp,
 } = useDisbursementVouchers()
 
 const route = useRoute()
@@ -29,7 +53,6 @@ onMounted(async () => {
 <template>
   <v-container fluid class="pa-2 fill-height align-start">
     <v-card class="mx-auto w-100" rounded="lg" elevation="1">
-
       <v-card-title class="d-flex justify-space-between align-center pa-5">
         <div>
           <div class="text-h6 font-weight-bold">Disbursement Vouchers</div>
@@ -62,7 +85,9 @@ onMounted(async () => {
         <template #item.dv_no="{ item }">
           <span
             class="font-weight-medium"
-            :class="{ 'text-decoration-line-through text-medium-emphasis': item.status === 'cancelled' }"
+            :class="{
+              'text-decoration-line-through text-medium-emphasis': item.status === 'cancelled',
+            }"
           >
             {{ item.dv_no ?? '—' }}
           </span>
@@ -82,7 +107,11 @@ onMounted(async () => {
 
         <template #item.voucher_date="{ item }">
           <span class="text-body-2 text-medium-emphasis">
-            {{ item.voucher_date ? formatDatePR_ISO(item.voucher_date) : formatDatePR_ISO(item.created_at) }}
+            {{
+              item.voucher_date
+                ? formatDatePR_ISO(item.voucher_date)
+                : formatDatePR_ISO(item.created_at)
+            }}
           </span>
         </template>
 
@@ -136,7 +165,11 @@ onMounted(async () => {
               color="info"
               class="text-none"
               prepend-icon="mdi-printer"
-              :title="item.print_count > 0 ? 'Reprint — the copy will be marked REPRINTED' : 'Print and lock this voucher'"
+              :title="
+                item.print_count > 0
+                  ? 'Reprint — the copy will be marked REPRINTED'
+                  : 'Print and lock this voucher'
+              "
               @click="openPrint(item)"
             >
               {{ item.print_count > 0 ? 'Reprint' : 'Print' }}
@@ -152,10 +185,27 @@ onMounted(async () => {
               prepend-icon="mdi-cash-minus"
               :disabled="!canRecord(item)"
               :loading="loading"
-              :title="canRecord(item) ? 'Record each particular as an expense' : recordBlockedReason(item)"
+              :title="
+                canRecord(item) ? 'Record each particular as an expense' : recordBlockedReason(item)
+              "
               @click="handleRecord(item)"
             >
               Record Expense
+            </v-btn>
+
+            <!-- Only after recording: the mark states that the expenses exist
+                 in the ledger, so it must never be printable before they do. -->
+            <v-btn
+              v-if="item.status === 'recorded'"
+              size="small"
+              variant="tonal"
+              color="error"
+              class="text-none"
+              prepend-icon="mdi-stamper"
+              title="Print the RECORDED mark onto the signed voucher"
+              @click="openStamp(item)"
+            >
+              Mark Recorded
             </v-btn>
 
             <v-btn
@@ -182,14 +232,12 @@ onMounted(async () => {
       @submit="handleSubmit"
     />
 
-    <VoucherPrintDialog
-      v-model="showPrintDialog"
-      :voucher="printTarget"
-      :copy-no="printCopyNo"
-    />
+    <VoucherPrintDialog v-model="showPrintDialog" :voucher="printTarget" :copy-no="printCopyNo" />
 
     <!-- Cancelling is only reachable before recording; after that the expenses
          are real and must be voided through the change-request flow instead. -->
+    <VoucherStampDialog v-model="showStampDialog" :voucher="stampTarget" />
+
     <v-dialog v-model="showCancelDialog" max-width="480">
       <v-card rounded="lg">
         <v-card-title class="text-h6 font-weight-bold pa-5">

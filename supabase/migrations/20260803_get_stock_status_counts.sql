@@ -1,4 +1,4 @@
-create or replace function public.get_stock_status_products(
+create or replace function get_stock_status_products(
   bucket_type text,
   ref_year int default null,
   ref_month int default null,
@@ -10,7 +10,6 @@ create or replace function public.get_stock_status_products(
 returns table (
   id bigint,
   product_name text,
-  generic_name text,
   sku text,
   barcode text,
   unit text,
@@ -33,7 +32,7 @@ as $$
       then make_date(ref_year, ref_month, 1) else null end as ref_date
   )
   select
-    p.id, p.product_name, p.generic_name, p.sku, p.barcode, p.unit,
+    p.id, p.product_name, p.sku, p.barcode, p.unit,
     p.current_stock, p.reorder_level, p.cost_price, p.selling_price,
     p.supplier_id, s.name as supplier_name, p.batch_no, p.expiry_date, p.status,
     count(*) over() as total_count
@@ -69,4 +68,4 @@ as $$
   limit page_limit offset page_offset;
 $$;
 
-grant execute on function public.get_stock_status_products to authenticated;
+grant execute on function get_stock_status_products to authenticated;

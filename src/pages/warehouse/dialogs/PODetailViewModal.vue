@@ -25,10 +25,8 @@ const {
   savingAll,
   transactionItems,
   effectiveEmptyRows,
-  warehouses,
   missingSkuCount,
   missingActualCount,
-  missingWarehouseCount,
   handleMarkAsReceived,
 } = usePODetailView(props as any, emit as any)
 </script>
@@ -61,7 +59,6 @@ const {
             :sku-edit-mode="skuEditMode"
             :transaction-items="transactionItems"
             :effective-empty-rows="effectiveEmptyRows"
-            :warehouses="warehouses"
           />
         </div>
       </v-card-text>
@@ -71,16 +68,13 @@ const {
       <!-- Actions -->
       <v-card-actions :class="mobile ? 'pa-3 ga-2 flex-wrap' : 'pa-4 justify-end'">
         <div
-          v-if="skuEditMode && (missingSkuCount > 0 || missingActualCount > 0 || missingWarehouseCount > 0)"
+          v-if="skuEditMode && (missingSkuCount > 0 || missingActualCount > 0)"
           :class="mobile ? 'text-caption text-medium-emphasis w-100 mb-2' : 'text-body-2 text-medium-emphasis'"
         >
           <v-icon size="16" color="error" class="mr-1">mdi-alert-circle-outline</v-icon>
           <template v-if="missingSkuCount > 0">{{ missingSkuCount }} SKU{{ missingSkuCount !== 1 ? 's' : '' }} missing</template>
           <template v-if="missingActualCount > 0">
             {{ missingSkuCount > 0 ? ' / ' : '' }}{{ missingActualCount }} actual count{{ missingActualCount !== 1 ? 's' : '' }} missing
-          </template>
-          <template v-if="missingWarehouseCount > 0">
-            {{ missingSkuCount > 0 || missingActualCount > 0 ? ' / ' : '' }}{{ missingWarehouseCount }} warehouse{{ missingWarehouseCount !== 1 ? 's' : '' }} missing
           </template>
         </div>
 
@@ -92,11 +86,11 @@ const {
             variant="flat"
             size="small"
             :loading="savingAll"
-            :disabled="missingSkuCount > 0 || missingActualCount > 0 || missingWarehouseCount > 0 || savingAll"
+            :disabled="missingSkuCount > 0 || missingActualCount > 0 || savingAll"
             @click="handleMarkAsReceived"
           >
             <template v-if="missingSkuCount > 0">
-              Input SKU ({{ missingSkuCount + missingActualCount + missingWarehouseCount }})
+              Input SKU ({{ missingSkuCount + missingActualCount }})
             </template>
             <template v-else> Mark as Received </template>
           </v-btn>

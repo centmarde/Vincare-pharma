@@ -6,7 +6,7 @@ import { useSharedChangeRequests } from '../composables/useSharedChangeRequests'
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
 import type { PRItem } from '@/stores/purchaseRequisitionData'
-import { formatDatePR_ISO } from '@/utils/helpers'
+import { formatDatePR_ISO, formatExpiryMonthYear } from '@/utils/helpers'
 import { computed, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import ActionRequiredDialogMobile from '../mobile/ActionRequiredDialogMobile.vue'
@@ -215,8 +215,8 @@ async function confirmReject() {
                   <th class="text-caption">Unit</th>
                   <th class="text-caption">Supplier</th>
                   <th class="text-caption text-right">Qty</th>
+                  <th class="text-caption text-right">Expiry</th>
                   <th class="text-caption text-right">Cost/Unit</th>
-                  <th class="text-caption text-right">Offer/Unit</th>
                 </tr>
               </thead>
               <tbody>
@@ -226,8 +226,8 @@ async function confirmReject() {
                   <td class="text-caption">{{ it.unit }}</td>
                   <td class="text-caption">{{ it.supplier_name }}</td>
                   <td class="text-caption text-right">{{ it.qty }}</td>
+                  <td class="text-caption text-right">{{ formatExpiryMonthYear(it.expiry_date) }}</td>
                   <td class="text-caption text-right">{{ it.cost_per_unit }}</td>
-                  <td class="text-caption text-right">{{ it.offer_per_unit }}</td>
                 </tr>
               </tbody>
             </v-table>
@@ -308,8 +308,8 @@ async function confirmReject() {
                 <th class="text-caption">Unit</th>
                 <th class="text-caption">Supplier</th>
                 <th class="text-caption text-right">Qty</th>
-                <th class="text-caption text-right">Cost/Unit</th>
-                <th class="text-caption text-right">Offer/Unit</th>
+                <th class="text-caption text-right">Expiry</th>
+                  <th class="text-caption text-right">Cost/Unit</th>
               </tr>
             </thead>
             <tbody>
@@ -319,8 +319,8 @@ async function confirmReject() {
                 <td class="text-caption">{{ it.unit }}</td>
                 <td class="text-caption">{{ it.supplier_name }}</td>
                 <td class="text-caption text-right">{{ it.qty }}</td>
-                <td class="text-caption text-right">{{ it.cost_per_unit }}</td>
-                <td class="text-caption text-right">{{ it.offer_per_unit }}</td>
+                <td class="text-caption text-right">{{ formatExpiryMonthYear(it.expiry_date) }}</td>
+                  <td class="text-caption text-right">{{ it.cost_per_unit }}</td>
               </tr>
             </tbody>
           </v-table>

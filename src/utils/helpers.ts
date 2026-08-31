@@ -449,6 +449,17 @@ export const formatCurrency = (value: number): string =>
   }).format(value).replace('PHP', '₱')
 
 /**
+ * Batch expiry as MM/YYYY — the pharma convention, and how expiry is entered
+ * across the app (the PR/PO forms use month-only pickers).
+ */
+export function formatExpiryMonthYear(value: string | Date | null | undefined): string {
+  if (!value) return '—'
+  const date = typeof value === 'string' ? new Date(value) : value
+  if (Number.isNaN(date.getTime())) return '—'
+  return `${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`
+}
+
+/**
  * Display text for a field that may not have been filled in yet.
  *
  * Returns the value when it has content, otherwise "not set yet".
@@ -497,7 +508,7 @@ export function parseTermDays(value: string | number | null | undefined): number
   // number that was never a term.
   if (text.includes('%')) return null
   // Ranges ('30 - 60 Days') resolve to the EARLIER bound: the receivable starts
-  // ageing at the first date it could have been due, which is the conservative
+  // aging at the first date it could have been due, which is the conservative
   // read for collections.
   const match = text.match(/(\d+)/)
   if (!match) return null // 'Consignment', 'Doctor's deal', ...
@@ -530,6 +541,7 @@ export {
   parseMonthYear,
   formatMonthYear,
   maskMonthYearInput,
+  endOfMonthISODate,
   formatDatePR_ISO,
   formatDatePO_Written,
 } from './dateFormats'

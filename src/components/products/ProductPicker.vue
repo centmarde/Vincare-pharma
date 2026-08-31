@@ -3,7 +3,7 @@ import type { ProductPickerResult } from '@/stores/productsData'
 import { useProductsDataStore } from '@/stores/productsData'
 import { formatCurrency } from '@/utils/helpers'
 import { storeToRefs } from 'pinia'
-import { ref, watch } from 'vue'
+import { onUnmounted, ref, watch } from 'vue'
 
 const props = defineProps<{
   modelValue: boolean
@@ -26,28 +26,56 @@ const loadingMore = ref(false)
 
 const hasMore = ref(true)
 
+// `clearable` sets the field to null, not ''.
+const term = () => searchInput.value ?? ''
+
 function runSearch() {
   currentLimit.value = PAGE_SIZE
-  productsStore.fetchProductPicker({ search: searchInput.value, limit: currentLimit.value })
+  productsStore.fetchProductPicker({ search: term(), limit: currentLimit.value })
     .then(() => {
       hasMore.value = products.value.length < pickerTotalCount.value
     })
+}
+
+// Suggestions update as the user types. Debounced so a word doesn't fire one
+// request per letter; Enter still searches immediately.
+const SEARCH_DEBOUNCE_MS = 250
+let debounce: ReturnType<typeof setTimeout> | undefined
+
+function queueSearch() {
+  if (debounce) clearTimeout(debounce)
+  debounce = setTimeout(runSearch, SEARCH_DEBOUNCE_MS)
+}
+
+function searchNow() {
+  if (debounce) clearTimeout(debounce)
+  runSearch()
+}
+
+watch(searchInput, queueSearch)
+onUnmounted(() => { if (debounce) clearTimeout(debounce) })
+
+// On-hand stock, shown in place of the supplier — supplier identity is
+// confidential and must not be exposed to the staff picking products.
+function stockLabel(stock: number | null): string {
+  if (stock == null) return 'Stock unknown'
+  return `${stock.toLocaleString()} on hand`
+}
+
+function stockClass(stock: number | null): string {
+  if (stock == null) return 'text-medium-emphasis'
+  return stock <= 0 ? 'text-error font-weight-bold' : 'text-success'
 }
 
 async function loadMore() {
   loadingMore.value = true
   currentLimit.value += LOAD_MORE_STEP
   try {
-    await productsStore.fetchProductPicker({ search: searchInput.value, limit: currentLimit.value })
+    await productsStore.fetchProductPicker({ search: term(), limit: currentLimit.value })
     hasMore.value = products.value.length < pickerTotalCount.value
   } finally {
     loadingMore.value = false
   }
-}
-
-function onClear() {
-  searchInput.value = ''
-  runSearch()
 }
 
 function pick(product: ProductPickerResult) {
@@ -64,7 +92,7 @@ watch(
   (isOpen) => {
     if (isOpen) {
       searchInput.value = ''
-      runSearch()
+      searchNow()
     }
   }
 )
@@ -91,15 +119,14 @@ watch(
       <div class="pa-4 pb-2">
         <v-text-field
           v-model="searchInput"
-          placeholder="Search by Product Name or SKU..."
+          placeholder="Search by product, brand or SKU..."
           prepend-inner-icon="mdi-magnify"
           variant="outlined"
           density="compact"
           hide-details
           autofocus
           clearable
-          @keyup.enter="runSearch"
-          @click:clear="onClear"
+          @keyup.enter="searchNow"
         />
       </div>
 
@@ -122,9 +149,12 @@ watch(
                 </template>
                 <template #subtitle>
                     <span class="text-caption">
-                        {{ product.unit || 'unit' }} · {{ product.supplier_name || 'No supplier' }}
-                        <span v-if="product.supplier_name && !product.supplier_is_active" class="text-error font-weight-bold">
-                            ● Inactive</span>
+                        <!-- Brand is shown because the search matches it: the row
+                             is titled by molecule, so a "Fluimucil" hit would
+                             otherwise look like an unrelated result. -->
+                        <span v-if="product.brand" class="font-weight-medium">{{ product.brand }}</span>
+                        <span v-if="product.brand"> · </span>{{ product.unit || 'unit' }} ·
+                        <span :class="stockClass(product.current_stock)">{{ stockLabel(product.current_stock) }}</span>
                     </span>
                 </template>
                 <template #append>

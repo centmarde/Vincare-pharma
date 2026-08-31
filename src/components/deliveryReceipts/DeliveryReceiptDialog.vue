@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { ref, nextTick } from 'vue'
+import { computed, nextTick, ref } from 'vue'
+import { companyFor, companyOptions, defaultCompanyFor } from '@/utils/companyProfiles'
+import type { CompanyKey } from '@/utils/companyProfiles'
 import html2pdf from 'html2pdf.js'
 import { useToast } from 'vue-toastification'
 import type { DeliveryReceiptType } from '@/stores/deliveryReceiptsData'
@@ -20,13 +22,8 @@ const printArea = ref<HTMLElement | null>(null)
 // (src/pages/sales/dialogs/PosReceiptDialog.vue) — real, already-shipped values.
 // TODO(confirm): if In-House govt/LGU DRs should carry Vincare Pharma's own
 // name / TIN / license instead of Exelmed's, replace these values.
-const company = {
-  name:    'EXELMED PHARMA TRADE',
-  line1:   'Ground Floor NB Building, Ochoa Avenue, Butuan City',
-  line2:   '8600 Agusan del Norte, Philippines (Tel: 085-3000-460)',
-  license: 'License Number: 3000001108883 - VAT Reg: TIN: 178-845-363-000',
-  contact: 'Mobile: 09090734525 - Email Address: exelmedshop@gmail.com',
-} as const
+const companyKey = ref<CompanyKey>(defaultCompanyFor('delivery_receipt'))
+const company = computed(() => companyFor(companyKey.value))
 
 function formatReceiptDate(iso: string): string {
   const d = new Date(iso)
@@ -73,7 +70,7 @@ async function handlePrint() {
             <div class="text-h5 font-weight-bold" style="letter-spacing: 2px;">{{ company.name }}</div>
             <div class="text-caption text-medium-emphasis">{{ company.line1 }}</div>
             <div class="text-caption text-medium-emphasis">{{ company.line2 }}</div>
-            <div class="text-caption text-medium-emphasis">{{ company.license }}</div>
+            <div v-if="company.license" class="text-caption text-medium-emphasis">{{ company.license }}</div>
             <div class="text-caption text-medium-emphasis">{{ company.contact }}</div>
           </div>
 
@@ -112,8 +109,8 @@ async function handlePrint() {
               <tr v-for="(line, i) in receipt.items" :key="i">
                 <td>
                   <div class="font-weight-medium">{{ line.product?.product_name ?? `#${line.product_id}` }}</div>
-                  <div class="text-caption text-medium-emphasis" v-if="line.product?.generic_name">
-                    {{ line.product.generic_name }}
+                  <div class="text-caption text-medium-emphasis" v-if="line.product?.product_name">
+                    {{ line.product.product_name }}
                   </div>
                 </td>
                 <td class="text-caption">
@@ -139,6 +136,16 @@ async function handlePrint() {
       <v-divider />
 
       <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end ga-2">
+        <v-select
+          v-model="companyKey"
+          :items="companyOptions"
+          label="Issuing company"
+          variant="outlined"
+          density="compact"
+          hide-details
+          class="flex-grow-0 mr-auto"
+          style="max-width: 230px"
+        />
         <v-btn variant="text" color="error" class="text-none" prepend-icon="mdi-printer" @click="handlePrint">
           Print
         </v-btn>

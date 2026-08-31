@@ -212,6 +212,22 @@ function scrollToSection(sectionId: string) {
             </v-btn>
           </div>
 
+          <!-- Login/Auth Icon Button -->
+          <v-tooltip location="bottom">
+            <template #activator="{ props: tooltipProps }">
+              <v-btn
+                v-bind="tooltipProps"
+                icon="mdi-account-circle-outline"
+                variant="text"
+                size="large"
+                class="me-3"
+                aria-label="Go to login"
+                @click="router.push('/auth')"
+              />
+            </template>
+            <span>Login</span>
+          </v-tooltip>
+
           <!-- Theme Toggle Menu -->
           <v-menu location="bottom">
             <template #activator="{ props: menuProps }">
@@ -263,13 +279,30 @@ function scrollToSection(sectionId: string) {
         </div>
 
         <!-- Mobile Menu Button -->
-        <v-btn
-          v-if="!lgAndUp"
-          icon="mdi-menu"
-          variant="text"
-          :size="xs ? 'default' : 'large'"
-          @click="drawer = !drawer"
-        />
+        <div v-if="!lgAndUp" class="d-flex align-center ga-2">
+          <!-- Login/Auth Icon Button -->
+          <v-tooltip location="bottom">
+            <template #activator="{ props: tooltipProps }">
+              <v-btn
+                v-bind="tooltipProps"
+                icon="mdi-account-circle-outline"
+                variant="text"
+                :size="xs ? 'default' : 'large'"
+                :aria-label="'Login'"
+                @click="router.push('/auth')"
+              />
+            </template>
+            <span>Login</span>
+          </v-tooltip>
+
+          <!-- Mobile Menu Button -->
+          <v-btn
+            icon="mdi-menu"
+            variant="text"
+            :size="xs ? 'default' : 'large'"
+            @click="drawer = !drawer"
+          />
+        </div>
       </template>
     </v-app-bar>
 

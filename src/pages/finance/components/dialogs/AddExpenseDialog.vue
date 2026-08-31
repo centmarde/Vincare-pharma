@@ -103,13 +103,13 @@ const close = () => {
           class="mb-3"
         />
 
-        <label class="field-label">Cash Account <span class="text-error">*</span></label>
+        <label class="field-label">Payment Mode <span class="text-error">*</span></label>
         <v-select
           v-model="cashAccountId"
           :items="accountOptions"
           item-title="title"
           item-value="value"
-          placeholder="Select account paid from"
+          placeholder="Select payment mode"
           variant="outlined"
           density="compact"
           hide-details

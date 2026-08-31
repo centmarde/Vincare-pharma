@@ -25,8 +25,8 @@ export function useIssuePOModal(
     contact: '0968-879-5589',
   })
 
-  const shipViaOptions    = ['Ground', 'Air', 'Sea', 'Courier']
-  const shipMethodOptions = ['Pick-up', 'Delivery', 'Door-to-door']
+  const shipViaOptions    = ['Land', 'Air', 'Sea']
+  const shipMethodOptions = ['Pick-up', 'Delivery']
 
   const today = new Date().toLocaleDateString('en-PH', {
     month: 'short', day: '2-digit', year: 'numeric',
@@ -84,7 +84,7 @@ export function useIssuePOModal(
       await logsStore.createLog({
         created_by: user.id,
         action: 'issue_po',
-        description: `Purchase order issued from requisition ${props.pr.requisition_no}`,
+        description: `Purchase order Ordered from requisition ${props.pr.requisition_no}`,
         transaction_id: props.pr.id,
         module: 'purchase_order',
       })

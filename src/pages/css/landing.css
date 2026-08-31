@@ -1,0 +1,592 @@
+/*
+ * Landing page styles.
+ *
+ * Imported UNSCOPED by src/pages/index.vue, matching the pattern used by
+ * pages/executive/css/executive.css. Because it is unscoped, EVERY rule here is
+ * namespaced under `.landing` (the root element of the page) — the class names
+ * are intentionally plain (.hero, .section, .feature) and would otherwise apply
+ * to every page in the app.
+ */
+
+.landing {
+  min-height: 100vh;
+}
+
+
+/* ── Hero ──────────────────────────────────────────────────────────────── */
+.landing .hero {
+  background: rgb(var(--v-theme-surface));
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+}
+
+
+.landing .hero-eyebrow {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgb(var(--v-theme-primary));
+}
+
+
+/* The motto carries the page; sized by viewport so it stays commanding on a
+   projector and still fits a phone. The second line is set in italic serif so
+   the promise reads as a signature rather than a headline. */
+.landing .hero-motto {
+  font-size: clamp(2.5rem, 5.4vw, 4rem);
+  font-weight: 400;
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+
+.landing .hero-motto-accent {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-style: italic;
+  font-weight: 400;
+  color: rgb(var(--v-theme-primary));
+}
+
+
+.landing .hero-rule {
+  width: 64px;
+  height: 3px;
+  background: rgb(var(--v-theme-primary));
+}
+
+
+.landing .hero-lead {
+  font-size: clamp(1.15rem, 1.9vw, 1.45rem);
+  line-height: 1.45;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  max-width: 26ch;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+
+.landing .hero-body {
+  font-size: 1rem;
+  line-height: 1.7;
+  max-width: 46ch;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+}
+
+
+.landing .hero-cta {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+
+/* ── Hero visual panel ─────────────────────────────────────────────────── */
+.landing .hero-panel {
+  position: relative;
+  display: block;
+  margin: 0;
+  overflow: hidden;
+  min-height: 420px;
+  background: rgba(var(--v-theme-on-surface), 0.08);
+}
+
+
+.landing .hero-panel-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+
+/* Darkens the lower half only, so the photograph stays visible at the top while
+   the copy below it keeps AA contrast. */
+.landing .hero-panel-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.15) 0%,
+    rgba(0, 0, 0, 0.3) 42%,
+    rgba(0, 0, 0, 0.78) 100%
+  );
+}
+
+
+.landing .hero-panel-tag {
+  position: absolute;
+  top: 1.5rem;
+  left: 1.75rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+
+.landing .hero-panel-body {
+  position: absolute;
+  right: 1.75rem;
+  bottom: 1.75rem;
+  left: 1.75rem;
+}
+
+
+.landing .hero-glance {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+
+.landing .hero-glance-item {
+  border-top: 3px solid rgb(var(--v-theme-primary));
+  padding-top: 0.6rem;
+}
+
+
+.landing .hero-glance-step {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: rgb(var(--v-theme-primary));
+  margin-bottom: 0.25rem;
+}
+
+
+.landing .hero-glance-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #fff;
+}
+
+
+.landing .hero-glance-note {
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.72);
+  margin-top: 0.15rem;
+}
+
+
+.landing .hero-panel-rule {
+  height: 1px;
+  background: rgb(var(--v-theme-primary));
+  margin: 1.75rem 0 1.25rem;
+}
+
+
+.landing .hero-panel-quote {
+  margin: 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(1.05rem, 1.6vw, 1.3rem);
+  line-height: 1.45;
+  color: #fff;
+}
+
+
+@media (max-width: 599px) {
+  .landing .hero-panel {
+    min-height: 360px;
+  }
+
+  .landing .hero-glance {
+    gap: 0.65rem;
+  }
+
+  .landing .hero-glance-title {
+    font-size: 0.95rem;
+  }
+
+  .landing .hero-glance-note {
+    font-size: 0.72rem;
+  }
+}
+
+
+/* ── Credentials ───────────────────────────────────────────────────────── */
+/* A near-black band, deliberately fixed rather than themed: it is the one strip
+   on the page that must read the same in light and dark mode, because it sits
+   between two light sections and acts as the page's spine. */
+.landing .credentials {
+  background: #121212;
+  padding: 2rem 0;
+}
+
+
+/* The hairline sits on the left of every item and is removed from the first in
+   each row, so the dividers fall BETWEEN the figures and never on the edge. */
+.landing .cred-item {
+  padding: 0.35rem 0 0.35rem 1.75rem;
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+  height: 100%;
+}
+
+
+/* Two per row on mobile, so the 1st and 3rd start a row and lose their rule. */
+.landing .credentials .v-col:nth-child(2n + 1) .cred-item {
+  border-left: 0;
+  padding-left: 0;
+}
+
+
+/* Four across from md up: only the very first item starts a row. */
+@media (min-width: 960px) {
+  .landing .credentials .v-col:nth-child(2n + 1) .cred-item {
+    border-left: 1px solid rgba(255, 255, 255, 0.14);
+    padding-left: 1.75rem;
+  }
+
+  .landing .credentials .v-col:first-child .cred-item {
+    border-left: 0;
+    padding-left: 0;
+  }
+}
+
+
+.landing .cred-value {
+  font-size: clamp(1.35rem, 2.2vw, 1.7rem);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  color: #fff;
+  margin-bottom: 0.4rem;
+}
+
+
+.landing .cred-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+
+@media (max-width: 959px) {
+  .landing .cred-item {
+    padding-left: 1.25rem;
+  }
+
+  .landing .credentials .v-col:nth-child(n + 3) .cred-item {
+    margin-top: 1.75rem;
+  }
+}
+
+
+/* ── Sections ──────────────────────────────────────────────────────────── */
+.landing .section {
+  padding: 6rem 0;
+}
+
+
+.landing .section-alt {
+  background: rgba(var(--v-theme-on-surface), 0.03);
+}
+
+
+.landing .section-head {
+  max-width: 62ch;
+}
+
+
+/* Narrower measure for heads that stack their title over several short lines,
+   so the lead paragraph wraps with the title rather than running past it. */
+.landing .section-head-narrow {
+  max-width: 42ch;
+}
+
+
+/* Matches the hero: the closing line of a title set in italic serif and the
+   brand red, so the statement reads as a phrase rather than a label. */
+.landing .section-title-accent {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-style: italic;
+  font-weight: 400;
+  color: rgb(var(--v-theme-primary));
+}
+
+
+.landing .section-eyebrow {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgb(var(--v-theme-primary));
+}
+
+
+.landing .section-title {
+  font-size: clamp(1.6rem, 3.2vw, 2.35rem);
+  font-weight: 750;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+
+/* Display variant: bigger, lighter and tighter-leaded, for heads that carry a
+   stacked statement instead of a single running line. */
+.landing .section-title-display {
+  font-size: clamp(2.25rem, 4.6vw, 3.5rem);
+  font-weight: 400;
+  line-height: 1.04;
+  letter-spacing: -0.025em;
+}
+
+
+.landing .section-lead {
+  font-size: 1rem;
+  line-height: 1.7;
+  color: rgba(var(--v-theme-on-surface), 0.72);
+  margin-bottom: 0;
+}
+
+
+/* ── Group cover photo ─────────────────────────────────────────────────── */
+/* A wide, cover-ratio photograph placed beneath the Group section head, mirroring
+   the .hero-panel pattern (object-fit cover + a light lower-left wash so the
+   caption reads). Square corners and a soft surface shadow keep it flush with the
+   section that follows. */
+.landing .group-cover {
+  position: relative;
+  margin: 0 auto;
+  overflow: hidden;
+  /* ~16:5 cover ratio; never smaller than the hero panel height. */
+  aspect-ratio: 16 / 5;
+  min-height: 220px;
+  border-radius: 0;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.12);
+}
+
+.landing .group-cover-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.landing .group-cover-caption {
+  position: absolute;
+  right: 1.5rem;
+  bottom: 1.25rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  color: rgba(var(--v-theme-on-surface), 0.65);
+}
+
+
+/* ── Channels ──────────────────────────────────────────────────────────── */
+.landing .channel {
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  border-radius: 0;
+  background: rgb(var(--v-theme-surface));
+  transition: border-color 0.18s ease;
+}
+
+
+.landing .channel:hover {
+  border-color: rgb(var(--v-theme-primary));
+}
+
+
+/* Square outlined glyph, balanced against the eyebrow at the far right of the
+   same row — the two together form the card's header rule. */
+.landing .channel-icon {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(var(--v-theme-primary), 0.4);
+  flex-shrink: 0;
+}
+
+
+.landing .channel-eyebrow {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgb(var(--v-theme-primary));
+}
+
+
+.landing .channel-title {
+  font-size: 1.3rem;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+
+.landing .channel-body {
+  font-size: 0.94rem;
+  line-height: 1.7;
+  color: rgba(var(--v-theme-on-surface), 0.72);
+  margin-bottom: 0;
+}
+
+
+.landing .channel-point {
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: rgba(var(--v-theme-on-surface), 0.85);
+}
+
+
+/* ── Assurances ────────────────────────────────────────────────────────── */
+.landing .assurance {
+  background: rgb(var(--v-theme-surface));
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  border-radius: 4px;
+}
+
+
+.landing .assurance-title {
+  font-size: 1.02rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+
+.landing .assurance-body {
+  font-size: 0.89rem;
+  line-height: 1.65;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  margin-bottom: 0;
+}
+
+
+/* ── Platform features ─────────────────────────────────────────────────── */
+.landing .feature-icon {
+  width: 46px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(var(--v-theme-primary), 0.35);
+  border-radius: 4px;
+  color: rgb(var(--v-theme-primary));
+}
+
+
+.landing .feature-title {
+  font-size: 1.12rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+
+.landing .feature-body {
+  font-size: 0.92rem;
+  line-height: 1.7;
+  color: rgba(var(--v-theme-on-surface), 0.72);
+  margin-bottom: 0;
+}
+
+
+/* ── Group entities ────────────────────────────────────────────────────── */
+.landing .entity {
+  background: rgb(var(--v-theme-surface));
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  border-top: 3px solid rgb(var(--v-theme-primary));
+  border-radius: 4px;
+}
+
+
+.landing .entity-name {
+  font-size: 1.28rem;
+  font-weight: 750;
+  letter-spacing: 0.01em;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+
+.landing .entity-role {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgb(var(--v-theme-primary));
+}
+
+
+.landing .entity-body {
+  font-size: 0.94rem;
+  line-height: 1.7;
+  color: rgba(var(--v-theme-on-surface), 0.72);
+  margin-bottom: 0;
+}
+
+
+.landing .entity-meta {
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+}
+
+
+/* ── Contact ───────────────────────────────────────────────────────────── */
+.landing .contact-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(var(--v-theme-on-surface), 0.55);
+  margin-bottom: 0.35rem;
+}
+
+
+.landing .contact-value {
+  font-size: 0.98rem;
+  line-height: 1.6;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+
+.landing .contact-link {
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: rgb(var(--v-theme-primary));
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s ease;
+}
+
+
+.landing .contact-link:hover {
+  border-bottom-color: rgb(var(--v-theme-primary));
+}
+
+
+/* ── Closing ───────────────────────────────────────────────────────────── */
+.landing .closing {
+  background: rgb(var(--v-theme-primary));
+}
+
+
+.landing .closing-title {
+  font-size: clamp(1.35rem, 2.8vw, 1.95rem);
+  font-weight: 750;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+
+
+.landing .closing-body {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.82);
+}

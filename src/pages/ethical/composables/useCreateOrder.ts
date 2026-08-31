@@ -2,7 +2,7 @@ import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useEthicalDataStore } from '@/stores/ethicalData'
-import { useProductsDataStore } from '@/stores/productsData'
+import type { ProductPickerResult } from '@/stores/productsData'
 import { useAgentsDataStore } from '@/stores/agentsData'
 import { useOutletsDataStore } from '@/stores/outletsData'
 import { parseTermDays } from '@/utils/helpers'
@@ -15,17 +15,27 @@ const round2 = (n: number) => Math.round(n * 100) / 100
 
 type FormLine = {
   product_id: number | null
+  // The product's own details are held ON the line. The products store only
+  // ever returns the first 1,000 of 2,401 rows (Supabase caps an unranged
+  // request), so a product chosen through the search dialog is usually absent
+  // from it — the below-cost guard and the re-price-on-customer-change below
+  // both used to silently find nothing for those products.
+  product_name: string
+  brand: string | null
+  unit: string
+  /** System price snapshot — re-priced against the customer's markup. */
+  selling: number
+  /** Company cost snapshot — drives the below-cost guard. */
+  cost: number | null
   quantity: number
   unit_price: number
 }
 
 export function useCreateOrder(onCreated: () => void) {
   const ethical = useEthicalDataStore()
-  const productsStore = useProductsDataStore()
   const agentsStore = useAgentsDataStore()
   const outletsStore = useOutletsDataStore()
 
-  const { products } = storeToRefs(productsStore)
   const { agents } = storeToRefs(agentsStore)
   const { outlets } = storeToRefs(outletsStore)
 
@@ -44,7 +54,7 @@ export function useCreateOrder(onCreated: () => void) {
   // — the version bump discards any old v1 draft that still carried them.
   const draft = useFormDraft({
     key: 'ethical-create-order',
-    version: 2,
+    version: 3,
     refs: { customerId, agentId, outletId, remarks, lines },
     isEmpty: () => customerId.value == null && agentId.value == null && !remarks.value
       && !lines.value.some((l) => l.product_id != null || l.unit_price > 0),
@@ -59,21 +69,6 @@ export function useCreateOrder(onCreated: () => void) {
 
   const outletOptions = computed(() =>
     outlets.value.filter(o => o.channel === 'ethical' && o.is_active).map(o => ({ title: o.name, value: o.id })))
-
-  const productOptions = computed(() =>
-    products.value.map(p => ({
-      title: `${p.product_name ?? '—'}${p.sku ? ` (${p.sku})` : ''}`,
-      value: p.id,
-      selling: p.selling_price ?? 0,
-      cost: p.cost_price ?? null,
-      unit: p.unit ?? '—',
-    })))
-
-  // Unit (Box/Bottle/Piece/…) is a property of the product master, same as
-  // Purchasing's PR table and In-House's Raise Order dialog.
-  function unitFor(productId: number | null): string {
-    return productOptions.value.find(o => o.value === productId)?.unit ?? '—'
-  }
 
   // PRICE = SYSTEM PRICE / DIVISOR, DIVISOR = (100 - MARKUP)% — the client's
   // trade-profile pricing formula (customersData.ts markup_percent). Falls
@@ -150,11 +145,9 @@ export function useCreateOrder(onCreated: () => void) {
   type BelowCostLine = { index: number; name: string; net: number; cost: number }
   const belowCostLines = computed<BelowCostLine[]>(() =>
     lines.value.flatMap((l, index) => {
-      if (l.product_id == null) return []
-      const p = productOptions.value.find(o => o.value === l.product_id)
-      if (!p || p.cost == null) return []
+      if (l.product_id == null || l.cost == null) return []
       const net = netUnitPrice(l.unit_price)
-      return net < p.cost ? [{ index, name: p.title, net, cost: p.cost }] : []
+      return net < l.cost ? [{ index, name: l.product_name, net, cost: l.cost }] : []
     }))
   const hasBelowCostLine = computed(() => belowCostLines.value.length > 0)
   const lineBelowCost = (i: number) => belowCostLines.value.some(b => b.index === i)
@@ -170,13 +163,24 @@ export function useCreateOrder(onCreated: () => void) {
     return markup == null ? true : giveawayRate.value > markup
   })
 
-  function addLine() { lines.value.push({ product_id: null, quantity: 1, unit_price: 0 }) }
+  function addLine() {
+    lines.value.push({
+      product_id: null, product_name: '', brand: null, unit: '',
+      selling: 0, cost: null, quantity: 1, unit_price: 0,
+    })
+  }
   function removeLine(i: number) { lines.value.splice(i, 1) }
 
-  function onProductChange(i: number) {
+  function applyPickedProduct(i: number, product: ProductPickerResult) {
     const line = lines.value[i]
-    const p = productOptions.value.find(o => o.value === line.product_id)
-    if (p) { line.unit_price = priceForCustomer(p.selling) }
+    if (!line) return
+    line.product_id   = product.id
+    line.product_name = product.product_name ?? ''
+    line.brand        = product.brand
+    line.unit         = product.unit ?? ''
+    line.selling      = product.selling_price ?? 0
+    line.cost         = product.cost_price
+    line.unit_price   = priceForCustomer(line.selling)
   }
 
   function onCustomerChange() {
@@ -185,8 +189,7 @@ export function useCreateOrder(onCreated: () => void) {
     // Re-price existing lines for the newly selected customer's markup —
     // still just a default, unit_price stays manually editable per line.
     for (const line of lines.value) {
-      const p = productOptions.value.find(o => o.value === line.product_id)
-      if (p) line.unit_price = priceForCustomer(p.selling)
+      if (line.product_id != null) line.unit_price = priceForCustomer(line.selling)
     }
   }
 
@@ -215,6 +218,9 @@ export function useCreateOrder(onCreated: () => void) {
         product_id: l.product_id!,
         quantity: l.quantity,
         unit_price: l.unit_price,
+        // Snapshotted at order time — the same figure the below-cost guard
+        // above checks against, so the ledger and the guard agree.
+        cost_price: l.cost,
       })),
     })
     loading.value = false
@@ -233,7 +239,6 @@ export function useCreateOrder(onCreated: () => void) {
   async function init() {
     await initCustomerPicker()
     if (!agents.value.length) await agentsStore.fetchAgents({ activeOnly: true })
-    if (!products.value.length) await productsStore.fetchProducts()
     if (!outlets.value.length) await outletsStore.fetchOutlets()
     // Restore a saved draft first, then fall back to defaults for anything blank.
     draft.restore()
@@ -243,11 +248,11 @@ export function useCreateOrder(onCreated: () => void) {
 
   return {
     loading, customerId, agentId, outletId, remarks, lines,
-    customerSearch, customerOptions, selectedCustomer, agentOptions, outletOptions, productOptions,
+    customerSearch, customerOptions, selectedCustomer, agentOptions, outletOptions,
     subtotal, discountRate, discountAmount, rebateRate, rebateAmount, adsRate, adsAmount,
     termsDays, total, dueDatePreview, discountProfile, termsNeedReview,
     markupDivisorLabel,
     giveawayRate, netRevenue, belowCostLines, hasBelowCostLine, lineBelowCost, erodesSystemPrice,
-    addLine, removeLine, onProductChange, onCustomerChange, unitFor, submit, reset, init,
+    addLine, removeLine, applyPickedProduct, onCustomerChange, submit, reset, init,
   }
 }

@@ -6,9 +6,9 @@ import { useProductsWidget } from '@/components/products/composables/useProducts
 import { useTheme } from '@/stores/useTheme'
 import { useLogsDataStore, type LogType } from '@/stores/logsData'
 import ProductMobile from './mobile/ProductMobile.vue'
+import WarehouseStockDetails from './WarehouseStockDetails.vue'
 import ProductFormDialog from './dialogs/ProductFormDialog.vue'
 import ProductDeleteDialog from './dialogs/ProductDeleteDialog.vue'
-import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import StockStatusCards from '../products/StockStatusCards.vue'
 import StockStatusDialog from './dialogs/StockStatusDialog.vue'
 import ManageIgnoredItemsDialog from './dialogs/ManageIgnoredItemsDialog.vue'
@@ -91,6 +91,7 @@ const {
   getWarehouseStock,
   getWarehouseProductDetail,
   getProductReservations,
+  getMainWarehouseStock,
   expiryFilterValue,
   expiryFilterLabel,
   clearExpiryFilter,
@@ -98,6 +99,7 @@ const {
   openAddReservationDialog,
   showAddReservationDialog,
   selectedProductForReservation,
+  fetchMainWarehouseReservations,
 } = useProductsWidget()
 
 // Manage ignored items dialog
@@ -169,8 +171,7 @@ const closeLogsDialog = () => {
 const { getCurrentTheme } = useTheme()
 const isDark = computed<'light' | 'dark'>(() => getCurrentTheme())
 
-function stockColor(item: any) {
-  const stock = item.current_stock ?? 0
+function stockColor(item: any, stock: number) {
   const isOutOfStock = stock <= 0
   const isLowStock = item.reorder_level && stock <= item.reorder_level
 
@@ -379,11 +380,11 @@ function stockColor(item: any) {
         <template #[`item.current_stock`]="{ item }">
           <v-chip
             v-if="!selectedWarehouseId"
-            :color="stockColor(item)"
+            :color="stockColor(item, getMainWarehouseStock(item))"
             size="small"
             variant="outlined"
           >
-            {{ Math.max(0, item.current_stock ?? 0) }}
+            {{ getMainWarehouseStock(item) }}
           </v-chip>
           <v-chip
             v-else
@@ -406,9 +407,9 @@ function stockColor(item: any) {
                   <v-col cols="12" md="6" class="d-flex align-center py-2">
                     <v-icon icon="mdi-label" color="primary" class="mr-3"></v-icon>
                     <div>
-                      <div class="text-caption text-grey-darken-1">Generic Name</div>
+                      <div class="text-caption text-grey-darken-1">Product Name</div>
                       <div class="text-body-1 font-weight-medium">
-                        {{ item.generic_name || 'N/A' }}
+                        {{ item.product_name || 'N/A' }}
                       </div>
                     </div>
                   </v-col>
@@ -440,134 +441,23 @@ function stockColor(item: any) {
                     </div>
                   </v-col>
                   <v-col cols="12" md="6" class="d-flex align-center py-2">
-                    <v-icon icon="mdi-counter" color="primary" class="mr-3"></v-icon>
-                    <div>
-                      <div class="text-caption text-grey-darken-1">Physical Inventory</div>
-                      <div class="text-body-1 font-weight-medium">
-                        {{ item.physical_inventory ?? 'N/A' }}
-                      </div>
-                    </div>
-                  </v-col>
-                  <v-col cols="12" md="6" class="d-flex align-center py-2">
-                    <v-icon icon="mdi-pound" color="primary" class="mr-3"></v-icon>
-                    <div>
-                      <div class="text-caption text-grey-darken-1">Lot Number</div>
-                      <div class="text-body-1 font-weight-medium">
-                        {{ item.lot_number || 'N/A' }}
-                      </div>
-                    </div>
-                  </v-col>
-                  <v-col cols="12" md="6" class="d-flex align-center py-2">
-                    <v-icon icon="mdi-shape-outline" color="primary" class="mr-3"></v-icon>
-                    <div>
-                      <div class="text-caption text-grey-darken-1">Type</div>
-                      <div class="text-body-1 font-weight-medium">{{ item.type || 'N/A' }}</div>
-                    </div>
-                  </v-col>
-                  <v-col cols="12" md="6" class="d-flex align-center py-2">
                     <v-icon icon="mdi-ruler" color="primary" class="mr-3"></v-icon>
                     <div>
                       <div class="text-caption text-grey-darken-1">Unit</div>
                       <div class="text-body-1 font-weight-medium">{{ item.unit || 'N/A' }}</div>
                     </div>
                   </v-col>
-                  <v-col cols="12" md="6" class="d-flex align-center py-2">
-                    <v-icon icon="mdi-text-box-outline" color="primary" class="mr-3"></v-icon>
-                    <div>
-                      <div class="text-caption text-grey-darken-1">Description</div>
-                      <div class="text-body-1 font-weight-medium">
-                        {{ item.item_description || 'N/A' }}
-                      </div>
-                    </div>
-                  </v-col>
 
                   <!-- Warehouse details when a warehouse filter is active -->
-                  <template v-if="selectedWarehouseId && getWarehouseProductDetail(item.id)">
-                    <v-col cols="12" class="py-2">
-                      <v-divider class="mb-2"></v-divider>
-                      <div class="text-subtitle-2 font-weight-bold text-grey-darken-1 mb-2">
-                        <v-icon icon="mdi-warehouse" size="18" class="mr-1"></v-icon>
-                        Warehouse Stock Details
-                      </div>
-                    </v-col>
-                    <v-col cols="12" md="4" class="d-flex align-center py-2">
-                      <v-icon
-                        icon="mdi-package-variant-closed"
-                        color="primary"
-                        class="mr-3"
-                      ></v-icon>
-                      <div>
-                        <div class="text-caption text-grey-darken-1">Total Qty</div>
-                        <div class="text-body-1 font-weight-medium">
-                          {{ Math.max(0, getWarehouseProductDetail(item.id)?.total_qty ?? 0) }}
-                        </div>
-                      </div>
-                    </v-col>
-                    <v-col cols="12" md="4" class="d-flex align-center py-2">
-                      <v-icon icon="mdi-check-circle-outline" color="success" class="mr-3"></v-icon>
-                      <div>
-                        <div class="text-caption text-grey-darken-1">Available Stock</div>
-                        <div class="text-body-1 font-weight-medium">
-                          {{ Math.max(0, getWarehouseStock(item.id) ?? 0) }}
-                        </div>
-                      </div>
-                    </v-col>
-                    <v-col cols="12" md="4" class="d-flex align-center py-2">
-                      <v-btn
-                        icon="mdi-plus"
-                        size="small"
-                        variant="outlined"
-                        color="primary"
-                        @click="openAddReservationDialog(item)"
-                      >
-                        <v-icon size="16">mdi-bookmark-plus</v-icon>
-                        <v-tooltip activator="parent" location="top">Add Reservation</v-tooltip>
-                      </v-btn>
-                    </v-col>
-                    <v-col cols="12" class="py-2">
-                      <v-divider class="mb-2"></v-divider>
-                      <div class="text-subtitle-2 font-weight-bold text-grey-darken-1 mb-2">
-                        <v-icon icon="mdi-bookmark-multiple" size="18" class="mr-1"></v-icon>
-                        Reserved to Customers
-                      </div>
-                      <template v-if="getProductReservations(item.id).length > 0">
-                        <v-list density="compact" class="pa-0" lines="one">
-                          <v-list-item
-                            v-for="reservation in getProductReservations(item.id)"
-                            :key="reservation.id"
-                            class="px-0"
-                          >
-                            <template #prepend>
-                              <v-icon icon="mdi-account" color="warning" size="20"></v-icon>
-                            </template>
-                            <v-list-item-title class="text-body-2">
-                              {{ reservation.customer_name }}
-                            </v-list-item-title>
-                            <template #append>
-                              <v-chip
-                                size="x-small"
-                                color="warning"
-                                variant="outlined"
-                                class="mr-2"
-                              >
-                                {{ reservation.reserved_qty }}
-                              </v-chip>
-                              <v-btn
-                                icon="mdi-delete"
-                                size="x-small"
-                                variant="text"
-                                color="error"
-                                @click.stop="removeReservation(reservation.id)"
-                              ></v-btn>
-                            </template>
-                          </v-list-item>
-                        </v-list>
-                      </template>
-                      <div v-else class="text-body-2 text-grey">
-                        No reservations for this product
-                      </div>
-                    </v-col>
-                  </template>
+                  <WarehouseStockDetails
+                    :product="item"
+                    :selected-warehouse-id="selectedWarehouseId"
+                    :get-warehouse-stock="getWarehouseStock"
+                    :get-warehouse-product-detail="getWarehouseProductDetail"
+                    :get-product-reservations="getProductReservations"
+                    :open-add-reservation-dialog="openAddReservationDialog"
+                    :remove-reservation="removeReservation"
+                  />
                 </v-row>
               </div>
             </td>
@@ -703,15 +593,14 @@ function stockColor(item: any) {
     :ignored-product-entries="ignoredProductEntries"
   />
 
-  <!-- Confirm Dialog -->
-  <ConfirmDialog />
-
   <!-- Add Reservation Dialog -->
   <AddReservationDialog
     v-model="showAddReservationDialog"
     :selected-product="selectedProductForReservation"
     :selected-warehouse-id="selectedWarehouseId"
-    @reservation-added="selectedWarehouseId && setWarehouseFilter(selectedWarehouseId)"
+    @reservation-added="
+      selectedWarehouseId ? setWarehouseFilter(selectedWarehouseId) : fetchMainWarehouseReservations()
+    "
   />
 </template>
 

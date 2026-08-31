@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRaiseOrder } from '../composables/useRaiseOrder'
 import { formatCurrency } from '@/utils/helpers'
+import type { ProductPickerResult } from '@/stores/productsData'
 import CustomerTermsCard from '@/components/customers/CustomerTermsCard.vue'
+import ProductPickerDialog from '@/components/products/ProductPicker.vue'
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
@@ -12,10 +14,27 @@ defineProps<{ modelValue: boolean }>()
 
 const {
   loading, customerId, govtPoNo, poAmount, remarks, lines,
-  customerSearch, customerOptions, selectedCustomer, discountProfile, productOptions, isGovtCustomer,
-  offerTotal, costTotal, profit, marginPct,
-  addLine, removeLine, onProductChange, unitFor, submit, init,
+  customerSearch, customerOptions, selectedCustomer, discountProfile, isGovtCustomer,
+  offerTotal, costTotal, ratioLabel, ratioClass, profitLabel, marginLabel,
+  addLine, removeLine, applyPickedProduct, submit, init,
 } = useRaiseOrder(() => emit('created'))
+
+// Products are chosen through the shared search dialog (the same one Purchasing
+// uses), not a dropdown: it searches all 2,401 products server-side, where the
+// products store only ever held the first 1,000 rows.
+const showProductPicker = ref(false)
+const pickerTargetIndex = ref<number | null>(null)
+
+function openProductPicker(index: number) {
+  pickerTargetIndex.value = index
+  showProductPicker.value = true
+}
+
+function onProductSelected(product: ProductPickerResult) {
+  if (pickerTargetIndex.value === null) return
+  applyPickedProduct(pickerTargetIndex.value, product)
+  pickerTargetIndex.value = null
+}
 
 onMounted(init)
 </script>
@@ -80,7 +99,7 @@ onMounted(init)
               <th class="text-left">Product</th>
               <th class="text-left" style="width:80px">Unit</th>
               <th class="text-right" style="width:100px">Qty</th>
-              <th class="text-right" style="width:130px">Offer/Unit</th>
+              <th class="text-right" style="width:130px">PR Price</th>
               <th class="text-right" style="width:130px">Cost/Unit</th>
               <th class="text-right" style="width:120px">Offer Total</th>
               <th style="width:40px"></th>
@@ -89,10 +108,17 @@ onMounted(init)
           <tbody>
             <tr v-for="(line, i) in lines" :key="i">
               <td>
-                <v-select v-model="line.product_id" :items="productOptions" placeholder="Select"
-                  variant="outlined" density="compact" hide-details @update:model-value="onProductChange(i)" />
+                <v-text-field
+                  :model-value="line.product_name"
+                  placeholder="Search product"
+                  readonly
+                  variant="outlined" density="compact" hide-details
+                  append-inner-icon="mdi-database-search-outline"
+                  @click="openProductPicker(i)"
+                  @click:append-inner="openProductPicker(i)"
+                />
               </td>
-              <td class="text-medium-emphasis">{{ unitFor(line.product_id) }}</td>
+              <td class="text-medium-emphasis">{{ line.unit || '—' }}</td>
               <td><v-text-field v-model.number="line.qty" type="number" min="1" variant="outlined" density="compact" hide-details class="input-number" /></td>
               <td><v-text-field v-model.number="line.offer_unit" type="number" min="0" prefix="₱" variant="outlined" density="compact" hide-details /></td>
               <td><v-text-field v-model.number="line.cost_unit" type="number" min="0" prefix="₱" variant="outlined" density="compact" hide-details /></td>
@@ -111,8 +137,11 @@ onMounted(init)
             <div class="d-flex justify-space-between text-body-2"><span>Customer Offer Total</span><span>{{ formatCurrency(offerTotal) }}</span></div>
             <div class="d-flex justify-space-between text-body-2 text-medium-emphasis"><span>Company Cost Total</span><span>{{ formatCurrency(costTotal) }}</span></div>
             <v-divider class="my-1" />
-            <div class="d-flex justify-space-between text-body-1 font-weight-bold" :class="profit >= 0 ? 'text-success' : 'text-error'">
-              <span>Projected Profit ({{ marginPct }}%)</span><span>{{ formatCurrency(profit) }}</span>
+            <div class="d-flex justify-space-between text-body-1 font-weight-bold" :class="ratioClass">
+              <span>Ratio (Cost / Offer)</span><span>{{ ratioLabel }}</span>
+            </div>
+            <div class="d-flex justify-space-between text-body-2 font-weight-bold" :class="ratioClass">
+              <span>Projected Profit ({{ marginLabel }})</span><span>{{ profitLabel }}</span>
             </div>
           </v-col>
         </v-row>
@@ -123,6 +152,8 @@ onMounted(init)
         <v-btn color="primary" class="text-none font-weight-bold" elevation="0" :loading="loading" @click="submit">Place Order</v-btn>
       </v-card-actions>
     </v-card>
+
+    <ProductPickerDialog v-model="showProductPicker" @select="onProductSelected" />
   </v-dialog>
 </template>
 

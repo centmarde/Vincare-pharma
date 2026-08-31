@@ -65,7 +65,6 @@ export function useProductsWidget() {
     barcode: '',
     sku: '',
     product_name: '',
-    generic_name: '',
     category: '',
     unit: '',
     cost_price: null,
@@ -76,10 +75,6 @@ export function useProductsWidget() {
     batch_no: null,
     expiry_date: '',
     status: '',
-    item_description: '',
-    offer_per_unit: null,
-    cost_per_unit: null,
-    no: null,
   })
 
   const productForm = ref<CreateProductData & UpdateProductData>(emptyForm())
@@ -219,7 +214,7 @@ export function useProductsWidget() {
 
     await productsStore.fetchProducts({
       search: searchQuery.value,
-      type: typeFilter.value,
+      // type: typeFilter.value,
       orderBy: range ? 'expiry_date' : (sortBy.value[0]?.key as any) || 'created_at',
       ascending: range ? true : sortBy.value[0]?.order === 'asc',
       limit: itemsPerPage.value,
@@ -356,8 +351,9 @@ export function useProductsWidget() {
       warehouseProductIds.value = []
       warehouseStockMap.value = new Map()
       warehouseProductDetails.value = new Map()
-      reservedProductsMap.value = new Map()
       warehouseProductsIdToProductId.value = new Map()
+      // Fetch main-warehouse reservations (rows tied to is_main_warehouse products)
+      fetchMainWarehouseReservations()
       fetchProducts()
     }
   }
@@ -384,6 +380,18 @@ export function useProductsWidget() {
     productId: number,
   ): { id: number; customer_name: string; reserved_qty: number }[] {
     return reservedProductsMap.value.get(productId) || []
+  }
+
+  /**
+   * Get the main-warehouse available stock for a product: its current stock minus
+   * the sum of all quantities reserved to customers.
+   */
+  function getMainWarehouseStock(product: ProductType): number {
+    const reserved = (reservedProductsMap.value.get(product.id) || []).reduce(
+      (sum, r) => sum + (r.reserved_qty ?? 0),
+      0,
+    )
+    return Math.max(0, (product.current_stock ?? 0) - reserved)
   }
 
   /**
@@ -425,6 +433,9 @@ export function useProductsWidget() {
       if (selectedWarehouseId.value) {
         console.log('[ProductsWidget] Refreshing warehouse filter:', selectedWarehouseId.value)
         await setWarehouseFilter(selectedWarehouseId.value)
+      } else {
+        console.log('[ProductsWidget] Refreshing main warehouse reservations')
+        await fetchMainWarehouseReservations()
       }
     } else {
       toast.error('Failed to remove reservation')
@@ -433,6 +444,62 @@ export function useProductsWidget() {
         reservedProductsStore.error,
       )
     }
+  }
+
+  /**
+   * Fetch reservations for the main warehouse. Main-warehouse products live in
+   * warehouse_products rows where warehouse_id is NULL and is_main_warehouse is
+   * true; their reservation rows reference those warehouse_products ids. Populate
+   * reservedProductsMap keyed by product_id.
+   */
+  async function fetchMainWarehouseReservations() {
+    const warehouseProductsStore = useWarehouseProductsDataStore()
+    const reservedProductsStore = useReservedProductsDataStore()
+    const customersStore = useCustomersDataStore()
+
+    if (customersStore.customers.length === 0) {
+      await customersStore.fetchCustomers()
+    }
+
+    const mainProducts = await warehouseProductsStore.fetchMainWarehouseProducts()
+
+    // warehouse_products.id -> product.id for main-warehouse rows
+    const wpIdToProductId = new Map<number, number>()
+    for (const wp of mainProducts) {
+      if (wp.id != null && wp.product_id != null) {
+        wpIdToProductId.set(wp.id, wp.product_id)
+      }
+    }
+
+    const rows =
+      wpIdToProductId.size > 0
+        ? await reservedProductsStore.fetchReservedProductsByWarehouseProductIds(
+            Array.from(wpIdToProductId.keys()),
+          )
+        : []
+
+    const map = new Map<
+      number,
+      { id: number; customer_name: string; reserved_qty: number }[]
+    >()
+
+    for (const rp of rows) {
+      if (rp.warehouse_products_id == null) continue
+      const productId = wpIdToProductId.get(rp.warehouse_products_id)
+      if (productId == null) continue
+
+      const existing = map.get(productId) || []
+      existing.push({
+        id: rp.id,
+        customer_name:
+          customersStore.customers.find((c) => c.id === rp.customer_id)?.name ||
+          `Customer #${rp.customer_id}`,
+        reserved_qty: rp.reserved_qty ?? 0,
+      })
+      map.set(productId, existing)
+    }
+
+    reservedProductsMap.value = map
   }
 
   function openCreateDialog() {
@@ -519,14 +586,6 @@ export function useProductsWidget() {
             changes.push(
               `reorder_level=${oldData.reorder_level ?? 'N/A'} → ${result.reorder_level ?? 'N/A'}`,
             )
-          if (oldData.offer_per_unit !== result.offer_per_unit)
-            changes.push(
-              `offer_per_unit=${oldData.offer_per_unit ?? 'N/A'} → ${result.offer_per_unit ?? 'N/A'}`,
-            )
-          if (oldData.cost_per_unit !== result.cost_per_unit)
-            changes.push(
-              `cost_per_unit=${oldData.cost_per_unit ?? 'N/A'} → ${result.cost_per_unit ?? 'N/A'}`,
-            )
           if (oldData.supplier_id !== result.supplier_id)
             changes.push(
               `supplier_id=${oldData.supplier_id ?? 'N/A'} → ${result.supplier_id ?? 'N/A'}`,
@@ -539,23 +598,13 @@ export function useProductsWidget() {
             )
           if (oldData.status !== result.status)
             changes.push(`status=${oldData.status ?? 'N/A'} → ${result.status ?? 'N/A'}`)
-          if (oldData.item_description !== result.item_description)
-            changes.push(
-              `item_description=${oldData.item_description ?? 'N/A'} → ${result.item_description ?? 'N/A'}`,
-            )
           if (oldData.unit !== result.unit)
             changes.push(`unit=${oldData.unit ?? 'N/A'} → ${result.unit ?? 'N/A'}`)
-          if (oldData.no !== result.no)
-            changes.push(`no=${oldData.no ?? 'N/A'} → ${result.no ?? 'N/A'}`)
           if (oldData.barcode !== result.barcode)
             changes.push(`barcode=${oldData.barcode ?? 'N/A'} → ${result.barcode ?? 'N/A'}`)
           if (oldData.product_name !== result.product_name)
             changes.push(
               `product_name="${oldData.product_name ?? 'N/A'}" → "${result.product_name ?? 'N/A'}"`,
-            )
-          if (oldData.generic_name !== result.generic_name)
-            changes.push(
-              `generic_name="${oldData.generic_name ?? 'N/A'}" → "${result.generic_name ?? 'N/A'}"`,
             )
           if (oldData.category !== result.category)
             changes.push(`category="${oldData.category ?? 'N/A'}" → "${result.category ?? 'N/A'}"`)
@@ -611,21 +660,13 @@ export function useProductsWidget() {
   const reorderRequestInfo = computed(() => {
     const map = new Map<number, { id: number; status: string }>()
     for (const r of productsStore.reorderRequests) {
-      // FIXED — reorderRequests is sorted created_at desc (newest first).
-      // The old `.set()` here unconditionally overwrote, so iterating
-      // forward left the OLDEST entry per product in the map. That's now a
-      // real bug: a rejected row followed by a fresh pending re-flag would
-      // show as "Rejected" forever. Guard with `!map.has` so only the first
-      // (i.e. most recent) entry per product sticks.
       if (r.product?.id != null && !map.has(r.product.id)) {
         map.set(r.product.id, { id: r.id, status: r.status })
       }
     }
     return map
   })
-
-  // NEW — a product can be reordered if it has no request yet, OR its most
-  // recent request was rejected (re-flagging is allowed after rejection).
+  
   function canRequestReorder(productId: number): boolean {
     const info = reorderRequestInfo.value.get(productId)
     return !info || info.status === 'rejected'
@@ -658,7 +699,6 @@ export function useProductsWidget() {
         unit: p.unit ?? 'Box',
         supplier_id: p.supplier_id ?? null,
         cost_per_unit: p.cost_price ?? 0,
-        offer_per_unit: p.selling_price ?? 0,
       }))
 
     showStockDialog.value = false
@@ -713,17 +753,14 @@ export function useProductsWidget() {
   }
 
   async function refreshStockStatusCounts() {
-    await productsStore.fetchAllStockStatusCounts(
-      currentStatusRef(),
-      productIgnore.activeIgnoredIdsArray.value,
-    )
+    await productsStore.fetchAllStockStatusCounts(currentStatusRef())
   }
 
   async function refreshStockDialogProducts() {
     await productsStore.fetchStockStatusProducts(
       stockDialogType.value,
       currentStatusRef(),
-      productIgnore.activeIgnoredIdsArray.value,
+      [],
       stockDialogItemsPerPage.value,
       (stockDialogPage.value - 1) * stockDialogItemsPerPage.value,
       stockDialogSearchQuery.value.trim(),
@@ -769,31 +806,78 @@ export function useProductsWidget() {
     }
 
     const reservedProductsStore = useReservedProductsDataStore()
-    const warehouseProductsStore = useWarehouseProductsDataStore()
 
-    const warehouseProduct = warehouseProductsStore.warehouseProducts.find(
-      (wp) =>
-        wp.product_id === selectedProductForReservation.value?.id &&
-        wp.warehouse_id === selectedWarehouseId.value,
-    )
+    const product = selectedProductForReservation.value
 
-    if (!warehouseProduct || warehouseProduct.id == null) {
-      toast.error('Product not found in selected warehouse')
-      return
+    let result
+
+    if (selectedWarehouseId.value) {
+      const warehouseProductsStore = useWarehouseProductsDataStore()
+
+      const warehouseProduct = warehouseProductsStore.warehouseProducts.find(
+        (wp) =>
+          wp.product_id === product.id &&
+          wp.warehouse_id === selectedWarehouseId.value,
+      )
+
+      if (!warehouseProduct || warehouseProduct.id == null) {
+        toast.error('Product not found in selected warehouse')
+        return
+      }
+
+      result = await reservedProductsStore.createReservedProduct({
+        warehouse_products_id: warehouseProduct.id,
+        customer_id: reservationCustomerId.value,
+        reserved_qty: reservationQuantity.value,
+      })
+    } else {
+      // Main warehouse (no specific warehouse selected): ensure a main-warehouse
+      // warehouse_products row exists (warehouse_id NULL, is_main_warehouse true),
+      // then reference it from the reservation.
+      const warehouseProductsStore = useWarehouseProductsDataStore()
+
+      // Refresh the main-warehouse product rows so we can reuse an existing row.
+      const mainProducts = await warehouseProductsStore.fetchMainWarehouseProducts()
+      let warehouseProduct = mainProducts.find(
+        (wp) => wp.product_id === product.id && wp.warehouse_id == null && wp.is_main_warehouse,
+      )
+
+      if (!warehouseProduct) {
+        warehouseProduct = await warehouseProductsStore.createWarehouseProduct({
+          product_id: product.id,
+          warehouse_id: null,
+          is_main_warehouse: true,
+          total_qty: product.current_stock ?? null,
+        })
+
+        if (!warehouseProduct || warehouseProduct.id == null) {
+          toast.error('Failed to set up main warehouse product')
+          return
+        }
+      }
+
+      if (warehouseProduct.id == null) {
+        toast.error('Product not found in main warehouse')
+        return
+      }
+
+      result = await reservedProductsStore.createReservedProduct({
+        warehouse_products_id: warehouseProduct.id,
+        customer_id: reservationCustomerId.value,
+        reserved_qty: reservationQuantity.value,
+      })
     }
-
-    const result = await reservedProductsStore.createReservedProduct({
-      warehouse_products_id: warehouseProduct.id,
-      customer_id: reservationCustomerId.value,
-      reserved_qty: reservationQuantity.value,
-    })
 
     if (result) {
       toast.success('Reservation added successfully')
       showAddReservationDialog.value = false
 
       // Refresh warehouse stock and reservations
-      await setWarehouseFilter(selectedWarehouseId.value)
+      if (selectedWarehouseId.value) {
+        await setWarehouseFilter(selectedWarehouseId.value)
+      } else {
+        await fetchMainWarehouseReservations()
+      }
     } else {
       toast.error('Failed to add reservation')
     }
@@ -803,6 +887,7 @@ export function useProductsWidget() {
   onMounted(async () => {
     await refreshStockStatusCounts()
     await fetchProducts()
+    await fetchMainWarehouseReservations()
     productsStore.startRealtime()
   })
 
@@ -904,8 +989,10 @@ export function useProductsWidget() {
     getWarehouseStock,
     getWarehouseProductDetail,
     getProductReservations,
+    getMainWarehouseStock,
     removeReservation,
     addReservation,
+    fetchMainWarehouseReservations,
     openAddReservationDialog,
     handleTableOptions,
     //Stock order for Purchaser
