@@ -94,7 +94,6 @@ function createPRFromReorder() {
         unit:                r.product.unit ?? 'Box',
         supplier_id:         r.product.supplier_id ?? null,
         cost_per_unit:       r.product.cost_price ?? 0,
-        offer_per_unit:      r.product.selling_price ?? 0,
         suggested_qty:       Math.max(shortfall, 1),
       }
     })

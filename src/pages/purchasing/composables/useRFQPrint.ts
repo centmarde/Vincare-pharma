@@ -94,6 +94,9 @@ export function useRFQPrint(request: () => ProcurementRequestType | null) {
   const belowShortfallLines = computed(() =>
     lines.value.filter((l) => l.qty < l.needed))
 
+  /**
+   * Generates and downloads an RFQ PDF, then logs the action
+   */
   async function printRFQ() {
     const req = request()
     if (!req || !printArea.value) return
@@ -136,6 +139,9 @@ export function useRFQPrint(request: () => ProcurementRequestType | null) {
     }
   }
 
+  /**
+   * Initializes the composable by fetching suppliers if not already loaded
+   */
   async function init() {
     if (!suppliers.value.length) await suppliersStore.fetchSuppliers()
   }

@@ -1,9 +1,11 @@
 import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useToast } from 'vue-toastification'
 import { useProcurementDataStore, type ProcurementRequestType } from '@/stores/procurementData'
 import { useInhouseDataStore } from '@/stores/inhouseData'
 import { useEthicalDataStore } from '@/stores/ethicalData'
 import type { CanvassCommitFn, CanvassableOrder } from '@/utils/canvassTypes'
+import { useDraftPRDataStore } from '@/stores/draftPRData'
 
 export const headers = [
   { title: 'MODULE',      key: 'order_type',    sortable: false, align: 'center' as const },
@@ -15,17 +17,27 @@ export const headers = [
   { title: 'ACTIONS',     key: 'actions',        sortable: false, align: 'center' as const },
 ]
 
+const toast = useToast()
+
 export function useProcurementRequests() {
   const procurementStore = useProcurementDataStore()
   const inhouseStore = useInhouseDataStore()
   const ethicalStore = useEthicalDataStore()
+  const draftStore = useDraftPRDataStore()
   const { queue, loading } = storeToRefs(procurementStore)
+  const { draftByOrder } = storeToRefs(draftStore)
+
+  type CanvassExposed = { autoSaveDraft: () => Promise<{ success: boolean }>; hasSelections: boolean }
 
   const selected = ref<ProcurementRequestType | null>(null)
   const showDetail = ref(false)
+  const canvassRef = ref<CanvassExposed | null>(null)
+  const dismissing = ref(false)
+  const showDraftEdit = ref(false)
+  const showDraftReview = ref(false)
+  const activeDraftId = ref<number | null>(null)
+  const draftReadonly = ref(false)
 
-  // RFQ (costing sheet) for the selected request. The quantities it was printed
-  // with flow into the canvass so quotes are entered against what was asked.
   const showRFQ = ref(false)
   const rfqQuantities = ref<Record<number, number>>({})
 
@@ -39,9 +51,14 @@ export function useProcurementRequests() {
 
   async function init() {
     await procurementStore.fetchQueue()
+    await draftStore.fetchDraftIdsByOrder()
   }
 
+  // Canvassing a request that a live PR already covers would raise a duplicate
+  // PR for the same shortfall. The button is disabled for this; the guard is
+  // here so a stale row can't slip past it either.
   function openDetail(req: ProcurementRequestType) {
+    if (req.already_canvassed) return
     selected.value = req
     showDetail.value = true
   }
@@ -53,9 +70,27 @@ export function useProcurementRequests() {
     rfqQuantities.value = {}
   }
 
-  // SupplierCanvass needs a stable CanvassableOrder + a commitFn matching the
-  // selected request's module — reuse the existing, unchanged in-house/ethical
-  // canvassToPRs (they already wrap canvassData.commitToPRs correctly).
+  // Closing on a failed autosave would throw away the canvass the purchaser just
+  // did, so the panel stays open and selected until the draft is actually saved.
+  async function dismissDetail() {
+    if (dismissing.value) return
+    dismissing.value = true
+    try {
+      const canvass = canvassRef.value
+      if (canvass?.hasSelections) {
+        const result = await canvass.autoSaveDraft()
+        if (!result.success) {
+          toast.error('Draft not saved — your supplier picks are still here, try closing again.')
+          return
+        }
+        await draftStore.fetchDraftIdsByOrder() // light up "Resume Draft" on the row
+      }
+      closeDetail()
+    } finally {
+      dismissing.value = false
+    }
+  }
+
   const canvassOrder = computed<CanvassableOrder | null>(() => {
     const req = selected.value
     if (!req) return null
@@ -73,9 +108,6 @@ export function useProcurementRequests() {
   }
 
   async function onCanvassCreated() {
-    // A commit doesn't resolve the shortfall (stock hasn't arrived yet) — it
-    // just flags the order as canvassed, so refresh the queue and keep the
-    // dialog open on the same request if it's still there.
     const orderId = selected.value?.order_id
     await procurementStore.fetchQueue()
     selected.value = orderId != null ? queue.value.find((r) => r.order_id === orderId) ?? null : null
@@ -84,10 +116,63 @@ export function useProcurementRequests() {
 
   const moduleLabel = (t: ProcurementRequestType['order_type']) => (t === 'inhouse_order' ? 'In-House' : 'Ethical')
 
+  async function startDraftPR(req: ProcurementRequestType) {
+    const result = await draftStore.getOrCreateDraft({
+      sourceOrderId: req.order_id,
+      sourceOrderType: req.order_type,
+      remarks: `Draft from ${moduleLabel(req.order_type)} ${req.order_no ?? ''}`,
+      lines: req.lines.map((l) => ({ product_id: l.product_id!, qty: l.needed, shortfall_qty: l.needed })),
+    })
+    if (result.success) {
+      activeDraftId.value = (result as any).draftId
+      showDraftEdit.value = true
+    }
+  }
+
+  function goToReview() {
+    showDraftEdit.value = false
+    showDraftReview.value = true
+  }
+
+  function backToEdit() {
+    showDraftReview.value = false
+    showDraftEdit.value = true
+  }
+
+  async function onDraftSubmitted() {
+    activeDraftId.value = null
+    draftReadonly.value = false
+    await init()
+  }
+
+  function onDraftSaved(draftId: number) {
+    activeDraftId.value = draftId
+    draftReadonly.value = false
+    showDraftEdit.value = true
+    closeDetail()
+    draftStore.fetchDraftIdsByOrder() // keep the badge in sync right away
+  }
+
+  function resumeDraft(draftId: number, readonly = false) {
+    activeDraftId.value = draftId
+    draftReadonly.value = readonly
+    showDraftEdit.value = true
+  }
+
+  // Once a PR covers the order the draft is a record, not a work item — it opens
+  // read-only. A rejected PR lifts that, so the purchaser can fix it and resubmit.
+  function openDraft(req: ProcurementRequestType) {
+    const draft = draftByOrder.value[req.order_id]
+    if (draft) resumeDraft(draft.id, req.already_canvassed)
+  }
+
   return {
     queue, loading, selected, showDetail,
     showRFQ, rfqQuantities, openRFQ, onRFQQuantities,
-    canvassOrder, canvassShortfall, commitFn,
-    init, openDetail, closeDetail, onCanvassCreated, moduleLabel,
+    canvassOrder, canvassShortfall, commitFn, canvassRef, dismissing,
+    init, openDetail, closeDetail, dismissDetail, onCanvassCreated, moduleLabel,
+    showDraftEdit, showDraftReview, activeDraftId, draftReadonly,
+    startDraftPR, goToReview, backToEdit, onDraftSubmitted, onDraftSaved,
+    draftByOrder, resumeDraft, openDraft,
   }
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { usePRDetailModal } from '../composables/usePRDetailModal'
-import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import { formatCurrency, formatDatePR_ISO, formatExpiryMonthYear } from '@/utils/helpers'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import { useDisplay } from 'vuetify'
 import PREditDialog from '@/pages/purchasing/components/dialogs/PREditDialog.vue'
@@ -18,15 +18,7 @@ const emit = defineEmits<{
 }>()
 const showEditDialog = ref<boolean>(false)
 const { confirmDialog: showUnapproveDialog, inputValue } = useConfirmDialog()
-const {
-  statusConfig,
-  customerOfferTotal,
-  companyCostTotal,
-  profit,
-  isProfitable,
-  offerCostRatio,
-  marginPercent,
-} = usePRDetailModal(props)
+const { statusConfig, companyCostTotal } = usePRDetailModal(props)
 
 function onApprove() {
   model.value = false
@@ -107,8 +99,7 @@ async function onUnapprove() {
               </template>
               <th v-else class="table-header text-caption">QTY</th>
               <th class="table-header text-caption">SUPPLIER</th>
-              <th class="table-header text-caption">PR PRICE</th>
-              <th class="table-header text-caption">OFFER TOTAL</th>
+              <th class="table-header text-caption">EXPIRY</th>
               <th class="table-header text-caption">COST/UNIT</th>
               <th class="table-header text-caption">COST TOTAL</th>
             </tr>
@@ -124,8 +115,7 @@ async function onUnapprove() {
               </template>
               <td v-else class="text-body-2">{{ item.qty.toLocaleString() }}</td>
               <td class="text-body-2">{{ item.supplier_name ?? '—' }}</td>
-              <td class="text-body-2">{{ formatCurrency(item.offer_per_unit ?? 0) }}</td>
-              <td class="text-body-2">{{ formatCurrency(item.qty * (item.offer_per_unit ?? 0)) }}</td>
+              <td class="text-body-2">{{ formatExpiryMonthYear(item.expiry_date) }}</td>
               <td class="text-body-2">{{ formatCurrency(item.cost_per_unit ?? 0) }}</td>
               <td class="text-body-2">{{ formatCurrency(item.qty * (item.cost_per_unit ?? 0)) }}</td>
             </tr>
@@ -154,8 +144,7 @@ async function onUnapprove() {
                 <div><span class="text-medium-emphasis">Unit: </span>{{ item.unit }}</div>
                 <div><span class="text-medium-emphasis">Qty: </span>{{ item.qty.toLocaleString() }}</div>
                 <div><span class="text-medium-emphasis">Supplier: </span>{{ item.supplier_name ?? '—' }}</div>
-                <div><span class="text-medium-emphasis">PR Price: </span>{{ formatCurrency(item.offer_per_unit ?? 0) }}</div>
-                <div><span class="text-medium-emphasis">Offer Total: </span>{{ formatCurrency(item.qty * (item.offer_per_unit ?? 0)) }}</div>
+                <div><span class="text-medium-emphasis">Expiry: </span>{{ formatExpiryMonthYear(item.expiry_date) }}</div>
                 <div><span class="text-medium-emphasis">Cost/Unit: </span>{{ formatCurrency(item.cost_per_unit ?? 0) }}</div>
                 <div><span class="text-medium-emphasis">Cost Total: </span><span class="font-weight-medium">{{ formatCurrency(item.qty * (item.cost_per_unit ?? 0)) }}</span></div>
               </div>
@@ -171,44 +160,9 @@ async function onUnapprove() {
             :class="mobile ? 'pa-3 border' : 'pa-4 border'"
             :min-width="mobile ? '100%' : '340'"
           >
-            <div class="d-flex justify-space-between align-center mb-2">
-              <span :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">Customer Offer Total</span>
-              <span :class="mobile ? 'text-body-2 font-weight-bold' : 'text-body-1 font-weight-bold'">{{ formatCurrency(customerOfferTotal) }}</span>
-            </div>
-
-            <div class="d-flex justify-space-between align-center mb-3">
-              <span :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">Company Cost Total</span>
-              <span :class="mobile ? 'text-body-2 font-weight-bold' : 'text-body-1 font-weight-bold'">{{ formatCurrency(companyCostTotal) }}</span>
-            </div>
-
-            <v-divider class="mb-3" />
-
-            <div class="d-flex justify-space-between align-center mb-2">
-              <span :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">Profit / (Loss)</span>
-              <div class="d-flex align-center ga-2">
-                <span
-                  :class="[
-                    mobile ? 'text-caption font-weight-bold' : 'text-body-1 font-weight-bold',
-                    isProfitable ? 'text-green-darken-2' : 'text-red-darken-2',
-                  ]"
-                >
-                  {{ formatCurrency(profit) }}
-                </span>
-                <v-chip
-                  :color="isProfitable ? 'green' : 'red'"
-                  variant="tonal"
-                  size="x-small"
-                  class="font-weight-bold"
-                >
-                  {{ isProfitable ? '● Profitable' : '● Loss' }}
-                </v-chip>
-              </div>
-            </div>
-
             <div class="d-flex justify-space-between align-center">
-              <span :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">Offer : Cost Ratio</span>
-              <span :class="mobile ? 'text-caption font-weight-bold' : 'text-body-2 font-weight-bold'">
-                {{ offerCostRatio }}x · {{ marginPercent }}% margin
+              <span :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">Total Cost</span>
+              <span :class="mobile ? 'text-body-2 font-weight-bold' : 'text-body-1 font-weight-bold'">{{ formatCurrency(companyCostTotal) }}
               </span>
             </div>
           </v-card>
