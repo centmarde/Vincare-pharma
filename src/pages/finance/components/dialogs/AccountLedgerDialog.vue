@@ -9,6 +9,11 @@ const props = defineProps<{
   lines: AccountLedgerLine[]
   balance: number
   loading: boolean
+  /** Cash accounts filed under this GL account. Empty for accounts with no
+   *  operational table behind them, which is most of them. */
+  subLedger: { id: number; name: string; classification: string; balance: number }[]
+  subLedgerTotal: number
+  subLedgerVariance: number
 }>()
 
 const emit = defineEmits<{
@@ -75,6 +80,46 @@ const referenceLabels: Record<string, string> = {
 
       <v-card-text class="pa-4 pa-sm-5">
         <v-progress-linear v-if="loading" indeterminate class="mb-3" />
+
+        <!-- What makes up the balance, for accounts with an operational table
+             behind them. Only cash is wired today; AR/AP/Inventory are the same
+             shape. Sits above the transactions because "what is in here now" is
+             the question that gets asked first. -->
+        <template v-if="subLedger.length">
+          <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis mb-1">
+            Accounts in this balance
+          </div>
+          <v-table density="compact" class="mb-2">
+            <tbody>
+              <tr v-for="a in subLedger" :key="a.id">
+                <td>{{ a.name }}</td>
+                <td class="text-caption text-medium-emphasis">{{ a.classification }}</td>
+                <td class="text-right">{{ formatCurrency(a.balance) }}</td>
+              </tr>
+              <tr>
+                <td class="font-weight-bold">Total</td>
+                <td />
+                <td class="text-right font-weight-bold">{{ formatCurrency(subLedgerTotal) }}</td>
+              </tr>
+            </tbody>
+          </v-table>
+
+          <!-- These two SHOULD agree. A gap means cash moved without being
+               booked to the ledger (or the reverse) -- shown plainly rather
+               than hidden, since it is exactly what needs investigating. -->
+          <v-alert
+            v-if="Math.abs(subLedgerVariance) > 0.01"
+            type="warning"
+            variant="tonal"
+            density="compact"
+            class="mb-3 text-body-2"
+          >
+            The accounts total {{ formatCurrency(subLedgerTotal) }} but the ledger says
+            {{ formatCurrency(balance) }} &mdash; a difference of
+            {{ formatCurrency(subLedgerVariance) }}. Something moved without being posted.
+          </v-alert>
+          <v-divider class="mb-3" />
+        </template>
 
         <!-- Most accounts have never been posted to yet, so this is the common
              case rather than an edge one. Say why it is empty instead of

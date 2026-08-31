@@ -5,9 +5,12 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useGLDataStore } from '@/stores/glData'
-import { glCashCode } from '@/stores/financeData'
+import { glAccountCodeFor } from '@/stores/financeData'
 import type { CashClassification } from '@/stores/financeData'
 import { generateNextNumber, insertWithDocRetry, getErrorMessage } from '@/utils/helpers'
+
+/** The shape glAccountCodeFor needs — the two columns that decide the GL account. */
+type CashAccountLike = { classification: CashClassification; gl_account_code?: string | null }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Bank deposits (transaction_type = 'bank_deposit')
@@ -158,7 +161,7 @@ export const useBankDepositsStore = defineStore('bankDeposits', () => {
 
     const { data: accounts, error: accountsError } = await supabase
       .from('cash_accounts')
-      .select('id, name, balance, classification')
+      .select('id, name, balance, classification, gl_account_code')
       .in('id', [payload.fromAccountId, payload.toAccountId])
     if (accountsError || !accounts || accounts.length !== 2) {
       toast.error('Could not load both cash accounts.'); loading.value = false; return { success: false }
@@ -227,8 +230,8 @@ export const useBankDepositsStore = defineStore('bankDeposits', () => {
       created.id,
       `Bank deposit ${docNo}: ${from.name} to ${to.name}`,
       [
-        { account_code: glCashCode(to.classification as CashClassification), debit: payload.amount, credit: 0 },
-        { account_code: glCashCode(from.classification as CashClassification), debit: 0, credit: payload.amount },
+        { account_code: glAccountCodeFor(to as CashAccountLike), debit: payload.amount, credit: 0 },
+        { account_code: glAccountCodeFor(from as CashAccountLike), debit: 0, credit: payload.amount },
       ],
       user.id,
     )

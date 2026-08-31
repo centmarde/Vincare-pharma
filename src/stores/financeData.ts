@@ -74,6 +74,14 @@ export type CashAccountType = {
   float_amount: number | null
   balance: number
   is_active: boolean
+  /**
+   * The chart-of-accounts asset account this cash account posts to. Recorded
+   * rather than inferred from `classification` — three classifications cannot
+   * address the chart's eight cash-ish asset accounts (a revolving fund belongs
+   * in 1050, which no classification maps to). Optional because rows created
+   * before the column existed have none; `glAccountCodeFor` falls back.
+   */
+  gl_account_code?: string | null
 }
 
 export type LiquidationReportItem = {
@@ -345,11 +353,33 @@ function applyDateRange<T>(q: T, column: string, range?: DateRange): T {
   return query
 }
 
-// classification -> GL asset account code (was the gl_cash_code SQL helper).
+/**
+ * Legacy classification -> GL asset account map (was the gl_cash_code SQL
+ * helper). Superseded by `cash_accounts.gl_account_code`, which records the link
+ * instead of inferring it — three classifications cannot address the chart's
+ * eight cash-ish asset accounts.
+ *
+ * Kept only as the fallback for rows created before that column existed, and as
+ * the default the create form offers. Prefer `glAccountCodeFor(account)`.
+ */
 export function glCashCode(classification: CashClassification): string {
   if (classification === 'PETTY_CASH') return '1010'      // Cash on Hand
   if (classification === 'TIME_INVESTMENT') return '1100' // Other Investment
   return '1020'                                           // Cash in Bank (CASA / default)
+}
+
+/**
+ * Which GL account a cash account posts to. The recorded link wins; the
+ * classification map is the fallback for rows that predate it.
+ *
+ * Every cash posting must go through here. Two separate inline copies of the
+ * classification map had already drifted apart before this existed — one of them
+ * sent time deposits to 1020 instead of 1100.
+ */
+export function glAccountCodeFor(
+  account: { classification: CashClassification; gl_account_code?: string | null },
+): string {
+  return account.gl_account_code || glCashCode(account.classification)
 }
 
 export const useFinanceDataStore = defineStore('financeData', () => {
@@ -560,6 +590,12 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     classification: CashClassification
     openingBalance: number
     isActive: boolean
+    /**
+     * Which chart-of-accounts asset account this cash sits in. Optional: when
+     * omitted it falls back to the classification map, which is what every
+     * caller did before the link was recordable.
+     */
+    glAccountCode?: string | null
   }) => {
     loading.value = true
     clearError()
@@ -568,6 +604,11 @@ export const useFinanceDataStore = defineStore('financeData', () => {
 
     const name = payload.name.trim()
     if (!name) { toast.error('Account name is required.'); loading.value = false; return { success: false } }
+
+    // Resolved once, then used for BOTH the stored link and the opening entry,
+    // so the account a row claims to post to and the account its opening
+    // balance actually landed in can never disagree.
+    const glAccountCode = payload.glAccountCode || glCashCode(payload.classification)
     if (!['CASA', 'TIME_INVESTMENT', 'PETTY_CASH'].includes(payload.classification)) {
       toast.error(`Invalid classification: ${payload.classification}`); loading.value = false; return { success: false }
     }
@@ -583,6 +624,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         name, account_type: accountType, classification: payload.classification,
         float_amount: floatAmount, opening_balance: openingBalance, balance: openingBalance,
         is_active: payload.isActive ?? true,
+        gl_account_code: glAccountCode,
       })
       .select('*')
       .single()
@@ -597,7 +639,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       const result = await glStore.postJournalEntry(
         new Date().toISOString().slice(0, 10), 'manual', created.id, `Opening balance: ${name}`,
         [
-          { account_code: glCashCode(payload.classification), debit: openingBalance, credit: 0 },
+          { account_code: glAccountCode, debit: openingBalance, credit: 0 },
           { account_code: '3010', debit: 0, credit: openingBalance },
         ],
         user.id,

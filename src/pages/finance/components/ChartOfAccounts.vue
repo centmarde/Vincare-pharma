@@ -25,6 +25,9 @@ const {
   ledger,
   ledgerLoading,
   ledgerBalance,
+  subLedger,
+  subLedgerTotal,
+  subLedgerVariance,
   showAccount,
   showAccountByCode,
   closeAccount,
@@ -186,6 +189,9 @@ onMounted(init)
       :lines="ledger"
       :balance="ledgerBalance"
       :loading="ledgerLoading"
+      :sub-ledger="subLedger"
+      :sub-ledger-total="subLedgerTotal"
+      :sub-ledger-variance="subLedgerVariance"
       @update:model-value="closeAccount"
     />
   </v-container>

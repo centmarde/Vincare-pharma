@@ -3,6 +3,7 @@ import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useGLDataStore, ACCOUNT_CATEGORIES, nextAccountCode } from '@/stores/glData'
 import type { AccountCategoryKey, AccountLedgerLine, GLAccount } from '@/stores/glData'
+import { useFinanceDataStore, glAccountCodeFor } from '@/stores/financeData'
 
 const toast = useToast()
 
@@ -43,6 +44,7 @@ const SECTION_DIVIDERS: Record<string, string> = {
 
 export function useChartOfAccounts() {
   const gl = useGLDataStore()
+  const finance = useFinanceDataStore()
   const { accounts, loading } = storeToRefs(gl)
 
   const searchText = ref('')
@@ -90,10 +92,10 @@ export function useChartOfAccounts() {
   // expense line and a cash account read the same way, because for most
   // accounts the transactions ARE the whole story.
   //
-  // Accounts backed by an operational table (cash, AR, AP, inventory) can also
-  // show WHAT MAKES UP the balance. That breakdown is deliberately not built
-  // here yet: the generic view is useful on its own and each sub-ledger is
-  // additive, so they can land one at a time without touching this.
+  // Accounts backed by an operational table can also show WHAT MAKES UP the
+  // balance. Cash is the first such sub-ledger; AR (customers), AP (suppliers)
+  // and Inventory (products) are the same shape and can land later without
+  // touching anything here.
   const openAccount = ref<GLAccount | null>(null)
   const ledger = ref<AccountLedgerLine[]>([])
   const ledgerLoading = ref(false)
@@ -104,10 +106,31 @@ export function useChartOfAccounts() {
   // accountant.
   const ledgerBalance = computed(() => ledger.value[ledger.value.length - 1]?.runningBalance ?? 0)
 
+  // The cash accounts filed under the open GL account. Read from the recorded
+  // `gl_account_code` link, falling back to the legacy classification map for
+  // rows created before that column existed -- so this stays correct across the
+  // changeover rather than showing an account as empty until it is backfilled.
+  const subLedger = computed(() => {
+    const code = openAccount.value?.code
+    if (!code) return []
+    return finance.cashAccounts
+      .filter((a) => glAccountCodeFor(a) === code)
+      .map((a) => ({ id: a.id, name: a.name, classification: a.classification, balance: a.balance }))
+  })
+
+  // What the sub-ledger says vs. what the ledger says. These SHOULD agree; a
+  // gap means cash moved without being booked (or the reverse), which is worth
+  // surfacing rather than hiding -- it is the same reconciliation the AP page's
+  // drift chip does for suppliers.
+  const subLedgerTotal = computed(() => subLedger.value.reduce((sum, a) => sum + (a.balance ?? 0), 0))
+  const subLedgerVariance = computed(() => subLedgerTotal.value - ledgerBalance.value)
+
   async function showAccount(account: GLAccount) {
     openAccount.value = account
     ledgerLoading.value = true
     ledger.value = []
+    // Cash accounts back the breakdown panel; harmless and cached for the rest.
+    if (!finance.cashAccounts.length) await finance.fetchCashAccounts()
     ledger.value = await gl.fetchAccountLedger(account.code, account.normal_balance)
     ledgerLoading.value = false
   }
@@ -170,6 +193,7 @@ export function useChartOfAccounts() {
     previewCode, canCreate, categoryOptions,
     openCreateDialog, cancelCreate, submitCreate, init,
     openAccount, ledger, ledgerLoading, ledgerBalance,
+    subLedger, subLedgerTotal, subLedgerVariance,
     showAccount, showAccountByCode, closeAccount,
   }
 }

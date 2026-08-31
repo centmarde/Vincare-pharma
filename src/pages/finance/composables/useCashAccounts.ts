@@ -73,6 +73,7 @@ export function useCashAccounts() {
       classification: payload.classification,
       openingBalance: payload.opening_balance,
       isActive: payload.is_active,
+      glAccountCode: payload.gl_account_code,
     })
   }
 
