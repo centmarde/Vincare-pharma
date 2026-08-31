@@ -6,6 +6,9 @@ import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useGLDataStore } from '@/stores/glData'
 import { nextDocNumber, generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
+// Value import, but cashAccountTypes only imports TYPES back from here, and
+// type imports are erased at build -- so this is not a runtime cycle.
+import { isCashGLAccount } from '@/utils/cashAccountTypes'
 
 const toast = useToast()
 
@@ -609,6 +612,24 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     // so the account a row claims to post to and the account its opening
     // balance actually landed in can never disagree.
     const glAccountCode = payload.glAccountCode || glCashCode(payload.classification)
+
+    // Validated HERE, not just in the form's dropdown. The picker only filters
+    // what is offered; this store persists whatever it is handed and the
+    // journal API accepts any active code -- so without this a caller could
+    // link a cash account to, say, 4010 Sales Revenue and route its opening
+    // balance and every later cash posting into revenue.
+    if (!isCashGLAccount(glAccountCode)) {
+      toast.error('That GL account cannot hold cash. Pick a cash, revolving fund or investment account.')
+      loading.value = false
+      return { success: false }
+    }
+    const { data: glAccount } = await supabase
+      .from('accounts').select('code, is_active').eq('code', glAccountCode).maybeSingle()
+    if (!glAccount?.is_active) {
+      toast.error('That GL account does not exist or is inactive.')
+      loading.value = false
+      return { success: false }
+    }
     if (!['CASA', 'TIME_INVESTMENT', 'PETTY_CASH'].includes(payload.classification)) {
       toast.error(`Invalid classification: ${payload.classification}`); loading.value = false; return { success: false }
     }

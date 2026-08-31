@@ -112,11 +112,20 @@ onMounted(init)
                   <v-divider />
                   <v-table density="compact">
                     <tbody>
+                      <!-- Focusable and operable by keyboard, not click-only:
+                           a bare <tr> with a handler is unreachable by tab and
+                           ignores Enter/Space. role+tabindex+keydown give it
+                           the same semantics as the table view's rows. -->
                       <tr
                         v-for="a in group.items"
                         :key="a.code"
-                        class="cursor-pointer"
+                        class="cursor-pointer account-row"
+                        role="button"
+                        tabindex="0"
+                        :aria-label="`View ledger for ${a.code} ${a.name}`"
                         @click="showAccount(a)"
+                        @keydown.enter.prevent="showAccount(a)"
+                        @keydown.space.prevent="showAccount(a)"
                       >
                         <td class="font-weight-bold" style="width: 70px">{{ a.code }}</td>
                         <td>
@@ -196,3 +205,12 @@ onMounted(init)
     />
   </v-container>
 </template>
+
+<style scoped>
+/* A focusable row needs a visible focus state, or keyboard users can tab
+   through the chart with no idea where they are. */
+.account-row:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: -2px;
+}
+</style>

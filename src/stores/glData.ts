@@ -366,11 +366,23 @@ export const useGLDataStore = defineStore('glData', () => {
     loading.value = true
     clearError()
     try {
-      const { data, error: e } = await supabase
-        .from('journal_entry_lines')
-        .select('id, debit, credit, line_memo, entry:journal_entry_id(entry_no, entry_date, status, reference_type, description)')
-        .eq('account_code', code)
-      if (e) throw e
+      // Paged deliberately. PostgREST caps a response (1000 rows by default),
+      // and a truncated ledger would not error -- it would render a partial
+      // history AND a wrong closing balance, since the balance is accumulated
+      // from these rows. A busy control account like 1030 will cross that.
+      const PAGE = 1000
+      const data: unknown[] = []
+      for (let from = 0; ; from += PAGE) {
+        const { data: page, error: e } = await supabase
+          .from('journal_entry_lines')
+          .select('id, debit, credit, line_memo, entry:journal_entry_id(entry_no, entry_date, status, reference_type, description)')
+          .eq('account_code', code)
+          .order('id', { ascending: true })
+          .range(from, from + PAGE - 1)
+        if (e) throw e
+        data.push(...(page ?? []))
+        if (!page || page.length < PAGE) break
+      }
 
       const rows = (data ?? [])
         .map((l: any) => ({

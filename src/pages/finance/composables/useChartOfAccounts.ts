@@ -125,13 +125,23 @@ export function useChartOfAccounts() {
   const subLedgerTotal = computed(() => subLedger.value.reduce((sum, a) => sum + (a.balance ?? 0), 0))
   const subLedgerVariance = computed(() => subLedgerTotal.value - ledgerBalance.value)
 
+  // Opening an account awaits two fetches before assigning to shared state, so
+  // a slow request for account A can land AFTER the user has moved to B and
+  // overwrite B's ledger -- showing B's name and code above A's transactions,
+  // A's balance, and a variance warning computed from the wrong pair. Each call
+  // takes a ticket; only the newest one is allowed to write.
+  let ledgerRequestId = 0
+
   async function showAccount(account: GLAccount) {
+    const requestId = ++ledgerRequestId
     openAccount.value = account
     ledgerLoading.value = true
     ledger.value = []
     // Cash accounts back the breakdown panel; harmless and cached for the rest.
     if (!finance.cashAccounts.length) await finance.fetchCashAccounts()
-    ledger.value = await gl.fetchAccountLedger(account.code, account.normal_balance)
+    const lines = await gl.fetchAccountLedger(account.code, account.normal_balance)
+    if (requestId !== ledgerRequestId) return
+    ledger.value = lines
     ledgerLoading.value = false
   }
 
@@ -143,8 +153,12 @@ export function useChartOfAccounts() {
   }
 
   function closeAccount() {
+    // Invalidates any in-flight request too, so a response that lands after the
+    // dialog is closed cannot repopulate it, and the spinner cannot be left on.
+    ledgerRequestId++
     openAccount.value = null
     ledger.value = []
+    ledgerLoading.value = false
   }
 
   const selectedCategory = computed(() => ACCOUNT_CATEGORIES.find((c) => c.key === newCategory.value) ?? null)
