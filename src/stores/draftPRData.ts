@@ -1153,7 +1153,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
           updated_at: row.updated_at ?? existing.updated_at ?? null,
           converted_at: row.status === 'converted'
             ? fallbackConvertedAt
-            : existing.converted_at ?? fallbackConvertedAt,
+            : existing.converted_at ?? null,
         }
         continue
       }
