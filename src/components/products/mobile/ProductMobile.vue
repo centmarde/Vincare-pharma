@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import type { ProductType } from '@/stores/productsData'
-import { formatCurrency } from '@/utils/helpers'
+import { formatCurrency, isBlank, NOT_SET } from '@/utils/helpers'
 
 const props = defineProps<{
   products: ProductType[]
@@ -123,7 +123,10 @@ function nextPage() {
             <v-col cols="6">
               <div class="text-caption text-grey-darken-1">Selling Price</div>
               <div class="text-body-2 font-weight-medium">
-                {{ product.selling_price != null ? formatCurrency(Number(product.selling_price)) : '—' }}
+                <span v-if="!isBlank(product.selling_price)">
+                  {{ formatCurrency(Number(product.selling_price)) }}
+                </span>
+                <span v-else class="text-medium-emphasis font-italic">{{ NOT_SET }}</span>
               </div>
             </v-col>
             <v-col cols="6">
