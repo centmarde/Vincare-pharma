@@ -5,6 +5,7 @@ import { useToast } from 'vue-toastification'
 import { voucherSignatories } from '@/stores/disbursementVouchersData'
 import type { VoucherItemType, VoucherType } from '@/stores/disbursementVouchersData'
 import { categoryTitle } from '@/stores/financeData'
+import { maxVoucherAccounts } from '../../composables/useVoucherForm'
 import { companyFor, companyOptions, defaultCompanyFor } from '@/utils/companyProfiles'
 import type { CompanyKey } from '@/utils/companyProfiles'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
@@ -22,18 +23,30 @@ const emit = defineEmits<{
 
 const toast = useToast()
 
-// PARTICULARS is split in two: the category on the left, the purpose of that
-// specific spend on the right. Vouchers created before per-line explanations
+// The box is split in two: PARTICULARS (the purpose of that specific spend,
+// stored in `particular`) and ACCOUNTS (the expense category it is charged to). Vouchers created before per-line explanations
 // stored the category's own title in `particular`, so printing it verbatim
 // would read "Meals | Meals" — those show an empty explanation instead.
 // One department per voucher — stored on every line, entered and printed once.
 const voucherDepartment = computed(() =>
   props.voucher?.items.find((line) => line.department)?.department ?? '')
 
-function explanationFor(line: VoucherItemType): string {
-  const text = line.particular ?? ''
-  return text === categoryTitle(line.category) ? '' : text
-}
+/**
+ * The voucher's single particulars. It is stored on every line (that is the
+ * column the database has) but entered once, so the first line that carries a
+ * real one wins. Vouchers saved before this stored the category's own title
+ * there, which is not a description — those print blank.
+ */
+const voucherParticulars = computed(() => {
+  // Same scan as the form's loadFrom: find the first line holding a REAL
+  // particular, not merely the first non-empty one. A voucher from the per-line
+  // era can carry the category-title fallback on line 1 and the description
+  // further down, and stopping early would print it blank.
+  const line = (props.voucher?.items ?? []).find(
+    (i: VoucherItemType) => i.particular.trim() && i.particular !== categoryTitle(i.category),
+  )
+  return line?.particular ?? ''
+})
 const printArea = ref<HTMLElement | null>(null)
 
 // Same legal entity as the POS receipt / Ethical invoice / Delivery Receipt /
@@ -47,17 +60,37 @@ const company = computed(() => companyFor(companyKey.value))
 // passed off as the original signed voucher.
 const isReprint = computed(() => props.copyNo > 1)
 
-// Blank rows so a short voucher still prints a full-height particulars box,
-// matching the ruled form the accountant is used to signing.
-const minRows = 8
+// A FIXED number of account rows, padded with blanks when the voucher has
+// fewer. This is deliberate and load-bearing: a constant row count means a
+// constant sheet height, which keeps the signature row a constant distance from
+// the top -- and the RECORDED stamp is overprinted against that row. Do not
+// make this adaptive without re-solving the stamp.
+//
+// The count comes from the form's own cap rather than a second literal here, so
+// the two can never drift apart.
 const fillerRows = computed(() =>
-  Math.max(0, minRows - (props.voucher?.items.length ?? 0)),
+  Math.max(0, maxVoucherAccounts - (props.voucher?.items.length ?? 0)),
+)
+
+// A voucher saved under an older shape can still carry more accounts than the
+// form now allows. Printing it would push the signature row down and land the
+// stamp in the wrong place, so refuse rather than print a miscalibrated sheet.
+// Never truncate: dropping an account line would hide money off the document.
+const tooManyAccounts = computed(
+  () => (props.voucher?.items.length ?? 0) > maxVoucherAccounts,
 )
 
 async function handlePrint() {
   await nextTick()
   const el = printArea.value
   if (!el || !props.voucher) return
+
+  if (tooManyAccounts.value) {
+    toast.error(
+      `This voucher has ${props.voucher.items.length} accounts; the printed form holds ${maxVoucherAccounts}. Split the extra accounts onto a second voucher before printing.`,
+    )
+    return
+  }
 
   // html2canvas renders computed colours literally, so force the whole document
   // to black text regardless of the app theme the user is currently in.
@@ -163,27 +196,33 @@ async function handlePrint() {
 
               <!-- Particulars -->
               <div class="dv-row dv-head">
-                <div class="dv-cell dv-grow text-center font-weight-bold">EXPLANATION</div>
-                <div class="dv-cell dv-cat text-center font-weight-bold">PARTICULARS</div>
+                <div class="dv-cell dv-grow text-center font-weight-bold">PARTICULARS</div>
+                <div class="dv-cell dv-acct text-center font-weight-bold">ACCOUNT NAME</div>
                 <div class="dv-cell dv-nocol text-center font-weight-bold">AMOUNT</div>
               </div>
-              <div class="dv-row" v-for="line in voucher.items" :key="line.id">
-                <!-- Blank for vouchers saved before per-line explanations: back
-                     then `particular` just repeated the category's title, and
-                     printing it here would read "Meals | Meals". -->
-                <div class="dv-cell dv-grow dv-value">{{ explanationFor(line) }}</div>
-                <div class="dv-cell dv-cat dv-value">{{ categoryTitle(line.category) }}</div>
-                <div class="dv-cell dv-nocol text-right dv-value">{{ formatCurrency(line.amount) }}</div>
-              </div>
-              <div class="dv-row dv-filler" v-for="n in fillerRows" :key="`filler-${n}`">
-                <div class="dv-cell dv-grow">&nbsp;</div>
-                <div class="dv-cell dv-cat">&nbsp;</div>
-                <div class="dv-cell dv-nocol">&nbsp;</div>
-              </div>
-              <div class="dv-row dv-total">
-                <div class="dv-cell dv-grow">&nbsp;</div>
-                <div class="dv-cell dv-cat text-right font-weight-bold">TOTAL</div>
-                <div class="dv-cell dv-nocol text-right font-weight-bold">{{ formatCurrency(voucher.total_amount) }}</div>
+
+              <!-- One particulars for the whole voucher, sitting BESIDE the
+                   accounts rather than above them: a single tall cell on the
+                   left, with the account/amount rows stacked to its right. The
+                   sheet is built from flex rows, not a <table>, so this is the
+                   equivalent of a rowspan. -->
+              <div class="dv-split">
+                <div class="dv-cell dv-grow dv-value dv-particulars">{{ voucherParticulars }}</div>
+
+                <div class="dv-splitright">
+                  <div class="dv-row" v-for="line in voucher.items" :key="line.id">
+                    <div class="dv-cell dv-acct dv-value">{{ categoryTitle(line.category) }}</div>
+                    <div class="dv-cell dv-nocol text-right dv-value">{{ formatCurrency(line.amount) }}</div>
+                  </div>
+                  <div class="dv-row dv-filler" v-for="n in fillerRows" :key="`filler-${n}`">
+                    <div class="dv-cell dv-acct">&nbsp;</div>
+                    <div class="dv-cell dv-nocol">&nbsp;</div>
+                  </div>
+                  <div class="dv-row dv-total">
+                    <div class="dv-cell dv-acct text-right font-weight-bold">TOTAL</div>
+                    <div class="dv-cell dv-nocol text-right font-weight-bold">{{ formatCurrency(voucher.total_amount) }}</div>
+                  </div>
+                </div>
               </div>
 
               <!-- Prepared by / Checked by / Approved by, then a reserved
@@ -209,7 +248,7 @@ async function handlePrint() {
                 </div>
 
                 <div class="dv-cell dv-quarter">
-                  <div class="dv-fine font-weight-bold">Recorded:</div>
+                  <div class="dv-fine font-weight-bold">Validation:</div>
                   <div class="dv-stampbox"></div>
                 </div>
               </div>
@@ -302,6 +341,15 @@ async function handlePrint() {
   padding: 4px 6px;
   border-right: 1px solid #000000;
   min-height: 22px;
+  /* A long unbroken string (a typo, a pasted URL) used to widen the whole sheet
+     and force horizontal scroll instead of wrapping. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dv-particulars {
+  /* Stretches to whatever height the accounts column ends up being. */
+  white-space: pre-wrap;
 }
 
 .dv-cell:last-child {
@@ -316,12 +364,30 @@ async function handlePrint() {
   flex: 0 0 170px;
 }
 
-/* Category sits to the RIGHT of the explanation and is a fixed, predictable
-   width (its labels are a known set); the explanation leads and takes whatever
-   width is left, since it is the free-text one. */
-.dv-cat {
+/* Account column. Fixed so the header cells line up exactly with the rows
+   inside .dv-splitright, which is the same width by construction. */
+.dv-acct {
   flex: 0 0 190px;
 }
+
+/* The particulars cell and the stack of account rows, side by side. */
+.dv-split {
+  display: flex;
+  border-bottom: 1px solid #000000;
+}
+
+.dv-splitright {
+  flex: 0 0 360px; /* .dv-acct 190 + .dv-nocol 170 */
+  display: flex;
+  flex-direction: column;
+}
+
+/* Inner rows draw their own separators; the last one must not double up with
+   the border on .dv-split itself. */
+.dv-splitright .dv-row:last-child {
+  border-bottom: none;
+}
+
 
 .dv-stampbox {
   /* Deliberately empty — the RECORDED stamp is overprinted here on the signed

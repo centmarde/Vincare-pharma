@@ -1,3 +1,73 @@
+<script setup lang="ts">
+import { watch } from 'vue'
+import { useDisplay } from 'vuetify'
+import { maxParticularsLines, useVoucherForm } from '../../composables/useVoucherForm'
+import { voucherSignatories } from '@/stores/disbursementVouchersData'
+import type { VoucherType, VoucherInput } from '@/stores/disbursementVouchersData'
+import type { ClassifiedCashAccount } from '@/utils/cashAccountTypes'
+import { formatCurrency } from '@/utils/helpers'
+
+const props = defineProps<{
+  modelValue: boolean
+  loading: boolean
+  accounts: ClassifiedCashAccount[]
+  /** Set only when editing an existing DRAFT voucher; null when creating. */
+  editing: VoucherType | null
+}>()
+
+const emit = defineEmits<{
+  (e: 'update:modelValue', value: boolean): void
+  (e: 'submit', payload: VoucherInput): void
+}>()
+
+const {
+  isEditing,
+  payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, department, particulars, remarks, items,
+  categoryOptions, departmentOptions, accountOptions, metaForAccount, selectedAccount,
+  voucherTotal, insufficientFunds, canSubmit, blockers, signatories,
+  canAddItem, particularsLines, particularsTooTall,
+  resetForm, loadFrom, addItem, removeItem, buildPayload, restoreDraft,
+  setSignatory, applyCachedSignatories,
+} = useVoucherForm(() => props.accounts)
+
+// The form deliberately mirrors the printed voucher cell-for-cell, so what the
+// user fills in is laid out exactly where it lands on the paper they sign.
+// Signatory names are typed here and print above the rule; only the signature
+// itself is handwritten.
+
+// The ruled cells divide vertically on a wide screen and stack on a narrow one,
+// so the divider that separates a pair has to switch edges with the breakpoint.
+const { smAndUp } = useDisplay()
+
+// Signature blocks sit 4-across on a wide screen and 2-across on a narrow one.
+// Only rule the edges that fall *between* blocks — the outer frame draws the rest.
+function signatoryBorder(index: number) {
+  const perRow = smAndUp.value ? 4 : 2
+  const classes: string[] = []
+  if ((index + 1) % perRow !== 0) classes.push('border-e')
+  if (index < voucherSignatories.length - perRow) classes.push('border-b')
+  return classes
+}
+
+// Prefill on open: an existing draft loads its own values, a new voucher picks
+// up any autosaved draft instead.
+watch(() => props.modelValue, (open) => {
+  if (!open) return
+  resetForm()
+  if (props.editing) loadFrom(props.editing)
+  else restoreDraft()
+  // Prefill any signature block still blank with the last names used. Runs for
+  // edits too — an older voucher saved before this field existed has none.
+  applyCachedSignatories()
+})
+
+function handleSubmit() {
+  const payload = buildPayload()
+  if (!payload) return
+  emit('submit', payload)
+}
+</script>
+
 <template>
   <v-dialog
     :model-value="modelValue"
@@ -8,9 +78,10 @@
   >
     <v-card rounded="lg">
       <v-card-text class="pa-4 pa-sm-5">
+
         <v-alert type="info" variant="tonal" density="compact" class="mb-4 text-body-2">
-          Fill in the voucher, then <strong>print and sign it</strong>. Expenses are only recorded —
-          and cash only moves — after the printed voucher is recorded.
+          Fill in the voucher, then <strong>print and sign it</strong>. Expenses are only
+          recorded — and cash only moves — after the printed voucher is recorded.
         </v-alert>
 
         <!-- Ruled like the paper voucher it produces: each v-row is a ruled band,
@@ -165,6 +236,38 @@
 
           <v-row no-gutters class="border-b">
             <v-col cols="12" class="pa-2">
+              <!-- One particulars for the whole voucher: a voucher describes a
+                   single purpose, so this was retyped on every line before. -->
+              <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis">
+                Particulars
+              </div>
+              <!-- Line-capped, not free-growing: the printed cell sits beside
+                   the account rows and a taller one pushes the signature row
+                   down, which is what the stamp is aimed at. -->
+              <v-textarea
+                v-model="particulars"
+                placeholder="What this disbursement is for"
+                variant="plain"
+                density="compact"
+                rows="2"
+                auto-grow
+                hide-details
+              />
+              <div
+                v-if="particularsLines > 1"
+                class="text-caption"
+                :class="particularsTooTall ? 'text-error' : 'text-medium-emphasis'"
+              >
+                {{ particularsLines }} / {{ maxParticularsLines }} lines
+                <span v-if="particularsTooTall">
+                  &mdash; too tall for the printed voucher, shorten it or use a second voucher.
+                </span>
+              </div>
+            </v-col>
+          </v-row>
+
+          <v-row no-gutters class="border-b">
+            <v-col cols="12" class="pa-2">
               <!-- One department for the whole voucher. It used to be a select
                    on every line, which meant picking the same value over and
                    over; it is still saved onto each line, where the generated
@@ -196,26 +299,16 @@
             >
               PARTICULARS
             </v-col>
-            <v-col cols="12" sm="4" class="pa-2 text-center font-weight-bold"> AMOUNT </v-col>
+            <v-col cols="12" sm="4" class="pa-2 text-center font-weight-bold">
+              AMOUNT
+            </v-col>
           </v-row>
 
           <v-row v-for="(line, index) in items" :key="index" no-gutters class="border-b">
             <v-col cols="12" sm="8" class="pa-2" :class="smAndUp ? 'border-e' : 'border-b'">
-              <!-- Purpose of THIS line. Prints beside the category, which is
-                   the split the accountant asked for: what it is charged to on
-                   one side, what it was actually for on the other. -->
+              <!-- A line is only what the spend is charged to and how much;
+                   the purpose is written once on the header. -->
               <v-row dense>
-                <v-col cols="12">
-                  <v-text-field
-                    v-model="line.particular"
-                    label="Purpose / Explanation"
-                    placeholder="e.g. Butuan–Zamboanga round trip"
-                    variant="outlined"
-                    density="compact"
-                    hide-details
-                    class="mb-2"
-                  />
-                </v-col>
                 <v-col cols="12">
                   <v-select
                     v-model="line.category"
@@ -254,16 +347,23 @@
 
           <v-row no-gutters class="border-b">
             <v-col cols="12" sm="8" class="pa-2" :class="smAndUp ? 'border-e' : 'border-b'">
+              <!-- Five accounts maximum: the printed voucher has a fixed five
+                   rows so the RECORDED stamp lands in the same place every
+                   time. A sixth goes on a second voucher. -->
               <v-btn
                 size="small"
                 variant="text"
                 color="primary"
                 class="text-none"
                 prepend-icon="mdi-plus"
+                :disabled="!canAddItem"
                 @click="addItem"
               >
-                Add Particular
+                Add Account
               </v-btn>
+              <span v-if="!canAddItem" class="text-caption text-medium-emphasis ms-2">
+                Five per voucher &mdash; record the rest on another voucher.
+              </span>
             </v-col>
             <v-col cols="12" sm="4" class="pa-2" />
           </v-row>
@@ -307,11 +407,12 @@
               <div class="text-caption text-center"><em>(Signature Over Printed Name)</em></div>
             </v-col>
           </v-row>
+
         </div>
 
         <div class="text-caption text-medium-emphasis mt-2">
-          Section D (Received Payment — check no., bank, OR no., date) prints as blank lines for the
-          payee to complete on receipt.
+          Section D (Received Payment — check no., bank, OR no., date) prints as blank
+          lines for the payee to complete on receipt.
         </div>
 
         <!-- Fund balance preview, carried over from the old expense dialog -->
@@ -327,8 +428,7 @@
         </v-alert>
         <div v-else-if="selectedAccount" class="text-caption text-medium-emphasis mt-2">
           {{ selectedAccount.name }} balance {{ formatCurrency(selectedAccount.balance) }} —
-          {{ formatCurrency(selectedAccount.balance - voucherTotal) }} after this voucher is
-          recorded.
+          {{ formatCurrency(selectedAccount.balance - voucherTotal) }} after this voucher is recorded.
         </div>
       </v-card-text>
 
@@ -341,9 +441,7 @@
           Still needed: {{ blockers.join(', ') }}
         </span>
         <v-spacer />
-        <v-btn variant="text" class="text-none" @click="emit('update:modelValue', false)"
-          >Cancel</v-btn
-        >
+        <v-btn variant="text" class="text-none" @click="emit('update:modelValue', false)">Cancel</v-btn>
         <v-btn
           color="primary"
           variant="flat"
@@ -358,98 +456,3 @@
     </v-card>
   </v-dialog>
 </template>
-
-<script setup lang="ts">
-import { watch } from 'vue'
-import { useDisplay } from 'vuetify'
-import { useVoucherForm } from '../../composables/useVoucherForm'
-import { voucherSignatories } from '@/stores/disbursementVouchersData'
-import type { VoucherType, VoucherInput } from '@/stores/disbursementVouchersData'
-import type { ClassifiedCashAccount } from '@/utils/cashAccountTypes'
-import { formatCurrency } from '@/utils/helpers'
-
-const props = defineProps<{
-  modelValue: boolean
-  loading: boolean
-  accounts: ClassifiedCashAccount[]
-  /** Set only when editing an existing DRAFT voucher; null when creating. */
-  editing: VoucherType | null
-}>()
-
-const emit = defineEmits<{
-  (e: 'update:modelValue', value: boolean): void
-  (e: 'submit', payload: VoucherInput): void
-}>()
-
-const {
-  isEditing,
-  payee,
-  payeeAddress,
-  payeeTin,
-  voucherDate,
-  cashAccountId,
-  checkNo,
-  orSiNo,
-  department,
-  remarks,
-  items,
-  categoryOptions,
-  departmentOptions,
-  accountOptions,
-  metaForAccount,
-  selectedAccount,
-  voucherTotal,
-  insufficientFunds,
-  canSubmit,
-  blockers,
-  signatories,
-  resetForm,
-  loadFrom,
-  addItem,
-  removeItem,
-  buildPayload,
-  restoreDraft,
-  setSignatory,
-  applyCachedSignatories,
-} = useVoucherForm(() => props.accounts)
-
-// The form deliberately mirrors the printed voucher cell-for-cell, so what the
-// user fills in is laid out exactly where it lands on the paper they sign.
-// Signatory names are typed here and print above the rule; only the signature
-// itself is handwritten.
-
-// The ruled cells divide vertically on a wide screen and stack on a narrow one,
-// so the divider that separates a pair has to switch edges with the breakpoint.
-const { smAndUp } = useDisplay()
-
-// Signature blocks sit 4-across on a wide screen and 2-across on a narrow one.
-// Only rule the edges that fall *between* blocks — the outer frame draws the rest.
-function signatoryBorder(index: number) {
-  const perRow = smAndUp.value ? 4 : 2
-  const classes: string[] = []
-  if ((index + 1) % perRow !== 0) classes.push('border-e')
-  if (index < voucherSignatories.length - perRow) classes.push('border-b')
-  return classes
-}
-
-// Prefill on open: an existing draft loads its own values, a new voucher picks
-// up any autosaved draft instead.
-watch(
-  () => props.modelValue,
-  (open) => {
-    if (!open) return
-    resetForm()
-    if (props.editing) loadFrom(props.editing)
-    else restoreDraft()
-    // Prefill any signature block still blank with the last names used. Runs for
-    // edits too — an older voucher saved before this field existed has none.
-    applyCachedSignatories()
-  },
-)
-
-function handleSubmit() {
-  const payload = buildPayload()
-  if (!payload) return
-  emit('submit', payload)
-}
-</script>

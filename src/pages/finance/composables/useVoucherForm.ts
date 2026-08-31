@@ -1,4 +1,5 @@
 import { ref, computed } from 'vue'
+import { useToast } from 'vue-toastification'
 import { categoryTitle, expenseCategories, expenseDepartments } from '@/stores/financeData'
 import type { ExpenseCategory, ExpenseDepartment } from '@/stores/financeData'
 import { emptySignatories } from '@/stores/disbursementVouchersData'
@@ -24,31 +25,49 @@ const todayISO = () => new Date().toISOString().slice(0, 10)
 //   - amount may be null: starting it at 0 rendered a "0" in the field, which
 //     looks filled but isn't a valid amount, so the submit button stayed
 //     disabled with the form looking complete.
-//   - a free-text `particular` per line (REVERSES the earlier "no per-line
-//     description" rule). The accountant asked for the PARTICULARS box to be
-//     split in two — the expense category on one side, the purpose of that
-//     specific spend on the other — rather than one Reference on the header
-//     covering every line at once. The header Reference/Remarks is unchanged
-//     and still prints; it is voucher-level context, not the line's purpose.
+//   - no per-line free text. The voucher carries ONE `particulars` on the
+//     header, fanned out to every line on save (the database column is
+//     per-line). The printed box is split: PARTICULARS on the left, ACCOUNT
+//     NAME on the right. The header Reference/Remarks is separate and unchanged.
 type VoucherFormLine = {
   category: ExpenseCategory
-  /**
-   * Free-text purpose for THIS line ("Butuan–Zamboanga round trip"), printed in
-   * its own column beside the category. Stored in the long-existing
-   * `disbursement_voucher_items.particular`, which until now only held a copy of
-   * the category's title and carried no information of its own.
-   */
-  particular: string
   amount: number | null
 }
 
+/**
+ * A voucher prints a FIXED five account rows, padded with blanks when it has
+ * fewer. That fixed height is what lets the RECORDED stamp be overprinted at
+ * one calibrated position on every voucher — a variable-length sheet would move
+ * the signature row and the stamp would miss. A sixth account goes on a second
+ * voucher.
+ */
+export const maxVoucherAccounts = 5
+
+/**
+ * How many lines of particulars fit beside the account rows.
+ *
+ * Derived, not chosen: the particulars cell sits BESIDE the account block in the
+ * printed sheet, so its height budget is that block's height —
+ * maxVoucherAccounts rows at the 22px min-height each `.dv-cell` carries,
+ * about 110px, which is ~7 lines at the sheet's line height. Anything longer
+ * stretches the cell, pushes the signature row down, and breaks the one thing
+ * the layout must hold: the signature row's distance from the top of the sheet
+ * stays constant, because the RECORDED stamp is overprinted against it.
+ *
+ * Capped at entry rather than clipped at print — silently dropping part of a
+ * description off a financial document is not an option.
+ */
+export const maxParticularsLines = 7
+
 const emptyItem = (): VoucherFormLine => ({
   category: 'other',
-  particular: '',
   amount: null,
 })
 
 export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
+  // Inside the factory, not at module scope -- a store/composable factory called
+  // on import runs before Pinia is installed.
+  const toast = useToast()
   const editingId = ref<number | null>(null)
 
   const payee = ref('')
@@ -65,6 +84,11 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
   // data has ever used more than one department. Still WRITTEN to every line on
   // save, because that is where the generated expense reads it from.
   const department = ref<ExpenseDepartment | null>(null)
+  // ONE particular per voucher, not one per line. Per the accountant a voucher
+  // describes a single purpose, so a per-line box meant retyping the same
+  // sentence on every row. Still WRITTEN to every line, because that is the
+  // column the database has and where the generated expense reads its remark.
+  const particulars = ref('')
   const remarks = ref('')
   // Typed names for the four signature blocks — printed above the rule so only
   // the signature itself is handwritten.
@@ -77,13 +101,13 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
   const draft = useFormDraft({
     key: 'finance-disbursement-voucher',
     // v2: `signatories` joined the persisted shape. v3: each line gained a
-    // free-text `particular`. v4: `department` moved from the line to the
-    // header. Bumping discards older drafts rather than restoring a voucher
-    // with part of its shape silently missing.
-    version: 4,
-    refs: { payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, department, remarks, signatories, items },
+    // free-text `particular`. v4: `department` moved to the header. v5:
+    // `particular` moved to the header too. Bumping discards older drafts
+    // rather than restoring a voucher with part of its shape silently missing.
+    version: 5,
+    refs: { payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, department, particulars, remarks, signatories, items },
     isEmpty: () => !payee.value && !payeeAddress.value && !payeeTin.value && cashAccountId.value == null
-      && !checkNo.value && !orSiNo.value && !remarks.value
+      && !checkNo.value && !orSiNo.value && !particulars.value.trim() && !remarks.value
       && !hasAnySignatory()
       && items.value.every((line) => !line.amount),
   })
@@ -161,13 +185,30 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
   // What's still stopping a save. Drives a visible hint next to the submit
   // button — a disabled button with no explanation is unusable, since nothing
   // on the form says which cell it's waiting on.
+  // Both of these guard the printed sheet's fixed height rather than the data.
+  // A voucher loaded from an older shape can carry more accounts than the form
+  // would now let anyone add, so the cap has to be checked on save too, not
+  // only in addItem().
+  const particularsLines = computed(() => particulars.value.split('\n').length)
+  // Counted on what actually saves, not on the rows on screen: clearing the
+  // amounts off an over-long legacy voucher until it fits is a valid way to
+  // resolve one, and counting blank rows would block that.
+  const tooManyAccounts = computed(() => validItems.value.length > maxVoucherAccounts)
+  const particularsTooTall = computed(() => particularsLines.value > maxParticularsLines)
+
   const blockers = computed(() => {
     const missing: string[] = []
     if (!payee.value.trim()) missing.push('Payee')
     if (!voucherDate.value) missing.push('Date')
     if (cashAccountId.value === null) missing.push('Payment Mode')
-    if (!validItems.value.length) missing.push('a particular with an amount')
+    if (!validItems.value.length) missing.push('an account with an amount')
     if (insufficientFunds.value) missing.push('a total within the account balance')
+    if (tooManyAccounts.value) {
+      missing.push(`no more than ${maxVoucherAccounts} accounts (move the rest to a second voucher)`)
+    }
+    if (particularsTooTall.value) {
+      missing.push(`a particulars of ${maxParticularsLines} lines or fewer`)
+    }
     return missing
   })
 
@@ -185,6 +226,7 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
     checkNo.value = ''
     orSiNo.value = ''
     department.value = null
+    particulars.value = ''
     remarks.value = ''
     signatories.value = emptySignatories()
     items.value = [emptyItem()]
@@ -207,21 +249,34 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
     // Department is stored per line but entered once. Every live voucher uses a
     // single department across its lines, so the first non-null one is it.
     department.value = voucher.items.find((line) => line.department)?.department ?? null
+    // Every line carries the same particular; older vouchers stored the
+    // category's own title there, which is not a description worth restoring.
+    // Scan for the first line holding a REAL one rather than stopping at the
+    // first non-empty: a voucher from the per-line era can have the fallback
+    // title on line 1 and the actual description further down, and stopping
+    // early would blank it here and then overwrite it with titles on save.
+    particulars.value = voucher.items.find(
+      (line) => line.particular.trim() && line.particular !== categoryTitle(line.category),
+    )?.particular ?? ''
     remarks.value = voucher.remarks ?? ''
     signatories.value = { ...emptySignatories(), ...voucher.signatories }
     items.value = voucher.items.length
       ? voucher.items.map((line) => ({
         category: line.category,
-        // Vouchers saved before per-line explanations stored the category's
-        // title here. Show those as empty rather than pre-filling the box with
-        // a word the category column already says.
-        particular: line.particular === categoryTitle(line.category) ? '' : (line.particular ?? ''),
         amount: line.amount,
       }))
       : [emptyItem()]
   }
 
+  const canAddItem = computed(() => items.value.length < maxVoucherAccounts)
+
   function addItem() {
+    if (!canAddItem.value) {
+      toast.warning(
+        `A voucher holds ${maxVoucherAccounts} accounts. Record the rest on a second voucher.`,
+      )
+      return
+    }
     items.value.push(emptyItem())
   }
 
@@ -248,9 +303,9 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
         received_by_name: signatories.value.received_by_name.trim(),
       },
       items: validItems.value.map((line) => ({
-        // The typed purpose. Falls back to the category's title when left blank
-        // so the column is never empty in the database.
-        particular: line.particular.trim() || categoryTitle(line.category),
+        // Fanned out from the single header value; falls back to the category's
+        // title when left blank so the column is never empty in the database.
+        particular: particulars.value.trim() || categoryTitle(line.category),
         category: line.category as ExpenseCategory,
         // Fanned out from the single header value.
         department: department.value,
@@ -261,9 +316,10 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
 
   return {
     editingId, isEditing,
-    payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, department, remarks, signatories, items,
+    payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, department, particulars, remarks, signatories, items,
     categoryOptions, departmentOptions, accountOptions, metaForAccount, selectedAccount,
     voucherTotal, insufficientFunds, canSubmit, blockers,
+    canAddItem, particularsLines, tooManyAccounts, particularsTooTall,
     resetForm, loadFrom, addItem, removeItem, buildPayload, setSignatory, applyCachedSignatories,
     restoreDraft: draft.restore,
     clearDraft: draft.clear,
