@@ -475,9 +475,21 @@ export function label(value: string | number | null | undefined): string {
   return isBlank(value) ? NOT_SET : String(value).trim()
 }
 
-/** True when a field has never been filled in. */
+/**
+ * True when a field has never been filled in.
+ *
+ * Treats null, empty/whitespace-only strings, a literal `undefined`, and NaN
+ * (both the number and the "NaN" string a failed parse produces) as un-filled.
+ * This is what lets a numeric field like a missing selling price render as
+ * "not set yet" instead of "NaN".
+ */
 export function isBlank(value: string | number | null | undefined): boolean {
-  return value == null || String(value).trim() === ''
+  if (value == null) return true
+  const text = String(value).trim()
+  if (text === '') return true
+  if (typeof value === 'number' && Number.isNaN(value)) return true
+  if (/^(nan|undefined)$/i.test(text)) return true
+  return false
 }
 
 /**
