@@ -14,7 +14,7 @@ export type PRItem = {
   id: number
   no: number
   unit: string
-  item_description: string
+  product_name: string
   qty: number
   cost_per_unit: number
   product_id?: number
@@ -29,7 +29,7 @@ export type PRItem = {
 export type RequisitionItemType = {
   no: number
   unit: string
-  item_description: string
+  product_name: string
   qty: number
   cost_per_unit: number
   supplier_id: string | null
@@ -114,7 +114,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       id: ti.id,
       no: index + 1,
       unit: ti.products?.unit ?? '—',
-      item_description: ti.products?.product_name ?? '—',
+      product_name: ti.products?.product_name ?? '—',
       qty: ti.qty_stock_in ?? 0,
       // Line snapshot wins over the product master, per gl_sum_cost's convention.
       cost_per_unit: ti.cost_price ?? ti.unit_price ?? ti.products?.cost_price ?? 0,
@@ -167,7 +167,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       id: it.id,
       no: index + 1,
       unit: it.unit ?? '—',
-      item_description: it.product_name ?? '—',
+      product_name: it.product_name ?? '—',
       qty: it.qty_stock_in ?? 0,
       cost_per_unit: it.cost_price ?? 0,
       product_id: it.product_id,
@@ -299,7 +299,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       if (!product) return true // no linked product on file — treat as changed
       const supplierId = item.supplier_id ? Number(item.supplier_id) : null
       return (
-        product.product_name !== item.item_description ||
+        product.product_name !== item.product_name ||
         product.unit !== item.unit ||
         (product.supplier_id ?? null) !== supplierId ||
         (product.expiry_date ?? null) !== (item.expiry_date ?? null)
@@ -317,7 +317,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
 
     if (itemsNeedingProduct.length) {
       const names = [
-        ...new Set(itemsNeedingProduct.map((i) => i.item_description).filter(Boolean)),
+        ...new Set(itemsNeedingProduct.map((i) => i.product_name).filter(Boolean)),
       ]
       const { data: candidatesByName, error: productsFetchError } = await supabase
         .from('products')
@@ -386,7 +386,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
           if (picked && sameExpiry(picked.expiry_date, item.expiry_date ?? null)) {
             const exactCosmetic =
               picked.unit === item.unit &&
-              picked.product_name === item.item_description &&
+              picked.product_name === item.product_name &&
               (picked.supplier_id ?? null) === supplierId
 
             if (exactCosmetic) {
@@ -398,7 +398,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
               // tracked stock. Reuse it, just warn.
               resolvedId = picked.id
               skuMismatchWarnings.push({
-                itemDescription: item.item_description,
+                itemDescription: item.product_name,
                 sku: picked.sku,
               })
             }
@@ -414,7 +414,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         // duplicating a real, received batch.
         if (resolvedId === null) {
           const skuMatch = findExactMatch(
-            item.item_description,
+            item.product_name,
             supplierId,
             item.unit,
             item.expiry_date ?? null,
@@ -427,7 +427,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         // (no SKU requirement).
         if (resolvedId === null) {
           const match = findExactMatch(
-            item.item_description,
+            item.product_name,
             supplierId,
             item.unit,
             item.expiry_date ?? null,
@@ -460,7 +460,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         const productInserts = toCreateIndexes.map((idx) => {
           const item = itemsNeedingProduct[idx]
           return {
-            product_name: item.item_description,
+            product_name: item.product_name,
             unit: item.unit,
             supplier_id: item.supplier_id ? Number(item.supplier_id) : null,
             status: 'active',
@@ -621,7 +621,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     }
 
     // ─── Check for existing products (matched by product_name + supplier_id) ──
-    const names = [...new Set(items.value.map((i) => i.item_description))]
+    const names = [...new Set(items.value.map((i) => i.product_name))]
     const { data: existingProducts, error: existingError } = await supabase
       .from('products')
       .select('id, product_name, supplier_id, unit, expiry_date') // + expiry_date
@@ -659,7 +659,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         if (
           pickedProduct &&
           pickedProduct.unit === item.unit &&
-          pickedProduct.product_name === item.item_description &&
+          pickedProduct.product_name === item.product_name &&
           (pickedProduct.expiry_date ?? null) === (item.expiry_date ?? null)
         ) {
           return item.product_id
@@ -667,7 +667,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       }
 
       const match = findExisting(
-        item.item_description,
+        item.product_name,
         supplierId,
         item.unit,
         item.expiry_date ?? null,
@@ -684,7 +684,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       const productInserts = newItemIndexes.map((idx) => {
         const item = items.value[idx]
         return {
-          product_name: item.item_description,
+          product_name: item.product_name,
           unit: item.unit,
           supplier_id: item.supplier_id ? Number(item.supplier_id) : null,
           status: 'active',

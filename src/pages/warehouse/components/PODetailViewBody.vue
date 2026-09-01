@@ -132,7 +132,7 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
 
         <tr v-for="(item, index) in transactionItems" :key="item.id">
           <td>{{ index + 1 }}</td>
-          <td>{{ item.item_description ?? '—' }}</td>
+          <td>{{ item.product_name ?? '—' }}</td>
           <td class="text-right">{{ formatCurrency(item.cost_per_unit ?? 0) }}</td>
           <td class="text-right">
             {{ formatCurrency((item.qty ?? 0) * (item.cost_per_unit ?? 0)) }}
@@ -223,7 +223,7 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
           <!-- Item header -->
           <div class="d-flex align-center ga-2 mb-2">
             <span class="text-caption font-weight-bold text-primary">#{{ index + 1 }}</span>
-            <span class="text-body-2 font-weight-medium">{{ item.item_description ?? '—' }}</span>
+            <span class="text-body-2 font-weight-medium">{{ item.product_name ?? '—' }}</span>
           </div>
 
           <v-divider class="mb-2" />
