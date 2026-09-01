@@ -32,6 +32,7 @@ const {
   loading,
   currentDraftId,
   companyCostTotal,
+  supplierCount,
   addItem,
   removeItem,
   handleSubmit,
@@ -514,7 +515,13 @@ watch(
               {{ currentDraftId ? 'Update Draft' : 'Save as Draft' }}
             </v-btn>
             <div class="text-caption text-medium-emphasis">
-              Saved as one record <strong>(Pending Approval)</strong> → Manager approves → Issue PO.
+              <template v-if="supplierCount > 1">
+                One requisition per supplier — <strong>{{ supplierCount }}</strong> will be created
+                <strong>(Pending Approval)</strong> → Manager approves → Issue PO.
+              </template>
+              <template v-else>
+                Saved as one record <strong>(Pending Approval)</strong> → Manager approves → Issue PO.
+              </template>
             </div>
             <div class="text-caption text-medium-emphasis mt-1">
               A draft stays editable and is not sent for approval.

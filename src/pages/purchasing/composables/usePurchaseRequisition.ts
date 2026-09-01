@@ -21,7 +21,11 @@ type PRFormItem = {
   reorder_reason?: 'reorder_outofstock' | 'reorder_lowstock' | 'reorder_expiring' | 'reorder_expired' | null // NEW — set only when no reorder row exists yet and one should be created on successful submit
 }
 
-type SubmitResult = { success: boolean; resolvedReorderIds: number[] }
+type SubmitResult = {
+  success: boolean
+  resolvedReorderIds: number[]
+  requisitionNos: string[]
+}
 
 export type ReorderPrefillItem = {
   reorder_request_id?: number | null   // CHANGED — optional now. Only set when the row already exists.
@@ -113,6 +117,16 @@ export function usePurchaseRequisition() {
     items.value.reduce((sum, i) => sum + i.qty * i.cost_per_unit, 0)
   )
 
+  // Submitting raises one requisition per supplier, so this is how many documents the form will produce.
+  const supplierCount = computed(() => {
+    const supplierIds = new Set(
+      items.value
+        .filter(i => i.product_name.trim() && i.supplier_id != null)
+        .map(i => i.supplier_id),
+    )
+    return supplierIds.size
+  })
+
   // ─── Item Actions ─────────────────────────────────────────────────
   function addItem() {
     items.value.push({
@@ -162,7 +176,7 @@ export function usePurchaseRequisition() {
     const validItems = items.value.filter(i => i.product_name.trim())
     if (!validItems.length) {
       toast.warning('Please add at least one item.')
-      return { success: false, resolvedReorderIds: [] }
+      return { success: false, resolvedReorderIds: [], requisitionNos: [] }
     }
 
     const rules: { check: (i: typeof validItems[number]) => boolean; message: string }[] = [
@@ -179,7 +193,7 @@ export function usePurchaseRequisition() {
 
     if (failedMessages.length) {
       toast.info(`Please provide ${failedMessages.join(', ')} for each item.`)
-      return { success: false, resolvedReorderIds: [] }
+      return { success: false, resolvedReorderIds: [], requisitionNos: [] }
     }
 
     loading.value = true
@@ -221,27 +235,33 @@ export function usePurchaseRequisition() {
 
     loading.value = false
 
-    if (result?.success && result.transactionId && result.requisitionNo) {
-      await logPRSubmission(
-        result.transactionId,
-        result.requisitionNo,
-        'purchase_requisition',
-        validItems.length,
-      )
+    const createdPRs = result?.createdPRs ?? []
+
+    if (result?.success && createdPRs.length) {
+      const requisitionNos = createdPRs.map(pr => pr.requisitionNo)
+
+      for (const pr of createdPRs) {
+        await logPRSubmission(
+          pr.transactionId,
+          pr.requisitionNo,
+          'purchase_requisition',
+          pr.itemCount,
+        )
+      }
 
       if (currentDraftId.value != null) {
         const removed = await useDraftPRDataStore()
           .deleteDraft(currentDraftId.value, { silent: true })
         if (!removed) {
           toast.warning(
-            `${result.requisitionNo} was created, but its draft could not be removed — delete it manually so it isn't submitted twice.`,
+            `${requisitionNos.join(', ')} created, but the draft could not be removed — delete it manually so it isn't submitted twice.`,
           )
         }
       }
 
       draft.clear()
       reset()
-      return { success: true, resolvedReorderIds }
+      return { success: true, resolvedReorderIds, requisitionNos }
     }
 
     // NOTE: if savePurchaseRequisition fails here, any reorder rows created
@@ -249,7 +269,7 @@ export function usePurchaseRequisition() {
     // low-risk (each item's reorder_request_id is now set, so retrying this
     // same submit won't create duplicates) but worth a follow-up cleanup pass
     // if PR-save failures turn out to be common.
-    return { success: false, resolvedReorderIds: [] }
+    return { success: false, resolvedReorderIds: [], requisitionNos: [] }
   }
 
   // ─── Reset ────────────────────────────────────────────────────────
@@ -361,6 +381,7 @@ if (!draftWasRestored && items.value.length === 0) addItem()
     loading,
     currentDraftId,
     companyCostTotal,
+    supplierCount,
     addReorderItems,
     addItem,
     removeItem,

@@ -10,6 +10,7 @@ import { useSupplierOffersDataStore } from '@/stores/supplierOffersData'
 import type { SupplierOfferType } from '@/stores/supplierOffersData'
 import { maxDocSeq, insertWithDocRetry, formatCurrency } from '@/utils/helpers'
 import { prIdFromCoverage, isPRCoverageLive, type PRCoverage } from '@/utils/canvassTypes'
+import { carriedProductFields } from '@/utils/productBatch'
 
 const toast = useToast()
 
@@ -122,6 +123,10 @@ type BatchProduct = {
   unit: string | null
   supplier_id: number | null
   expiry_date: string | null
+  category: string | null
+  brand: string | null
+  reorder_level: number | null
+  sku: string | null
 }
 
 /**
@@ -131,12 +136,14 @@ type BatchProduct = {
  * @param product - The base product information
  * @param supplierId - The supplier ID for this batch
  * @param expiryDate - The expiry date for this batch (null if not expiring)
+ * @param costPrice - The winning offer's unit cost, stored as this batch's cost_price
  * @returns Object containing the resolved product ID or an error message
  */
 async function resolveBatchProduct(
   product: BatchProduct,
   supplierId: number,
   expiryDate: string | null,
+  costPrice: number | null,
 ): Promise<{ id: number | null; error?: string }> {
   const sameBatch =
     (product.supplier_id ?? null) === supplierId &&
@@ -167,6 +174,8 @@ async function resolveBatchProduct(
       expiry_date: expiryDate,
       status: 'active',
       current_stock: 0,
+      cost_price: costPrice,
+      ...carriedProductFields(product),
     })
     .select('id')
     .single()
@@ -684,7 +693,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       }
       draftId = created.id
     } else {
-      // Checked before any write: the item replace below would otherwise strip a canvass draft's lines.
+      // Checked before any write: the delete below would otherwise strip a canvass draft's lines.
       const { data: existing, error: findError } = await supabase
         .from('draft_purchase_requisitions')
         .select('id')
@@ -715,65 +724,22 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
         return { success: false }
       }
 
-      const { data: existingItems, error: existingItemsError } = await supabase
+      // Cleared before the insert below, never after: a failure here writes nothing,
+      // and a failure there leaves the draft empty while the form still holds every
+      // line, so pressing save again fixes it. Inserting first would leave both sets.
+      const { error: clearError } = await supabase
         .from('draft_pr_items')
-        .select('id')
+        .delete()
         .eq('draft_pr_id', draftId)
-      if (existingItemsError) {
-        handleError(existingItemsError, 'Failed to save draft.')
+      if (clearError) {
+        handleError(clearError, 'Failed to save draft.')
         toast.error('Failed to save draft.')
         loading.value = false
         return { success: false }
       }
-
-      const replacementLines = payload.lines.map((line) => ({
-        draft_pr_id: draftId,
-        product_id: line.product_id,
-        product_name: line.product_name,
-        unit: line.unit,
-        supplier_id: line.supplier_id,
-        qty: line.qty,
-        cost_per_unit: line.cost_per_unit,
-        expiry_date: line.expiry_date,
-        reorder_request_id: line.reorder_request_id,
-        reorder_reason: line.reorder_reason,
-      }))
-
-      const existingItemIds = (existingItems ?? []).map((item) => item.id)
-      const insertedIds: number[] = []
-
-      if (replacementLines.length) {
-        const { data: insertedRows, error: itemsError } = await supabase
-          .from('draft_pr_items')
-          .insert(replacementLines)
-          .select('id')
-        if (itemsError) {
-          handleError(itemsError, 'Failed to save draft items.')
-          toast.error('Failed to save draft items.')
-          loading.value = false
-          return { success: false }
-        }
-        insertedIds.push(...(insertedRows ?? []).map((row) => row.id))
-      }
-
-      if (existingItemIds.length) {
-        const { error: clearError } = await supabase
-          .from('draft_pr_items')
-          .delete()
-          .in('id', existingItemIds)
-        if (clearError) {
-          if (insertedIds.length) {
-            await supabase.from('draft_pr_items').delete().in('id', insertedIds)
-          }
-          handleError(clearError, 'Failed to save draft.')
-          toast.error('Failed to save draft.')
-          loading.value = false
-          return { success: false }
-        }
-      }
     }
 
-    if (isNewDraft && payload.lines.length) {
+    if (payload.lines.length) {
       const { error: itemsError } = await supabase.from('draft_pr_items').insert(
         payload.lines.map((line) => ({
           draft_pr_id: draftId,
@@ -790,7 +756,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       )
       if (itemsError) {
         // A brand-new header is removed so the list never shows a draft with no lines.
-        if (draftId != null) {
+        if (isNewDraft && draftId != null) {
           await supabase.from('draft_purchase_requisitions').delete().eq('id', draftId)
         }
         handleError(itemsError, 'Failed to save draft items.')
@@ -1009,7 +975,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       }
       const { data: product } = await supabase
         .from('products')
-        .select('id, product_name, unit, supplier_id, expiry_date')
+        .select('id, product_name, unit, supplier_id, expiry_date, category, brand, reorder_level, sku')
         .eq('id', item.product_id)
         .maybeSingle()
       if (!product) {
@@ -1047,7 +1013,12 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
 
       // Falls back to the offer so a draft item predating supplier_id still resolves.
       const supplierId = item.supplier_id ?? offer.supplier_id
-      const resolved = await resolveBatchProduct(product, supplierId, offer.expiry_date)
+      const resolved = await resolveBatchProduct(
+        product,
+        supplierId,
+        offer.expiry_date,
+        offer.cost_price_per_unit ?? null,
+      )
       if (resolved.id == null) {
         loading.value = false
         return { success: false, error: `Failed to resolve product batch for item ${item.id}: ${resolved.error}` }
