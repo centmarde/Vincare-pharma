@@ -16,22 +16,28 @@ const toast = useToast()
 export type DraftPRItemType = {
   id: number
   draft_pr_id: number
-  product_id: number
+  product_id: number | null
   product_name?: string | null
+  unit?: string | null
   qty: number
   shortfall_qty: number | null
   required_by_date: string | null
   selected_supplier_offer_id: number | null
   justification: string | null
   considered_offers: any[] | null
-  supplier_id?: number | null 
+  supplier_id?: number | null
   supplier_name?: string | null
   unit_price?: number | null
   expiry_date?: string | null
+  reorder_request_id?: number | null
+  reorder_reason?: string | null
 }
+
+export type DraftPROrigin = 'canvass' | 'manual'
 
 export type DraftPRType = {
   id: number
+  origin: DraftPROrigin
   status: 'draft' | 'converted'
   remarks: string | null
   created_by: string | null
@@ -56,6 +62,18 @@ export type DraftLineInput = {
   qty: number
   shortfall_qty?: number | null
   required_by_date?: string | null
+}
+
+export type ManualDraftLineInput = {
+  product_id: number | null
+  product_name: string
+  unit: string
+  supplier_id: number | null
+  qty: number
+  cost_per_unit: number
+  expiry_date: string | null
+  reorder_request_id: number | null
+  reorder_reason: string | null
 }
 
 export type ConvertWarning = {
@@ -165,6 +183,8 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
   const drafts: Ref<DraftPRType[]> = ref([])
   const currentDraft: Ref<DraftPRType | null> = ref(null)
   const draftByOrder: Ref<Record<number, DraftByOrderEntry>> = ref({})
+  const manualDrafts: Ref<DraftPRType[]> = ref([])
+  const manualDraftCount = ref(0)
 
   const handleError = (err: unknown, msg: string) => {
     error.value = err instanceof Error ? err.message : msg
@@ -180,7 +200,8 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       id: row.id,
       draft_pr_id: row.draft_pr_id,
       product_id: row.product_id,
-      product_name: row.product?.product_name ?? null,
+      product_name: row.product?.product_name ?? row.product_name ?? null,
+      unit: row.unit ?? null,
       qty: row.qty,
       shortfall_qty: row.shortfall_qty ?? null,
       required_by_date: row.required_by_date,
@@ -189,8 +210,10 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       considered_offers: row.considered_offers ?? [],
       supplier_id: row.supplier_id ?? row.offer?.supplier_id ?? null,
       supplier_name: row.offer?.supplier?.name ?? null,
-      unit_price: row.offer?.cost_price_per_unit ?? null,
-      expiry_date: row.offer?.expiry_date ?? null,
+      unit_price: row.offer?.cost_price_per_unit ?? row.cost_per_unit ?? null,
+      expiry_date: row.offer?.expiry_date ?? row.expiry_date ?? null,
+      reorder_request_id: row.reorder_request_id ?? null,
+      reorder_reason: row.reorder_reason ?? null,
     }
   }
 
@@ -216,6 +239,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     const { data: draft, error: draftError } = await supabase
       .from('draft_purchase_requisitions')
       .insert({
+        origin: 'canvass',
         status: 'draft',
         remarks: payload.remarks ?? null,
         created_by: user.id,
@@ -270,6 +294,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     const { data: existing, error: findError } = await supabase
       .from('draft_purchase_requisitions')
       .select('id, items:draft_pr_items(id, product_id)')
+      .eq('origin', 'canvass')
       .eq('status', 'draft')
       .eq('source_order_id', payload.sourceOrderId)
       // Nothing stops a second open draft per order at the DB level, and
@@ -368,6 +393,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     let q = supabase
       .from('draft_purchase_requisitions')
       .select(`*, items:draft_pr_items(${ITEM_SELECT})`)
+      .eq('origin', 'canvass')
     if (status) q = q.eq('status', status)
     if (sourceOrderId != null) q = q.eq('source_order_id', sourceOrderId)
     const { data, error: fetchError } = await q.order('created_at', { ascending: false })
@@ -587,7 +613,21 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
    * @param draftId - The draft PR ID to delete
    * @returns True if successful, false otherwise
    */
-  async function deleteDraft(draftId: number) {
+  // silent is for the post-submit cleanup, which already toasts about the same action.
+  async function deleteDraft(
+    draftId: number,
+    options?: { silent?: boolean; origin?: 'manual' | 'canvass' },
+  ) {
+    const draftOrigin =
+      options?.origin ??
+      (
+        await supabase
+          .from('draft_purchase_requisitions')
+          .select('origin')
+          .eq('id', draftId)
+          .maybeSingle()
+      ).data?.origin ?? null
+
     const { error: deleteError } = await supabase
       .from('draft_purchase_requisitions')
       .delete()
@@ -596,9 +636,208 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       toast.error('Failed to delete draft.')
       return false
     }
+
+    const wasManualDraft =
+      draftOrigin === 'manual' || options?.origin === 'manual' || manualDrafts.value.some((d) => d.id === draftId)
+
     drafts.value = drafts.value.filter((d) => d.id !== draftId)
-    toast.success('Draft deleted.')
+    manualDrafts.value = manualDrafts.value.filter((d) => d.id !== draftId)
+    if (wasManualDraft && manualDraftCount.value > 0) manualDraftCount.value -= 1
+    if (!options?.silent) toast.success('Draft deleted.')
     return true
+  }
+
+  async function saveManualDraft(payload: {
+    draftId?: number | null
+    remarks?: string | null
+    lines: ManualDraftLineInput[]
+  }) {
+    loading.value = true
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) {
+      toast.error('User not authenticated.')
+      loading.value = false
+      return { success: false }
+    }
+
+    const isNewDraft = payload.draftId == null
+    let draftId = payload.draftId ?? null
+
+    if (isNewDraft) {
+      const { data: created, error: createError } = await supabase
+        .from('draft_purchase_requisitions')
+        .insert({
+          origin: 'manual',
+          status: 'draft',
+          remarks: payload.remarks ?? null,
+          created_by: user.id,
+          source_order_id: null,
+          source_order_type: null,
+        })
+        .select('id')
+        .single()
+      if (createError || !created) {
+        handleError(createError, 'Failed to save draft.')
+        toast.error('Failed to save draft.')
+        loading.value = false
+        return { success: false }
+      }
+      draftId = created.id
+    } else {
+      // Checked before any write: the item replace below would otherwise strip a canvass draft's lines.
+      const { data: existing, error: findError } = await supabase
+        .from('draft_purchase_requisitions')
+        .select('id')
+        .eq('id', draftId)
+        .eq('origin', 'manual')
+        .maybeSingle()
+      if (findError) {
+        handleError(findError, 'Failed to save draft.')
+        toast.error('Failed to save draft.')
+        loading.value = false
+        return { success: false }
+      }
+      if (!existing) {
+        toast.error('That draft is no longer available.')
+        loading.value = false
+        return { success: false }
+      }
+
+      const { error: updateError } = await supabase
+        .from('draft_purchase_requisitions')
+        .update({ remarks: payload.remarks ?? null, updated_at: new Date().toISOString() })
+        .eq('id', draftId)
+        .eq('origin', 'manual')
+      if (updateError) {
+        handleError(updateError, 'Failed to save draft.')
+        toast.error('Failed to save draft.')
+        loading.value = false
+        return { success: false }
+      }
+
+      const { data: existingItems, error: existingItemsError } = await supabase
+        .from('draft_pr_items')
+        .select('id')
+        .eq('draft_pr_id', draftId)
+      if (existingItemsError) {
+        handleError(existingItemsError, 'Failed to save draft.')
+        toast.error('Failed to save draft.')
+        loading.value = false
+        return { success: false }
+      }
+
+      const replacementLines = payload.lines.map((line) => ({
+        draft_pr_id: draftId,
+        product_id: line.product_id,
+        product_name: line.product_name,
+        unit: line.unit,
+        supplier_id: line.supplier_id,
+        qty: line.qty,
+        cost_per_unit: line.cost_per_unit,
+        expiry_date: line.expiry_date,
+        reorder_request_id: line.reorder_request_id,
+        reorder_reason: line.reorder_reason,
+      }))
+
+      const existingItemIds = (existingItems ?? []).map((item) => item.id)
+      const insertedIds: number[] = []
+
+      if (replacementLines.length) {
+        const { data: insertedRows, error: itemsError } = await supabase
+          .from('draft_pr_items')
+          .insert(replacementLines)
+          .select('id')
+        if (itemsError) {
+          handleError(itemsError, 'Failed to save draft items.')
+          toast.error('Failed to save draft items.')
+          loading.value = false
+          return { success: false }
+        }
+        insertedIds.push(...(insertedRows ?? []).map((row) => row.id))
+      }
+
+      if (existingItemIds.length) {
+        const { error: clearError } = await supabase
+          .from('draft_pr_items')
+          .delete()
+          .in('id', existingItemIds)
+        if (clearError) {
+          if (insertedIds.length) {
+            await supabase.from('draft_pr_items').delete().in('id', insertedIds)
+          }
+          handleError(clearError, 'Failed to save draft.')
+          toast.error('Failed to save draft.')
+          loading.value = false
+          return { success: false }
+        }
+      }
+    }
+
+    if (isNewDraft && payload.lines.length) {
+      const { error: itemsError } = await supabase.from('draft_pr_items').insert(
+        payload.lines.map((line) => ({
+          draft_pr_id: draftId,
+          product_id: line.product_id,
+          product_name: line.product_name,
+          unit: line.unit,
+          supplier_id: line.supplier_id,
+          qty: line.qty,
+          cost_per_unit: line.cost_per_unit,
+          expiry_date: line.expiry_date,
+          reorder_request_id: line.reorder_request_id,
+          reorder_reason: line.reorder_reason,
+        })),
+      )
+      if (itemsError) {
+        // A brand-new header is removed so the list never shows a draft with no lines.
+        if (draftId != null) {
+          await supabase.from('draft_purchase_requisitions').delete().eq('id', draftId)
+        }
+        handleError(itemsError, 'Failed to save draft items.')
+        toast.error('Failed to save draft items.')
+        loading.value = false
+        return { success: false }
+      }
+    }
+
+    if (isNewDraft) manualDraftCount.value += 1
+    toast.success('Draft saved.')
+    loading.value = false
+    return { success: true, draftId: draftId as number }
+  }
+
+  async function fetchManualDrafts(): Promise<DraftPRType[]> {
+    loading.value = true
+    const { data, error: fetchError } = await supabase
+      .from('draft_purchase_requisitions')
+      .select(`*, items:draft_pr_items(${ITEM_SELECT})`)
+      .eq('origin', 'manual')
+      .order('created_at', { ascending: false })
+    loading.value = false
+    if (fetchError) {
+      handleError(fetchError, 'Failed to fetch drafts.')
+      return []
+    }
+    manualDrafts.value = (data ?? []).map((d: any) => ({
+      ...d,
+      converted_at: null,
+      items: (d.items ?? []).map(mapItem),
+    }))
+    manualDraftCount.value = manualDrafts.value.length
+    return manualDrafts.value
+  }
+
+  async function fetchManualDraftCount(): Promise<number> {
+    const { count, error: countError } = await supabase
+      .from('draft_purchase_requisitions')
+      .select('id', { count: 'exact', head: true })
+      .eq('origin', 'manual')
+    if (countError) {
+      handleError(countError, 'Failed to count drafts.')
+      return 0
+    }
+    manualDraftCount.value = count ?? 0
+    return manualDraftCount.value
   }
 
   /**
@@ -610,7 +849,8 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     const warnings: ConvertWarning[] = []
 
     for (const item of draft.items) {
-      if (!item.selected_supplier_offer_id) continue
+      // Manual draft lines carry neither, and have no offers to check against.
+      if (!item.selected_supplier_offer_id || item.product_id == null) continue
 
       // Falls back to the id so a product with no name still reads sensibly.
       const label = item.product_name ?? `Item ${item.id}`
@@ -1089,6 +1329,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       }
       const itemsByProduct = new Map<number, typeof draft.items>()
       for (const item of [...draft.items].sort((a, b) => a.id - b.id)) {
+        if (item.product_id == null) continue
         const arr = itemsByProduct.get(item.product_id) ?? []
         arr.push(item)
         itemsByProduct.set(item.product_id, arr)
@@ -1126,6 +1367,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     const { data, error: fetchError } = await supabase
       .from('draft_purchase_requisitions')
       .select('id, source_order_id, status, updated_at')
+      .eq('origin', 'canvass')
       .not('source_order_id', 'is', null)
       .order('id', { ascending: true })
     if (fetchError) {
@@ -1185,6 +1427,8 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     drafts,
     currentDraft,
     draftByOrder,
+    manualDrafts,
+    manualDraftCount,
     createDraft,
     getOrCreateDraft,
     fetchDrafts,
@@ -1197,6 +1441,9 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     clearOfferSelection,
     updateRemarks,
     deleteDraft,
+    saveManualDraft,
+    fetchManualDrafts,
+    fetchManualDraftCount,
     precheckDraft,
     submitDraft,
     createDraftWithSelections,

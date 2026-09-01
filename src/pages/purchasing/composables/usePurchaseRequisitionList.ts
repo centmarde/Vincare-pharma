@@ -7,6 +7,7 @@ import type { PR } from '@/stores/purchaseRequisitionData'
 import { useLogsDataStore } from '@/stores/logsData'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useProductsDataStore } from '@/stores/productsData'
+import { useDraftPRDataStore } from '@/stores/draftPRData'
 import { storeToRefs } from 'pinia'
 import { ref, watch } from 'vue'
 export const headers = [
@@ -28,7 +29,9 @@ export function usePurchaseRequisitionList() {
   const logsStore = useLogsDataStore()
   const authStore = useAuthUserStore()
   const productsStore = useProductsDataStore()
+  const draftStore = useDraftPRDataStore()
   const { loading } = storeToRefs(txStore)
+  const { manualDrafts, manualDraftCount } = storeToRefs(draftStore)
   const { totalQty, totalCost, itemSummary, itemNames, statusConfig, statusOptions } =
     useTransactionsData()
   const { reorderRequests, reorderCount } = storeToRefs(productsStore)
@@ -46,6 +49,8 @@ export function usePurchaseRequisitionList() {
   const searchInput = ref(search.value)
   const stats = ref({ total: 0, pending: 0, approved: 0, totalCost: 0, rejected: 0 })
   const showReorderDialog = ref(false)
+  const showDraftsDialog = ref(false)
+  const draftsLoading = ref(false)
 
   const confirmDialog = ref({
     show: false,
@@ -114,6 +119,22 @@ export function usePurchaseRequisitionList() {
     showReorderDialog.value = true
   }
 
+  // Opens first so the dialog shows its skeleton instead of hanging on the stat card.
+  async function openDraftsDialog() {
+    showDraftsDialog.value = true
+    draftsLoading.value = true
+    await draftStore.fetchManualDrafts()
+    draftsLoading.value = false
+  }
+
+  async function deleteDraft(draftId: number) {
+    await draftStore.deleteDraft(draftId)
+  }
+
+  async function refreshDraftCount() {
+    await draftStore.fetchManualDraftCount()
+  }
+
   watch([search, filterStatus], () =>
     loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] }),
   )
@@ -121,6 +142,7 @@ export function usePurchaseRequisitionList() {
   async function init() {
     await productsStore.fetchReorderCount()
     await supplierStore.fetchSuppliers()
+    await draftStore.fetchManualDraftCount()
     await loadStats()
   }
 
@@ -128,6 +150,7 @@ export function usePurchaseRequisitionList() {
   async function refresh() {
     await loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
     await loadStats()
+    await draftStore.fetchManualDraftCount()
   }
 
   function openDetail(pr: PR) {
@@ -187,6 +210,13 @@ export function usePurchaseRequisitionList() {
     reorderRequests,
     showReorderDialog,
     reorderCount,
+    manualDrafts,
+    manualDraftCount,
+    showDraftsDialog,
+    draftsLoading,
+    openDraftsDialog,
+    deleteDraft,
+    refreshDraftCount,
     totalQty,
     totalCost,
     itemSummary,
