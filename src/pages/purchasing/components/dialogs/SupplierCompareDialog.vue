@@ -262,9 +262,9 @@ async function onConfirm() {
     scrollable @update:model-value="emit('update:modelValue', $event)">
     <v-card v-if="product" rounded="lg">
       <v-card-title class="pa-4 pb-2">
-        <div class="text-h6 font-weight-bold">Compare Suppliers — {{ product.name }}</div>
+        <div class="text-h6 font-weight-bold text-wrap">Compare Suppliers — {{ product.name }}</div>
         <div class="d-flex flex-wrap mt-2" :class="mobile ? 'flex-column align-start' : 'align-center'" style="gap:16px">
-          <div class="text-caption text-medium-emphasis">
+          <div class="text-caption text-medium-emphasis text-wrap">
             Required by {{ requiredByDate }} · min. qualifying expiry is 18 months after that date
           </div>
           <v-text-field v-model.number="localQty" type="number" :min="minQty ?? 1" label="Quantity" density="compact" variant="outlined" hide-details style="max-width:120px" @blur="commitQty" />
@@ -284,15 +284,15 @@ async function onConfirm() {
         </div>
         <v-progress-linear v-if="loadingRows" indeterminate class="mb-2" />
 
-        <div class="table-scroll mb-2">
+        <div v-if="!mobile" class="table-scroll mb-2">
         <v-table density="compact" style="width:100%">
           <colgroup>
-            <col style="width:auto; min-width:200px" />   
-            <col style="width:auto; min-width:150px" />   
-            <col style="width:auto; min-width:130px" />                 
-            <col style="width:130px" />                   
-            <col style="width:90px" />                     
-            <col style="width:40px" />                     
+            <col style="width:auto; min-width:200px" />
+            <col style="width:auto; min-width:150px" />
+            <col style="width:auto; min-width:130px" />
+            <col style="width:130px" />
+            <col style="width:90px" />
+            <col style="width:40px" />
           </colgroup>
           <thead>
             <tr>
@@ -305,11 +305,11 @@ async function onConfirm() {
             <tr v-for="(row, idx) in draftRows" :key="idx">
               <td>
                 <v-autocomplete v-model="row.supplier_id" :items="availableSupplierOptions(idx)" placeholder="Supplier"
-                  density="compact" variant="outlined" hide-details />
+                  density="compact" variant="outlined" hide-details autocomplete="off" />
               </td>
               <td>
                 <v-text-field v-model.number="row.price" type="number" min="0" prefix="₱" placeholder="Price/Unit"
-                  density="compact" variant="outlined" hide-details />
+                  density="compact" variant="outlined" hide-details autocomplete="off" />
               </td>
               <td>
                 <v-text-field :model-value="row.expiry" placeholder="MM/YYYY" maxlength="7" inputmode="numeric"
@@ -346,8 +346,48 @@ async function onConfirm() {
         </v-table>
         </div>
 
+        <div v-else class="mb-2">
+          <v-card v-for="(row, idx) in draftRows" :key="idx" class="mb-3" variant="outlined" rounded="lg">
+            <v-card-text class="pa-3">
+              <div class="d-flex align-start mb-2" style="gap:8px">
+                <v-autocomplete v-model="row.supplier_id" :items="availableSupplierOptions(idx)" placeholder="Supplier"
+                  density="compact" variant="outlined" hide-details autocomplete="off" style="flex:1; min-width:0" />
+                <v-btn icon="mdi-close" aria-label="Remove supplier" variant="text" size="x-small" @click="removeDraftRow(idx)" />              </div>
+              <div class="d-flex mb-2" style="gap:8px">
+                <v-text-field v-model.number="row.price" type="number" min="0" prefix="₱" placeholder="Price/Unit"
+                  density="compact" variant="outlined" hide-details autocomplete="off" />
+                <v-text-field :model-value="row.expiry" placeholder="MM/YYYY" maxlength="7" inputmode="numeric"
+                  density="compact" variant="outlined" hide-details style="width:100%; min-width:0"
+                  @update:model-value="onExpiryInput(row, $event)" />
+              </div>
+              <div class="d-flex justify-space-between align-center" style="gap:8px">
+                <template v-if="rowStatus(idx)">
+                  <div class="d-flex align-center flex-wrap" style="gap:6px">
+                    <v-chip v-if="rowStatus(idx) === 'recommended'" color="success" size="x-small" label>Recommended</v-chip>
+                    <v-chip v-else-if="rowStatus(idx) === 'qualifies'" color="info" variant="tonal" size="x-small" label>Qualifies</v-chip>
+                    <v-chip v-else color="warning" variant="tonal" size="x-small" label>Expiry too soon</v-chip>
+                    <span
+                      v-if="monthsLabel(idx)"
+                      class="text-caption font-weight-medium"
+                      :class="monthsClass(idx)"
+                      style="white-space:nowrap; padding:0 6px; border-radius:8px; line-height:1.6"
+                    >
+                      {{ monthsLabel(idx) }}
+                    </span>
+                  </div>
+                </template>
+                <span v-else class="text-caption text-medium-emphasis">Incomplete</span>
+                <v-btn size="x-small" variant="tonal" :disabled="!candidateFor(idx)"
+                  :color="pendingRowIdx === idx ? 'primary' : undefined" class="text-none" @click="pick(idx)">
+                  {{ pendingRowIdx === idx ? 'Selected' : 'Select' }}
+                </v-btn>
+              </div>
+            </v-card-text>
+          </v-card>
+        </div>
+
         <v-btn variant="text" size="small" color="info" class="text-none" prepend-icon="mdi-plus" @click="addDraftRow">
-          Add another supplier
+          Add supplier to compare
         </v-btn>
 
         <v-textarea v-if="needsJustification" v-model="justification"

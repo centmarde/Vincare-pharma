@@ -37,13 +37,19 @@ export type DraftPRType = {
   created_by: string | null
   created_at: string
   updated_at: string | null
+  converted_at?: string | null
   source_order_id: number | null
   source_order_type: string | null
   converted_pr_id: number | null
   items: DraftPRItemType[]
 }
 
-export type DraftByOrderEntry = { id: number; status: DraftPRType['status'] }
+export type DraftByOrderEntry = {
+  id: number
+  status: DraftPRType['status']
+  updated_at: string | null
+  converted_at?: string | null
+}
 
 export type DraftLineInput = {
   product_id: number
@@ -370,7 +376,11 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       handleError(fetchError, 'Failed to fetch drafts.')
       return []
     }
-    drafts.value = (data ?? []).map((d: any) => ({ ...d, items: (d.items ?? []).map(mapItem) }))
+    drafts.value = (data ?? []).map((d: any) => ({
+      ...d,
+      converted_at: d.status === 'converted' ? d.updated_at ?? null : null,
+      items: (d.items ?? []).map(mapItem),
+    }))
     return drafts.value
   }
 
@@ -391,7 +401,11 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       handleError(fetchError, 'Failed to load draft.')
       return null
     }
-    currentDraft.value = { ...data, items: (data.items ?? []).map(mapItem) }
+    currentDraft.value = {
+      ...data,
+      converted_at: data.status === 'converted' ? data.updated_at ?? null : null,
+      items: (data.items ?? []).map(mapItem),
+    }
     return currentDraft.value
   }
 
@@ -850,10 +864,18 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     }
 
     const releaseClaim = async () => {
+      const restoreUpdatedAt = claimedFromStatus === 'converted' && claimedFromUpdatedAt
+        ? claimedFromUpdatedAt
+        : new Date().toISOString()
       await supabase
         .from('draft_purchase_requisitions')
-        .update({ status: claimedFromStatus, updated_at: new Date().toISOString() })
+        .update({ status: claimedFromStatus, updated_at: restoreUpdatedAt })
         .eq('id', draftId)
+      if (currentDraft.value?.id === draftId) {
+        currentDraft.value.status = claimedFromStatus
+        currentDraft.value.updated_at = restoreUpdatedAt
+        currentDraft.value.converted_at = claimedFromStatus === 'converted' ? claimedFromUpdatedAt ?? null : null
+      }
     }
 
     const rollback = async () => {
@@ -980,10 +1002,17 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       }
     }
 
+    const successfulConversionAt = claimStamp
     await supabase
       .from('draft_purchase_requisitions')
-      .update({ converted_pr_id: createdPRs[0]?.pr_id ?? null, updated_at: new Date().toISOString() })
+      .update({ converted_pr_id: createdPRs[0]?.pr_id ?? null, updated_at: successfulConversionAt })
       .eq('id', draftId)
+
+    if (currentDraft.value?.id === draftId) {
+      currentDraft.value.status = 'converted'
+      currentDraft.value.updated_at = successfulConversionAt
+      currentDraft.value.converted_at = successfulConversionAt
+    }
 
     const raisedPRNos = createdPRs.map((p) => p.pr_no).join(', ')
 
@@ -1096,7 +1125,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
   async function fetchDraftIdsByOrder(): Promise<Record<number, DraftByOrderEntry>> {
     const { data, error: fetchError } = await supabase
       .from('draft_purchase_requisitions')
-      .select('id, source_order_id, status')
+      .select('id, source_order_id, status, updated_at')
       .not('source_order_id', 'is', null)
       .order('id', { ascending: true })
     if (fetchError) {
@@ -1105,9 +1134,46 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     }
     const byOrder: Record<number, DraftByOrderEntry> = {}
     for (const row of data ?? []) {
-      const existing = byOrder[row.source_order_id]
-      if (existing && existing.status === 'draft' && row.status !== 'draft') continue
-      byOrder[row.source_order_id] = { id: row.id, status: row.status }
+      const orderId = row.source_order_id
+      const existing = byOrder[orderId]
+      const fallbackConvertedAt = row.updated_at ?? existing?.converted_at ?? null
+
+      if (existing && existing.status === 'draft' && row.status !== 'draft') {
+        byOrder[orderId] = {
+          ...existing,
+          converted_at: fallbackConvertedAt,
+        }
+        continue
+      }
+
+      if (existing && existing.status === row.status) {
+        byOrder[orderId] = {
+          id: row.id,
+          status: row.status,
+          updated_at: row.updated_at ?? existing.updated_at ?? null,
+          converted_at: row.status === 'converted'
+            ? fallbackConvertedAt
+            : existing.converted_at ?? null,
+        }
+        continue
+      }
+
+      if (existing && existing.status !== 'draft' && row.status === 'draft') {
+        byOrder[orderId] = {
+          id: row.id,
+          status: row.status,
+          updated_at: row.updated_at,
+          converted_at: existing.converted_at ?? fallbackConvertedAt,
+        }
+        continue
+      }
+
+      byOrder[orderId] = {
+        id: row.id,
+        status: row.status,
+        updated_at: row.updated_at,
+        converted_at: row.status === 'converted' ? fallbackConvertedAt : null,
+      }
     }
     draftByOrder.value = byOrder
     return byOrder
