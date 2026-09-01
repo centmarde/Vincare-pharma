@@ -84,6 +84,25 @@ export type JournalEntryLine = {
   line_memo: string | null
 }
 
+/**
+ * One movement through a single account, flattened for the account drill-down:
+ * the line's own debit/credit plus the entry it belongs to, so the ledger reads
+ * as a statement instead of requiring the caller to join back to the entry.
+ */
+export type AccountLedgerLine = {
+  id: number
+  entry_no: string | null
+  entry_date: string
+  status: JournalEntry['status']
+  reference_type: ReferenceType
+  description: string | null
+  line_memo: string | null
+  debit: number
+  credit: number
+  /** Signed by the account's normal balance, accumulated oldest-first. */
+  runningBalance: number
+}
+
 export type ReferenceType =
   | 'sales_invoice' | 'sales_return' | 'payment' | 'collection' | 'purchase_invoice'
   | 'disbursement' | 'pdc' | 'payroll' | 'accrual' | 'depreciation' | 'loan'
@@ -325,6 +344,71 @@ export const useGLDataStore = defineStore('glData', () => {
       return journal.value
     } catch (err) {
       handleError(err, 'Failed to fetch journal')
+      return []
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * Every movement through one account, oldest first, with a running balance.
+   *
+   * Counts entries with status 'posted' OR 'reversed', never 'posted' alone: a
+   * reversal leaves the original in the ledger flipped to 'reversed' AND posts
+   * an offsetting entry, so both have to count for the pair to net to zero.
+   * Filtering to 'posted' would drop the original and leave the account at
+   * NEGATIVE it. Drafts stay out — they are not in the ledger yet.
+   *
+   * The closing balance is the last line's runningBalance, so the total the
+   * drill-down shows is always the sum of the lines it is showing.
+   */
+  const fetchAccountLedger = async (code: string, normalBalance: GLAccount['normal_balance']) => {
+    loading.value = true
+    clearError()
+    try {
+      // Paged deliberately. PostgREST caps a response (1000 rows by default),
+      // and a truncated ledger would not error -- it would render a partial
+      // history AND a wrong closing balance, since the balance is accumulated
+      // from these rows. A busy control account like 1030 will cross that.
+      const PAGE = 1000
+      const data: unknown[] = []
+      for (let from = 0; ; from += PAGE) {
+        const { data: page, error: e } = await supabase
+          .from('journal_entry_lines')
+          .select('id, debit, credit, line_memo, entry:journal_entry_id(entry_no, entry_date, status, reference_type, description)')
+          .eq('account_code', code)
+          .order('id', { ascending: true })
+          .range(from, from + PAGE - 1)
+        if (e) throw e
+        data.push(...(page ?? []))
+        if (!page || page.length < PAGE) break
+      }
+
+      const rows = (data ?? [])
+        .map((l: any) => ({
+          id: l.id as number,
+          debit: Number(l.debit ?? 0),
+          credit: Number(l.credit ?? 0),
+          line_memo: (l.line_memo ?? null) as string | null,
+          entry_no: (l.entry?.entry_no ?? null) as string | null,
+          entry_date: (l.entry?.entry_date ?? '') as string,
+          status: l.entry?.status as JournalEntry['status'],
+          reference_type: l.entry?.reference_type as ReferenceType,
+          description: (l.entry?.description ?? null) as string | null,
+        }))
+        .filter((l) => l.status === 'posted' || l.status === 'reversed')
+        // Oldest first so the running balance accumulates in reading order.
+        // Sorted here rather than in the query: entry_date lives on the embedded
+        // parent, which PostgREST cannot order a child-table select by.
+        .sort((a, b) => (a.entry_date === b.entry_date ? a.id - b.id : a.entry_date.localeCompare(b.entry_date)))
+
+      let balance = 0
+      return rows.map<AccountLedgerLine>((l) => {
+        balance += normalBalance === 'debit' ? l.debit - l.credit : l.credit - l.debit
+        return { ...l, runningBalance: balance }
+      })
+    } catch (err) {
+      handleError(err, 'Failed to load the account ledger')
       return []
     } finally {
       loading.value = false
@@ -624,7 +708,7 @@ export const useGLDataStore = defineStore('glData', () => {
 
   return {
     accounts, journal, trialBalance, incomeStatement, balanceSheet, loading, error,
-    fetchAccounts, createAccount, fetchJournal, postJournalEntry, postManualEntry, approveManualEntry, reverseEntry, reverseJournalEntry,
+    fetchAccounts, createAccount, fetchJournal, fetchAccountLedger, postJournalEntry, postManualEntry, approveManualEntry, reverseEntry, reverseJournalEntry,
     projectEvents, fetchTrialBalance, fetchIncomeStatement, fetchBalanceSheet,
     clearError, resetStore,
   }

@@ -23,6 +23,8 @@ const {
   openingBalance,
   isActive,
   canSubmit,
+  glAccountCode,
+  glAccountOptions,
   openAddDialog,
   cancelAdd,
   buildPayload,
@@ -173,6 +175,25 @@ const submitNewAccount = () => {
               </v-chip>
             </template>
           </v-select>
+
+          <!-- Which chart account this cash sits in. Defaulted from the
+               classification above, but overridable: a revolving fund is
+               PETTY_CASH by behaviour yet belongs in 1050, not 1010. -->
+          <label class="field-label">GL Account <span class="text-error">*</span></label>
+          <v-select
+            v-model="glAccountCode"
+            :items="glAccountOptions"
+            placeholder="Where this money sits in the ledger"
+            variant="outlined"
+            density="compact"
+            hide-details
+            class="mb-1"
+          />
+          <div class="text-caption text-medium-emphasis mb-3">
+            Postings from this account land here. Suggested from the
+            classification &mdash; change it for a revolving fund or a named
+            bank account.
+          </div>
 
           <label class="field-label">Opening Balance <span class="text-error">*</span></label>
           <v-text-field

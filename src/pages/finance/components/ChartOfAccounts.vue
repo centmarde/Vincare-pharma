@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useChartOfAccounts, headers } from '../composables/useChartOfAccounts'
 import NewAccountDialog from './dialogs/NewAccountDialog.vue'
+import AccountLedgerDialog from './dialogs/AccountLedgerDialog.vue'
 
 const {
   loading,
@@ -20,9 +21,26 @@ const {
   cancelCreate,
   submitCreate,
   init,
+  openAccount,
+  ledger,
+  ledgerLoading,
+  ledgerBalance,
+  subLedger,
+  subLedgerTotal,
+  subLedgerVariance,
+  showAccount,
+  showAccountByCode,
+  closeAccount,
 } = useChartOfAccounts()
 
 const view = ref<'table' | 'cheatsheet'>('cheatsheet')
+
+// v-data-table's row-click hands back (event, { item }). Unpacked here rather
+// than inline in the template: template expressions are parsed as plain JS, so
+// a type annotation on the handler's args is a parse error, not a type error.
+function onRowClick(_event: unknown, row: { item: { code: string } }) {
+  showAccountByCode(row.item.code)
+}
 
 onMounted(init)
 </script>
@@ -94,7 +112,21 @@ onMounted(init)
                   <v-divider />
                   <v-table density="compact">
                     <tbody>
-                      <tr v-for="a in group.items" :key="a.code">
+                      <!-- Focusable and operable by keyboard, not click-only:
+                           a bare <tr> with a handler is unreachable by tab and
+                           ignores Enter/Space. role+tabindex+keydown give it
+                           the same semantics as the table view's rows. -->
+                      <tr
+                        v-for="a in group.items"
+                        :key="a.code"
+                        class="cursor-pointer account-row"
+                        role="button"
+                        tabindex="0"
+                        :aria-label="`View ledger for ${a.code} ${a.name}`"
+                        @click="showAccount(a)"
+                        @keydown.enter.prevent="showAccount(a)"
+                        @keydown.space.prevent="showAccount(a)"
+                      >
                         <td class="font-weight-bold" style="width: 70px">{{ a.code }}</td>
                         <td>
                           {{ a.name }}
@@ -131,6 +163,7 @@ onMounted(init)
             item-value="code"
             no-data-text="No accounts found."
             hover
+            @click:row="onRowClick"
           >
             <template #item.is_contra="{ item }">
               <v-chip v-if="item.is_contra" size="small" variant="tonal" color="warning"
@@ -158,5 +191,26 @@ onMounted(init)
       @submit="submitCreate"
       @cancel="cancelCreate"
     />
+
+    <AccountLedgerDialog
+      :model-value="openAccount !== null"
+      :account="openAccount"
+      :lines="ledger"
+      :balance="ledgerBalance"
+      :loading="ledgerLoading"
+      :sub-ledger="subLedger"
+      :sub-ledger-total="subLedgerTotal"
+      :sub-ledger-variance="subLedgerVariance"
+      @update:model-value="closeAccount"
+    />
   </v-container>
 </template>
+
+<style scoped>
+/* A focusable row needs a visible focus state, or keyboard users can tab
+   through the chart with no idea where they are. */
+.account-row:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: -2px;
+}
+</style>
