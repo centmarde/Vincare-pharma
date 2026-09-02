@@ -8,8 +8,8 @@ export type CarriedProductSource = {
 export type CarriedProductFields = {
   category: string | null
   brand: string | null
-  reorder_level: number | null
-  sku: string | null
+  reorder_level: number | null | undefined
+  sku: string | null | undefined
 }
 
 export function carriedProductFields(
@@ -18,7 +18,7 @@ export function carriedProductFields(
   return {
     category: source?.category ?? null,
     brand: source?.brand ?? null,
-    reorder_level: source?.reorder_level ?? null,
-    sku: source?.sku ?? null,
+    reorder_level: source?.reorder_level,
+    sku: source?.sku,
   }
 }

@@ -675,6 +675,8 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       .map((id, idx) => (id === null ? idx : -1))
       .filter((idx) => idx !== -1)
 
+    const createdProductIds: number[] = []
+
     if (newItemIndexes.length) {
       const productInserts = newItemIndexes.map((idx) => {
         const item = items.value[idx]
@@ -709,6 +711,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
 
       newItemIndexes.forEach((idx, i) => {
         productIdByIndex[idx] = productData[i].id
+        createdProductIds.push(productData[i].id)
       })
     }
 
@@ -726,6 +729,11 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
 
     const rollbackCreatedPRs = async () => {
       for (const pr of createdPRs) await rollbackPR(pr.transactionId)
+      // Every PR from this submission is gone, so any product created for it is
+      // now unreferenced — remove it rather than leave a phantom catalogue row.
+      if (createdProductIds.length) {
+        await supabase.from('products').delete().in('id', createdProductIds)
+      }
     }
 
     for (const [supplierId, indexes] of indexesBySupplier) {
@@ -824,7 +832,9 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         )
       `,
       )
-      .not('requisition_no', 'is', null)
+      // requisition_no is only stamped at PO issuance, so filtering on it alone would
+      // hide every pending/approved PR that hasn't been issued yet.
+      .or('reference_no.ilike.PR%,requisition_no.ilike.PR%')
       .order('created_at', { ascending: false })
 
     if (fetchError) {

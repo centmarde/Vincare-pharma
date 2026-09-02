@@ -49,7 +49,12 @@ async function onDelete(draft: DraftPRType) {
 </script>
 
 <template>
-  <v-dialog :model-value="modelValue" max-width="640" scrollable>
+  <v-dialog
+    :model-value="modelValue"
+    max-width="640"
+    scrollable
+    @update:model-value="emit('update:modelValue', $event)"
+  >
     <v-card rounded="lg">
       <v-card-title class="d-flex align-center pa-4">
         <v-icon icon="mdi-content-save-outline" color="primary" class="mr-2" />

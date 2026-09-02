@@ -180,7 +180,7 @@ export function usePurchaseRequisition() {
     }
 
     const rules: { check: (i: typeof validItems[number]) => boolean; message: string }[] = [
-      { check: i => !i.product_name.trim(), message: 'description' },
+      { check: i => !i.product_name.trim(), message: 'product name' },
       { check: i => !i.supplier_id, message: 'supplier' },
       { check: i => !i.expiry_date, message: 'expiry date' },
       { check: i => i.qty <= 0, message: 'quantity greater than zero' },
@@ -197,6 +197,17 @@ export function usePurchaseRequisition() {
     }
 
     loading.value = true
+
+    // Claimed before anything else so a retry after a failed post-submit delete — or
+    // the same draft resumed in a second tab — can't raise a second set of PRs.
+    if (currentDraftId.value != null) {
+      const claimed = await useDraftPRDataStore().claimManualDraftForSubmit(currentDraftId.value)
+      if (!claimed) {
+        loading.value = false
+        toast.error('This draft was already submitted or is no longer available — reopen it from Saved Drafts.')
+        return { success: false, resolvedReorderIds: [], requisitionNos: [] }
+      }
+    }
 
     const productsStore = useProductsDataStore()
 
@@ -269,6 +280,9 @@ export function usePurchaseRequisition() {
     // low-risk (each item's reorder_request_id is now set, so retrying this
     // same submit won't create duplicates) but worth a follow-up cleanup pass
     // if PR-save failures turn out to be common.
+    if (currentDraftId.value != null) {
+      await useDraftPRDataStore().releaseManualDraftClaim(currentDraftId.value)
+    }
     return { success: false, resolvedReorderIds: [], requisitionNos: [] }
   }
 
@@ -332,8 +346,10 @@ export function usePurchaseRequisition() {
     const draftStore = useDraftPRDataStore()
     const loaded = await draftStore.fetchDraft(draftId)
 
-    // fetchDraft isn't scoped by origin, and a canvass draft's offers have nowhere to go in this form.
-    if (!loaded || loaded.origin !== 'manual') {
+    // fetchDraft isn't scoped by origin or status: a canvass draft's offers have nowhere
+    // to go in this form, and a converted one already raised its PR — reloading it would
+    // let a second Submit raise a duplicate.
+    if (!loaded || loaded.origin !== 'manual' || loaded.status !== 'draft') {
       loading.value = false
       return false
     }

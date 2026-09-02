@@ -623,20 +623,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
    * @returns True if successful, false otherwise
    */
   // silent is for the post-submit cleanup, which already toasts about the same action.
-  async function deleteDraft(
-    draftId: number,
-    options?: { silent?: boolean; origin?: 'manual' | 'canvass' },
-  ) {
-    const draftOrigin =
-      options?.origin ??
-      (
-        await supabase
-          .from('draft_purchase_requisitions')
-          .select('origin')
-          .eq('id', draftId)
-          .maybeSingle()
-      ).data?.origin ?? null
-
+  async function deleteDraft(draftId: number, options?: { silent?: boolean }) {
     const { error: deleteError } = await supabase
       .from('draft_purchase_requisitions')
       .delete()
@@ -646,12 +633,11 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       return false
     }
 
-    const wasManualDraft =
-      draftOrigin === 'manual' || options?.origin === 'manual' || manualDrafts.value.some((d) => d.id === draftId)
-
     drafts.value = drafts.value.filter((d) => d.id !== draftId)
     manualDrafts.value = manualDrafts.value.filter((d) => d.id !== draftId)
-    if (wasManualDraft && manualDraftCount.value > 0) manualDraftCount.value -= 1
+    // Re-derived from the database instead of decremented locally, so the count stays
+    // correct even for a draft whose origin was never loaded client-side.
+    await fetchManualDraftCount()
     if (!options?.silent) toast.success('Draft deleted.')
     return true
   }
@@ -671,6 +657,9 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
 
     const isNewDraft = payload.draftId == null
     let draftId = payload.draftId ?? null
+    // Captured, not deleted, before the insert below — so a failed insert leaves this
+    // draft's previously-saved lines untouched instead of destroying them first.
+    let staleItemIds: number[] = []
 
     if (isNewDraft) {
       const { data: created, error: createError } = await supabase
@@ -693,7 +682,8 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       }
       draftId = created.id
     } else {
-      // Checked before any write: the delete below would otherwise strip a canvass draft's lines.
+      // Checked before any write below — item read, item insert, item cleanup, remarks
+      // update — none of which may ever touch a draft this call doesn't own.
       const { data: existing, error: findError } = await supabase
         .from('draft_purchase_requisitions')
         .select('id')
@@ -712,31 +702,19 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
         return { success: false }
       }
 
-      const { error: updateError } = await supabase
-        .from('draft_purchase_requisitions')
-        .update({ remarks: payload.remarks ?? null, updated_at: new Date().toISOString() })
-        .eq('id', draftId)
-        .eq('origin', 'manual')
-      if (updateError) {
-        handleError(updateError, 'Failed to save draft.')
-        toast.error('Failed to save draft.')
-        loading.value = false
-        return { success: false }
-      }
-
-      // Cleared before the insert below, never after: a failure here writes nothing,
-      // and a failure there leaves the draft empty while the form still holds every
-      // line, so pressing save again fixes it. Inserting first would leave both sets.
-      const { error: clearError } = await supabase
+      // Read only — nothing is written yet, so a failure past this point leaves the
+      // draft exactly as it was before this save was attempted.
+      const { data: existingItems, error: existingItemsError } = await supabase
         .from('draft_pr_items')
-        .delete()
+        .select('id')
         .eq('draft_pr_id', draftId)
-      if (clearError) {
-        handleError(clearError, 'Failed to save draft.')
+      if (existingItemsError) {
+        handleError(existingItemsError, 'Failed to save draft.')
         toast.error('Failed to save draft.')
         loading.value = false
         return { success: false }
       }
+      staleItemIds = (existingItems ?? []).map((item) => item.id)
     }
 
     if (payload.lines.length) {
@@ -756,6 +734,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       )
       if (itemsError) {
         // A brand-new header is removed so the list never shows a draft with no lines.
+        // An existing draft's prior lines were never touched, so there's nothing to restore.
         if (isNewDraft && draftId != null) {
           await supabase.from('draft_purchase_requisitions').delete().eq('id', draftId)
         }
@@ -766,8 +745,45 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       }
     }
 
+    // Only the lines this draft had before the save are removed, matched by id — never a
+    // blanket delete on draft_pr_id, which would also remove what was just inserted above.
+    // Retried once: a duplicate left behind here would go out as a real requisition line
+    // if this draft is later resumed and submitted, so a single transient failure is worth
+    // absorbing before accepting the duplicate.
+    let cleanupFailed = false
+    if (staleItemIds.length) {
+      const deleteStaleItems = () =>
+        supabase.from('draft_pr_items').delete().in('id', staleItemIds)
+      let clearResult = await deleteStaleItems()
+      if (clearResult.error) clearResult = await deleteStaleItems()
+      if (clearResult.error) {
+        cleanupFailed = true
+        console.warn('saveManualDraft: stale line cleanup failed, draft has duplicate lines:', clearResult.error.message)
+      }
+    }
+
+    // Written last, only once the line items are confirmed correct — so a save that
+    // fails above never leaves remarks changed while the old items are still in place.
+    if (!isNewDraft) {
+      const { error: updateError } = await supabase
+        .from('draft_purchase_requisitions')
+        .update({ remarks: payload.remarks ?? null, updated_at: new Date().toISOString() })
+        .eq('id', draftId)
+        .eq('origin', 'manual')
+      if (updateError) {
+        handleError(updateError, 'Failed to save draft.')
+        toast.warning('Items saved, but the notes could not be updated — try saving again.')
+        loading.value = false
+        return { success: true, draftId: draftId as number }
+      }
+    }
+
     if (isNewDraft) manualDraftCount.value += 1
-    toast.success('Draft saved.')
+    if (cleanupFailed) {
+      toast.warning('Draft saved, but its previous lines could not be cleared — reopen and save again to remove the duplicates.')
+    } else {
+      toast.success('Draft saved.')
+    }
     loading.value = false
     return { success: true, draftId: draftId as number }
   }
@@ -778,6 +794,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       .from('draft_purchase_requisitions')
       .select(`*, items:draft_pr_items(${ITEM_SELECT})`)
       .eq('origin', 'manual')
+      .eq('status', 'draft')
       .order('created_at', { ascending: false })
     loading.value = false
     if (fetchError) {
@@ -798,12 +815,37 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       .from('draft_purchase_requisitions')
       .select('id', { count: 'exact', head: true })
       .eq('origin', 'manual')
+      .eq('status', 'draft')
     if (countError) {
       handleError(countError, 'Failed to count drafts.')
       return 0
     }
     manualDraftCount.value = count ?? 0
     return manualDraftCount.value
+  }
+
+  // Claims a manual draft before it's converted, so a retry after a failed post-submit
+  // delete — or the same draft resumed in a second tab — can't raise a second set of PRs.
+  async function claimManualDraftForSubmit(draftId: number): Promise<boolean> {
+    const { data, error: claimError } = await supabase
+      .from('draft_purchase_requisitions')
+      .update({ status: 'converted', updated_at: new Date().toISOString() })
+      .eq('id', draftId)
+      .eq('origin', 'manual')
+      .eq('status', 'draft')
+      .select('id')
+    if (claimError) return false
+    return !!data?.length
+  }
+
+  // Reverts a claim that didn't end in a created requisition, so the draft can be retried.
+  async function releaseManualDraftClaim(draftId: number): Promise<void> {
+    await supabase
+      .from('draft_purchase_requisitions')
+      .update({ status: 'draft', updated_at: new Date().toISOString() })
+      .eq('id', draftId)
+      .eq('origin', 'manual')
+      .eq('status', 'converted')
   }
 
   /**
@@ -1415,6 +1457,8 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     saveManualDraft,
     fetchManualDrafts,
     fetchManualDraftCount,
+    claimManualDraftForSubmit,
+    releaseManualDraftClaim,
     precheckDraft,
     submitDraft,
     createDraftWithSelections,
