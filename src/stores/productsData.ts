@@ -420,6 +420,48 @@ export const useProductsDataStore = defineStore('productsData', () => {
     }
   }
 
+  /**
+   * Queries products directly by product_name (case-insensitive) and returns a
+   * map of lowercase product_name -> sku. Intentionally ignores the (warehouse /
+   * id-scoped) `products` list so the returned SKUs resolve even when the
+   * product isn't in the currently loaded rows.
+   * @param names - the product names to look up
+   * @returns a Map keyed by trimmed, lowercase product_name
+   */
+  async function fetchSkusByProductNames(names: string[]): Promise<Map<string, string>> {
+    const results = new Map<string, string>()
+    const unique = [...new Set(names.map((n) => (n || '').trim()).filter(Boolean))]
+
+    if (!unique.length) return results
+
+    const orFilter = unique
+      .map((name) => `product_name.ilike.${JSON.stringify(name)}`)
+      .join(',')
+
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('product_name, sku')
+        .or(orFilter)
+        .not('sku', 'is', null)
+        .neq('sku', 'null')
+
+      if (error) throw error
+
+      // Map product_name -> sku (last one wins if a name somehow repeats).
+      for (const row of data ?? []) {
+        const key = (row.product_name || '').trim().toLowerCase()
+        const sku = row.sku?.toString().trim() ?? ''
+        if (key && sku) results.set(key, sku)
+      }
+    } catch (err) {
+      handleError(err, 'Failed to fetch product SKUs by product name')
+      console.error('[productsData] Failed to fetch product SKUs by product_name', err)
+    }
+
+    return results
+  }
+
 
   const createProduct = async (productData: CreateProductData) => {
     loading.value = true
@@ -956,6 +998,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     fetchProducts,
     fetchProductById,
     fetchProductPicker,
+    fetchSkusByProductNames,
     createProduct,
     updateProduct,
     deleteProduct,

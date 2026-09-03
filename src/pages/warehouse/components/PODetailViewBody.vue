@@ -4,7 +4,7 @@ import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailMo
 import { formatCurrency, formatDatePO_Written, formatExpiryMonthYear } from '@/utils/helpers'
 import type { PR, PRItem } from '@/stores/purchaseRequisitionData'
 import { useProductsDataStore } from '@/stores/productsData'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
 const props = defineProps<{
   po: PurchaseOrder | null
@@ -17,15 +17,36 @@ const props = defineProps<{
 
 const productsStore = useProductsDataStore()
 
-// Returns the existing SKU from the linked product record (if any) so it can
-// be shown as the placeholder while editing the SKU input.
-function productSkuFor(item: PRItem): string {
-  if (item.product_id == null) return ''
-  const product = productsStore.products.find((p) => p.id === item.product_id)
-  const sku = product?.sku?.toString().trim() ?? ''
-  console.log('[PODetailViewBody] Retrieved SKU for product', item.product_id, '=>', sku)
-  return sku
+/**
+ * Looks up the SKU for each item directly by product_name (via the products
+ * store) and fills each item's sku input with the matched product SKU — only
+ * if the item doesn't already carry its own SKU, so the user's value/override
+ * is kept.
+ */
+async function loadSkuValues() {
+  const items = props.transactionItems
+  const names = [...new Set(items.map((i) => (i.item_description || '').trim()).filter(Boolean))]
+
+  if (!names.length) return
+
+  const skuByName = await productsStore.fetchSkusByProductNames(names)
+
+  for (const item of items) {
+    const key = (item.item_description || '').trim().toLowerCase()
+    const matchedSku = key ? skuByName.get(key) ?? '' : ''
+    // Populate the input directly, keeping any SKU the user typed/saved first.
+    if (matchedSku && !item.sku?.toString().trim()) {
+      item.sku = matchedSku
+    }
+  }
 }
+
+// Reload whenever the item rows change (e.g. the dialog opens with the PO/PR).
+watch(
+  () => props.transactionItems,
+  () => loadSkuValues(),
+  { immediate: true, deep: true },
+)
 
 // Track which expiry month picker menu is currently open (keyed by item row).
 const expiryMenuOpen = ref<Record<number, boolean>>({})
@@ -158,7 +179,7 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
               density="compact"
               variant="outlined"
               hide-details
-              :placeholder="productSkuFor(item) || 'Enter SKU'"
+              placeholder="Enter SKU"
               style="width: 120px"
             />
             <span v-else>{{ item.sku ?? '—' }}</span>
@@ -263,7 +284,7 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
                   density="compact"
                   variant="outlined"
                   hide-details
-                  :placeholder="productSkuFor(item) || 'SKU'"
+                  placeholder="SKU"
                   style="width: 100%"
                 />
               </div>
