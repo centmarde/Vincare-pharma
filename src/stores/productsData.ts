@@ -31,6 +31,7 @@ export type ProductType = {
   status: string | null
   brand: string | null
   remarks: string | null
+  is_reorder: boolean | null
   // Joined supplier data (via FK)
   suppliers: SupplierType | null
 }
@@ -94,6 +95,8 @@ export type ReceiveStockUpdate ={
   sku: string | null
   actual_count_stock_in: number
   expiry_date?: string | null
+  batch_no?: string | null
+  cost_price?: number | null
 }
 
 export type StockStatusBucket =
@@ -321,6 +324,10 @@ export const useProductsDataStore = defineStore('productsData', () => {
 
       q = q.not('sku', 'is', null).neq('sku', 'null')
 
+      // Hide products that are flagged for reorder AND sitting at zero stock —
+      // keep showing rows where is_reorder isn't true OR current_stock > 0.
+      q = q.or('is_reorder.neq.true,current_stock.gt.0')
+
       if (category) q = q.eq('category', category)
       if (typeof supplier_id === 'number') q = q.eq('supplier_id', supplier_id)
       if (search && search.trim()) {
@@ -462,6 +469,38 @@ export const useProductsDataStore = defineStore('productsData', () => {
     return results
   }
 
+  /**
+   * Sets the `is_reorder` flag for the given products and syncs the local
+   * `products` list / `currentProduct` to match.
+   * @param productIds - products to update
+   * @param isReorder - the flag value to set
+   */
+  async function setProductsReorderFlag(productIds: number[], isReorder: boolean): Promise<boolean> {
+    const ids = [...new Set(productIds)].filter((id): id is number => id != null)
+    if (!ids.length) return true
+
+    try {
+      const { error } = await supabase
+        .from('products')
+        .update({ is_reorder: isReorder })
+        .in('id', ids)
+
+      if (error) throw error
+
+      // Sync local state so the UI reflects the flag without a refetch.
+      for (const id of ids) {
+        const localIndex = products.value.findIndex((p) => p.id === id)
+        if (localIndex !== -1) products.value[localIndex].is_reorder = isReorder
+        if (currentProduct.value?.id === id) currentProduct.value.is_reorder = isReorder
+      }
+      return true
+    } catch (err) {
+      handleError(err, 'Failed to update product reorder flag')
+      console.error('[productsData] Failed to set is_reorder flag', err)
+      return false
+    }
+  }
+
 
   const createProduct = async (productData: CreateProductData) => {
     loading.value = true
@@ -558,6 +597,19 @@ export const useProductsDataStore = defineStore('productsData', () => {
       toast.error('Failed to save reorder item.')
       loading.value = false
       return { success: false }
+    }
+
+    // Flag the product for reorder on the products table.
+    await supabase
+      .from('products')
+      .update({ is_reorder: true })
+      .eq('id', payload.product_id)
+
+    // Keep the local products list in sync with the flag.
+    const localIndex = products.value.findIndex((p) => p.id === payload.product_id)
+    if (localIndex !== -1) products.value[localIndex].is_reorder = true
+    if (currentProduct.value?.id === payload.product_id) {
+      currentProduct.value.is_reorder = true
     }
 
 
@@ -885,7 +937,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     clearError()
 
     try {
-      for (const { transaction_item_id, product_id, sku, actual_count_stock_in, expiry_date } of updates) {
+      for (const { transaction_item_id, product_id, sku, actual_count_stock_in, expiry_date, batch_no, cost_price } of updates) {
         const { data: existingItem, error: existingError } = await supabase
           .from('transaction_items')
           .select('actual_count_stock_in')
@@ -903,10 +955,12 @@ export const useProductsDataStore = defineStore('productsData', () => {
           const appliedExpiryChanged = expiry_date != null && expiry_date !== applied.expiry_date
           if (appliedExpiryChanged) await assertExpiryEditable(applied, transaction_item_id)
 
-          if (sku || appliedExpiryChanged) {
+          if (sku || appliedExpiryChanged || batch_no || cost_price != null) {
             const result = await updateProduct(product_id, {
               ...(sku ? { sku } : {}),
               ...(appliedExpiryChanged ? { expiry_date } : {}),
+              ...(batch_no ? { batch_no } : {}),
+              ...(cost_price != null ? { cost_price } : {}),
             })
             if (!result) throw new Error(`Failed to update product ID ${product_id}`)
           }
@@ -930,6 +984,8 @@ export const useProductsDataStore = defineStore('productsData', () => {
           current_stock: newStock,
           ...(sku ? { sku } : {}),
           ...(expiryChanged ? { expiry_date } : {}),
+          ...(batch_no ? { batch_no } : {}),
+          ...(cost_price != null ? { cost_price } : {}),
         })
         if (!result) throw new Error(`Failed to update product ID ${product_id}`)
 
@@ -999,6 +1055,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     fetchProductById,
     fetchProductPicker,
     fetchSkusByProductNames,
+    setProductsReorderFlag,
     createProduct,
     updateProduct,
     deleteProduct,
