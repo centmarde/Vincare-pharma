@@ -20,7 +20,7 @@ type PRFormItem = {
   reorder_reason?: 'reorder_outofstock' | 'reorder_lowstock' | 'reorder_expiring' | 'reorder_expired' | null // NEW — set only when no reorder row exists yet and one should be created on successful submit
 }
 
-type SubmitResult = { success: boolean; resolvedReorderIds: number[] }
+type SubmitResult = { success: boolean; resolvedReorderIds: number[]; productIds: number[] }
 
 export type ReorderPrefillItem = {
   reorder_request_id?: number | null   // CHANGED — optional now. Only set when the row already exists.
@@ -129,7 +129,7 @@ export function usePurchaseRequisition() {
     const validItems = items.value.filter(i => i.item_description.trim())
     if (!validItems.length) {
       toast.warning('Please add at least one item.')
-      return { success: false, resolvedReorderIds: [] }
+      return { success: false, resolvedReorderIds: [], productIds: [] }
     }
 
     const rules: { check: (i: typeof validItems[number]) => boolean; message: string }[] = [
@@ -146,7 +146,7 @@ export function usePurchaseRequisition() {
 
     if (failedMessages.length) {
       toast.info(`Please provide ${failedMessages.join(', ')} for each item.`)
-      return { success: false, resolvedReorderIds: [] }
+      return { success: false, resolvedReorderIds: [], productIds: [] }
     }
 
     loading.value = true
@@ -184,6 +184,13 @@ export function usePurchaseRequisition() {
       .map(i => i.reorder_request_id)
       .filter((id): id is number => id != null)
 
+    // The actual products being requisitioned — flagged for reorder once the PR
+    // is accepted, so the warehouse/reorder views keep showing them until the
+    // order is delivered.
+    const productIds = validItems
+      .map(i => i.product_id)
+      .filter((id): id is number => id != null)
+
     const result = await prStore.savePurchaseRequisition()
 
     loading.value = false
@@ -195,9 +202,14 @@ export function usePurchaseRequisition() {
         'purchase_requisition',
         validItems.length,
       )
+
+      // Submitted products are now being re-ordered — persist is_reorder = true
+      // and keep the local products list / currentProduct in sync.
+      await productsStore.setProductsReorderFlag(productIds, true)
+
       draft.clear()
       reset()
-      return { success: true, resolvedReorderIds }
+      return { success: true, resolvedReorderIds, productIds }
     }
 
     // NOTE: if savePurchaseRequisition fails here, any reorder rows created
@@ -205,7 +217,7 @@ export function usePurchaseRequisition() {
     // low-risk (each item's reorder_request_id is now set, so retrying this
     // same submit won't create duplicates) but worth a follow-up cleanup pass
     // if PR-save failures turn out to be common.
-    return { success: false, resolvedReorderIds: [] }
+    return { success: false, resolvedReorderIds: [], productIds: [] }
   }
 
   // ─── Reset ────────────────────────────────────────────────────────

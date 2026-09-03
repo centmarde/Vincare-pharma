@@ -4,7 +4,7 @@ import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailMo
 import { formatCurrency, formatDatePO_Written, formatExpiryMonthYear } from '@/utils/helpers'
 import type { PR, PRItem } from '@/stores/purchaseRequisitionData'
 import { useProductsDataStore } from '@/stores/productsData'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
 const props = defineProps<{
   po: PurchaseOrder | null
@@ -17,15 +17,36 @@ const props = defineProps<{
 
 const productsStore = useProductsDataStore()
 
-// Returns the existing SKU from the linked product record (if any) so it can
-// be shown as the placeholder while editing the SKU input.
-function productSkuFor(item: PRItem): string {
-  if (item.product_id == null) return ''
-  const product = productsStore.products.find((p) => p.id === item.product_id)
-  const sku = product?.sku?.toString().trim() ?? ''
-  console.log('[PODetailViewBody] Retrieved SKU for product', item.product_id, '=>', sku)
-  return sku
+/**
+ * Looks up the SKU for each item directly by product_name (via the products
+ * store) and fills each item's sku input with the matched product SKU — only
+ * if the item doesn't already carry its own SKU, so the user's value/override
+ * is kept.
+ */
+async function loadSkuValues() {
+  const items = props.transactionItems
+  const names = [...new Set(items.map((i) => (i.item_description || '').trim()).filter(Boolean))]
+
+  if (!names.length) return
+
+  const skuByName = await productsStore.fetchSkusByProductNames(names)
+
+  for (const item of items) {
+    const key = (item.item_description || '').trim().toLowerCase()
+    const matchedSku = key ? skuByName.get(key) ?? '' : ''
+    // Populate the input directly, keeping any SKU the user typed/saved first.
+    if (matchedSku && !item.sku?.toString().trim()) {
+      item.sku = matchedSku
+    }
+  }
 }
+
+// Reload whenever the item rows change (e.g. the dialog opens with the PO/PR).
+watch(
+  () => props.transactionItems,
+  () => loadSkuValues(),
+  { immediate: true, deep: true },
+)
 
 // Track which expiry month picker menu is currently open (keyed by item row).
 const expiryMenuOpen = ref<Record<number, boolean>>({})
@@ -121,13 +142,14 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
           <th class="text-white text-right">TOTAL</th>
           <th class="text-white text-center" style="width: 130px">ACTUAL COUNT</th>
           <th class="text-white text-center" style="width: 130px">SKU</th>
+          <th class="text-white text-center" style="width: 130px">BATCH NO</th>
           <th class="text-white text-center" style="width: 150px">EXPIRY</th>
         </tr>
       </thead>
 
       <tbody>
         <tr v-if="transactionItems.length === 0">
-          <td colspan="7" class="text-center pa-4">No items found.</td>
+          <td colspan="8" class="text-center pa-4">No items found.</td>
         </tr>
 
         <tr v-for="(item, index) in transactionItems" :key="item.id">
@@ -158,10 +180,22 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
               density="compact"
               variant="outlined"
               hide-details
-              :placeholder="productSkuFor(item) || 'Enter SKU'"
+              placeholder="Enter SKU"
               style="width: 120px"
             />
             <span v-else>{{ item.sku ?? '—' }}</span>
+          </td>
+          <td class="text-center" style="width: 130px">
+            <v-text-field
+              v-if="skuEditMode"
+              v-model="item.batch_no"
+              density="compact"
+              variant="outlined"
+              hide-details
+              placeholder="Enter batch no"
+              style="width: 120px"
+            />
+            <span v-else>{{ item.batch_no ?? '—' }}</span>
           </td>
           <td class="text-center" style="width: 150px">
             <v-menu
@@ -195,13 +229,13 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
         </tr>
 
         <tr v-for="n in effectiveEmptyRows" :key="`empty-${n}`">
-          <td colspan="7">&nbsp;</td>
+          <td colspan="8">&nbsp;</td>
         </tr>
       </tbody>
 
       <tfoot>
         <tr class="bg-grey-lighten-3">
-          <td colspan="6" class="text-right font-weight-bold">TOTAL</td>
+          <td colspan="7" class="text-right font-weight-bold">TOTAL</td>
           <td class="text-center font-weight-bold">
             {{ formatCurrency(po?.total_amount ?? 0) }}
           </td>
@@ -263,38 +297,51 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
                   density="compact"
                   variant="outlined"
                   hide-details
-                  :placeholder="productSkuFor(item) || 'SKU'"
+                  placeholder="SKU"
                   style="width: 100%"
                 />
               </div>
             </div>
-            <div class="mt-3">
-              <div class="text-caption text-medium-emphasis mb-1">Expiry</div>
-              <v-menu
-                :model-value="expiryMenuOpen[index] ?? false"
-                @update:model-value="(val) => (expiryMenuOpen[index] = val)"
-                :close-on-content-click="false"
-                location="bottom"
-              >
-                <template #activator="{ props: menuProps }">
-                  <v-text-field
-                    v-bind="menuProps"
-                    :model-value="expiryFieldText(item)"
-                    placeholder="MM/YYYY"
-                    density="compact"
-                    variant="outlined"
-                    hide-details
-                    readonly
-                    prepend-inner-icon="mdi-calendar-month-outline"
-                    style="width: 100%"
-                  />
-                </template>
-                <v-date-picker
-                  view-mode="months"
-                  @update:month="(m) => onExpiryMonthSelect(item, index, m)"
-                  @update:year="(y) => onExpiryYearSelect(item, index, y)"
+            <div class="mt-3 d-flex ga-3">
+              <div style="flex: 1; min-width: 0;">
+                <div class="text-caption text-medium-emphasis mb-1">Batch No</div>
+                <v-text-field
+                  v-model="item.batch_no"
+                  density="compact"
+                  variant="outlined"
+                  hide-details
+                  placeholder="Batch no"
+                  style="width: 100%"
                 />
-              </v-menu>
+              </div>
+              <div style="flex: 1; min-width: 0;">
+                <div class="text-caption text-medium-emphasis mb-1">Expiry</div>
+                <v-menu
+                  :model-value="expiryMenuOpen[index] ?? false"
+                  @update:model-value="(val) => (expiryMenuOpen[index] = val)"
+                  :close-on-content-click="false"
+                  location="bottom"
+                >
+                  <template #activator="{ props: menuProps }">
+                    <v-text-field
+                      v-bind="menuProps"
+                      :model-value="expiryFieldText(item)"
+                      placeholder="MM/YYYY"
+                      density="compact"
+                      variant="outlined"
+                      hide-details
+                      readonly
+                      prepend-inner-icon="mdi-calendar-month-outline"
+                      style="width: 100%"
+                    />
+                  </template>
+                  <v-date-picker
+                    view-mode="months"
+                    @update:month="(m) => onExpiryMonthSelect(item, index, m)"
+                    @update:year="(y) => onExpiryYearSelect(item, index, y)"
+                  />
+                </v-menu>
+              </div>
             </div>
           </div>
           <!-- Read-only display -->
@@ -306,6 +353,10 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
             <div>
               <span class="text-medium-emphasis">SKU: </span>
               <span class="font-weight-medium">{{ item.sku ?? '—' }}</span>
+            </div>
+            <div>
+              <span class="text-medium-emphasis">Batch: </span>
+              <span class="font-weight-medium">{{ item.batch_no ?? '—' }}</span>
             </div>
             <div>
               <span class="text-medium-emphasis">Expiry: </span>

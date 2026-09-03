@@ -60,11 +60,11 @@ defineExpose({ autoSaveDraft, hasSelections })
       One Purchase Requisition is raised per winning supplier, or save this as a Draft PR to finish later.
     </div>
 
-    <div class="table-scroll mb-3">
+    <div v-if="!mobile" class="table-scroll mb-3">
     <v-table density="comfortable">
       <thead>
         <tr>
-          <th class="text-left">Product</th><th class="text-right" style="width:90px">Shortfall</th>
+          <th class="text-left" style="max-width:220px">Product</th><th class="text-right" style="width:90px">Shortfall</th>
           <th class="text-right" style="width:110px">Order Qty</th><th class="text-left">Supplier</th>
           <th class="text-right">Price/Unit</th><th class="text-left">Expiry</th>
           <th class="text-right">Line Total</th><th style="width:110px"></th>
@@ -72,7 +72,7 @@ defineExpose({ autoSaveDraft, hasSelections })
       </thead>
       <tbody>
         <tr v-for="(row, idx) in rows" :key="row.product_id">
-          <td>{{ row.product_name }}</td>
+          <td style="max-width:220px; white-space:normal; overflow-wrap:anywhere">{{ row.product_name }}</td>
           <td class="text-right">{{ row.shortfall_qty }}</td>
           <td>
             <v-text-field v-model.number="row.order_qty" type="number" :min="row.shortfall_qty"
@@ -87,6 +87,35 @@ defineExpose({ autoSaveDraft, hasSelections })
         </tr>
       </tbody>
     </v-table>
+    </div>
+
+    <div v-else class="mb-3">
+      <v-card v-for="(row, idx) in rows" :key="row.product_id" class="mb-3" variant="outlined" rounded="lg">
+        <v-card-text class="pa-3">
+          <div class="d-flex justify-space-between align-start mb-2" style="gap:8px">
+            <div style="min-width:0">
+              <div class="text-body-2 font-weight-medium" style="overflow-wrap:anywhere">{{ row.product_name }}</div>              <div class="text-caption text-medium-emphasis">Shortfall: {{ row.shortfall_qty }}</div>
+            </div>
+            <v-btn size="small" variant="tonal" color="primary" class="text-none" @click="openCompare(idx)">Compare</v-btn>
+          </div>
+          <v-divider class="mb-2" />
+          <div class="d-flex align-center mb-2" style="gap:6px">
+            <v-text-field v-model.number="row.order_qty" type="number" label="Order Qty" :min="row.shortfall_qty"
+              density="compact" variant="outlined" hide-details style="max-width:140px" @blur="validateQty(idx)" />
+            <v-chip v-if="bufferQty(row) > 0" color="info" size="x-small" label>+{{ bufferQty(row) }}</v-chip>
+          </div>
+          <div class="d-flex flex-wrap ga-3 text-caption">
+            <div>
+              <span class="text-medium-emphasis">Supplier: </span>
+              <span v-if="row.selected_offer">{{ row.selected_offer.supplier_name }}</span>
+              <span v-else class="text-medium-emphasis">Not selected</span>
+            </div>
+            <div><span class="text-medium-emphasis">Price/Unit: </span>{{ row.selected_offer ? formatCurrency(row.selected_offer.cost_price_per_unit) : '—' }}</div>
+            <div><span class="text-medium-emphasis">Expiry: </span>{{ row.selected_offer?.expiry_date ?? '—' }}</div>
+            <div><span class="text-medium-emphasis">Total: </span><span class="font-weight-medium">{{ row.selected_offer ? formatCurrency(lineTotal(row)) : '—' }}</span></div>
+          </div>
+        </v-card-text>
+      </v-card>
     </div>
 
     <v-card v-if="prPreview.length" variant="tonal" color="success" rounded="lg" class="mb-3">
