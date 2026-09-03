@@ -90,7 +90,7 @@ export function usePosCheckout(pos: ReturnType<typeof usePos>) {
 
   async function confirmPayment() {
     if (!canComplete.value) return
-    if (!pos.selectedOutletId.value) {
+    if (!pos.selectedWarehouseId.value) {
       toast.warning('Select a branch first.')
       return
     }
@@ -107,7 +107,7 @@ export function usePosCheckout(pos: ReturnType<typeof usePos>) {
     }))
 
     const result = await salesStore.createSale({
-      outletId: pos.selectedOutletId.value,
+      warehouseId: pos.selectedWarehouseId.value,
       lines: pos.cart.value.map(l => ({
         product_id: l.product_id,
         quantity:   l.quantity,

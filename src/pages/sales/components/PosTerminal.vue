@@ -12,9 +12,9 @@ const pos = usePos()
 const {
   search, cart, loading,
   isSearching, resultCount, submitSearch, clearSearch,
-  selectedOutletId, posOutletOptions,
+  selectedWarehouseId, posWarehouseOptions,
   filteredProducts, subtotal, total, itemCount, isEmpty,
-  addToCart, setQty, removeFromCart, clearCart, init, setOutlet,
+  addToCart, setQty, removeFromCart, clearCart, init, setWarehouse,
 } = pos
 
 const checkout = usePosCheckout(pos)
@@ -38,8 +38,8 @@ onMounted(init)
             <span class="text-h6 font-weight-bold">POS</span>
             <div class="d-flex align-center flex-wrap ga-3" :class="mobile ? 'w-100' : ''">
               <v-select
-                :model-value="selectedOutletId"
-                :items="posOutletOptions"
+                :model-value="selectedWarehouseId"
+                :items="posWarehouseOptions"
                 item-title="title"
                 item-value="value"
                 label="Branch"
@@ -47,7 +47,7 @@ onMounted(init)
                 density="compact"
                 hide-details
                 :style="mobile ? 'width: 100%' : 'min-width: 200px'"
-                @update:model-value="setOutlet"
+                @update:model-value="setWarehouse"
               />
               <!-- Enter (or the button) adds a single exact match straight to
                    the cart, so a barcode scanner works and the counter saves a

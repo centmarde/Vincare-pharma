@@ -81,7 +81,7 @@ export function useSalesHistory() {
     if (!authStore.users.length) await authStore.getAllUsers()
     if (!outlets.value.length) await outletsStore.fetchOutlets()
     await salesStore.fetchSales({
-      outletId: filterOutletId.value ?? undefined,
+      warehouseId: filterOutletId.value ?? undefined,
       dateFrom: dateFrom.value || undefined,
       dateTo: dateTo.value ? `${dateTo.value}T23:59:59` : undefined,
     })

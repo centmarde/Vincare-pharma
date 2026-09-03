@@ -12,9 +12,9 @@ const {
   search,
   filterStatus,
   statusOptions,
-  selectedOutletId,
-  outletOptions,
-  setOutlet,
+  selectedWarehouseId,
+  warehouseOptions,
+  setWarehouse,
   filteredRows,
   totalSkus,
   totalValue,
@@ -98,8 +98,8 @@ const statusMeta = {
                 <span class="text-h6 font-weight-bold">Branch Inventory</span>
                 <div class="d-flex align-center flex-wrap ga-3">
                   <v-select
-                    :model-value="selectedOutletId"
-                    :items="outletOptions"
+                    :model-value="selectedWarehouseId"
+                    :items="warehouseOptions"
                     item-title="title"
                     item-value="value"
                     label="Branch"
@@ -107,7 +107,7 @@ const statusMeta = {
                     density="compact"
                     hide-details
                     style="min-width: 200px"
-                    @update:model-value="setOutlet"
+                    @update:model-value="setWarehouse"
                   />
                   <v-text-field
                     v-model="search"
@@ -202,11 +202,11 @@ const statusMeta = {
       :search="search"
       :filter-status="filterStatus"
       :status-options="statusOptions"
-      :selected-outlet-id="selectedOutletId"
-      :outlet-options="outletOptions"
+      :selected-warehouse-id="selectedWarehouseId"
+      :warehouse-options="warehouseOptions"
       @update:search="search = $event"
       @update:filter-status="onFilterStatus"
-      @set-outlet="setOutlet"
+      @set-warehouse="setWarehouse"
     />
   </v-container>
 </template>
