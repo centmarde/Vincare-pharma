@@ -198,6 +198,8 @@ export const useSalesDataStore = defineStore('salesData', () => {
 
   const createSale = async (payload: {
     warehouseId: number
+    paymentMethod?: string
+    paymentReference?: string | null
     lines: SaleLineInput[]
     amountTendered: number
     customer?: { name?: string | null; address?: string | null; mobile?: string | null }
@@ -205,7 +207,7 @@ export const useSalesDataStore = defineStore('salesData', () => {
     loading.value = true
     clearError()
 
-    const { warehouseId, lines, amountTendered, customer } = payload
+    const { warehouseId, lines, amountTendered, customer, paymentMethod = 'cash', paymentReference = null } = payload
 
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) {
@@ -322,6 +324,11 @@ export const useSalesDataStore = defineStore('salesData', () => {
           transaction_type: 'sale',
           status: 'completed',
           warehouse_id: warehouseId,
+          // The payment's own trace (GCash ref, cheque no., transfer ref).
+          // pos_sale_details has no reference column and `remarks` is unused by
+          // POS, so it lands here rather than forcing a schema change. A
+          // dedicated column would be better if this ever needs querying.
+          remarks: paymentReference ? `${paymentMethod.toUpperCase()} ref: ${paymentReference}` : null,
           total_amount: total,
           customer_id: customerId,
           created_by: user.id,
@@ -340,7 +347,7 @@ export const useSalesDataStore = defineStore('salesData', () => {
     const changeDue = amountTendered - total
     const { error: detailsError } = await supabase.from('pos_sale_details').insert({
       transaction_id: created.id,
-      payment_method: 'cash',
+      payment_method: paymentMethod,
       subtotal,
       amount_tendered: amountTendered,
       change_due: changeDue,

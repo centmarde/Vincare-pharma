@@ -244,10 +244,17 @@ export const useCustomersDataStore = defineStore('customersData', () => {
    * Server-side and capped — there are ~5.3k customers, far too many to load
    * into an autocomplete.
    */
-  async function searchCustomers(term: string, limit = 50) {
+  /**
+   * Type-ahead search. `department` scopes it to one module's customers — POS
+   * checkout suggests the walk-ins and drugstore accounts it created itself
+   * (department='pos'), not the whole 5,000-row book shared with In-House and
+   * Ethical.
+   */
+  async function searchCustomers(term: string, limit = 50, department?: string) {
     clearError()
     try {
       let q = supabase.from('customers').select('*').eq('is_active', true)
+      if (department) q = q.eq('department', department)
       const s = term.trim().replace(/[,()]/g, '')
       if (s) {
         q = q.or(`name.ilike.%${s}%,contact_person.ilike.%${s}%,contact_no.ilike.%${s}%`)

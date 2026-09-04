@@ -22,6 +22,8 @@ const {
   loading: saleLoading,
   showPayment, showReceipt, amountTendered, changeDue, canComplete,
   customerName, customerAddress, customerMobile,
+  paymentMethod, paymentReference,
+  customerSuggestions, customerSearching, searchCustomers, applyCustomer,
   lastReceipt, openPayment, confirmPayment,
 } = checkout
 
@@ -31,12 +33,15 @@ onMounted(init)
 <template>
   <v-container fluid class="pa-2 fill-height align-start">
     <v-row>
-      <!-- ── Product picker ─────────────────────────────────────── -->
+      <!-- ── Tile: branch + search ──────────────────────────────
+           Lifted out of the product card's header into its own tile: the
+           controls that decide WHAT you are looking at read as one unit,
+           separate from the results. -->
       <v-col cols="12" lg="7" class="pa-2">
-        <v-card rounded="lg" elevation="1">
-          <v-card-title class="d-flex justify-space-between align-center pa-4 flex-wrap ga-3">
+        <v-card rounded="lg" elevation="1" class="mb-2">
+          <v-card-text class="pa-3 pa-sm-4 d-flex justify-space-between align-center flex-wrap ga-2">
             <span class="text-h6 font-weight-bold">POS</span>
-            <div class="d-flex align-center flex-wrap ga-3" :class="mobile ? 'w-100' : ''">
+            <div class="d-flex align-center flex-wrap ga-2" :class="mobile ? 'w-100' : ''">
               <v-select
                 :model-value="selectedWarehouseId"
                 :items="posWarehouseOptions"
@@ -76,10 +81,15 @@ onMounted(init)
                 Search
               </v-btn>
             </div>
-          </v-card-title>
-          <v-divider />
+          </v-card-text>
+        </v-card>
 
-          <v-card-text class="pa-3" :style="mobile ? 'max-height: 50vh; overflow-y: auto' : 'max-height: 70vh; overflow-y: auto'">
+        <!-- ── Tile: products ─────────────────────────────────────
+             Uniform card sizes on purpose. A till is scanned for a target, so
+             varied tile sizes would slow the cashier down and give every
+             product a different hit area. The BENTO is in the regions. -->
+        <v-card rounded="lg" elevation="1">
+          <v-card-text class="pa-3" :style="mobile ? 'max-height: 50vh; overflow-y: auto' : 'max-height: 62vh; overflow-y: auto'">
             <div v-if="loading" class="text-center pa-6 text-medium-emphasis">Loading stock…</div>
 
             <template v-else>
@@ -202,18 +212,30 @@ onMounted(init)
             </div>
           </v-card-text>
 
-          <v-divider />
+        </v-card>
 
-          <v-card-text class="pa-4">
+        <!-- ── Tile: totals ───────────────────────────────────────
+             Its own tile rather than a footer of the cart: the amount owed is
+             what the cashier reads aloud, and it should not scroll away with
+             a long basket. -->
+        <v-card rounded="lg" elevation="1" class="mt-2">
+          <v-card-text class="pa-4 pa-sm-5">
             <div class="d-flex justify-space-between text-body-2 text-medium-emphasis mb-1">
               <span>Items</span><span>{{ itemCount }}</span>
             </div>
-            <div class="d-flex justify-space-between text-h6 font-weight-bold">
+            <div class="d-flex justify-space-between text-body-2 text-medium-emphasis mb-2">
+              <span>Subtotal</span><span>{{ formatCurrency(subtotal) }}</span>
+            </div>
+            <v-divider class="mb-2" />
+            <div class="d-flex justify-space-between text-h5 font-weight-bold">
               <span>Total</span><span>{{ formatCurrency(total) }}</span>
             </div>
           </v-card-text>
+        </v-card>
 
-          <v-card-actions class="pa-4 pt-0">
+        <!-- ── Tile: charge ──────────────────────────────────────── -->
+        <v-card rounded="lg" elevation="1" class="mt-2">
+          <v-card-text class="pa-3 pa-sm-4">
             <v-btn
               color="success"
               class="text-none font-weight-bold"
@@ -225,7 +247,7 @@ onMounted(init)
             >
               Charge {{ formatCurrency(total) }}
             </v-btn>
-          </v-card-actions>
+          </v-card-text>
         </v-card>
       </v-col>
     </v-row>
@@ -240,6 +262,14 @@ onMounted(init)
       :customer-name="customerName"
       :customer-address="customerAddress"
       :customer-mobile="customerMobile"
+      :payment-method="paymentMethod"
+      :payment-reference="paymentReference"
+      :customer-suggestions="customerSuggestions"
+      :customer-searching="customerSearching"
+      @search-customer="searchCustomers"
+      @pick-customer="applyCustomer"
+      @update:payment-method="paymentMethod = $event"
+      @update:payment-reference="paymentReference = $event"
       @update:tendered="amountTendered = $event"
       @update:customer-name="customerName = $event"
       @update:customer-address="customerAddress = $event"
