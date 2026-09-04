@@ -140,8 +140,8 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
           <th class="text-white">DESCRIPTION</th>
           <th class="text-white text-right">UNIT PRICE</th>
           <th class="text-white text-right">TOTAL</th>
-          <th class="text-white text-center" style="width: 130px">ACTUAL COUNT</th>
           <th class="text-white text-center" style="width: 130px">SKU</th>
+          <th class="text-white text-center" style="width: 130px">ACTUAL COUNT</th>
           <th class="text-white text-center" style="width: 130px">BATCH NO</th>
           <th class="text-white text-center" style="width: 150px">EXPIRY</th>
         </tr>
@@ -160,6 +160,18 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
             {{ formatCurrency((item.qty ?? 0) * (item.cost_per_unit ?? 0)) }}
           </td>
           <td class="text-center" style="width: 130px">
+            <v-chip
+              v-if="skuEditMode"
+              :color="item.sku ? 'green' : 'error'"
+              variant="tonal"
+              size="small"
+              label
+            >
+              {{ item.sku || 'No SKU' }}
+            </v-chip>
+            <span v-else>{{ item.sku ?? '—' }}</span>
+          </td>
+          <td class="text-center" style="width: 130px">
             <v-text-field
               v-if="skuEditMode"
               v-model.number="item.actual_count_stock_in"
@@ -172,18 +184,6 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
               style="width: 120px"
             />
             <span v-else>{{ item.actual_count_stock_in ?? '—' }}</span>
-          </td>
-          <td class="text-center" style="width: 130px">
-            <v-text-field
-              v-if="skuEditMode"
-              v-model="item.sku"
-              density="compact"
-              variant="outlined"
-              hide-details
-              placeholder="Enter SKU"
-              style="width: 120px"
-            />
-            <span v-else>{{ item.sku ?? '—' }}</span>
           </td>
           <td class="text-center" style="width: 130px">
             <v-text-field
@@ -263,13 +263,13 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
           <v-divider class="mb-2" />
 
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
-            <div class="flex-1 pa-2 rounded-lg bg-grey-lighten-4">
-              <div class="text-caption text-medium-emphasis">Price</div>
-              <div class="text-caption font-weight-medium">{{ formatCurrency(item.cost_per_unit ?? 0) }}</div>
+            <div class="pa-2 rounded-lg bg-surface-variant">
+              <div class="text-caption">Price</div>
+              <div class="text-body-2 font-weight-bold">{{ formatCurrency(item.cost_per_unit ?? 0) }}</div>
             </div>
-            <div class="flex-1 pa-2 rounded-lg bg-grey-lighten-4">
-              <div class="text-caption text-medium-emphasis">Total</div>
-              <div class="text-caption font-weight-medium">
+            <div class="pa-2 rounded-lg bg-surface-variant">
+              <div class="text-caption">Total</div>
+              <div class="text-body-2 font-weight-bold">
                 {{ formatCurrency((item.qty ?? 0) * (item.cost_per_unit ?? 0)) }}
               </div>
             </div>
@@ -291,15 +291,17 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
                 />
               </div>
               <div style="flex: 1; min-width: 0;">
-                <div class="text-caption text-medium-emphasis mb-1">SKU</div>
-                <v-text-field
-                  v-model="item.sku"
-                  density="compact"
-                  variant="outlined"
-                  hide-details
-                  placeholder="SKU"
-                  style="width: 100%"
-                />
+                <div class="text-caption text-medium-emphasis mb-1 text-center">SKU</div>
+                <div class="d-flex align-center justify-center" style="min-height: 40px;">
+                  <v-chip
+                    :color="item.sku ? 'green' : 'error'"
+                    variant="tonal"
+                    size="small"
+                    label
+                  >
+                    {{ item.sku || 'No SKU' }}
+                  </v-chip>
+                </div>
               </div>
             </div>
             <div class="mt-3 d-flex ga-3">
@@ -365,7 +367,7 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
           </div>
         </v-card-text>
       </v-card>
-      <v-card variant="outlined" rounded="lg" class="bg-grey-lighten-3">
+      <v-card variant="outlined" rounded="lg" class="bg-surface-variant">
         <v-card-text class="pa-3 d-flex justify-space-between text-caption font-weight-bold">
           <span>TOTAL</span>
           <span>{{ formatCurrency(po?.total_amount ?? 0) }}</span>
