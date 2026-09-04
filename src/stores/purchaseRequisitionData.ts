@@ -20,6 +20,7 @@ export type PRItem = {
   cost_per_unit: number
   product_id?: number
   sku?: string | null
+  batch_no?: string | null
   supplier_name?: string | null
   supplier_id?: string | null
   expiry_date?: string | null

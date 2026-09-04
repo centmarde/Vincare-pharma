@@ -25,6 +25,7 @@ type SubmitResult = {
   success: boolean
   resolvedReorderIds: number[]
   requisitionNos: string[]
+  productIds: number[]
 }
 
 export type ReorderPrefillItem = {
@@ -176,7 +177,7 @@ export function usePurchaseRequisition() {
     const validItems = items.value.filter(i => i.product_name.trim())
     if (!validItems.length) {
       toast.warning('Please add at least one item.')
-      return { success: false, resolvedReorderIds: [], requisitionNos: [] }
+      return { success: false, resolvedReorderIds: [], requisitionNos: [], productIds: [] }
     }
 
     const rules: { check: (i: typeof validItems[number]) => boolean; message: string }[] = [
@@ -193,7 +194,7 @@ export function usePurchaseRequisition() {
 
     if (failedMessages.length) {
       toast.info(`Please provide ${failedMessages.join(', ')} for each item.`)
-      return { success: false, resolvedReorderIds: [], requisitionNos: [] }
+      return { success: false, resolvedReorderIds: [], requisitionNos: [], productIds: [] }
     }
 
     loading.value = true
@@ -205,7 +206,7 @@ export function usePurchaseRequisition() {
       if (!claimed) {
         loading.value = false
         toast.error('This draft was already submitted or is no longer available — reopen it from Saved Drafts.')
-        return { success: false, resolvedReorderIds: [], requisitionNos: [] }
+        return { success: false, resolvedReorderIds: [], requisitionNos: [], productIds: [] }
       }
     }
 
@@ -242,6 +243,13 @@ export function usePurchaseRequisition() {
       .map(i => i.reorder_request_id)
       .filter((id): id is number => id != null)
 
+    // The actual products being requisitioned — flagged for reorder once the PR
+    // is accepted, so the warehouse/reorder views keep showing them until the
+    // order is delivered.
+    const productIds = validItems
+      .map(i => i.product_id)
+      .filter((id): id is number => id != null)
+
     const result = await prStore.savePurchaseRequisition()
 
     loading.value = false
@@ -260,6 +268,10 @@ export function usePurchaseRequisition() {
         )
       }
 
+      // Submitted products are now being re-ordered — persist is_reorder = true
+      // and keep the local products list / currentProduct in sync.
+      await productsStore.setProductsReorderFlag(productIds, true)
+
       if (currentDraftId.value != null) {
         const removed = await useDraftPRDataStore()
           .deleteDraft(currentDraftId.value, { silent: true })
@@ -272,7 +284,7 @@ export function usePurchaseRequisition() {
 
       draft.clear()
       reset()
-      return { success: true, resolvedReorderIds, requisitionNos }
+      return { success: true, resolvedReorderIds, requisitionNos, productIds }
     }
 
     // NOTE: if savePurchaseRequisition fails here, any reorder rows created
@@ -283,7 +295,7 @@ export function usePurchaseRequisition() {
     if (currentDraftId.value != null) {
       await useDraftPRDataStore().releaseManualDraftClaim(currentDraftId.value)
     }
-    return { success: false, resolvedReorderIds: [], requisitionNos: [] }
+    return { success: false, resolvedReorderIds: [], requisitionNos: [], productIds: [] }
   }
 
   // ─── Reset ────────────────────────────────────────────────────────

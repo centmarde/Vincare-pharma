@@ -1,3 +1,7 @@
+-- The return type evolved (e.g. supplier_name added), and CREATE OR REPLACE
+-- cannot change a function's return type — so drop it first, then recreate.
+drop function if exists get_stock_status_products(text, integer, integer, bigint[], integer, integer, text);
+
 create or replace function get_stock_status_products(
   bucket_type text,
   ref_year int default null,
@@ -19,7 +23,7 @@ returns table (
   selling_price numeric,
   supplier_id bigint,
   supplier_name text,
-  batch_no int,
+  batch_no text,
   expiry_date date,
   status text,
   total_count bigint
@@ -45,6 +49,9 @@ as $$
     and (search_term = '' or p.product_name ilike '%' || search_term || '%')
     and case bucket_type
       when 'out-of-stock' then coalesce(p.current_stock, 0) <= 0
+        -- Skip products already flagged for reorder at zero stock — they've
+        -- been moved into the Purchase Requisition flow, so stop surfacing them.
+        and not (p.is_reorder = true and coalesce(p.current_stock, 0) = 0)
       when 'low-stock' then coalesce(p.current_stock, 0) > 0
         and p.reorder_level is not null
         and coalesce(p.current_stock, 0) <= p.reorder_level
