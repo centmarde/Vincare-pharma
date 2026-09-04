@@ -7,7 +7,7 @@ import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useSalesDataStore } from '@/stores/salesData'
 import { generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
-import type { OutletType } from '@/stores/outletsData'
+import type { WarehouseType } from '@/stores/warehouseData'
 
 // A shortfall this large is flagged as too big to reasonably ask a cashier to
 // cover out of pocket on the spot — still an editable choice, not a hard gate.
@@ -24,8 +24,8 @@ export type RemittanceType = {
   id: number
   created_at: string
   remittance_no: string | null
-  outlet_id: number | null
-  outlet?: OutletType | null
+  warehouse_id: number | null
+  warehouse?: WarehouseType | null
   remittance_date: string | null
   expected_amount: number | null
   actual_amount: number | null
@@ -40,8 +40,17 @@ export type RemittanceType = {
 }
 
 export type ExpectedSummary = {
+  /** Cash only — what the cashier can actually count and hand over. */
   expected: number
+  /** Number of CASH sales making up `expected`. */
   saleCount: number
+  /**
+   * The rest of the day's takings, per method. Shown beside the cash figure so
+   * the branch sees its whole day, but NOT counted toward what is owed: GCash,
+   * a bank transfer and a cheque never entered the drawer.
+   */
+  nonCash: { method: string; amount: number; saleCount: number }[]
+  nonCashTotal: number
 }
 
 // A remittance shortfall being carried as a debt owed BY the employee TO the
@@ -61,12 +70,12 @@ export type EmployeeReceivableRow = {
 }
 
 type FetchRemittancesOptions = {
-  outletId?: number
+  warehouseId?: number
   orderBy?: 'created_at'
   ascending?: boolean
 }
 
-const SELECT_REMITTANCE = '*, outlet:outlet_id(*), remittance_details(actual_amount, resolution, resolved_at, receivable_status)'
+const SELECT_REMITTANCE = '*, warehouse:warehouse_id(*), remittance_details(actual_amount, resolution, resolved_at, receivable_status)'
 const SELECT_EMPLOYEE_RECEIVABLE =
   'id, created_at, remittance_no, created_by, total_amount, remarks, remittance_details!inner(actual_amount, receivable_status, receivable_paid_at)'
 
@@ -76,8 +85,8 @@ function mapRowToRemittance(row: any): RemittanceType {
     id:              row.id,
     created_at:      row.created_at,
     remittance_no:   row.remittance_no,
-    outlet_id:       row.outlet_id,
-    outlet:          row.outlet,
+    warehouse_id:    row.warehouse_id,
+    warehouse:       row.warehouse,
     remittance_date: row.created_at,
     expected_amount: row.total_amount,
     actual_amount:   actualAmount,
@@ -139,9 +148,9 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
     loading.value = true
     clearError()
     try {
-      const { outletId, orderBy = 'created_at', ascending = false } = options
+      const { warehouseId, orderBy = 'created_at', ascending = false } = options
       let q = supabase.from('transactions').select(SELECT_REMITTANCE).eq('transaction_type', 'remittance')
-      if (outletId) q = q.eq('outlet_id', outletId)
+      if (warehouseId) q = q.eq('warehouse_id', warehouseId)
       q = q.order(orderBy, { ascending })
 
       const { data, error: fetchError } = await q
@@ -156,25 +165,62 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
     }
   }
 
-  // Expected = sum of completed cash sales for the branch not yet remitted.
-  const computeExpected = async (outletId: number): Promise<ExpectedSummary> => {
+  /**
+   * What the branch owes in CASH, plus the rest of the day's takings for
+   * context.
+   *
+   * A remittance is the cashier handing over the drawer, so only cash sales can
+   * be owed. Summing every sale regardless of tender — which this did before
+   * POS had more than one — means a GCash sale raises the expected amount by
+   * money that never entered the drawer, the count comes up short by exactly
+   * that, and the existing flow offers to book the difference as an employee
+   * receivable. That charges a cashier for money that arrived safely.
+   *
+   * payment_method lives on pos_sale_details; it is read through the embed
+   * rather than transactions.payment_method so a sale with no details row
+   * cannot silently be treated as cash.
+   */
+  const computeExpected = async (warehouseId: number): Promise<ExpectedSummary> => {
     clearError()
     const { data, error: fetchError } = await supabase
       .from('transactions')
-      .select('total_amount')
+      .select('total_amount, pos_sale_details(payment_method)')
       .eq('transaction_type', 'sale')
       .eq('status', 'completed')
       .is('remittance_id', null)
-      .eq('outlet_id', outletId)
+      .eq('warehouse_id', warehouseId)
 
     if (fetchError) {
       handleError(fetchError, 'Failed to compute expected amount')
-      return { expected: 0, saleCount: 0 }
+      return { expected: 0, saleCount: 0, nonCash: [], nonCashTotal: 0 }
     }
-    const rows = (data || []) as { total_amount: number | null }[]
+
+    const rows = (data || []) as { total_amount: number | null; pos_sale_details: { payment_method: string | null } | { payment_method: string | null }[] | null }[]
+    let expected = 0
+    let saleCount = 0
+    const byMethod = new Map<string, { amount: number; saleCount: number }>()
+
+    for (const r of rows) {
+      const details = Array.isArray(r.pos_sale_details) ? r.pos_sale_details[0] : r.pos_sale_details
+      const method = details?.payment_method ?? 'cash'
+      const amount = r.total_amount ?? 0
+      if (method === 'cash') {
+        expected += amount
+        saleCount += 1
+      } else {
+        const bucket = byMethod.get(method) ?? { amount: 0, saleCount: 0 }
+        bucket.amount += amount
+        bucket.saleCount += 1
+        byMethod.set(method, bucket)
+      }
+    }
+
+    const nonCash = [...byMethod.entries()].map(([method, v]) => ({ method, ...v }))
     return {
-      expected:  rows.reduce((sum, r) => sum + (r.total_amount ?? 0), 0),
-      saleCount: rows.length,
+      expected,
+      saleCount,
+      nonCash,
+      nonCashTotal: nonCash.reduce((sum, n) => sum + n.amount, 0),
     }
   }
 
@@ -192,7 +238,7 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
   }
 
   const submitRemittance = async (payload: {
-    outletId: number
+    warehouseId: number
     actualAmount: number
     notes?: string
     resolution?: 'paid_on_spot' | 'employee_receivable' | null
@@ -212,13 +258,18 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
       return { success: false }
     }
 
+    // Recomputed here rather than trusting the figure the screen was showing,
+    // since sales can land between opening the dialog and submitting it. Must
+    // use the SAME cash-only rule as computeExpected: the amount stored on the
+    // remittance is what the cashier was asked to hand over, and the
+    // discrepancy is measured against it.
     const { data: unremitted, error: sumError } = await supabase
       .from('transactions')
-      .select('total_amount')
+      .select('total_amount, pos_sale_details(payment_method)')
       .eq('transaction_type', 'sale')
       .eq('status', 'completed')
       .is('remittance_id', null)
-      .eq('outlet_id', payload.outletId)
+      .eq('warehouse_id', payload.warehouseId)
 
     if (sumError) {
       handleError(sumError, 'Failed to compute expected amount.')
@@ -226,13 +277,17 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
       loading.value = false
       return { success: false }
     }
-    const rows = (unremitted || []) as { total_amount: number | null }[]
+    const rows = (unremitted || []) as { total_amount: number | null; pos_sale_details: { payment_method: string | null } | { payment_method: string | null }[] | null }[]
     if (rows.length === 0) {
-      toast.error('No unremitted cash sales to remit.')
+      toast.error('No unremitted sales to remit.')
       loading.value = false
       return { success: false }
     }
-    const expected = rows.reduce((sum, r) => sum + (r.total_amount ?? 0), 0)
+    const expected = rows.reduce((sum, r) => {
+      const details = Array.isArray(r.pos_sale_details) ? r.pos_sale_details[0] : r.pos_sale_details
+      const method = details?.payment_method ?? 'cash'
+      return method === 'cash' ? sum + (r.total_amount ?? 0) : sum
+    }, 0)
 
     const year = new Date().getFullYear().toString()
     const { data: created, docNo: remittanceNo, error: insertError } = await insertWithDocRetry<{ id: number }>(
@@ -243,7 +298,7 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
           remittance_no: docNo,
           transaction_type: 'remittance',
           status: 'submitted',
-          outlet_id: payload.outletId,
+          warehouse_id: payload.warehouseId,
           total_amount: expected,
           remarks: payload.notes || null,
           created_by: user.id,
@@ -285,7 +340,7 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
       .eq('transaction_type', 'sale')
       .eq('status', 'completed')
       .is('remittance_id', null)
-      .eq('outlet_id', payload.outletId)
+      .eq('warehouse_id', payload.warehouseId)
     if (tagError) {
       handleError(tagError, 'Failed to tag remitted sales.')
       toast.error(tagError.message || 'Failed to tag remitted sales.')

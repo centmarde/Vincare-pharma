@@ -1,14 +1,15 @@
 import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRemittancesDataStore, largeDiscrepancyThreshold } from '@/stores/remittancesData'
-import { useOutletsDataStore } from '@/stores/outletsData'
+import { useWarehousesDataStore } from '@/stores/warehouseData'
+import type { WarehouseType } from '@/stores/warehouseData'
 import { useFinanceDataStore } from '@/stores/financeData'
 import { formatCurrency } from '@/utils/helpers'
 import type { ExpectedSummary } from '@/stores/remittancesData'
 
 export const headers = [
   { title: 'REMITTANCE #', key: 'remittance_no',   sortable: true,  align: 'center' as const },
-  { title: 'BRANCH',       key: 'outlet',           sortable: false, align: 'center' as const },
+  { title: 'BRANCH',       key: 'warehouse',        sortable: false, align: 'center' as const },
   { title: 'DATE',         key: 'remittance_date',  sortable: true,  align: 'center' as const },
   { title: 'EXPECTED',     key: 'expected_amount',  sortable: false, align: 'center' as const },
   { title: 'ACTUAL',       key: 'actual_amount',    sortable: false, align: 'center' as const },
@@ -20,16 +21,16 @@ export const headers = [
 
 export function useRemittance() {
   const remitStore = useRemittancesDataStore()
-  const outletsStore = useOutletsDataStore()
+  const warehousesStore = useWarehousesDataStore()
   const financeStore = useFinanceDataStore()
   const { remittances, loading } = storeToRefs(remitStore)
-  const { outlets } = storeToRefs(outletsStore)
+  const { warehouses } = storeToRefs(warehousesStore)
   const { cashAccounts } = storeToRefs(financeStore)
 
   // ─── State ────────────────────────────────────────────────────────
-  const selectedOutletId = ref<number | null>(null)
+  const selectedWarehouseId = ref<number | null>(null)
   const showSubmitDialog = ref(false)
-  const expected = ref<ExpectedSummary>({ expected: 0, saleCount: 0 })
+  const expected = ref<ExpectedSummary>({ expected: 0, saleCount: 0, nonCash: [], nonCashTotal: 0 })
   const actualAmount = ref<number | null>(null)
   const notes = ref('')
   // Which Cash on Hand account the counted cash is handed into. It sits there
@@ -38,8 +39,8 @@ export function useRemittance() {
   const resolution = ref<'paid_on_spot' | 'employee_receivable' | null>(null)
 
   // ─── Computed ─────────────────────────────────────────────────────
-  const outletOptions = computed(() =>
-    outlets.value.filter(o => o.channel === 'pos').map(o => ({ title: o.name, value: o.id })),
+  const warehouseOptions = computed(() =>
+    warehouses.value.map((w: WarehouseType) => ({ title: w.name, value: w.id })),
   )
   const discrepancy = computed(() => (actualAmount.value ?? 0) - expected.value.expected)
   // A cash mismatch must carry a reason in the audit trail — only a balanced
@@ -72,24 +73,24 @@ export function useRemittance() {
 
   // ─── Actions ──────────────────────────────────────────────────────
   async function loadRemittances() {
-    if (!selectedOutletId.value) return
-    await remitStore.fetchRemittances({ outletId: selectedOutletId.value })
+    if (!selectedWarehouseId.value) return
+    await remitStore.fetchRemittances({ warehouseId: selectedWarehouseId.value })
   }
 
-  async function setOutlet(outletId: number) {
-    selectedOutletId.value = outletId
+  async function setWarehouse(warehouseId: number) {
+    selectedWarehouseId.value = warehouseId
     await loadRemittances()
   }
 
   async function init() {
-    if (!outlets.value.length) await outletsStore.fetchOutlets()
-    if (!selectedOutletId.value) selectedOutletId.value = outletOptions.value[0]?.value ?? null
+    if (!warehouses.value.length) await warehousesStore.fetchWarehouses()
+    if (!selectedWarehouseId.value) selectedWarehouseId.value = warehouseOptions.value[0]?.value ?? null
     await loadRemittances()
   }
 
   async function openSubmitDialog() {
-    if (!selectedOutletId.value) return
-    expected.value = await remitStore.computeExpected(selectedOutletId.value)
+    if (!selectedWarehouseId.value) return
+    expected.value = await remitStore.computeExpected(selectedWarehouseId.value)
     actualAmount.value = null
     notes.value = ''
     resolution.value = null
@@ -101,9 +102,9 @@ export function useRemittance() {
   }
 
   async function handleSubmit() {
-    if (!canSubmit.value || !selectedOutletId.value) return
+    if (!canSubmit.value || !selectedWarehouseId.value) return
     const result = await remitStore.submitRemittance({
-      outletId:     selectedOutletId.value,
+      warehouseId:  selectedWarehouseId.value,
       actualAmount: actualAmount.value ?? 0,
       notes:        notes.value || undefined,
       resolution:   resolution.value,
@@ -114,7 +115,7 @@ export function useRemittance() {
 
   return {
     remittances, loading,
-    selectedOutletId, outletOptions, setOutlet,
+    selectedWarehouseId, warehouseOptions, setWarehouse,
     showSubmitDialog, expected, actualAmount, notes, resolution,
     cashAccountId, cashOnHandOptions,
     discrepancy, requiresNote, canSubmit, isShortfall, recommendReceivable,
