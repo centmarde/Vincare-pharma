@@ -538,18 +538,30 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
   }
 
 
+  // .select() is what makes the row count readable — a delete without it reports no error
+  // even when RLS matched nothing, so callers would treat a blocked delete as a success.
   async function deleteDraft(draftId: number, options?: { silent?: boolean }) {
-    const { error: deleteError } = await supabase
+    const { data, error: deleteError } = await supabase
       .from('draft_purchase_requisitions')
       .delete()
       .eq('id', draftId)
-    if (deleteError) {
-      toast.error('Failed to delete draft.')
+      .select('id, origin, source_order_id')
+    if (deleteError || !data?.length) {
+      handleError(deleteError, 'Failed to delete draft.')
+      if (!options?.silent) toast.error('Failed to delete draft.')
       return false
     }
 
     drafts.value = drafts.value.filter((d) => d.id !== draftId)
     manualDrafts.value = manualDrafts.value.filter((d) => d.id !== draftId)
+    if (currentDraft.value?.id === draftId) currentDraft.value = null
+
+    // One entry can summarise both a draft and a converted row for the same order, so
+    // rebuild the index instead of dropping the key and losing the other row's dates.
+    const indexedByOrder = Object.values(draftByOrder.value).some((entry) => entry.id === draftId)
+    const deletedDraft = data[0]
+    const hasSourceOrder = deletedDraft?.origin === 'canvass' && deletedDraft.source_order_id != null
+    if (indexedByOrder || hasSourceOrder) await fetchDraftIdsByOrder()
 
     await fetchManualDraftCount()
     if (!options?.silent) toast.success('Draft deleted.')
@@ -736,18 +748,36 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       .eq('origin', 'manual')
       .eq('status', 'draft')
       .select('id')
-    if (claimError) return false
-    return !!data?.length
+    if (claimError || !data?.length) return false
+    // The claim is what takes a draft out of the Saved Drafts lane, so local state
+    // follows it here — the delete that may follow can fail without stranding a
+    // converted draft in the list, where Resume would only reject it.
+    const hadDraftLocally = manualDrafts.value.some((d) => d.id === draftId)
+    manualDrafts.value = manualDrafts.value.filter((d) => d.id !== draftId)
+    if (hadDraftLocally) {
+      manualDraftCount.value = Math.max(0, manualDraftCount.value - 1)
+    }
+    return true
   }
 
   // Reverts a claim that didn't end in a created requisition, so the draft can be retried.
-  async function releaseManualDraftClaim(draftId: number): Promise<void> {
-    await supabase
-      .from('draft_purchase_requisitions')
-      .update({ status: 'draft', updated_at: new Date().toISOString() })
-      .eq('id', draftId)
-      .eq('origin', 'manual')
-      .eq('status', 'converted')
+  async function releaseManualDraftClaim(draftId: number): Promise<boolean> {
+    let releaseError: unknown = null
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const { error } = await supabase
+        .from('draft_purchase_requisitions')
+        .update({ status: 'draft', updated_at: new Date().toISOString() })
+        .eq('id', draftId)
+        .eq('origin', 'manual')
+        .eq('status', 'converted')
+      if (!error) {
+        await fetchManualDrafts()
+        return true
+      }
+      releaseError = error
+    }
+    handleError(releaseError, 'Failed to release draft claim.')
+    return false
   }
 
 

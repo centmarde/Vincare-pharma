@@ -1,4 +1,5 @@
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
+import { toLocalISODate, fromLocalISODate } from '@/utils/helpers'
 import { useProductsDataStore } from '@/stores/productsData'
 import { useDraftPRDataStore } from '@/stores/draftPRData'
 import { useLogRequisition } from './useLogRequisition'
@@ -26,6 +27,7 @@ type SubmitResult = {
   resolvedReorderIds: number[]
   requisitionNos: string[]
   productIds: number[]
+  error?: string
 }
 
 export type ReorderPrefillItem = {
@@ -36,25 +38,6 @@ export type ReorderPrefillItem = {
   unit: string
   supplier_id: number | null
   cost_per_unit: number
-}
-
-// Add near the top of usePurchaseRequisition.ts
-function toLocalISODate(d: Date): string {
-  const y   = d.getFullYear()
-  const m   = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
-// new Date('2026-09-01') reads as UTC midnight and lands a day early west of Greenwich.
-function fromLocalISODate(value: string): Date | null {
-  const parts = value.split('-')
-  if (parts.length !== 3) return null
-  const year = Number(parts[0])
-  const month = Number(parts[1])
-  const day = Number(parts[2])
-  if (!year || !month || !day) return null
-  return new Date(year, month - 1, day)
 }
 
 type ReorderReason =
@@ -272,14 +255,10 @@ export function usePurchaseRequisition() {
       // and keep the local products list / currentProduct in sync.
       await productsStore.setProductsReorderFlag(productIds, true)
 
+      // A failed delete needs no warning: the claim above already left the draft
+      // 'converted', so it's out of Saved Drafts and loadDraft won't reopen it.
       if (currentDraftId.value != null) {
-        const removed = await useDraftPRDataStore()
-          .deleteDraft(currentDraftId.value, { silent: true })
-        if (!removed) {
-          toast.warning(
-            `${requisitionNos.join(', ')} created, but the draft could not be removed — delete it manually so it isn't submitted twice.`,
-          )
-        }
+        await useDraftPRDataStore().deleteDraft(currentDraftId.value, { silent: true })
       }
 
       draft.clear()
@@ -293,7 +272,16 @@ export function usePurchaseRequisition() {
     // same submit won't create duplicates) but worth a follow-up cleanup pass
     // if PR-save failures turn out to be common.
     if (currentDraftId.value != null) {
-      await useDraftPRDataStore().releaseManualDraftClaim(currentDraftId.value)
+      const released = await useDraftPRDataStore().releaseManualDraftClaim(currentDraftId.value)
+      if (!released) {
+        return {
+          success: false,
+          resolvedReorderIds: [],
+          requisitionNos: [],
+          productIds: [],
+          error: 'The saved draft could not be released. Please reopen Saved Drafts and try again.',
+        }
+      }
     }
     return { success: false, resolvedReorderIds: [], requisitionNos: [], productIds: [] }
   }
