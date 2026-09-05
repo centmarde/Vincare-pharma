@@ -11,8 +11,8 @@ const { mobile } = useDisplay()
 withDefaults(defineProps<{ mode?: 'warehouse' | 'outlet' }>(), { mode: 'outlet' })
 
 const {
-  loading, search, filterStatus, filterOutletId,
-  statusOptions, outletOptions,
+  loading, search, filterStatus, filterWarehouseId,
+  statusOptions, warehouseOptions,
   showRequestDialog, showDetailDialog, selectedTransfer,
   filteredTransfers,
   statusLabel, statusColor,
@@ -41,8 +41,8 @@ onMounted(init)
             :style="mobile ? 'width: 100%' : 'min-width: 220px'"
           />
           <v-select
-            v-model="filterOutletId"
-            :items="outletOptions"
+            v-model="filterWarehouseId"
+            :items="warehouseOptions"
             variant="outlined"
             density="compact"
             hide-details
@@ -84,7 +84,7 @@ onMounted(init)
             {{ t.transfer_no }}
           </v-list-item-title>
           <v-list-item-subtitle class="text-caption">
-            {{ t.outlet?.name ?? '—' }} · {{ formatDatePR_ISO(t.created_at) }}
+            {{ t.warehouse?.name ?? '—' }} · {{ formatDatePR_ISO(t.created_at) }}
           </v-list-item-subtitle>
           <template #append>
             <v-chip :color="statusColor(t.status)" size="x-small" variant="tonal" class="font-weight-bold">
@@ -111,8 +111,8 @@ onMounted(init)
           <span class="font-weight-medium">{{ item.transfer_no }}</span>
         </template>
 
-        <template #item.outlet="{ item }">
-          {{ item.outlet?.name ?? '—' }}
+        <template #item.warehouse="{ item }">
+          {{ item.warehouse?.name ?? '—' }}
         </template>
 
         <template #item.created_at="{ item }">

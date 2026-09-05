@@ -12,7 +12,7 @@ import { useDisplay } from 'vuetify'
 const { mobile } = useDisplay()
 const {
   remittances, loading,
-  selectedOutletId, outletOptions, setOutlet,
+  selectedWarehouseId, warehouseOptions, setWarehouse,
   showSubmitDialog, expected, actualAmount, notes, resolution,
   cashAccountId, cashOnHandOptions,
   discrepancy, requiresNote, canSubmit, isShortfall, recommendReceivable,
@@ -49,8 +49,8 @@ onMounted(async () => { await init(); await loadPending() })
         <span class="text-h6 font-weight-bold">Cash Remittances</span>
         <div class="d-flex align-center ga-3" :class="mobile ? 'w-100 flex-column align-stretch' : ''">
           <v-select
-            :model-value="selectedOutletId"
-            :items="outletOptions"
+            :model-value="selectedWarehouseId"
+            :items="warehouseOptions"
             item-title="title"
             item-value="value"
             label="Branch"
@@ -58,7 +58,7 @@ onMounted(async () => { await init(); await loadPending() })
             density="compact"
             hide-details
             :style="mobile ? 'width: 100%' : 'min-width: 200px'"
-            @update:model-value="setOutlet"
+            @update:model-value="setWarehouse"
           />
           <v-btn
             color="primary"
@@ -105,7 +105,7 @@ onMounted(async () => { await init(); await loadPending() })
           </template>
           <template #default>
             <div class="text-caption text-medium-emphasis mt-1">
-              <div>{{ r.outlet?.name ?? '—' }}</div>
+              <div>{{ r.warehouse?.name ?? '—' }}</div>
               <div>
                 <template v-if="r.resolution === 'paid_on_spot'">
                   <v-chip size="x-small" variant="tonal" color="success" class="mt-1">Paid on spot — Balanced</v-chip>
@@ -161,8 +161,8 @@ onMounted(async () => { await init(); await loadPending() })
           <span class="font-weight-medium">{{ item.remittance_no }}</span>
         </template>
 
-        <template #item.outlet="{ item }">
-          {{ item.outlet?.name ?? '—' }}
+        <template #item.warehouse="{ item }">
+          {{ item.warehouse?.name ?? '—' }}
         </template>
 
         <template #item.remittance_date="{ item }">

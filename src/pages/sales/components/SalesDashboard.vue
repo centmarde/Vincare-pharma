@@ -5,7 +5,7 @@ import { useDisplay } from 'vuetify'
 
 const { mobile } = useDisplay()
 const {
-  loading, filterOutletId, outletOptions, today, week, month,
+  loading, filterWarehouseId, warehouseOptions, today, week, month,
   topProducts, byCashier, lowStockCount, recentSales, load,
 } = useSalesDashboard()
 </script>
@@ -16,8 +16,8 @@ const {
 
       <div class="d-flex justify-end mb-2">
         <v-select
-          v-model="filterOutletId"
-          :items="outletOptions"
+          v-model="filterWarehouseId"
+          :items="warehouseOptions"
           item-title="title"
           item-value="value"
           label="Branch"
@@ -125,7 +125,7 @@ const {
                   {{ s.customer?.name || 'Walk-in' }}
                 </v-list-item-title>
                 <v-list-item-subtitle class="text-caption">
-                  {{ s.outlet?.name ?? '—' }} · {{ formatDatePR_ISO(s.created_at) }}
+                  {{ s.warehouse?.name ?? '—' }} · {{ formatDatePR_ISO(s.created_at) }}
                 </v-list-item-subtitle>
                 <template #append>
                   <div class="text-right">
@@ -156,7 +156,7 @@ const {
               <tbody>
                 <tr v-for="s in recentSales" :key="s.id">
                   <td>{{ s.sale_no }}</td>
-                  <td>{{ s.outlet?.name ?? '—' }}</td>
+                  <td>{{ s.warehouse?.name ?? '—' }}</td>
                   <td class="text-medium-emphasis">{{ formatDatePR_ISO(s.created_at) }}</td>
                   <td>{{ s.customer?.name || '—' }}</td>
                   <td class="text-right">{{ formatCurrency(s.total_amount ?? 0) }}</td>

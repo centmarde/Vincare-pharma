@@ -376,6 +376,40 @@ export const useProductsDataStore = defineStore('productsData', () => {
     }
   }
 
+  /**
+   * Fetch a specific set of products by id, for joining product details onto
+   * rows that only carry a product_id (warehouse_products, POS lines, branch
+   * inventory).
+   *
+   * Deliberately NOT `fetchProducts()` + find-in-JS: that query matches ~1,072
+   * rows and PostgREST caps a response at 1,000, so the catalogue it returns is
+   * silently incomplete and any product outside the window resolves to nothing
+   * (blank name, zero price). It also applies the Products page's own filters,
+   * which have no business deciding whether a product a branch is holding can
+   * be displayed. Chunked so a long id list cannot hit the same cap.
+   */
+  const fetchProductsByIds = async (ids: number[]) => {
+    const unique = [...new Set(ids.filter((id) => typeof id === 'number'))]
+    if (!unique.length) return []
+    clearError()
+    try {
+      const chunkSize = 500
+      const found: ProductType[] = []
+      for (let i = 0; i < unique.length; i += chunkSize) {
+        const { data, error: fetchError } = await supabase
+          .from('products')
+          .select('*')
+          .in('id', unique.slice(i, i + chunkSize))
+        if (fetchError) throw fetchError
+        found.push(...((data ?? []) as ProductType[]))
+      }
+      return found
+    } catch (err) {
+      handleError(err, 'Failed to fetch products by id')
+      return []
+    }
+  }
+
   const fetchProductById = async (id: number) => {
     loading.value = true
     clearError()
@@ -1070,6 +1104,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     // Actions
     fetchEligibleProductIds,
     fetchProducts,
+    fetchProductsByIds,
     fetchProductById,
     fetchProductPicker,
     fetchSkusByProductNames,

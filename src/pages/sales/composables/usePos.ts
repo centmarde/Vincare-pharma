@@ -1,8 +1,11 @@
 import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
-import { useOutletStockDataStore } from '@/stores/outletStockData'
-import { useOutletsDataStore } from '@/stores/outletsData'
+import { useWarehouseProductsDataStore } from '@/stores/warehouseProductsData'
+import { useWarehousesDataStore } from '@/stores/warehouseData'
+import { useProductsDataStore } from '@/stores/productsData'
+import type { ProductType } from '@/stores/productsData'
+import type { WarehouseType } from '@/stores/warehouseData'
 
 const toast = useToast()
 
@@ -50,41 +53,53 @@ export type PosProduct = {
 }
 
 export function usePos() {
-  const outletStockStore = useOutletStockDataStore()
-  const outletsStore = useOutletsDataStore()
-  const { outletStock, loading } = storeToRefs(outletStockStore)
-  const { outlets } = storeToRefs(outletsStore)
+  const warehouseProductsStore = useWarehouseProductsDataStore()
+  const warehousesStore = useWarehousesDataStore()
+  const productsStore = useProductsDataStore()
+  const { warehouseProducts, loading } = storeToRefs(warehouseProductsStore)
+  const { warehouses } = storeToRefs(warehousesStore)
+  // Products for the rows on screen, fetched by id -- the shared catalogue is
+  // capped at 1000 rows of ~1072, so a product a branch is holding can be
+  // missing from it and render blank at zero price (it would also be unsellable
+  // at the correct amount).
+  const rowProducts = ref<ProductType[]>([])
 
   // ─── State ────────────────────────────────────────────────────────
   const search = ref('')
   const cart = ref<CartLine[]>([])
-  const selectedOutletId = ref<number | null>(null)
+  const selectedWarehouseId = ref<number | null>(null)
 
   // ─── Branch picker ────────────────────────────────────────────────
-  const posOutletOptions = computed(() =>
-    outlets.value
-      .filter(o => o.channel === 'pos' && o.is_active)
-      .map(o => ({ title: o.name, value: o.id })),
+  // Every warehouse is sellable-from: there is no channel to filter on any
+  // more, and `warehouses` has no is_active column (schema finalised).
+  const posWarehouseOptions = computed(() =>
+    warehouses.value.map((w: WarehouseType) => ({ title: w.name, value: w.id })),
   )
 
   // ─── Computed ─────────────────────────────────────────────────────
-  // Sellable products = Exelmed outlet_stock rows with qty on hand.
+  // Sellable products = this warehouse's warehouse_products rows with qty on
+  // hand. warehouse_products carries only the quantity (no embedded product
+  // relation, unlike the outlet_stock rows this replaced), so the product
+  // master is joined here in JS.
   const products = computed<PosProduct[]>(() =>
-    outletStock.value
-      .filter(s => s.quantity > 0 && s.product)
-      .map(s => ({
-        product_id:   s.product_id,
-        product_name: s.product?.product_name ?? '—',
-        brand:        s.product?.brand ?? null,
-        cost_price:   s.product?.cost_price ?? null,
-        barcode:      s.product?.barcode != null ? String(s.product.barcode) : null,
-        sku:          s.product?.sku ?? null,
-        unit:         s.product?.unit != null ? String(s.product.unit) : null,
-        batch_no:     s.product?.batch_no ?? null,
-        expiry_date:  s.product?.expiry_date ?? null,
-        unit_price:   s.product?.selling_price ?? 0,
-        available:    s.quantity,
-      })),
+    warehouseProducts.value
+      .filter(s => (s.total_qty ?? 0) > 0 && s.product_id != null)
+      .map(s => {
+        const p = rowProducts.value.find(pr => pr.id === s.product_id)
+        return {
+          product_id:   s.product_id as number,
+          product_name: p?.product_name ?? '—',
+          brand:        p?.brand ?? null,
+          cost_price:   p?.cost_price ?? null,
+          barcode:      p?.barcode != null ? String(p.barcode) : null,
+          sku:          p?.sku ?? null,
+          unit:         p?.unit != null ? String(p.unit) : null,
+          batch_no:     p?.batch_no ?? null,
+          expiry_date:  p?.expiry_date ?? null,
+          unit_price:   p?.selling_price ?? 0,
+          available:    s.total_qty ?? 0,
+        }
+      }),
   )
 
   // Matches brand name, generic name, SKU and barcode. Barcode matters most:
@@ -182,37 +197,40 @@ export function usePos() {
 
   // ─── Init ─────────────────────────────────────────────────────────
   async function refreshStock() {
-    if (!selectedOutletId.value) return
-    await outletStockStore.fetchOutletStock({ outletId: selectedOutletId.value })
+    if (!selectedWarehouseId.value) return
+    await warehouseProductsStore.fetchWarehouseProducts({ warehouse_id: selectedWarehouseId.value })
+    rowProducts.value = await productsStore.fetchProductsByIds(
+      warehouseProducts.value.map(wp => wp.product_id).filter((id): id is number => id != null),
+    )
     // Live stock updates: with 2+ terminals on the same branch, a sale on
     // one terminal must reflect here immediately — otherwise a cashier can
     // add an item to cart that's already sold out and only find out from a
     // raw RPC error at checkout instead of the UI greying it out up front.
-    outletStockStore.startRealtime(selectedOutletId.value)
+    warehouseProductsStore.startRealtime()
   }
 
-  async function setOutlet(outletId: number) {
-    if (selectedOutletId.value === outletId) return
-    selectedOutletId.value = outletId
+  async function setWarehouse(warehouseId: number) {
+    if (selectedWarehouseId.value === warehouseId) return
+    selectedWarehouseId.value = warehouseId
     clearCart()
     await refreshStock()
   }
 
   async function init() {
-    if (!outlets.value.length) await outletsStore.fetchOutlets()
-    if (!selectedOutletId.value) {
-      selectedOutletId.value = posOutletOptions.value[0]?.value ?? null
+    if (!warehouses.value.length) await warehousesStore.fetchWarehouses()
+    if (!selectedWarehouseId.value) {
+      selectedWarehouseId.value = posWarehouseOptions.value[0]?.value ?? null
     }
     await refreshStock()
   }
 
   return {
     search, cart, loading,
-    selectedOutletId, posOutletOptions,
+    selectedWarehouseId, posWarehouseOptions,
     products, filteredProducts,
     subtotal, total, itemCount, isEmpty,
     isSearching, resultCount, submitSearch, clearSearch,
     addToCart, setQty, removeFromCart, clearCart,
-    init, refreshStock, setOutlet,
+    init, refreshStock, setWarehouse,
   }
 }

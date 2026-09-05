@@ -121,7 +121,7 @@ onMounted(loadPending)
           </template>
           <template #default>
             <div class="text-caption text-medium-emphasis mt-1">
-              <div>{{ s.outlet?.name ?? '—' }} · {{ s.customer?.name || '—' }}</div>
+              <div>{{ s.warehouse?.name ?? '—' }} · {{ s.customer?.name || '—' }}</div>
               <div>{{ cashierName(s.cashier_id) }} · {{ s.sale_items?.length ?? 0 }} item(s)</div>
             </div>
             <div class="d-flex align-center ga-2 mt-2">
@@ -162,7 +162,7 @@ onMounted(loadPending)
         </template>
 
         <template #item.outlet="{ item }">
-          {{ item.outlet?.name ?? '—' }}
+          {{ item.warehouse?.name ?? '—' }}
         </template>
 
         <template #item.created_at="{ item }">

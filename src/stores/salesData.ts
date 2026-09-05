@@ -8,7 +8,7 @@ import { useAuthUserStore } from '@/stores/authUser'
 import { generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
 import type { ProductType } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
-import type { OutletType } from '@/stores/outletsData'
+import type { WarehouseType } from '@/stores/warehouseData'
 
 const toast = useToast()
 
@@ -17,8 +17,9 @@ const toast = useToast()
 // sales UI consumes; fetch maps the hub columns onto them so the composables
 // and components are unaffected by the consolidation.
 //
-// Outlets are a real table now (see outletsData.ts) — branches are editable
-// data, identified by outlet_id. No code here may hardcode a branch code.
+// A POS terminal sells from a WAREHOUSE (see warehouseData.ts) — branches are
+// editable data, identified by warehouse_id, and stock lives in
+// warehouse_products. No code here may hardcode a branch name.
 
 export type SaleItemType = {
   id: number
@@ -33,8 +34,8 @@ export type SaleType = {
   id: number
   created_at: string
   sale_no: string | null
-  outlet_id: number | null
-  outlet?: OutletType | null
+  warehouse_id: number | null
+  warehouse?: WarehouseType | null
   status: string | null
   payment_method: string | null
   subtotal: number | null
@@ -59,7 +60,7 @@ export type SaleLineInput = {
 }
 
 type FetchSalesOptions = {
-  outletId?: number
+  warehouseId?: number
   unremittedOnly?: boolean
   dateFrom?: string
   dateTo?: string
@@ -73,7 +74,7 @@ type FetchSalesOptions = {
 // transaction types) so we still fall back to row.payment_method for it.
 // Line values live directly on transaction_items (transaction_item_details was
 // merged back in). A sale is outbound, so the line quantity is qty_stock_out.
-const SELECT_SALE = '*, transaction_items!transaction_items_transaction_id_fkey(id, product_id, qty_stock_out, unit_price, line_total, product:product_id(*)), customer:customer_id(*), outlet:outlet_id(*), pos_sale_details(*)'
+const SELECT_SALE = '*, transaction_items!transaction_items_transaction_id_fkey(id, product_id, qty_stock_out, unit_price, line_total, product:product_id(*)), customer:customer_id(*), warehouse:warehouse_id(*), pos_sale_details(*)'
 
 function mapRowToSale(row: any): SaleType {
   const details = row.pos_sale_details ?? {}
@@ -81,8 +82,8 @@ function mapRowToSale(row: any): SaleType {
     id:               row.id,
     created_at:       row.created_at,
     sale_no:          row.sale_no,
-    outlet_id:        row.outlet_id,
-    outlet:           row.outlet,
+    warehouse_id:     row.warehouse_id,
+    warehouse:        row.warehouse,
     status:           row.status,
     payment_method:   details.payment_method,
     subtotal:         details.subtotal,
@@ -154,11 +155,11 @@ export const useSalesDataStore = defineStore('salesData', () => {
     loading.value = true
     clearError()
     try {
-      const { outletId, unremittedOnly, dateFrom, dateTo, orderBy = 'created_at', ascending = false } = options
+      const { warehouseId, unremittedOnly, dateFrom, dateTo, orderBy = 'created_at', ascending = false } = options
 
       let q = supabase.from('transactions').select(SELECT_SALE).eq('transaction_type', 'sale')
 
-      if (outletId) q = q.eq('outlet_id', outletId)
+      if (warehouseId) q = q.eq('warehouse_id', warehouseId)
       if (unremittedOnly) q = q.is('remittance_id', null).eq('status', 'completed')
       if (dateFrom) q = q.gte('created_at', dateFrom)
       if (dateTo) q = q.lte('created_at', dateTo)
@@ -196,7 +197,9 @@ export const useSalesDataStore = defineStore('salesData', () => {
   }
 
   const createSale = async (payload: {
-    outletId: number
+    warehouseId: number
+    paymentMethod?: string
+    paymentReference?: string | null
     lines: SaleLineInput[]
     amountTendered: number
     customer?: { name?: string | null; address?: string | null; mobile?: string | null }
@@ -204,7 +207,7 @@ export const useSalesDataStore = defineStore('salesData', () => {
     loading.value = true
     clearError()
 
-    const { outletId, lines, amountTendered, customer } = payload
+    const { warehouseId, lines, amountTendered, customer, paymentMethod = 'cash', paymentReference = null } = payload
 
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) {
@@ -212,7 +215,7 @@ export const useSalesDataStore = defineStore('salesData', () => {
       loading.value = false
       return { success: false }
     }
-    if (!outletId) {
+    if (!warehouseId) {
       toast.warning('Select a branch first.')
       loading.value = false
       return { success: false }
@@ -225,19 +228,16 @@ export const useSalesDataStore = defineStore('salesData', () => {
 
     const cashierName = user.user_metadata?.full_name ?? user.email ?? '—'
 
-    const { data: outlet, error: outletError } = await supabase
-      .from('outlets')
-      .select('channel')
-      .eq('id', outletId)
-      .eq('is_active', true)
+    // Every warehouse is just a warehouse now, so there is no POS-vs-Ethical
+    // channel to enforce -- the old `outlet.channel !== 'pos'` guard is gone
+    // deliberately, not lost. `warehouses` has no channel or is_active column.
+    const { data: warehouse, error: warehouseError } = await supabase
+      .from('warehouses')
+      .select('id')
+      .eq('id', warehouseId)
       .maybeSingle()
-    if (outletError || !outlet) {
-      toast.error('Outlet not found or inactive.')
-      loading.value = false
-      return { success: false }
-    }
-    if (outlet.channel !== 'pos') {
-      toast.error('Outlet is not a POS outlet.')
+    if (warehouseError || !warehouse) {
+      toast.error('Warehouse not found.')
       loading.value = false
       return { success: false }
     }
@@ -250,20 +250,20 @@ export const useSalesDataStore = defineStore('salesData', () => {
       return { success: false }
     }
 
-    const stockChecks: { product_id: number; onHand: number }[] = []
+    const stockChecks: { product_id: number; rowId: number; onHand: number }[] = []
     for (const line of lines) {
       const { data: stockRow, error: stockError } = await supabase
-        .from('outlet_stock')
-        .select('quantity')
-        .eq('outlet_id', outletId)
+        .from('warehouse_products')
+        .select('id, total_qty')
+        .eq('warehouse_id', warehouseId)
         .eq('product_id', line.product_id)
         .maybeSingle()
-      if (stockError || !stockRow || stockRow.quantity < line.quantity) {
+      if (stockError || !stockRow || (stockRow.total_qty ?? 0) < line.quantity) {
         toast.error(`Insufficient stock for product ${line.product_id}.`)
         loading.value = false
         return { success: false }
       }
-      stockChecks.push({ product_id: line.product_id, onHand: stockRow.quantity })
+      stockChecks.push({ product_id: line.product_id, rowId: stockRow.id, onHand: stockRow.total_qty ?? 0 })
     }
 
     const name = customer?.name?.trim() || null
@@ -323,7 +323,12 @@ export const useSalesDataStore = defineStore('salesData', () => {
           sale_no: docNo,
           transaction_type: 'sale',
           status: 'completed',
-          outlet_id: outletId,
+          warehouse_id: warehouseId,
+          // The payment's own trace (GCash ref, cheque no., transfer ref).
+          // pos_sale_details has no reference column and `remarks` is unused by
+          // POS, so it lands here rather than forcing a schema change. A
+          // dedicated column would be better if this ever needs querying.
+          remarks: paymentReference ? `${paymentMethod.toUpperCase()} ref: ${paymentReference}` : null,
           total_amount: total,
           customer_id: customerId,
           created_by: user.id,
@@ -342,7 +347,7 @@ export const useSalesDataStore = defineStore('salesData', () => {
     const changeDue = amountTendered - total
     const { error: detailsError } = await supabase.from('pos_sale_details').insert({
       transaction_id: created.id,
-      payment_method: 'cash',
+      payment_method: paymentMethod,
       subtotal,
       amount_tendered: amountTendered,
       change_due: changeDue,
@@ -379,10 +384,9 @@ export const useSalesDataStore = defineStore('salesData', () => {
       }
       const check = stockChecks.find(c => c.product_id === line.product_id)
       const { error: stockUpdateError } = await supabase
-        .from('outlet_stock')
-        .update({ quantity: (check?.onHand ?? 0) - line.quantity, updated_at: new Date().toISOString() })
-        .eq('outlet_id', outletId)
-        .eq('product_id', line.product_id)
+        .from('warehouse_products')
+        .update({ total_qty: (check?.onHand ?? 0) - line.quantity })
+        .eq('id', check?.rowId ?? -1)
       if (stockUpdateError) {
         handleError(stockUpdateError, 'Failed to update branch stock.')
         toast.error(stockUpdateError.message || 'Failed to update branch stock (partway through — verify stock manually).')
@@ -432,7 +436,7 @@ export const useSalesDataStore = defineStore('salesData', () => {
 
     const { data: sale, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, remittance_id, outlet_id, transaction_items!transaction_items_transaction_id_fkey(product_id, qty_stock_out)')
+      .select('id, status, remittance_id, warehouse_id, transaction_items!transaction_items_transaction_id_fkey(product_id, qty_stock_out)')
       .eq('id', saleId)
       .eq('transaction_type', 'sale')
       .maybeSingle()
@@ -476,16 +480,15 @@ export const useSalesDataStore = defineStore('salesData', () => {
       .map(li => ({ product_id: li.product_id, qty: li.qty_stock_out ?? 0 }))
     for (const line of lines) {
       const { data: stockRow } = await supabase
-        .from('outlet_stock')
-        .select('quantity')
-        .eq('outlet_id', sale.outlet_id)
+        .from('warehouse_products')
+        .select('id, total_qty')
+        .eq('warehouse_id', sale.warehouse_id)
         .eq('product_id', line.product_id)
         .maybeSingle()
       const { error: stockError } = await supabase
-        .from('outlet_stock')
-        .update({ quantity: (stockRow?.quantity ?? 0) + line.qty, updated_at: nowIso })
-        .eq('outlet_id', sale.outlet_id)
-        .eq('product_id', line.product_id)
+        .from('warehouse_products')
+        .update({ total_qty: (stockRow?.total_qty ?? 0) + line.qty })
+        .eq('id', stockRow?.id ?? -1)
       if (stockError) {
         toast.warning(`Sale voided, but stock for product ${line.product_id} needs manual correction.`)
       }

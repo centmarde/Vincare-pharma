@@ -1,8 +1,22 @@
 import { ref, computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useOutletStockDataStore } from '@/stores/outletStockData'
-import { useOutletsDataStore } from '@/stores/outletsData'
-import type { OutletStockType } from '@/stores/outletStockData'
+import { useWarehouseProductsDataStore } from '@/stores/warehouseProductsData'
+import { useWarehousesDataStore } from '@/stores/warehouseData'
+import { useProductsDataStore } from '@/stores/productsData'
+import type { WarehouseType } from '@/stores/warehouseData'
+import type { ProductType } from '@/stores/productsData'
+
+/**
+ * A branch inventory row. warehouse_products carries only the quantity (no
+ * embedded product relation, unlike the outlet_stock rows this replaced), so
+ * the product master is joined in and the row keeps the old shape — the table
+ * templates read `quantity` and `product.*` and need no changes.
+ */
+export type BranchStockRow = {
+  product_id: number | null
+  quantity: number
+  product: ProductType | null
+}
 
 export type StockStatus = 'out' | 'low' | 'ok'
 
@@ -15,7 +29,7 @@ export const headers = [
   { title: 'STATUS',     key: 'status',       sortable: false, align: 'center' as const },
 ] as const
 
-export function rowStatus(row: OutletStockType): StockStatus {
+export function rowStatus(row: BranchStockRow): StockStatus {
   const reorder = row.product?.reorder_level
   if (row.quantity <= 0) return 'out'
   if (reorder != null && row.quantity <= reorder) return 'low'
@@ -23,25 +37,39 @@ export function rowStatus(row: OutletStockType): StockStatus {
 }
 
 export function useOutletInventory() {
-  const outletStockStore = useOutletStockDataStore()
-  const outletsStore = useOutletsDataStore()
-  const { outletStock, loading } = storeToRefs(outletStockStore)
-  const { outlets } = storeToRefs(outletsStore)
+  const warehouseProductsStore = useWarehouseProductsDataStore()
+  const warehousesStore = useWarehousesDataStore()
+  const productsStore = useProductsDataStore()
+  const { warehouseProducts, loading } = storeToRefs(warehouseProductsStore)
+  const { warehouses } = storeToRefs(warehousesStore)
+
+  // Products for the rows on screen, fetched by id rather than read from the
+  // shared catalogue: fetchProducts() is capped at 1000 rows of ~1072 and
+  // applies the Products page's filters, so a branch's product can be missing
+  // from it entirely and render as a blank name at zero price.
+  const rowProducts = ref<ProductType[]>([])
 
   const search = ref('')
   const filterStatus = ref<'all' | StockStatus>('all')
-  const selectedOutletId = ref<number | null>(null)
+  const selectedWarehouseId = ref<number | null>(null)
   const statusOptions: { title: string; value: StockStatus | 'all' }[] = [
     { title: 'All', value: 'all' },
     { title: 'Out of stock', value: 'out' },
     { title: 'Low stock', value: 'low' },
     { title: 'OK', value: 'ok' },
   ]
-  const outletOptions = computed(() =>
-    outlets.value.filter(o => o.channel === 'pos').map(o => ({ title: o.name, value: o.id })),
+  // Every warehouse is a branch now; there is no channel to filter on.
+  const warehouseOptions = computed(() =>
+    warehouses.value.map((w: WarehouseType) => ({ title: w.name, value: w.id })),
   )
 
-  const rows = computed(() => outletStock.value)
+  const rows = computed<BranchStockRow[]>(() =>
+    warehouseProducts.value.map((wp) => ({
+      product_id: wp.product_id,
+      quantity: wp.total_qty ?? 0,
+      product: rowProducts.value.find((p) => p.id === wp.product_id) ?? null,
+    })),
+  )
 
   const filteredRows = computed(() => {
     let list = rows.value
@@ -65,19 +93,22 @@ export function useOutletInventory() {
   const outCount = computed(() => rows.value.filter((r) => rowStatus(r) === 'out').length)
 
   async function loadStock() {
-    if (!selectedOutletId.value) return
-    await outletStockStore.fetchOutletStock({ outletId: selectedOutletId.value })
-    outletStockStore.startRealtime(selectedOutletId.value)
+    if (!selectedWarehouseId.value) return
+    await warehouseProductsStore.fetchWarehouseProducts({ warehouse_id: selectedWarehouseId.value })
+    rowProducts.value = await productsStore.fetchProductsByIds(
+      warehouseProducts.value.map((wp) => wp.product_id).filter((id): id is number => id != null),
+    )
+    warehouseProductsStore.startRealtime()
   }
 
-  async function setOutlet(outletId: number) {
-    selectedOutletId.value = outletId
+  async function setWarehouse(warehouseId: number) {
+    selectedWarehouseId.value = warehouseId
     await loadStock()
   }
 
   async function init() {
-    if (!outlets.value.length) await outletsStore.fetchOutlets()
-    if (!selectedOutletId.value) selectedOutletId.value = outletOptions.value[0]?.value ?? null
+    if (!warehouses.value.length) await warehousesStore.fetchWarehouses()
+    if (!selectedWarehouseId.value) selectedWarehouseId.value = warehouseOptions.value[0]?.value ?? null
     await loadStock()
   }
 
@@ -85,7 +116,7 @@ export function useOutletInventory() {
 
   return {
     loading, search, filterStatus, statusOptions,
-    selectedOutletId, outletOptions, setOutlet,
+    selectedWarehouseId, warehouseOptions, setWarehouse,
     filteredRows,
     totalSkus, totalValue, lowCount, outCount,
     rowStatus, init,

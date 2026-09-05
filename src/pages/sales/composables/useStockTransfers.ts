@@ -2,11 +2,12 @@ import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useStockTransfersDataStore } from '@/stores/stockTransfersData'
 import type { StockTransferType } from '@/stores/stockTransfersData'
-import { useOutletsDataStore } from '@/stores/outletsData'
+import { useWarehousesDataStore } from '@/stores/warehouseData'
+import type { WarehouseType } from '@/stores/warehouseData'
 
 export const headers = [
   { title: 'TRANSFER #', key: 'transfer_no', sortable: true,  align: 'center' as const },
-  { title: 'OUTLET',     key: 'outlet',      sortable: false, align: 'center' as const },
+  { title: 'WAREHOUSE',  key: 'warehouse',   sortable: false, align: 'center' as const },
   { title: 'REQUESTED',  key: 'created_at',  sortable: true,  align: 'center' as const },
   { title: 'STATUS',     key: 'status',      sortable: true,  align: 'center' as const },
   { title: 'ACTIONS',    key: 'actions',     sortable: false, align: 'center' as const },
@@ -28,13 +29,13 @@ const statusColors: Record<string, string> = {
 
 export function useStockTransfers() {
   const transfersStore = useStockTransfersDataStore()
-  const outletsStore = useOutletsDataStore()
+  const warehouseStore = useWarehousesDataStore()
   const { transfers, loading } = storeToRefs(transfersStore)
-  const { outlets } = storeToRefs(outletsStore)
+  const { warehouses } = storeToRefs(warehouseStore)
 
   const search       = ref('')
   const filterStatus = ref<string | null>(null)
-  const filterOutletId = ref<number | null>(null)
+  const filterWarehouseId = ref<number | null>(null)
 
   const showRequestDialog = ref(false)
   const showDetailDialog  = ref(false)
@@ -43,7 +44,7 @@ export function useStockTransfers() {
   const filteredTransfers = computed(() => {
     return transfers.value.filter(t => {
       if (filterStatus.value && t.status !== filterStatus.value) return false
-      if (filterOutletId.value && t.outlet_id !== filterOutletId.value) return false
+      if (filterWarehouseId.value && t.warehouse_id !== filterWarehouseId.value) return false
       if (search.value.trim()) {
         const s = search.value.trim().toLowerCase()
         if (!t.transfer_no?.toLowerCase().includes(s)) return false
@@ -60,16 +61,16 @@ export function useStockTransfers() {
     { title: 'Rejected', value: 'rejected' },
   ]
 
-  const outletOptions = computed(() => [
-    { title: 'All Branches', value: null },
-    ...outlets.value.map(o => ({ title: o.name, value: o.id })),
+  const warehouseOptions = computed(() => [
+    { title: 'All Warehouses', value: null },
+    ...warehouses.value.map((w: WarehouseType) => ({ title: w.name, value: w.id })),
   ])
 
   const statusLabel = (status: string | null) => statusLabels[status ?? ''] ?? status ?? '—'
   const statusColor = (status: string | null) => statusColors[status ?? ''] ?? 'grey'
 
   async function init() {
-    if (!outlets.value.length) await outletsStore.fetchOutlets()
+    if (!warehouses.value.length) await warehouseStore.fetchWarehouses()
     await transfersStore.fetchTransfers()
   }
 
@@ -96,8 +97,8 @@ export function useStockTransfers() {
   }
 
   return {
-    loading, search, filterStatus, filterOutletId,
-    statusOptions, outletOptions,
+    loading, search, filterStatus, filterWarehouseId,
+    statusOptions, warehouseOptions,
     showRequestDialog, showDetailDialog, selectedTransfer,
     filteredTransfers,
     statusLabel, statusColor,

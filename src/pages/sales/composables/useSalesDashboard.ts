@@ -1,24 +1,31 @@
 import { ref, computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSalesDataStore } from '@/stores/salesData'
-import { useOutletStockDataStore } from '@/stores/outletStockData'
-import { useOutletsDataStore } from '@/stores/outletsData'
+import { useWarehouseProductsDataStore } from '@/stores/warehouseProductsData'
+import { useWarehousesDataStore } from '@/stores/warehouseData'
+import { useProductsDataStore } from '@/stores/productsData'
+import type { ProductType } from '@/stores/productsData'
+import type { WarehouseType } from '@/stores/warehouseData'
 import { useAuthUserStore } from '@/stores/authUser'
 import type { SaleType } from '@/stores/salesData'
 
 export function useSalesDashboard() {
   const salesStore = useSalesDataStore()
-  const outletStockStore = useOutletStockDataStore()
-  const outletsStore = useOutletsDataStore()
+  const warehouseProductsStore = useWarehouseProductsDataStore()
+  const warehousesStore = useWarehousesDataStore()
+  const productsStore = useProductsDataStore()
   const authStore = useAuthUserStore()
   const { sales, loading } = storeToRefs(salesStore)
-  const { outletStock } = storeToRefs(outletStockStore)
-  const { outlets } = storeToRefs(outletsStore)
+  const { warehouseProducts } = storeToRefs(warehouseProductsStore)
+  const { warehouses } = storeToRefs(warehousesStore)
+  // reorder_level for the rows on screen, by id -- see usePos for why the
+  // shared catalogue is not safe to join against.
+  const rowProducts = ref<ProductType[]>([])
 
-  const filterOutletId = ref<number | null>(null)
-  const outletOptions = computed(() => [
+  const filterWarehouseId = ref<number | null>(null)
+  const warehouseOptions = computed(() => [
     { title: 'All Branches', value: null },
-    ...outlets.value.filter(o => o.channel === 'pos').map(o => ({ title: o.name, value: o.id })),
+    ...warehouses.value.map((w: WarehouseType) => ({ title: w.name, value: w.id })),
   ])
 
   const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d }
@@ -60,10 +67,13 @@ export function useSalesDashboard() {
     return [...map.entries()].map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total)
   })
 
+  // reorder_level lives on the product master; warehouse_products carries only
+  // the quantity, so the threshold is looked up rather than embedded.
   const lowStockCount = computed(() =>
-    outletStock.value.filter((r) => {
-      const reorder = r.product?.reorder_level
-      return r.quantity <= 0 || (reorder != null && r.quantity <= reorder)
+    warehouseProducts.value.filter((r) => {
+      const qty = r.total_qty ?? 0
+      const reorder = rowProducts.value.find((p) => p.id === r.product_id)?.reorder_level
+      return qty <= 0 || (reorder != null && qty <= reorder)
     }).length,
   )
 
@@ -71,21 +81,24 @@ export function useSalesDashboard() {
 
   async function load() {
     if (!authStore.users.length) await authStore.getAllUsers()
-    if (!outlets.value.length) await outletsStore.fetchOutlets()
+    if (!warehouses.value.length) await warehousesStore.fetchWarehouses()
     // Bound to month-start: the widest range the KPI cards/recent-sales list
     // actually display. Without this the dashboard pulled every sale ever
     // recorded on every visit, which only gets slower as history grows.
     await Promise.all([
-      salesStore.fetchSales({ outletId: filterOutletId.value ?? undefined, dateFrom: startOfMonth().toISOString() }),
-      outletStockStore.fetchOutletStock({ outletId: filterOutletId.value ?? undefined }),
+      salesStore.fetchSales({ warehouseId: filterWarehouseId.value ?? undefined, dateFrom: startOfMonth().toISOString() }),
+      warehouseProductsStore.fetchWarehouseProducts({ warehouse_id: filterWarehouseId.value ?? undefined }),
     ])
+    rowProducts.value = await productsStore.fetchProductsByIds(
+      warehouseProducts.value.map((wp) => wp.product_id).filter((id): id is number => id != null),
+    )
   }
 
   onMounted(load)
 
   return {
     loading,
-    filterOutletId, outletOptions,
+    filterWarehouseId, warehouseOptions,
     today, week, month,
     topProducts, byCashier, lowStockCount, recentSales,
     load,
