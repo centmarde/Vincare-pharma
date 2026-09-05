@@ -27,6 +27,7 @@ const {
   effectiveEmptyRows,
   missingSkuCount,
   missingActualCount,
+  missingBatchNoCount,
   handleMarkAsReceived,
 } = usePODetailView(props as any, emit as any)
 </script>
@@ -68,13 +69,16 @@ const {
       <!-- Actions -->
       <v-card-actions :class="mobile ? 'pa-3 ga-2 flex-wrap' : 'pa-4 justify-end'">
         <div
-          v-if="skuEditMode && (missingSkuCount > 0 || missingActualCount > 0)"
+          v-if="skuEditMode && (missingSkuCount > 0 || missingActualCount > 0 || missingBatchNoCount > 0)"
           :class="mobile ? 'text-caption text-medium-emphasis w-100 mb-2' : 'text-body-2 text-medium-emphasis'"
         >
           <v-icon size="16" color="error" class="mr-1">mdi-alert-circle-outline</v-icon>
-          <template v-if="missingSkuCount > 0">{{ missingSkuCount }} SKU{{ missingSkuCount !== 1 ? 's' : '' }} missing</template>
+          <template v-if="missingSkuCount > 0">{{ missingSkuCount }} SKU{{ missingSkuCount !== 1 ? 's' : '' }} missing,</template>
           <template v-if="missingActualCount > 0">
-            {{ missingSkuCount > 0 ? ' / ' : '' }}{{ missingActualCount }} actual count{{ missingActualCount !== 1 ? 's' : '' }} missing
+            {{ missingSkuCount > 0 ? ' / ' : '' }}{{ missingActualCount }} actual count{{ missingActualCount !== 1 ? 's' : '' }} missing,
+          </template>
+          <template v-if="missingBatchNoCount > 0">
+            {{ missingSkuCount > 0 || missingActualCount > 0 ? ' / ' : '' }}{{ missingBatchNoCount }} batch number{{ missingBatchNoCount !== 1 ? 's' : '' }} missing
           </template>
         </div>
 
@@ -86,12 +90,11 @@ const {
             variant="flat"
             size="small"
             :loading="savingAll"
-            :disabled="missingSkuCount > 0 || missingActualCount > 0 || savingAll"
+            :disabled="missingSkuCount > 0 || missingActualCount > 0 || missingBatchNoCount > 0 || savingAll"
             @click="handleMarkAsReceived"
           >
-            <template v-if="missingSkuCount > 0">
-              Input SKU ({{ missingSkuCount + missingActualCount }})
-            </template>
+            <template v-if="missingSkuCount + missingActualCount + missingBatchNoCount > 0">
+              Input Field ({{ missingSkuCount + missingActualCount + missingBatchNoCount }})            </template>
             <template v-else> Mark as Received </template>
           </v-btn>
         </template>

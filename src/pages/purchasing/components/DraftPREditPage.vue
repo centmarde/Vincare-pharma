@@ -260,7 +260,7 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
 
   <SupplierCompareDialog
     v-model="showCompare"
-    :product="activeItem ? { id: activeItem.product_id, name: activeItem.product_name } : null"
+    :product="activeItem?.product_id != null ? { id: activeItem.product_id, name: activeItem.product_name } : null"
     :required-by-date="activeItem?.required_by_date ?? new Date().toISOString().slice(0,10)"
     :qty="activeItem ? (edits[activeItem.id]?.qty ?? activeItem.qty) : 1"
     :min-qty="activeItem?.shortfall_qty ?? undefined"

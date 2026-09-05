@@ -1,5 +1,7 @@
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
+import { toLocalISODate, fromLocalISODate } from '@/utils/helpers'
 import { useProductsDataStore } from '@/stores/productsData'
+import { useDraftPRDataStore } from '@/stores/draftPRData'
 import { useLogRequisition } from './useLogRequisition'
 import { useToast } from 'vue-toastification'
 import { ref, computed } from 'vue'
@@ -10,7 +12,7 @@ export const unitOptions = ['Box', 'Pcs', 'Set', 'Unit', 'Kg', 'M']
 type PRFormItem = {
   no: number
   unit: string
-  item_description: string
+  product_name: string
   supplier_id: number | null
   qty: number
   cost_per_unit: number
@@ -20,24 +22,40 @@ type PRFormItem = {
   reorder_reason?: 'reorder_outofstock' | 'reorder_lowstock' | 'reorder_expiring' | 'reorder_expired' | null // NEW — set only when no reorder row exists yet and one should be created on successful submit
 }
 
-type SubmitResult = { success: boolean; resolvedReorderIds: number[]; productIds: number[] }
+type SubmitResult = {
+  success: boolean
+  resolvedReorderIds: number[]
+  requisitionNos: string[]
+  productIds: number[]
+  error?: string
+}
 
 export type ReorderPrefillItem = {
   reorder_request_id?: number | null   // CHANGED — optional now. Only set when the row already exists.
   reorder_reason?: 'reorder_outofstock' | 'reorder_lowstock' | 'reorder_expiring' | 'reorder_expired' | null // NEW
   product_id: number
-  item_description: string
+  product_name: string
   unit: string
   supplier_id: number | null
   cost_per_unit: number
 }
 
-// Add near the top of usePurchaseRequisition.ts
-function toLocalISODate(d: Date): string {
-  const y   = d.getFullYear()
-  const m   = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+type ReorderReason =
+  | 'reorder_outofstock'
+  | 'reorder_lowstock'
+  | 'reorder_expiring'
+  | 'reorder_expired'
+
+const reorderReasons: ReorderReason[] = [
+  'reorder_outofstock',
+  'reorder_lowstock',
+  'reorder_expiring',
+  'reorder_expired',
+]
+
+function toReorderReason(value: string | null | undefined): ReorderReason | null {
+  if (!value) return null
+  return reorderReasons.find((reason) => reason === value) ?? null
 }
 
 export function usePurchaseRequisition() {
@@ -54,15 +72,18 @@ export function usePurchaseRequisition() {
 
   const items = ref<PRFormItem[]>([])
 
+  // Set while editing a saved draft so the next save updates it instead of creating a second one.
+  const currentDraftId = ref<number | null>(null)
+
   // Persist a draft so a reload / crash mid-entry doesn't wipe the requisition.
   // expiry_date is a Date; JSON stores it as an ISO string, so revive it on
   // restore or the datepicker's .getFullYear()/.getMonth() calls would crash.
   const draft = useFormDraft({
     key: 'purchasing-requisition',
-    version: 2,
-    refs: { currentPR, items },
+    version: 3,
+    refs: { currentPR, items, currentDraftId },
     isEmpty: () => !currentPR.value.remarks
-      && !items.value.some((i) => i.item_description.trim() || i.supplier_id != null
+      && !items.value.some((i) => i.product_name.trim() || i.supplier_id != null
         || i.qty > 0 || i.cost_per_unit > 0 || i.expiry_date != null),
     deserialize: (data) => ({
       ...data,
@@ -80,12 +101,22 @@ export function usePurchaseRequisition() {
     items.value.reduce((sum, i) => sum + i.qty * i.cost_per_unit, 0)
   )
 
+  // Submitting raises one requisition per supplier, so this is how many documents the form will produce.
+  const supplierCount = computed(() => {
+    const supplierIds = new Set(
+      items.value
+        .filter(i => i.product_name.trim() && i.supplier_id != null)
+        .map(i => i.supplier_id),
+    )
+    return supplierIds.size
+  })
+
   // ─── Item Actions ─────────────────────────────────────────────────
   function addItem() {
     items.value.push({
       no:               items.value.length + 1,
       unit:             'Box',
-      item_description: '',
+      product_name: '',
       qty:              0,
       cost_per_unit:    0,
       supplier_id:      null,
@@ -102,7 +133,7 @@ export function usePurchaseRequisition() {
     // Drop the single blank starter row if it hasn't been touched
     if (
       items.value.length === 1 &&
-      !items.value[0].item_description.trim() &&
+      !items.value[0].product_name.trim() &&
       !items.value[0].qty
     ) {
       items.value = []
@@ -112,7 +143,7 @@ export function usePurchaseRequisition() {
       items.value.push({
         no:                 items.value.length + 1,
         unit:               entry.unit || 'Box',
-        item_description:   entry.item_description,
+        product_name:   entry.product_name,
         qty:                0,
         cost_per_unit:      entry.cost_per_unit,
         supplier_id:        entry.supplier_id,
@@ -126,14 +157,14 @@ export function usePurchaseRequisition() {
 
   // ─── Submit ───────────────────────────────────────────────────────
   async function handleSubmit(): Promise<SubmitResult> {
-    const validItems = items.value.filter(i => i.item_description.trim())
+    const validItems = items.value.filter(i => i.product_name.trim())
     if (!validItems.length) {
       toast.warning('Please add at least one item.')
-      return { success: false, resolvedReorderIds: [], productIds: [] }
+      return { success: false, resolvedReorderIds: [], requisitionNos: [], productIds: [] }
     }
 
     const rules: { check: (i: typeof validItems[number]) => boolean; message: string }[] = [
-      { check: i => !i.item_description.trim(), message: 'description' },
+      { check: i => !i.product_name.trim(), message: 'product name' },
       { check: i => !i.supplier_id, message: 'supplier' },
       { check: i => !i.expiry_date, message: 'expiry date' },
       { check: i => i.qty <= 0, message: 'quantity greater than zero' },
@@ -146,10 +177,21 @@ export function usePurchaseRequisition() {
 
     if (failedMessages.length) {
       toast.info(`Please provide ${failedMessages.join(', ')} for each item.`)
-      return { success: false, resolvedReorderIds: [], productIds: [] }
+      return { success: false, resolvedReorderIds: [], requisitionNos: [], productIds: [] }
     }
 
     loading.value = true
+
+    // Claimed before anything else so a retry after a failed post-submit delete — or
+    // the same draft resumed in a second tab — can't raise a second set of PRs.
+    if (currentDraftId.value != null) {
+      const claimed = await useDraftPRDataStore().claimManualDraftForSubmit(currentDraftId.value)
+      if (!claimed) {
+        loading.value = false
+        toast.error('This draft was already submitted or is no longer available — reopen it from Saved Drafts.')
+        return { success: false, resolvedReorderIds: [], requisitionNos: [], productIds: [] }
+      }
+    }
 
     const productsStore = useProductsDataStore()
 
@@ -171,7 +213,7 @@ export function usePurchaseRequisition() {
     prStore.items                 = validItems.map(i => ({
       no:               i.no,
       unit:             i.unit,
-      item_description: i.item_description,
+      product_name: i.product_name,
       qty:              i.qty,
       cost_per_unit:    i.cost_per_unit,
       supplier_id:      i.supplier_id != null ? String(i.supplier_id) : null,
@@ -195,21 +237,33 @@ export function usePurchaseRequisition() {
 
     loading.value = false
 
-    if (result?.success && result.transactionId && result.requisitionNo) {
-      await logPRSubmission(
-        result.transactionId,
-        result.requisitionNo,
-        'purchase_requisition',
-        validItems.length,
-      )
+    const createdPRs = result?.createdPRs ?? []
+
+    if (result?.success && createdPRs.length) {
+      const requisitionNos = createdPRs.map(pr => pr.requisitionNo)
+
+      for (const pr of createdPRs) {
+        await logPRSubmission(
+          pr.transactionId,
+          pr.requisitionNo,
+          'purchase_requisition',
+          pr.itemCount,
+        )
+      }
 
       // Submitted products are now being re-ordered — persist is_reorder = true
       // and keep the local products list / currentProduct in sync.
       await productsStore.setProductsReorderFlag(productIds, true)
 
+      // A failed delete needs no warning: the claim above already left the draft
+      // 'converted', so it's out of Saved Drafts and loadDraft won't reopen it.
+      if (currentDraftId.value != null) {
+        await useDraftPRDataStore().deleteDraft(currentDraftId.value, { silent: true })
+      }
+
       draft.clear()
       reset()
-      return { success: true, resolvedReorderIds, productIds }
+      return { success: true, resolvedReorderIds, requisitionNos, productIds }
     }
 
     // NOTE: if savePurchaseRequisition fails here, any reorder rows created
@@ -217,22 +271,118 @@ export function usePurchaseRequisition() {
     // low-risk (each item's reorder_request_id is now set, so retrying this
     // same submit won't create duplicates) but worth a follow-up cleanup pass
     // if PR-save failures turn out to be common.
-    return { success: false, resolvedReorderIds: [], productIds: [] }
+    if (currentDraftId.value != null) {
+      const released = await useDraftPRDataStore().releaseManualDraftClaim(currentDraftId.value)
+      if (!released) {
+        return {
+          success: false,
+          resolvedReorderIds: [],
+          requisitionNos: [],
+          productIds: [],
+          error: 'The saved draft could not be released. Please reopen Saved Drafts and try again.',
+        }
+      }
+    }
+    return { success: false, resolvedReorderIds: [], requisitionNos: [], productIds: [] }
   }
 
   // ─── Reset ────────────────────────────────────────────────────────
   function reset() {
-    currentPR.value = { remarks: '' }
-    items.value     = []
+    currentPR.value      = { remarks: '' }
+    items.value          = []
+    currentDraftId.value = null
     addItem()
   }
 
   // ─── Clear form (single blank row, no draft) ──────────────────────
   function clearForm() {
-    currentPR.value = { remarks: '' }
-    items.value     = []
+    currentPR.value      = { remarks: '' }
+    items.value          = []
+    currentDraftId.value = null
     addItem()
     draft.clear()
+  }
+
+  // ─── Saved drafts ─────────────────────────────────────────────────
+  // Not validated like handleSubmit — a draft is meant to hold a half-finished requisition.
+  async function saveDraft(): Promise<{ success: boolean }> {
+    const namedItems = items.value.filter(i => i.product_name.trim())
+    if (!namedItems.length) {
+      toast.warning('Add at least one item before saving a draft.')
+      return { success: false }
+    }
+
+    loading.value = true
+
+    const draftStore = useDraftPRDataStore()
+    const result = await draftStore.saveManualDraft({
+      draftId: currentDraftId.value,
+      remarks: currentPR.value.remarks || null,
+      lines: namedItems.map(i => ({
+        product_id:         i.product_id ?? null,
+        product_name:       i.product_name,
+        unit:               i.unit,
+        supplier_id:        i.supplier_id,
+        qty:                i.qty,
+        cost_per_unit:      i.cost_per_unit,
+        expiry_date:        i.expiry_date ? toLocalISODate(i.expiry_date) : null,
+        reorder_request_id: i.reorder_request_id ?? null,
+        reorder_reason:     i.reorder_reason ?? null,
+      })),
+    })
+
+    loading.value = false
+
+    if (!result.success) return { success: false }
+
+    if (result.draftId != null) currentDraftId.value = result.draftId
+    draft.clear()
+    return { success: true }
+  }
+
+  async function loadDraft(draftId: number): Promise<boolean> {
+    loading.value = true
+
+    const draftStore = useDraftPRDataStore()
+    const loaded = await draftStore.fetchDraft(draftId)
+
+    // fetchDraft isn't scoped by origin or status: a canvass draft's offers have nowhere
+    // to go in this form, and a converted one already raised its PR — reloading it would
+    // let a second Submit raise a duplicate.
+    if (!loaded || loaded.origin !== 'manual' || loaded.status !== 'draft') {
+      loading.value = false
+      return false
+    }
+
+    const productsStore = useProductsDataStore()
+    const linkedReorderIds = loaded.items
+      .map(i => i.reorder_request_id)
+      .filter((id): id is number => id != null)
+    const stillPending = await productsStore.filterPendingReorderRequestIds(linkedReorderIds)
+
+    currentPR.value = { remarks: loaded.remarks ?? '' }
+    items.value = loaded.items.map((item, index) => ({
+      no:               index + 1,
+      unit:             item.unit ?? 'Box',
+      product_name:     item.product_name ?? '',
+      supplier_id:      item.supplier_id ?? null,
+      qty:              item.qty ?? 0,
+      cost_per_unit:    item.unit_price ?? 0,
+      expiry_date:      item.expiry_date ? fromLocalISODate(item.expiry_date) : null,
+      product_id:       item.product_id ?? null,
+      // Dropped when resolved elsewhere, so approval can't resolve a row this PR no longer owns.
+      reorder_request_id:
+        item.reorder_request_id != null && stillPending.includes(item.reorder_request_id)
+          ? item.reorder_request_id
+          : null,
+      reorder_reason: toReorderReason(item.reorder_reason),
+    }))
+
+    currentDraftId.value = loaded.id
+    if (!items.value.length) addItem()
+
+    loading.value = false
+    return true
   }
 
   // ─── Init ─────────────────────────────────────────────────────────
@@ -245,11 +395,15 @@ if (!draftWasRestored && items.value.length === 0) addItem()
     currentPR,
     items,
     loading,
+    currentDraftId,
     companyCostTotal,
+    supplierCount,
     addReorderItems,
     addItem,
     removeItem,
     handleSubmit,
+    saveDraft,
+    loadDraft,
     reset,
     clearForm,
     draftWasRestored,

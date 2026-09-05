@@ -105,7 +105,7 @@ async function onUnapprove() {
             <tr class="bg-blue-darken-3">
               <th class="table-header text-caption">#</th>
               <th class="table-header text-caption">UNIT</th>
-              <th class="table-header text-caption">ITEM DESCRIPTION</th>
+              <th class="table-header text-caption">PRODUCT NAME</th>
               <th class="table-header text-caption">QTY</th>
               <th class="table-header text-caption">SUPPLIER</th>
               <th class="table-header text-caption">EXPIRY</th>
@@ -117,7 +117,7 @@ async function onUnapprove() {
             <tr v-for="item in pr.items" :key="item.id">
               <td class="text-body-2">{{ item.no ?? 0 }}</td>
               <td class="text-body-2">{{ item.unit }}</td>
-              <td class="text-body-2">{{ item.item_description }}</td>
+              <td class="text-body-2">{{ item.product_name }}</td>
               <td class="text-body-2">{{ item.qty.toLocaleString() }}</td>
               <td class="text-body-2">{{ item.supplier_name ?? '—' }}</td>
               <td class="text-body-2">{{ formatExpiryMonthYear(item.expiry_date) }}</td>
@@ -145,7 +145,7 @@ async function onUnapprove() {
                   <span class="text-caption font-weight-bold text-primary"
                     >#{{ item.no ?? 0 }}</span
                   >
-                  <span class="text-caption font-weight-medium">{{ item.item_description }}</span>
+                  <span class="text-caption font-weight-medium">{{ item.product_name }}</span>
                 </div>
               </div>
               <v-divider class="my-1" />

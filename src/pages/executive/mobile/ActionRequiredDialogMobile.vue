@@ -228,7 +228,7 @@ function formatMoney(value: number | string | undefined) {
                   <span class="text-body-2 font-weight-bold">#{{ it.no }}</span>
                   <span class="text-caption text-medium-emphasis text-right">{{ it.unit }}</span>
                 </div>
-                <div class="text-body-2 mb-2">{{ it.item_description }}</div>
+                <div class="text-body-2 mb-2">{{ it.product_name }}</div>
                 <div class="text-caption text-medium-emphasis mb-1">
                   Supplier: {{ it.supplier_name }}
                 </div>
@@ -333,7 +333,7 @@ function formatMoney(value: number | string | undefined) {
                   <span class="text-body-2 font-weight-bold">#{{ it.no }}</span>
                   <span class="text-caption text-medium-emphasis text-right">{{ it.unit }}</span>
                 </div>
-                <div class="text-body-2 mb-2">{{ it.item_description }}</div>
+                <div class="text-body-2 mb-2">{{ it.product_name }}</div>
                 <div class="text-caption text-medium-emphasis mb-1">
                   Supplier: {{ it.supplier_name }}
                 </div>

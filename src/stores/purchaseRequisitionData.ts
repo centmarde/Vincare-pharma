@@ -1,4 +1,5 @@
 import { generateDocNumber, getLatestReferenceNo, insertWithDocRetry } from '@/utils/helpers'
+import { carriedProductFields } from '@/utils/productBatch'
 import type { TransactionRPCRow } from './transactionsData'
 import { useProductsDataStore } from './productsData' // NEW
 import { useAuthUserStore } from './authUser'
@@ -14,7 +15,7 @@ export type PRItem = {
   id: number
   no: number
   unit: string
-  item_description: string
+  product_name: string
   qty: number
   cost_per_unit: number
   product_id?: number
@@ -30,7 +31,7 @@ export type PRItem = {
 export type RequisitionItemType = {
   no: number
   unit: string
-  item_description: string
+  product_name: string
   qty: number
   cost_per_unit: number
   supplier_id: string | null
@@ -66,6 +67,18 @@ export type PurchaseRequisitionType = {
   status: string
   requested_by: string | null
   supplier_id: string | null
+}
+
+export type CreatedPR = {
+  transactionId: number
+  requisitionNo: string
+  supplierId: number
+  itemCount: number
+}
+
+export type SavePRResult = {
+  success: boolean
+  createdPRs?: CreatedPR[]
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -115,7 +128,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       id: ti.id,
       no: index + 1,
       unit: ti.products?.unit ?? '—',
-      item_description: ti.products?.product_name ?? '—',
+      product_name: ti.products?.product_name ?? '—',
       qty: ti.qty_stock_in ?? 0,
       // Line snapshot wins over the product master, per gl_sum_cost's convention.
       cost_per_unit: ti.cost_price ?? ti.unit_price ?? ti.products?.cost_price ?? 0,
@@ -168,7 +181,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       id: it.id,
       no: index + 1,
       unit: it.unit ?? '—',
-      item_description: it.product_name ?? '—',
+      product_name: it.product_name ?? '—',
       qty: it.qty_stock_in ?? 0,
       cost_per_unit: it.cost_price ?? 0,
       product_id: it.product_id,
@@ -300,7 +313,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       if (!product) return true // no linked product on file — treat as changed
       const supplierId = item.supplier_id ? Number(item.supplier_id) : null
       return (
-        product.product_name !== item.item_description ||
+        product.product_name !== item.product_name ||
         product.unit !== item.unit ||
         (product.supplier_id ?? null) !== supplierId ||
         (product.expiry_date ?? null) !== (item.expiry_date ?? null)
@@ -318,11 +331,11 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
 
     if (itemsNeedingProduct.length) {
       const names = [
-        ...new Set(itemsNeedingProduct.map((i) => i.item_description).filter(Boolean)),
+        ...new Set(itemsNeedingProduct.map((i) => i.product_name).filter(Boolean)),
       ]
       const { data: candidatesByName, error: productsFetchError } = await supabase
         .from('products')
-        .select('id, product_name, supplier_id, unit, expiry_date, sku')
+        .select('id, product_name, supplier_id, unit, expiry_date, sku, category, brand, reorder_level')
         .in('product_name', names)
 
       if (productsFetchError) {
@@ -344,7 +357,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       if (idsToFetch.length) {
         const { data } = await supabase
           .from('products')
-          .select('id, product_name, supplier_id, unit, expiry_date, sku')
+          .select('id, product_name, supplier_id, unit, expiry_date, sku, category, brand, reorder_level')
           .in('id', idsToFetch)
         candidatesById = data || []
       }
@@ -387,19 +400,19 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
           if (picked && sameExpiry(picked.expiry_date, item.expiry_date ?? null)) {
             const exactCosmetic =
               picked.unit === item.unit &&
-              picked.product_name === item.item_description &&
+              picked.product_name === item.product_name &&
               (picked.supplier_id ?? null) === supplierId
 
             if (exactCosmetic) {
               // Tier 1 — exact match on every field, including expiry.
               resolvedId = picked.id
-            } else if (picked.sku) {
+            } else if (picked.sku && (picked.supplier_id ?? null) === supplierId) {
               // Tier 2 — same batch (expiry matches), only a cosmetic
-              // field (name typo/unit/supplier) differs, and it's already
+              // field (name typo/unit) differs, and it's already
               // tracked stock. Reuse it, just warn.
               resolvedId = picked.id
               skuMismatchWarnings.push({
-                itemDescription: item.item_description,
+                itemDescription: item.product_name,
                 sku: picked.sku,
               })
             }
@@ -415,7 +428,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         // duplicating a real, received batch.
         if (resolvedId === null) {
           const skuMatch = findExactMatch(
-            item.item_description,
+            item.product_name,
             supplierId,
             item.unit,
             item.expiry_date ?? null,
@@ -428,7 +441,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         // (no SKU requirement).
         if (resolvedId === null) {
           const match = findExactMatch(
-            item.item_description,
+            item.product_name,
             supplierId,
             item.unit,
             item.expiry_date ?? null,
@@ -460,13 +473,20 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       if (toCreateIndexes.length) {
         const productInserts = toCreateIndexes.map((idx) => {
           const item = itemsNeedingProduct[idx]
+          // The row this batch descends from: the one the picker chose, else any row
+          // already carrying this product name.
+          const source =
+            allCandidates.find((p) => p.id === item.product_id) ??
+            allCandidates.find((p) => p.product_name === item.product_name)
           return {
-            product_name: item.item_description,
+            product_name: item.product_name,
             unit: item.unit,
             supplier_id: item.supplier_id ? Number(item.supplier_id) : null,
             status: 'active',
             expiry_date: item.expiry_date ?? null,
             current_stock: 0,
+            cost_price: item.cost_per_unit,
+            ...carriedProductFields(source),
           }
         })
 
@@ -575,7 +595,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       )
   }
 
-  async function savePurchaseRequisition() {
+  async function savePurchaseRequisition(): Promise<SavePRResult> {
     loading.value = true
     error.value = ''
 
@@ -586,52 +606,24 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       return { success: false }
     }
 
-    const companyCostTotal = items.value.reduce((sum, i) => sum + i.qty * i.cost_per_unit, 0)
-
-    const {
-      data: txData,
-      docNo: prNumber,
-      error: txError,
-    } = await insertWithDocRetry<{ id: number; reference_no: string | null }>(
-      () => generateDocNumber('PR', getLatestReferenceNo),
-      async (docNo) =>
-        supabase
-          .from('transactions')
-          .insert({
-            reference_no: docNo,
-            recent_transaction_no: docNo,
-            po_no: null,
-            transaction_type: 'purchase_requisition',
-            status: 'pending_approval',
-            remarks: currentPR.value.remarks ?? '',
-            total_amount: companyCostTotal,
-            supplier_id: null,
-            created_by: user.id,
-          })
-          .select('id, reference_no')
-          .single(),
-    )
-
-    //console.log('[savePurchaseRequisition] prNumber:', prNumber, 'txData:', txData)
-
-    if (txError || !txData) {
-      handleError(txError, 'Failed to save purchase requisition.')
-      toast.error('Failed to save Purchase Requisition. Please try again.')
+    // Lines are grouped by supplier below, so one without a supplier would land in a PR addressed to nobody.
+    if (items.value.some((item) => !item.supplier_id)) {
+      handleError(null, 'Every item needs a supplier.')
+      toast.error('Every item needs a supplier before submitting.')
       loading.value = false
       return { success: false }
     }
 
     // ─── Check for existing products (matched by product_name + supplier_id) ──
-    const names = [...new Set(items.value.map((i) => i.item_description))]
+    const names = [...new Set(items.value.map((i) => i.product_name))]
     const { data: existingProducts, error: existingError } = await supabase
       .from('products')
-      .select('id, product_name, supplier_id, unit, expiry_date') // + expiry_date
+      .select('id, product_name, supplier_id, unit, expiry_date, category, brand, reorder_level, sku') // + expiry_date
       .in('product_name', names)
 
     if (existingError) {
       handleError(existingError, 'Failed to check existing products.')
       toast.error('Failed to check existing products. Please try again.')
-      await rollbackPR(txData.id)
       loading.value = false
       return { success: false }
     }
@@ -657,10 +649,13 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       if (item.product_id != null) {
         const pickedProduct = (existingProducts || []).find((p) => p.id === item.product_id)
 
+        // Supplier is part of batch identity: switching it must find or create that
+        // supplier's own row, so each supplier's delivery and cost history stays separate.
         if (
           pickedProduct &&
           pickedProduct.unit === item.unit &&
-          pickedProduct.product_name === item.item_description &&
+          pickedProduct.product_name === item.product_name &&
+          (pickedProduct.supplier_id ?? null) === supplierId &&
           (pickedProduct.expiry_date ?? null) === (item.expiry_date ?? null)
         ) {
           return item.product_id
@@ -668,7 +663,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       }
 
       const match = findExisting(
-        item.item_description,
+        item.product_name,
         supplierId,
         item.unit,
         item.expiry_date ?? null,
@@ -681,16 +676,25 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       .map((id, idx) => (id === null ? idx : -1))
       .filter((idx) => idx !== -1)
 
+    const createdProductIds: number[] = []
+
     if (newItemIndexes.length) {
       const productInserts = newItemIndexes.map((idx) => {
         const item = items.value[idx]
+        // The row this batch descends from: the one the picker chose, else any row
+        // already carrying this product name.
+        const source =
+          (existingProducts || []).find((p) => p.id === item.product_id) ??
+          (existingProducts || []).find((p) => p.product_name === item.product_name)
         return {
-          product_name: item.item_description,
+          product_name: item.product_name,
           unit: item.unit,
           supplier_id: item.supplier_id ? Number(item.supplier_id) : null,
           status: 'active',
           expiry_date: item.expiry_date ?? null,
           current_stock: 0,
+          cost_price: item.cost_per_unit,
+          ...carriedProductFields(source),
         }
       })
 
@@ -702,40 +706,114 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       if (productError || !productData) {
         handleError(productError, 'Failed to save products.')
         toast.error('Failed to save products. Please try again.')
-        await rollbackPR(txData.id)
         loading.value = false
         return { success: false }
       }
 
       newItemIndexes.forEach((idx, i) => {
         productIdByIndex[idx] = productData[i].id
+        createdProductIds.push(productData[i].id)
       })
     }
 
-    const { error: itemsError } = await supabase.from('transaction_items').insert(
-      items.value.map((item, index) => ({
-        transaction_id: txData.id,
-        product_id: productIdByIndex[index]!,
-        qty_stock_in: item.qty,
-        unit_price: item.cost_per_unit,
-        cost_price: item.cost_per_unit,
-        line_total: item.qty * item.cost_per_unit,
-        reorder_request_id: item.reorder_request_id ?? null, // NEW
-      })),
-    )
-
-    if (itemsError) {
-      handleError(itemsError, 'Failed to save transaction items.')
-      toast.error('Failed to save transaction items. Please try again.')
-      await rollbackPR(txData.id)
-      loading.value = false
-      return { success: false }
+    // One PR per supplier: a requisition covering two suppliers becomes a purchase
+    // order addressed to both, which is not a document anyone can act on.
+    const indexesBySupplier = new Map<number, number[]>()
+    for (let index = 0; index < items.value.length; index++) {
+      const supplierId = Number(items.value[index].supplier_id)
+      const group = indexesBySupplier.get(supplierId) ?? []
+      group.push(index)
+      indexesBySupplier.set(supplierId, group)
     }
 
-    toast.success('Purchase Requisition saved successfully.')
+    const createdPRs: CreatedPR[] = []
+
+    const rollbackCreatedPRs = async () => {
+      for (const pr of createdPRs) await rollbackPR(pr.transactionId)
+      // Every PR from this submission is gone, so any product created for it is
+      // now unreferenced — remove it rather than leave a phantom catalogue row.
+      if (createdProductIds.length) {
+        await supabase.from('products').delete().in('id', createdProductIds)
+      }
+    }
+
+    for (const [supplierId, indexes] of indexesBySupplier) {
+      const supplierTotal = indexes.reduce((sum, index) => {
+        const item = items.value[index]
+        return sum + item.qty * item.cost_per_unit
+      }, 0)
+
+      const {
+        data: txData,
+        docNo: prNumber,
+        error: txError,
+      } = await insertWithDocRetry<{ id: number; reference_no: string | null }>(
+        () => generateDocNumber('PR', getLatestReferenceNo),
+        async (docNo) =>
+          supabase
+            .from('transactions')
+            .insert({
+              reference_no: docNo,
+              recent_transaction_no: docNo,
+              po_no: null,
+              transaction_type: 'purchase_requisition',
+              status: 'pending_approval',
+              remarks: currentPR.value.remarks ?? '',
+              total_amount: supplierTotal,
+              supplier_id: supplierId,
+              created_by: user.id,
+            })
+            .select('id, reference_no')
+            .single(),
+      )
+
+      if (txError || !txData || !prNumber) {
+        handleError(txError, 'Failed to save purchase requisition.')
+        toast.error('Failed to save Purchase Requisition. Please try again.')
+        await rollbackCreatedPRs()
+        loading.value = false
+        return { success: false }
+      }
+
+      createdPRs.push({
+        transactionId: txData.id,
+        requisitionNo: prNumber,
+        supplierId,
+        itemCount: indexes.length,
+      })
+
+      const { error: itemsError } = await supabase.from('transaction_items').insert(
+        indexes.map((index) => {
+          const item = items.value[index]
+          return {
+            transaction_id: txData.id,
+            product_id: productIdByIndex[index]!,
+            qty_stock_in: item.qty,
+            unit_price: item.cost_per_unit,
+            cost_price: item.cost_per_unit,
+            line_total: item.qty * item.cost_per_unit,
+            reorder_request_id: item.reorder_request_id ?? null, // NEW
+          }
+        }),
+      )
+
+      if (itemsError) {
+        handleError(itemsError, 'Failed to save transaction items.')
+        toast.error('Failed to save transaction items. Please try again.')
+        await rollbackCreatedPRs()
+        loading.value = false
+        return { success: false }
+      }
+    }
+
+    toast.success(
+      createdPRs.length === 1
+        ? `${createdPRs[0].requisitionNo} submitted for approval.`
+        : `${createdPRs.length} purchase requisitions submitted for approval.`,
+    )
     resetStore()
     loading.value = false
-    return { success: true, transactionId: txData.id, requisitionNo: prNumber }
+    return { success: true, createdPRs }
   }
 
   async function fetchPurchaseRequisition() {
@@ -755,7 +833,9 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         )
       `,
       )
-      .not('requisition_no', 'is', null)
+      // requisition_no is only stamped at PO issuance, so filtering on it alone would
+      // hide every pending/approved PR that hasn't been issued yet.
+      .or('reference_no.ilike.PR%,requisition_no.ilike.PR%')
       .order('created_at', { ascending: false })
 
     if (fetchError) {

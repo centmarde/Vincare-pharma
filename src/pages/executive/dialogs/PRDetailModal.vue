@@ -92,7 +92,7 @@ async function onUnapprove() {
             <tr class="bg-blue-darken-3">
               <th class="table-header text-caption">#</th>
               <th class="table-header text-caption">UNIT</th>
-              <th class="table-header text-caption">ITEM DESCRIPTION</th>
+              <th class="table-header text-caption">PRODUCT NAME</th>
               <template v-if="pr.status === 'complete'">
                 <th class="table-header text-caption">QTY REQUESTED</th>
                 <th class="table-header text-caption">QTY RECEIVED</th>
@@ -108,7 +108,7 @@ async function onUnapprove() {
             <tr v-for="item in pr.items" :key="item.id">
               <td class="text-body-2">{{ item.no ?? 0 }}</td>
               <td class="text-body-2">{{ item.unit }}</td>
-              <td class="text-body-2">{{ item.item_description }}</td>
+              <td class="text-body-2">{{ item.product_name }}</td>
               <template v-if="pr.status === 'complete'">
                 <td class="text-body-2">{{ item.qty.toLocaleString() }}</td>
                 <td class="text-body-2">{{ (item.actual_count_stock_in ?? 0).toLocaleString() }}</td>
@@ -136,7 +136,7 @@ async function onUnapprove() {
               <div class="d-flex justify-space-between align-start mb-1">
                 <div class="d-flex ga-2 align-center">
                   <span class="text-caption font-weight-bold text-primary">#{{ item.no ?? 0 }}</span>
-                  <span class="text-caption font-weight-medium">{{ item.item_description }}</span>
+                  <span class="text-caption font-weight-medium">{{ item.product_name }}</span>
                 </div>
               </div>
               <v-divider class="my-1" />

@@ -155,7 +155,7 @@ const { printArea, poNumber, emptyRows, uniqueSuppliers, showActualQty, handlePr
             <tbody>
               <tr v-for="item in pr?.items" :key="item.id">
                 <td>{{ item.no }}</td>
-                <td>{{ item.item_description }}</td>
+                <td>{{ item.product_name }}</td>
                 <td class="text-right">{{ item.qty }}</td>
                 <td v-if="showActualQty" class="text-right">{{ item.actual_count_stock_in ?? '—' }}</td>
                 <td class="text-right">{{ item.supplier_name }}</td>
@@ -206,7 +206,7 @@ const { printArea, poNumber, emptyRows, uniqueSuppliers, showActualQty, handlePr
                 <div class="d-flex justify-space-between align-start mb-1">
                   <div class="d-flex ga-2 align-center">
                     <span class="text-caption font-weight-bold text-primary">#{{ item.no }}</span>
-                    <span class="text-caption font-weight-medium">{{ item.item_description }}</span>
+                    <span class="text-caption font-weight-medium">{{ item.product_name }}</span>
                   </div>
                 </div>
                 <v-divider class="my-1" />

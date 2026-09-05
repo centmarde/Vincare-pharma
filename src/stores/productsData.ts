@@ -649,6 +649,24 @@ export const useProductsDataStore = defineStore('productsData', () => {
       .filter((id: number | null): id is number => id != null)
   }
 
+  // An unreadable result drops every link rather than risk resolving a reorder request the PR no longer owns.
+  async function filterPendingReorderRequestIds(ids: number[]): Promise<number[]> {
+    if (!ids.length) return []
+
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('id')
+      .in('id', ids)
+      .in('transaction_type', REORDER_TYPES)
+      .eq('status', 'pending')
+
+    if (error) {
+      console.error('Failed to check reorder request statuses', error)
+      return []
+    }
+    return (data || []).map((row: any) => row.id)
+  }
+
   async function fetchReorderRequests(includeResolved = false) {
     loading.value = true
     if (!authStore.users.length) await authStore.getAllUsers()
@@ -1068,6 +1086,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     fetchReorderCount,
     createReorderRequest,
     fetchReorderRequestIdsForTransaction, // NEW
+    filterPendingReorderRequestIds,
     approveReorderRequestsById,   // RENAMED
     rejectReorderRequestsById,    // RENAMED
     markReorderRequestsAwaitingStockById,  // RENAMED

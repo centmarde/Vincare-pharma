@@ -45,12 +45,12 @@ export function useTransactionsData() {
     if (!list?.length) return '—'
     const extra = list.length - 1
     return extra > 0
-      ? `${list[0].item_description} +${extra} more`
-      : list[0].item_description
+      ? `${list[0].product_name} +${extra} more`
+      : list[0].product_name
   }
 
   const itemNames = (list: PRItem[]) => {
-    return list?.map(item => item.item_description) ?? []
+    return list?.map(item => item.product_name) ?? []
   }
 
   const statusConfig = (status: string) => {

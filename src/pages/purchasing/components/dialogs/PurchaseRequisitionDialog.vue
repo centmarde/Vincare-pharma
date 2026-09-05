@@ -8,28 +8,36 @@ import { formatCurrency } from '@/utils/helpers'
 import { useDisplay } from 'vuetify'
 import { storeToRefs } from 'pinia'
 import { ref, watch } from 'vue'
+import { useToast } from 'vue-toastification'
 
 const props = defineProps<{
   modelValue: boolean
   prefillItems?: ReorderPrefillItem[]
+  draftId?: number | null
 }>()
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
   (e: 'submitted', resolvedReorderIds: number[]): void
+  (e: 'saved-draft'): void
 }>()
 
 const supplierStore = useSuppliersDataStore()
 const { activeSuppliers } = storeToRefs(supplierStore)
 const { mobile } = useDisplay()
+const toast = useToast()
 const {
   currentPR,
   items,
   loading,
+  currentDraftId,
   companyCostTotal,
+  supplierCount,
   addItem,
   removeItem,
   handleSubmit,
+  saveDraft,
+  loadDraft,
   reset,
   clearForm,
   addReorderItems,
@@ -49,7 +57,7 @@ function onProductSelected(product: ProductPickerResult) {
   if (index === null || !items.value[index]) return
 
   const item = items.value[index]
-  item.item_description = product.product_name || item.item_description
+  item.product_name = product.product_name || item.product_name
   if (product.unit) item.unit = product.unit
   item.cost_per_unit = product.cost_price ?? item.cost_per_unit
   if (product.supplier_id != null) item.supplier_id = product.supplier_id
@@ -97,16 +105,34 @@ async function onSubmit() {
   // person can fix the item/supplier issue without losing what they've entered
 }
 
+async function onSaveDraft() {
+  const result = await saveDraft()
+  if (result.success) {
+    emit('saved-draft')
+    close()
+  }
+}
+
 // Fetch suppliers once when dialog opens; start from a clean form each time
 watch(
   () => props.modelValue,
-  (isOpen) => {
+  async (isOpen) => {
     if (isOpen) {
       supplierStore.fetchSuppliers({ activeOnly: true })
-      
-      if (props.prefillItems?.length) {
+
+      if (props.draftId != null) {
+        const loaded = await loadDraft(props.draftId)
+        if (!loaded) {
+          reset()
+          currentDraftId.value = null
+          toast.error('That draft is no longer available.')
+          close()
+        }
+      } else if (props.prefillItems?.length) {
         reset()
         addReorderItems(props.prefillItems)
+      } else if (currentDraftId.value != null) {
+        reset()
       }
       expiryMenuOpen.value = {}
     }
@@ -131,6 +157,15 @@ watch(
           <span class="text-subtitle-1 text-sm-h6 font-weight-bold"
             >Place Purchase Requisition</span
           >
+          <v-chip
+            v-if="currentDraftId"
+            size="small"
+            variant="tonal"
+            color="primary"
+            class="ml-3"
+          >
+            Draft #{{ currentDraftId }}
+          </v-chip>
         </div>
         <div class="d-flex align-center" style="gap: 12px">
           <v-btn icon="mdi-close" variant="text" size="small" @click="close" />
@@ -178,7 +213,7 @@ watch(
 
             <v-col cols="3" class="pl-2">
               <v-text-field
-                v-model="item.item_description"
+                v-model="item.product_name"
                 placeholder="Item description"
                 variant="outlined"
                 density="compact"
@@ -294,7 +329,7 @@ watch(
             <div class="mb-2">
               <div class="field-label">Product Description</div>
               <v-text-field
-                v-model="item.item_description"
+                v-model="item.product_name"
                 placeholder="Item description"
                 variant="outlined"
                 density="compact"
@@ -467,8 +502,29 @@ watch(
             >
               Submit for Approval
             </v-btn>
+            <v-btn
+              variant="outlined"
+              size="large"
+              class="text-none font-weight-bold mb-2"
+              rounded="lg"
+              prepend-icon="mdi-content-save-outline"
+              block
+              :loading="loading"
+              @click="onSaveDraft"
+            >
+              {{ currentDraftId ? 'Update Draft' : 'Save as Draft' }}
+            </v-btn>
             <div class="text-caption text-medium-emphasis">
-              Saved as one record <strong>(Pending Approval)</strong> → Manager approves → Issue PO.
+              <template v-if="supplierCount > 1">
+                One requisition per supplier — <strong>{{ supplierCount }}</strong> will be created
+                <strong>(Pending Approval)</strong> → Manager approves → Issue PO.
+              </template>
+              <template v-else>
+                Saved as one record <strong>(Pending Approval)</strong> → Manager approves → Issue PO.
+              </template>
+            </div>
+            <div class="text-caption text-medium-emphasis mt-1">
+              A draft stays editable and is not sent for approval.
             </div>
           </v-col>
         </v-row>
