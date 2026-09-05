@@ -10,5 +10,5 @@ as $$
   select distinct p.id as product_id
   from products p
   where p.sku != 'null'
-    and not (p.is_reorder = true and coalesce(p.current_stock, 0) = 0);
+    and not (p.is_reorder is true and coalesce(p.current_stock, 0) = 0);
 $$;
