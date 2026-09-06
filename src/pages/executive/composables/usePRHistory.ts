@@ -51,7 +51,7 @@ export function usePRHistory() {
   function flattenPR(pr: PR): ProductPurchaseRow[] {
     return (pr.items || []).map((item: PRItem) => ({
       product_id:     item.product_id ?? null,
-      product_name:   item.item_description,
+      product_name:   item.product_name,
       requisition_no: pr.requisition_no,
       unit:           item.unit,
       qty:            item.qty,

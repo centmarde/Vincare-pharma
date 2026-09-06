@@ -211,7 +211,7 @@ async function confirmReject() {
               <thead>
                 <tr>
                   <th class="text-caption">No.</th>
-                  <th class="text-caption">Description</th>
+                  <th class="text-caption">Product Name</th>
                   <th class="text-caption">Unit</th>
                   <th class="text-caption">Supplier</th>
                   <th class="text-caption text-right">Qty</th>
@@ -222,7 +222,7 @@ async function confirmReject() {
               <tbody>
                 <tr v-for="it in raw.items" :key="it.id">
                   <td class="text-caption">{{ it.no }}</td>
-                  <td class="text-caption">{{ it.item_description }}</td>
+                  <td class="text-caption">{{ it.product_name }}</td>
                   <td class="text-caption">{{ it.unit }}</td>
                   <td class="text-caption">{{ it.supplier_name }}</td>
                   <td class="text-caption text-right">{{ it.qty }}</td>
@@ -304,7 +304,7 @@ async function confirmReject() {
             <thead>
               <tr>
                 <th class="text-caption">No.</th>
-                <th class="text-caption">Description</th>
+                <th class="text-caption">Product Name</th>
                 <th class="text-caption">Unit</th>
                 <th class="text-caption">Supplier</th>
                 <th class="text-caption text-right">Qty</th>
@@ -315,7 +315,7 @@ async function confirmReject() {
             <tbody>
               <tr v-for="it in undoItems" :key="it.id">
                 <td class="text-caption">{{ it.no }}</td>
-                <td class="text-caption">{{ it.item_description }}</td>
+                <td class="text-caption">{{ it.product_name }}</td>
                 <td class="text-caption">{{ it.unit }}</td>
                 <td class="text-caption">{{ it.supplier_name }}</td>
                 <td class="text-caption text-right">{{ it.qty }}</td>

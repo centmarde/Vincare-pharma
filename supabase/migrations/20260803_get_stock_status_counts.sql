@@ -51,7 +51,7 @@ as $$
       when 'out-of-stock' then coalesce(p.current_stock, 0) <= 0
         -- Skip products already flagged for reorder at zero stock — they've
         -- been moved into the Purchase Requisition flow, so stop surfacing them.
-        and not (p.is_reorder = true and coalesce(p.current_stock, 0) = 0)
+        and not (p.is_reorder is true and coalesce(p.current_stock, 0) = 0)
       when 'low-stock' then coalesce(p.current_stock, 0) > 0
         and p.reorder_level is not null
         and coalesce(p.current_stock, 0) <= p.reorder_level

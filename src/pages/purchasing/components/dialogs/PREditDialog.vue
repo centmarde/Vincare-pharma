@@ -54,7 +54,7 @@ function onProductSelected(product: ProductPickerResult) {
   if (index === null || !items.value[index]) return
 
   const item = items.value[index]
-  item.item_description = product.product_name || item.item_description
+  item.product_name = product.product_name || item.product_name
   if (product.unit) item.unit = product.unit
   item.cost_per_unit = product.cost_price ?? item.cost_per_unit
   if (product.supplier_id != null) item.supplier_id = String(product.supplier_id)
@@ -75,7 +75,7 @@ function addItem() {
     id: Date.now(),
     no: maxNo + 1,
     unit: 'Box',
-    item_description: '',
+    product_name: '',
     qty: 1,
     cost_per_unit: 0,
     product_id: undefined,
@@ -149,7 +149,7 @@ const companyCostTotal = computed(() => {
           <v-row class="text-caption font-weight-bold mb-1 px-1" no-gutters>
             <v-col cols="auto" style="width: 36px" class="text-center">NO.</v-col>
             <v-col cols="1" class="pl-2">UNIT</v-col>
-            <v-col cols="3" class="pl-2">PRODUCT</v-col>
+            <v-col cols="3" class="pl-2">PRODUCT NAME</v-col>
             <v-col cols="2" class="pl-2">SUPPLIER</v-col>
             <v-col cols="2" class="pl-2">EXPIRY</v-col>
             <v-col cols="1" class="pl-2">QTY</v-col>
@@ -191,8 +191,8 @@ const companyCostTotal = computed(() => {
 
             <v-col cols="3" class="pl-2">
               <v-text-field
-                v-model="item.item_description"
-                placeholder="Item description"
+                v-model="item.product_name"
+                placeholder="Product name"
                 variant="outlined"
                 density="compact"
                 hide-details
@@ -318,12 +318,12 @@ const companyCostTotal = computed(() => {
               />
             </div>
 
-            <!-- Description -->
+            <!-- Product name -->
             <div class="mb-2">
-              <div class="field-label">Product Description</div>
+              <div class="field-label">PRODUCT NAME</div>
               <v-text-field
-                v-model="item.item_description"
-                placeholder="Item description"
+                v-model="item.product_name"
+                placeholder="Product name"
                 variant="outlined"
                 density="compact"
                 hide-details

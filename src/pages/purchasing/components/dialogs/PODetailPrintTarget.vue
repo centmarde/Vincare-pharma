@@ -119,7 +119,7 @@ defineExpose({ handlePrint })
         <tbody>
           <tr v-for="item in pr?.items" :key="item.id">
             <td>{{ item.no }}</td>
-            <td>{{ item.item_description }}</td>
+            <td>{{ item.product_name }}</td>
             <td class="text-right">{{ item.qty }}</td>
             <td v-if="showActualQty" class="text-right">{{ item.actual_count_stock_in ?? '—' }}</td>
             <td class="text-right">{{ item.supplier_name }}</td>

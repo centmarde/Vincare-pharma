@@ -169,7 +169,7 @@ const {
           <tbody>
             <tr v-for="item in pr?.items" :key="item.id">
               <td>{{ item.no }}</td>
-              <td>{{ item.item_description }}</td>
+              <td>{{ item.product_name }}</td>
               <td class="text-right">{{ item.qty }}</td>
               <td class="text-right">{{ item.supplier_name }}</td>
               <td class="text-right">{{ formatExpiryMonthYear(item.expiry_date) }}</td>
@@ -202,7 +202,7 @@ const {
               <div class="d-flex justify-space-between align-start mb-1">
                 <div class="d-flex ga-2 align-center">
                   <span class="text-caption font-weight-bold text-primary">#{{ item.no }}</span>
-                  <span class="text-caption font-weight-medium">{{ item.item_description }}</span>
+                  <span class="text-caption font-weight-medium">{{ item.product_name }}</span>
                 </div>
               </div>
               <v-divider class="my-1" />

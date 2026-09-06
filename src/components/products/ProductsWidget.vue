@@ -140,7 +140,28 @@ async function requestReorder(product: any) {
   const reason = reorderReasonMap[stockDialogType.value]
   if (!reason) return
   const result = await productsDataStore.createReorderRequest({ product_id: product.id, reason })
-  if (result?.success) await productsDataStore.fetchReorderRequests(true)
+  if (result?.success) {
+    await productsDataStore.fetchReorderRequests(true)
+
+    // Log the product reorder with its identifying details so the action is
+    // traceable in the logs view (module = products / action = reorder_product).
+    try {
+      await logsStore.createLog({
+        action: 'reorder_product',
+        module: 'products',
+        description: [
+          `Reorder flagged for product "${product.product_name ?? 'N/A'}"`,
+          `SKU: ${product.sku ?? 'N/A'}`,
+          `Batch: ${product.batch_no ?? 'N/A'}`,
+          `Stock: ${product.current_stock ?? 0}`,
+          `Reorder level: ${product.reorder_level ?? 'N/A'}`,
+          `Reason: ${reason.replace('reorder_', '')}`,
+        ].join(' | '),
+      })
+    } catch (err) {
+      console.error('[ProductsWidget] Failed to log reorder_product:', err)
+    }
+  }
 }
 function onPRSubmitted() {}
 
