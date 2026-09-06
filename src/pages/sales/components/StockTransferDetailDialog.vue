@@ -59,8 +59,8 @@ async function onMarkReceived() {
       <v-card-text class="pa-4 pa-sm-5">
         <v-row dense class="mb-2">
           <v-col cols="6">
-            <div class="text-caption text-medium-emphasis">Branch</div>
-            <div class="text-body-2 font-weight-medium">{{ transfer.outlet?.name ?? '—' }}</div>
+            <div class="text-caption text-medium-emphasis">Warehouse</div>
+            <div class="text-body-2 font-weight-medium">{{ transfer.warehouse?.name ?? '—' }}</div>
           </v-col>
           <v-col cols="6">
             <div class="text-caption text-medium-emphasis">Requested</div>

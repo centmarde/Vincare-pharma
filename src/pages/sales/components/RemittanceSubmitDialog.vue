@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ExpectedSummary } from '@/stores/remittancesData'
+import { paymentMethodMeta } from '@/utils/paymentMethods'
 import { formatCurrency } from '@/utils/helpers'
 import { useDisplay } from 'vuetify'
 
@@ -56,9 +57,31 @@ const noteRequiredRule = (v: string) => !!v?.trim() || 'A note is required for a
           <span class="text-body-2 font-weight-medium">{{ expected.saleCount }}</span>
         </div>
         <div class="d-flex justify-space-between align-center mb-4">
-          <span class="text-body-1 text-medium-emphasis">Expected (system)</span>
+          <span class="text-body-1 text-medium-emphasis">Expected in cash</span>
           <span class="text-h6 font-weight-bold">{{ formatCurrency(expected.expected) }}</span>
         </div>
+
+        <!-- The rest of the day's takings, shown for context and NOT counted:
+             GCash, a transfer and a cheque never entered the drawer, so asking
+             the cashier to hand them over would report a shortfall for money
+             that arrived safely by another rail. -->
+        <template v-if="expected.nonCash.length">
+          <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis mb-1">
+            Also taken today &mdash; not counted in the drawer
+          </div>
+          <div
+            v-for="n in expected.nonCash"
+            :key="n.method"
+            class="d-flex justify-space-between align-center text-body-2 text-medium-emphasis"
+          >
+            <span>{{ paymentMethodMeta(n.method).title }} ({{ n.saleCount }})</span>
+            <span>{{ formatCurrency(n.amount) }}</span>
+          </div>
+          <div class="d-flex justify-space-between align-center text-body-2 font-weight-medium mt-1 mb-4">
+            <span>Non-cash total</span>
+            <span>{{ formatCurrency(expected.nonCashTotal) }}</span>
+          </div>
+        </template>
 
         <v-alert
           v-if="expected.saleCount === 0"
