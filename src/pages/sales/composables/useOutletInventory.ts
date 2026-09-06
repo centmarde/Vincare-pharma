@@ -98,7 +98,7 @@ export function useOutletInventory() {
     rowProducts.value = await productsStore.fetchProductsByIds(
       warehouseProducts.value.map((wp) => wp.product_id).filter((id): id is number => id != null),
     )
-    warehouseProductsStore.startRealtime()
+    warehouseProductsStore.startRealtime(selectedWarehouseId.value)
   }
 
   async function setWarehouse(warehouseId: number) {

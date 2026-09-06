@@ -78,14 +78,21 @@ const SELECT_TRANSFER = '*, transaction_items!transaction_items_transaction_id_f
  */
 async function findUnpricedProducts(productIds: number[]) {
   const ids = [...new Set(productIds)]
-  if (!ids.length) return []
-  const { data } = await supabase
+  if (!ids.length) return { names: [], failed: false }
+  const { data, error } = await supabase
     .from('products')
     .select('id, product_name, selling_price')
     .in('id', ids)
-  return (data ?? [])
-    .filter((p) => p.selling_price == null || Number(p.selling_price) <= 0)
-    .map((p) => p.product_name ?? `#${p.id}`)
+  // A failed lookup is NOT "everything is priced". Swallowing the error here
+  // would turn the guard into a no-op exactly when it cannot be trusted, so the
+  // caller is told the check could not run and refuses rather than proceeding.
+  if (error || !data) return { names: [], failed: true }
+  return {
+    names: data
+      .filter((p) => p.selling_price == null || Number(p.selling_price) <= 0)
+      .map((p) => p.product_name ?? `#${p.id}`),
+    failed: false,
+  }
 }
 
 function unpricedMessage(names: string[]) {
@@ -223,9 +230,14 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
       return { success: false }
     }
 
-    const unpriced = await findUnpricedProducts(items.map(i => i.product_id))
-    if (unpriced.length) {
-      toast.error(unpricedMessage(unpriced))
+    const priceCheck = await findUnpricedProducts(items.map(i => i.product_id))
+    if (priceCheck.failed) {
+      toast.error('Could not verify selling prices. Try again before requesting this transfer.')
+      loading.value = false
+      return { success: false }
+    }
+    if (priceCheck.names.length) {
+      toast.error(unpricedMessage(priceCheck.names))
       loading.value = false
       return { success: false }
     }
@@ -313,10 +325,15 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
 
     const lines = ((transfer.transaction_items ?? []) as unknown as { product_id: number; qty_stock_out: number | null }[])
       .map(li => ({ product_id: li.product_id, qty: li.qty_stock_out ?? 0 }))
-    const unpriced = await findUnpricedProducts(lines.map(l => l.product_id))
-    if (unpriced.length) {
+    const priceCheck = await findUnpricedProducts(lines.map(l => l.product_id))
+    if (priceCheck.failed) {
       loading.value = false
-      toast.error(unpricedMessage(unpriced))
+      toast.error('Could not verify selling prices. Try again before approving this transfer.')
+      return false
+    }
+    if (priceCheck.names.length) {
+      loading.value = false
+      toast.error(unpricedMessage(priceCheck.names))
       return false
     }
 

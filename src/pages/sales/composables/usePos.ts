@@ -83,7 +83,15 @@ export function usePos() {
   // master is joined here in JS.
   const products = computed<PosProduct[]>(() =>
     warehouseProducts.value
+      // An unresolved product is NOT sellable. Without this it would fall
+      // through to `selling_price ?? 0` and ring up free while still
+      // decrementing stock -- and with most of the catalogue unpriced, a
+      // failed or in-flight product fetch is not a remote possibility.
       .filter(s => (s.total_qty ?? 0) > 0 && s.product_id != null)
+      .filter(s => {
+        const p = rowProducts.value.find(pr => pr.id === s.product_id)
+        return p != null && Number(p.selling_price ?? 0) > 0
+      })
       .map(s => {
         const p = rowProducts.value.find(pr => pr.id === s.product_id)
         return {
@@ -206,7 +214,7 @@ export function usePos() {
     // one terminal must reflect here immediately — otherwise a cashier can
     // add an item to cart that's already sold out and only find out from a
     // raw RPC error at checkout instead of the UI greying it out up front.
-    warehouseProductsStore.startRealtime()
+    warehouseProductsStore.startRealtime(selectedWarehouseId.value)
   }
 
   async function setWarehouse(warehouseId: number) {

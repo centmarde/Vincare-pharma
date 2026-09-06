@@ -479,16 +479,27 @@ export const useSalesDataStore = defineStore('salesData', () => {
     const lines = ((sale.transaction_items ?? []) as unknown as { product_id: number; qty_stock_out: number | null }[])
       .map(li => ({ product_id: li.product_id, qty: li.qty_stock_out ?? 0 }))
     for (const line of lines) {
-      const { data: stockRow } = await supabase
-        .from('warehouse_products')
-        .select('id, total_qty')
-        .eq('warehouse_id', sale.warehouse_id)
-        .eq('product_id', line.product_id)
-        .maybeSingle()
+      // A missing warehouse or missing row is a FAILED restoration, not a
+      // silent no-op: updating `id = -1` matches nothing and returns no error,
+      // so without this the void would report stock restored when it was not.
+      const { data: stockRow, error: lookupError } = sale.warehouse_id
+        ? await supabase
+            .from('warehouse_products')
+            .select('id, total_qty')
+            .eq('warehouse_id', sale.warehouse_id)
+            .eq('product_id', line.product_id)
+            .maybeSingle()
+        : { data: null, error: null }
+
+      if (lookupError || !stockRow) {
+        toast.warning(`Sale voided, but stock for product ${line.product_id} needs manual correction.`)
+        continue
+      }
+
       const { error: stockError } = await supabase
         .from('warehouse_products')
-        .update({ total_qty: (stockRow?.total_qty ?? 0) + line.qty })
-        .eq('id', stockRow?.id ?? -1)
+        .update({ total_qty: (stockRow.total_qty ?? 0) + line.qty })
+        .eq('id', stockRow.id)
       if (stockError) {
         toast.warning(`Sale voided, but stock for product ${line.product_id} needs manual correction.`)
       }

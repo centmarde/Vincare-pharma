@@ -1,14 +1,15 @@
 import { ref, computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSalesDataStore } from '@/stores/salesData'
-import { useOutletsDataStore } from '@/stores/outletsData'
+import { useWarehousesDataStore } from '@/stores/warehouseData'
+import type { WarehouseType } from '@/stores/warehouseData'
 import { useAuthUserStore } from '@/stores/authUser'
 import type { SaleType } from '@/stores/salesData'
 import { buildReceiptFromSale, type Receipt } from './usePosCheckout'
 
 export const headers = [
   { title: 'SALE #',   key: 'sale_no',      sortable: true,  align: 'start' as const },
-  { title: 'BRANCH',   key: 'outlet',       sortable: false, align: 'center' as const },
+  { title: 'BRANCH',   key: 'warehouse',    sortable: false, align: 'center' as const },
   { title: 'DATE',     key: 'created_at',   sortable: true,  align: 'center' as const },
   { title: 'CUSTOMER', key: 'customer',     sortable: false, align: 'start' as const },
   { title: 'CASHIER',  key: 'cashier',      sortable: false, align: 'center' as const },
@@ -20,10 +21,10 @@ export const headers = [
 
 export function useSalesHistory() {
   const salesStore = useSalesDataStore()
-  const outletsStore = useOutletsDataStore()
+  const warehousesStore = useWarehousesDataStore()
   const authStore = useAuthUserStore()
   const { sales, loading } = storeToRefs(salesStore)
-  const { outlets } = storeToRefs(outletsStore)
+  const { warehouses } = storeToRefs(warehousesStore)
 
   // Default to the last 30 days so a fresh page load doesn't pull the
   // pharmacy's entire sales history — the user can still clear/widen it.
@@ -35,7 +36,7 @@ export function useSalesHistory() {
 
   const search = ref('')
   const filterStatus = ref<'all' | 'completed' | 'voided'>('all')
-  const filterOutletId = ref<number | null>(null)
+  const filterWarehouseId = ref<number | null>(null)
   const dateFrom = ref(defaultDateFrom())
   const dateTo = ref('')
   const statusOptions = [
@@ -43,9 +44,9 @@ export function useSalesHistory() {
     { title: 'Completed', value: 'completed' },
     { title: 'Voided', value: 'voided' },
   ]
-  const outletOptions = computed(() => [
+  const warehouseOptions = computed(() => [
     { title: 'All Branches', value: null },
-    ...outlets.value.filter(o => o.channel === 'pos').map(o => ({ title: o.name, value: o.id })),
+    ...warehouses.value.map((w: WarehouseType) => ({ title: w.name, value: w.id })),
   ])
 
   // Dialog state
@@ -79,9 +80,9 @@ export function useSalesHistory() {
 
   async function load() {
     if (!authStore.users.length) await authStore.getAllUsers()
-    if (!outlets.value.length) await outletsStore.fetchOutlets()
+    if (!warehouses.value.length) await warehousesStore.fetchWarehouses()
     await salesStore.fetchSales({
-      warehouseId: filterOutletId.value ?? undefined,
+      warehouseId: filterWarehouseId.value ?? undefined,
       dateFrom: dateFrom.value || undefined,
       dateTo: dateTo.value ? `${dateTo.value}T23:59:59` : undefined,
     })
@@ -107,7 +108,7 @@ export function useSalesHistory() {
   onMounted(load)
 
   return {
-    loading, sales, search, filterStatus, filterOutletId, outletOptions, dateFrom, dateTo, statusOptions,
+    loading, sales, search, filterStatus, filterWarehouseId, warehouseOptions, dateFrom, dateTo, statusOptions,
     filteredSales, cashierName, canVoid,
     showReceipt, receipt, showVoid, voidReason, selectedSale,
     load, openReceipt, openVoid, confirmVoid,

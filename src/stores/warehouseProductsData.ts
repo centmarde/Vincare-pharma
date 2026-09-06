@@ -77,7 +77,14 @@ export const useWarehouseProductsDataStore = defineStore('warehouseProductsData'
     if (currentWarehouseProduct.value?.id === id) currentWarehouseProduct.value = undefined
   }
 
-  const startRealtime = () => {
+  /**
+   * @param warehouseId Scope live updates to one warehouse. Without it a change
+   * to ANOTHER branch's stock is inserted into the list this store is holding
+   * for the selected one — POS then offers stock the branch does not have, and
+   * checkout fails when it validates that product against the real warehouse.
+   * Omit only where every warehouse is genuinely wanted.
+   */
+  const startRealtime = (warehouseId?: number | null) => {
     // Avoid double subscriptions
     if (realtimeChannel.value) return realtimeChannel.value
 
@@ -94,7 +101,9 @@ export const useWarehouseProductsDataStore = defineStore('warehouseProductsData'
 
           if (eventType === 'INSERT' || eventType === 'UPDATE') {
             const row = payload.new as WarehouseProductType
-            if (row?.id != null) upsertWarehouseProductLocal(row)
+            if (row?.id == null) return
+            if (warehouseId != null && row.warehouse_id !== warehouseId) return
+            upsertWarehouseProductLocal(row)
           }
 
           if (eventType === 'DELETE') {

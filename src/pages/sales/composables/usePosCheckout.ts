@@ -94,22 +94,32 @@ export function usePosCheckout(pos: ReturnType<typeof usePos>) {
   const customerSuggestions = ref<CustomerType[]>([])
   const customerSearching = ref(false)
   let customerSearchTimer: ReturnType<typeof setTimeout> | null = null
+  // clearTimeout cannot cancel a request that already left. Without a ticket an
+  // earlier lookup resolving late overwrites the current suggestions with
+  // results for a term the cashier has already moved on from.
+  let customerSearchId = 0
 
   function searchCustomers(term: string) {
     if (customerSearchTimer) clearTimeout(customerSearchTimer)
+    const requestId = ++customerSearchId
     const s = term.trim()
     if (s.length < 2) { customerSuggestions.value = []; return }
     // Debounced: a cashier types a name a character at a time, and one query
     // per keystroke would be ~10 round trips for a single lookup.
     customerSearchTimer = setTimeout(async () => {
       customerSearching.value = true
-      customerSuggestions.value = await customersStore.searchCustomers(s, 20, 'pos')
+      const results = await customersStore.searchCustomers(s, 20, 'pos')
+      if (requestId !== customerSearchId) return
+      customerSuggestions.value = results
       customerSearching.value = false
     }, 300)
   }
 
   /** Fill the form from a picked suggestion. */
   function applyCustomer(customer: CustomerType) {
+    // Invalidate anything in flight so a late response cannot repopulate the
+    // list after the cashier has already chosen.
+    customerSearchId++
     customerName.value = customer.name ?? ''
     customerAddress.value = customer.address ?? ''
     customerMobile.value = customer.contact_no ?? ''

@@ -45,6 +45,13 @@ export type ExpectedSummary = {
   /** Number of CASH sales making up `expected`. */
   saleCount: number
   /**
+   * Every unremitted sale for the branch, cash or not. `saleCount` alone
+   * cannot gate submission: a day with only GCash sales has zero cash sales
+   * but still has sales that need closing out, and refusing to remit would
+   * leave them unremitted forever, re-counted in every later remittance.
+   */
+  totalSaleCount: number
+  /**
    * The rest of the day's takings, per method. Shown beside the cash figure so
    * the branch sees its whole day, but NOT counted toward what is owed: GCash,
    * a bank transfer and a cheque never entered the drawer.
@@ -192,7 +199,7 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
 
     if (fetchError) {
       handleError(fetchError, 'Failed to compute expected amount')
-      return { expected: 0, saleCount: 0, nonCash: [], nonCashTotal: 0 }
+      return { expected: 0, saleCount: 0, totalSaleCount: 0, nonCash: [], nonCashTotal: 0 }
     }
 
     const rows = (data || []) as { total_amount: number | null; pos_sale_details: { payment_method: string | null } | { payment_method: string | null }[] | null }[]
@@ -219,6 +226,7 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
     return {
       expected,
       saleCount,
+      totalSaleCount: rows.length,
       nonCash,
       nonCashTotal: nonCash.reduce((sum, n) => sum + n.amount, 0),
     }
