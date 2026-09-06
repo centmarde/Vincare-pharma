@@ -11,7 +11,7 @@ import { useDisplay } from 'vuetify'
 
 const { mobile } = useDisplay()
 const {
-  loading, search, filterStatus, filterOutletId, outletOptions, dateFrom, dateTo, statusOptions,
+  loading, search, filterStatus, filterWarehouseId, warehouseOptions, dateFrom, dateTo, statusOptions,
   filteredSales, cashierName, canVoid,
   showReceipt, receipt,
   load, openReceipt,
@@ -44,8 +44,8 @@ onMounted(loadPending)
         <span class="text-h6 font-weight-bold">Sales History</span>
         <div class="d-flex align-center flex-wrap ga-3" :class="mobile ? 'w-100' : ''">
           <v-select
-            v-model="filterOutletId"
-            :items="outletOptions"
+            v-model="filterWarehouseId"
+            :items="warehouseOptions"
             item-title="title"
             item-value="value"
             label="Branch"
@@ -121,7 +121,7 @@ onMounted(loadPending)
           </template>
           <template #default>
             <div class="text-caption text-medium-emphasis mt-1">
-              <div>{{ s.outlet?.name ?? '—' }} · {{ s.customer?.name || '—' }}</div>
+              <div>{{ s.warehouse?.name ?? '—' }} · {{ s.customer?.name || '—' }}</div>
               <div>{{ cashierName(s.cashier_id) }} · {{ s.sale_items?.length ?? 0 }} item(s)</div>
             </div>
             <div class="d-flex align-center ga-2 mt-2">
@@ -161,8 +161,8 @@ onMounted(loadPending)
           <span class="font-weight-medium">{{ item.sale_no }}</span>
         </template>
 
-        <template #item.outlet="{ item }">
-          {{ item.outlet?.name ?? '—' }}
+        <template #item.warehouse="{ item }">
+          {{ item.warehouse?.name ?? '—' }}
         </template>
 
         <template #item.created_at="{ item }">

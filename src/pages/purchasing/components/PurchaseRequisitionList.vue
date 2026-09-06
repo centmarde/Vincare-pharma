@@ -4,6 +4,7 @@ import type { ReorderPrefillItem } from '../composables/usePurchaseRequisition'
 import PurchaseRequisitionDialog from './dialogs/PurchaseRequisitionDialog.vue'
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import ReorderRequestsDialog from './dialogs/ReorderRequestsDialog.vue'
+import PRDraftsDialog from './dialogs/PRDraftsDialog.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import PRDetailModal from './dialogs/PRDetailModal.vue'
 import IssuePOModal from './dialogs/IssuePOModal.vue'
@@ -46,6 +47,13 @@ const {
   reorderRequests,
   showReorderDialog,
   reorderCount,
+  manualDrafts,
+  manualDraftCount,
+  showDraftsDialog,
+  draftsLoading,
+  openDraftsDialog,
+  deleteDraft,
+  refreshDraftCount,
   loadStats,
   refresh,
   // proposeEditPR,
@@ -58,6 +66,7 @@ onMounted(() => {
     }
 })
 const showNewPRDialog = ref(false)
+const resumeDraftId = ref<number | null>(null)
 
 // Clear prefill items when the dialog is closed without submitting
 watch(showNewPRDialog, (isOpen) => {
@@ -90,7 +99,7 @@ function createPRFromReorder() {
       return {
         reorder_request_id: r.id,
         product_id:         r.product.id,
-        item_description:   r.product.product_name ?? '',
+        product_name:   r.product.product_name ?? '',
         unit:                r.product.unit ?? 'Box',
         supplier_id:         r.product.supplier_id ?? null,
         cost_per_unit:       r.product.cost_price ?? 0,
@@ -98,8 +107,30 @@ function createPRFromReorder() {
       }
     })
 
+  resumeDraftId.value = null
   showReorderDialog.value = false
   showNewPRDialog.value = true
+}
+
+function openNewPR() {
+  resumeDraftId.value = null
+  prefillItemsForDialog.value = []
+  showNewPRDialog.value = true
+}
+
+function onResumeDraft(draftId: number) {
+  prefillItemsForDialog.value = []
+  resumeDraftId.value = draftId
+  showNewPRDialog.value = true
+}
+
+async function onDeleteDraft(draftId: number) {
+  await deleteDraft(draftId)
+}
+
+async function onDraftSaved() {
+  resumeDraftId.value = null
+  await refreshDraftCount()
 }
 
 function onPRSubmitted() {
@@ -107,6 +138,8 @@ function onPRSubmitted() {
   loadItems({ page: 1, itemsPerPage: itemsPerPage.value, sortBy: [] })
   selectedReorderIds.value = []
   prefillItemsForDialog.value = []
+  resumeDraftId.value = null
+  refreshDraftCount()
 }
 
 // PurchaseRequisitionList.vue — restore the direct-save version
@@ -156,6 +189,20 @@ async function onPOIssued() {
             <div>
               <div class="text-subtitle-2">Reorder Requests</div>
               <div class="text-h6 font-weight-bold text-teal">{{ reorderCount.toLocaleString() }}</div>
+            </div>
+          </v-card-text>
+        </v-card>
+
+        <v-card elevation="1" class="stat-card rounded-xl" @click="openDraftsDialog">
+          <v-card-text class="d-flex align-center" style="gap: 12px">
+            <v-avatar color="blue-grey" variant="tonal" size="40">
+              <v-icon icon="mdi-content-save-outline" />
+            </v-avatar>
+            <div>
+              <div class="text-subtitle-2">Drafts</div>
+              <div class="text-h6 font-weight-bold text-blue-grey">
+                {{ manualDraftCount.toLocaleString() }}
+              </div>
             </div>
           </v-card-text>
         </v-card>
@@ -229,7 +276,7 @@ async function onPOIssued() {
               class="text-none font-weight-bold"
               prepend-icon="mdi-plus"
               elevation="0"
-              @click="showNewPRDialog = true"
+              @click="openNewPR"
             >
               New Requisition
             </v-btn>
@@ -332,7 +379,7 @@ async function onPOIssued() {
             density="compact"
             color="primary"
             size="40"
-            @click="showNewPRDialog = true"
+            @click="openNewPR"
           />
         </div>
       </v-card-title>
@@ -583,7 +630,21 @@ async function onPOIssued() {
     </v-card>
 
     <!-- New Purchase Requisition -->
-    <PurchaseRequisitionDialog v-model="showNewPRDialog" :prefill-items="prefillItemsForDialog" @submitted="onPRSubmitted" />
+    <PurchaseRequisitionDialog
+      v-model="showNewPRDialog"
+      :prefill-items="prefillItemsForDialog"
+      :draft-id="resumeDraftId"
+      @submitted="onPRSubmitted"
+      @saved-draft="onDraftSaved"
+    />
+
+    <PRDraftsDialog
+      v-model="showDraftsDialog"
+      :drafts="manualDrafts"
+      :loading="draftsLoading"
+      @resume="onResumeDraft"
+      @delete="onDeleteDraft"
+    />
 
     <!-- 3. Add the Modal Component -->
     <IssuePOModal v-model="showPOModal" :pr="selectedPRForPO" @ordered="onPOIssued" />

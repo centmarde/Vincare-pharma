@@ -38,11 +38,16 @@ export function usePODetailView(
       }).length,
   )
 
+  const missingBatchNoCount = computed(
+    () => transactionItems.value.filter((item) => !item.batch_no?.toString().trim()).length,
+  )
+
   async function saveAllItems(): Promise<boolean> {
     const validItems = transactionItems.value.filter(
       (item) =>
         item.product_id &&
         item.sku?.toString().trim() &&
+        item.batch_no?.toString().trim() &&
         Number(item.actual_count_stock_in) > 0,
     )
 
@@ -57,6 +62,8 @@ export function usePODetailView(
         sku: item.sku!.toString().trim(),
         actual_count_stock_in: Number(item.actual_count_stock_in),
         expiry_date: item.expiry_date ?? null,
+        batch_no: item.batch_no ?? null,
+        cost_price: item.cost_per_unit ?? null,
       }))
 
       const skuSuccess = await productsStore.updateProductSkuAndCount(updates)
@@ -80,6 +87,10 @@ export function usePODetailView(
       toast.error(`Please fill in Actual Count for all ${missingActualCount.value} item(s).`)
       return
     }
+    if (missingBatchNoCount.value > 0) {
+      toast.error(`Please fill in Batch No for all ${missingBatchNoCount.value} item(s).`)
+      return
+    }
     if (props.po?.id == null) {
       toast.error('No purchase order selected.')
       return
@@ -98,6 +109,7 @@ export function usePODetailView(
     effectiveEmptyRows,
     missingSkuCount,
     missingActualCount,
+    missingBatchNoCount,
     handleMarkAsReceived,
   }
 }

@@ -695,7 +695,7 @@ export function useProductsWidget() {
         reorder_request_id: null, // no row exists yet
         reorder_reason: reason, // tells the PR composable to create one on submit
         product_id: p.id,
-        item_description: p.product_name ?? '',
+        product_name: p.product_name ?? '',
         unit: p.unit ?? 'Box',
         supplier_id: p.supplier_id ?? null,
         cost_per_unit: p.cost_price ?? 0,

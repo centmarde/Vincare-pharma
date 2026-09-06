@@ -101,7 +101,7 @@ async function onSubmit() {
           </thead>
           <tbody>
             <tr v-for="item in draft.items" :key="item.id">
-              <td>{{ item.product_name }}</td>
+              <td class="text-left text-medium-emphasis" style="max-width:220px; white-space:normal; overflow-wrap:anywhere">{{ item.product_name }}</td>
               <td class="text-right text-medium-emphasis">{{ item.shortfall_qty ?? '—' }}</td>
               <td class="text-right">{{ item.qty }}</td>
               <td>{{ item.supplier_name ?? '—' }}</td>

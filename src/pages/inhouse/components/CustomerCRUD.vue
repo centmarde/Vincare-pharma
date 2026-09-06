@@ -7,7 +7,7 @@ import FieldValue from '@/components/customers/FieldValue.vue'
 import CustomerDetailPanel from '@/components/customers/CustomerDetailPanel.vue'
 import CustomerCRUDMobile from '@/pages/inhouse/mobile/CustomerCRUDMobile.vue'
 import CustomerFormDialog from '@/pages/inhouse/dialogs/CustomerFormDialog.vue'
-import { label } from '@/utils/helpers'
+import { label, NOT_SET } from '@/utils/helpers'
 
 const { mobile } = useDisplay()
 const {
@@ -41,7 +41,7 @@ const editingCustomer = computed(() =>
 )
 
 function structureLabel(value: string | null): string {
-  return businessStructures.find((structure) => structure.value === value)?.title ?? 'not set yet'
+  return businessStructures.find((structure) => structure.value === value)?.title ?? NOT_SET
 }
 
 function displayLabel(value: string | null | undefined): string {

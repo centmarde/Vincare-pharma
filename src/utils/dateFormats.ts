@@ -85,6 +85,29 @@ export const formatDatePO_Written = (dateString: string | null | undefined) => {
   return `${datePart} at ${timePart}`
 }
 
+export function toLocalISODate(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+// new Date('2026-09-01') reads as UTC midnight and lands a day early west of Greenwich.
+export function fromLocalISODate(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return null
+  const [, yearText, monthText, dayText] = match
+  const year = Number(yearText)
+  const month = Number(monthText)
+  const day = Number(dayText)
+  const date = new Date(year, month - 1, day)
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) return null
+  return date}
+
 // ─── Batch-expiry helpers ────────────────────────────────────────────────────
 // Batch-expiry fields only need month/year (e.g. "04/2026") — no day.
 

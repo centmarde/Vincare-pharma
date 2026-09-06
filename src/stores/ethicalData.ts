@@ -9,6 +9,7 @@ import { useCanvassDataStore } from '@/stores/canvassData'
 import { useDeliveryReceiptsDataStore } from '@/stores/deliveryReceiptsData'
 import { useGLDataStore } from '@/stores/glData'
 import { useCustomersDataStore } from '@/stores/customersData'
+import { glAccountCodeFor } from '@/stores/financeData'
 import { generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
 import type { ProductType } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
@@ -724,7 +725,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     const rebateAmount = (order?.ethical_details as unknown as { rebate_amount: number | null } | null)?.rebate_amount ?? 0
 
     const { data: account } = await supabase
-      .from('cash_accounts').select('id, name, classification, balance').eq('id', payload.cashAccountId).maybeSingle()
+      .from('cash_accounts').select('id, name, classification, balance, gl_account_code').eq('id', payload.cashAccountId).maybeSingle()
     if (!account) { toast.error('Cash account not found.'); loading.value = false; return { success: false } }
 
     const nowIso = new Date().toISOString()
@@ -749,8 +750,10 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     }
 
     // Settle the liability against the funding account:
-    //   DR 2020 Accrued Expenses / CR 1010 Cash on Hand | 1020 Cash in Bank
-    const cashCode = account.classification === 'PETTY_CASH' ? '1010' : '1020'
+    //   DR 2020 Accrued Expenses / CR whichever asset account the cash sits in.
+    // Was an inline two-way map that had drifted from the shared one — it sent
+    // time deposits to 1020 instead of 1100.
+    const cashCode = glAccountCodeFor(account)
     const glResult = await glStore.postJournalEntry(
       nowIso.slice(0, 10),
       'disbursement',

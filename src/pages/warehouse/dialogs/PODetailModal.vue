@@ -132,7 +132,7 @@ const { poNumber, emptyRows, uniqueSuppliers } = usePODetailModal(props, emit)
             <tbody>
               <tr v-for="item in pr?.items" :key="item.id">
                 <td>{{ item.no }}</td>
-                <td>{{ item.item_description }}</td>
+                <td>{{ item.product_name }}</td>
                 <td class="text-right">{{ item.actual_count_stock_in ?? '—' }}</td>
                 <td class="text-right">{{ formatExpiryMonthYear(item.expiry_date) }}</td>
                 <td class="text-right">{{ formatCurrency(item.cost_per_unit) }}</td>
@@ -166,7 +166,7 @@ const { poNumber, emptyRows, uniqueSuppliers } = usePODetailModal(props, emit)
                 <div class="d-flex justify-space-between align-start mb-1">
                   <div class="d-flex ga-2 align-center">
                     <span class="text-caption font-weight-bold text-primary">#{{ item.no }}</span>
-                    <span class="text-caption font-weight-medium">{{ item.item_description }}</span>
+                    <span class="text-caption font-weight-medium">{{ item.product_name }}</span>
                   </div>
                 </div>
                 <v-divider class="my-1" />

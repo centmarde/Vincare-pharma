@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import type { OutletStockType } from '@/stores/outletStockData'
+import type { BranchStockRow } from '../composables/useOutletInventory'
 import { rowStatus, type StockStatus } from '../composables/useOutletInventory'
 import { formatCurrency } from '@/utils/helpers'
 
@@ -8,7 +8,7 @@ const router = useRouter()
 
 defineProps<{
   loading: boolean
-  rows: OutletStockType[]
+  rows: BranchStockRow[]
   totalSkus: number
   totalValue: number
   lowCount: number
@@ -16,8 +16,8 @@ defineProps<{
   search: string
   filterStatus: StockStatus | 'all'
   statusOptions: { title: string; value: StockStatus | 'all' }[]
-  selectedOutletId: number | null
-  outletOptions: { title: string; value: number }[]
+  selectedWarehouseId: number | null
+  warehouseOptions: { title: string | null; value: number }[]
 }>()
 
 const emit = defineEmits<{
@@ -87,8 +87,8 @@ const statusMeta = {
     <v-card class="mx-auto w-100 mb-3" rounded="lg" elevation="1">
       <v-card-text class="pa-3 d-flex flex-column" style="gap: 10px">
         <v-select
-          :model-value="selectedOutletId"
-          :items="outletOptions"
+          :model-value="selectedWarehouseId"
+          :items="warehouseOptions"
           item-title="title"
           item-value="value"
           label="Branch"
@@ -143,7 +143,7 @@ const statusMeta = {
     <template v-else>
       <v-card
         v-for="row in rows"
-        :key="row.id"
+        :key="row.product_id ?? row.product?.sku ?? String(row.quantity)"
         class="mx-auto w-100 mb-2"
         variant="outlined"
         rounded="lg"

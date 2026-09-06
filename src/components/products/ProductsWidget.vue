@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useDisplay } from 'vuetify'
-import { formatCurrency, formatMonthYear } from '@/utils/helpers'
+import { formatCurrency, formatMonthYear, isBlank, NOT_SET } from '@/utils/helpers'
 import { useProductsWidget } from '@/components/products/composables/useProductsWidget.ts'
 import { useTheme } from '@/stores/useTheme'
 import { useLogsDataStore, type LogType } from '@/stores/logsData'
@@ -140,7 +140,28 @@ async function requestReorder(product: any) {
   const reason = reorderReasonMap[stockDialogType.value]
   if (!reason) return
   const result = await productsDataStore.createReorderRequest({ product_id: product.id, reason })
-  if (result?.success) await productsDataStore.fetchReorderRequests(true)
+  if (result?.success) {
+    await productsDataStore.fetchReorderRequests(true)
+
+    // Log the product reorder with its identifying details so the action is
+    // traceable in the logs view (module = products / action = reorder_product).
+    try {
+      await logsStore.createLog({
+        action: 'reorder_product',
+        module: 'products',
+        description: [
+          `Reorder flagged for product "${product.product_name ?? 'N/A'}"`,
+          `SKU: ${product.sku ?? 'N/A'}`,
+          `Batch: ${product.batch_no ?? 'N/A'}`,
+          `Stock: ${product.current_stock ?? 0}`,
+          `Reorder level: ${product.reorder_level ?? 'N/A'}`,
+          `Reason: ${reason.replace('reorder_', '')}`,
+        ].join(' | '),
+      })
+    } catch (err) {
+      console.error('[ProductsWidget] Failed to log reorder_product:', err)
+    }
+  }
 }
 function onPRSubmitted() {}
 
@@ -370,9 +391,17 @@ function stockColor(item: any, stock: number) {
         show-expand
         @update:options="handleTableOptions"
       >
-        <template #[`item.cost_price`]="{ value }">
-          <span v-if="value != null">{{ formatCurrency(Number(value)) }}</span>
-          <span v-else class="text-grey">-</span>
+        <template #[`item.cost_price`]="{ item }">
+          <span v-if="!isBlank(item.cost_price)">
+            {{ formatCurrency(Number(item.cost_price)) }}
+          </span>
+          <span v-else class="text-medium-emphasis font-italic">{{ NOT_SET }}</span>
+        </template>
+        <template #[`item.selling_price`]="{ item }">
+          <span v-if="!isBlank(item.selling_price)">
+            {{ formatCurrency(Number(item.selling_price)) }}
+          </span>
+          <span v-else class="text-medium-emphasis font-italic">{{ NOT_SET }}</span>
         </template>
         <template #[`item.unit`]="{ item }">
           <span>{{ item.unit || 'N/A' }}</span>
