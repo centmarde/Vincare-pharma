@@ -128,7 +128,11 @@ const typeOptions = [
   { title: 'All', value: 'All' },
   { title: 'injectibles', value: 'injectibles' },
   { title: 'oral medicine', value: 'oral medicine' },
+  { title: 'dental', value: 'dental' },
+  { title: 'laboratory supplies', value: 'laboratory supplies' },
+  { title: 'medical supplies', value: 'medical supplies' },
 ]
+
 
 function handleStockCardClick(type: string) {
   stockDialogType.value = type as any
@@ -256,7 +260,7 @@ function stockColor(item: any, stock: number) {
           class="expiry-filter"
           @click:clear="clearExpiryFilter"
         ></v-text-field>
-        <!--   <v-select
+        <v-select
           v-model="typeFilter"
           :items="typeOptions"
           item-title="title"
@@ -275,7 +279,7 @@ function stockColor(item: any, stock: number) {
             </v-list-item>
             <v-divider class="mt-2"></v-divider>
           </template>
-        </v-select> -->
+        </v-select>
         <!-- I want to restrict this when the user is a warehouse user -->
         <v-btn
           color="primary"
@@ -402,6 +406,11 @@ function stockColor(item: any, stock: number) {
             {{ formatCurrency(Number(item.selling_price)) }}
           </span>
           <span v-else class="text-medium-emphasis font-italic">{{ NOT_SET }}</span>
+        </template>
+        <template #[`item.category`]="{ item }">
+          <v-chip size="small" variant="tonal" color="primary">
+            {{ item.category || 'N/A' }}
+          </v-chip>
         </template>
         <template #[`item.unit`]="{ item }">
           <span>{{ item.unit || 'N/A' }}</span>

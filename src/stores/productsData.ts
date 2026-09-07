@@ -232,9 +232,11 @@ export const useProductsDataStore = defineStore('productsData', () => {
     await supabase.removeChannel(channel)
   }
 
-  const fetchEligibleProductIds = async (): Promise<number[]> => {
+  const fetchEligibleProductIds = async (category?: string | null): Promise<number[]> => {
     try {
-      const { data, error: rpcError } = await supabase.rpc('get_eligible_product_ids')
+      const { data, error: rpcError } = await supabase.rpc('get_eligible_product_ids', {
+        p_category: category ?? null,
+      })
       if (rpcError) throw rpcError
       return (data || []).map((row: { product_id: number }) => row.product_id)
     } catch (err) {
