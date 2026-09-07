@@ -327,7 +327,8 @@ async function onPOIssued() {
         </div>
 
         <!-- Mobile: search + icon filter (reuses same list) -->
-        <div v-if="mobile" class="d-flex align-center" style="gap: 8px">
+        <div v-if="mobile" class="d-flex flex-column" style="gap: 8px">
+          <!-- Row 1: search input -->
           <v-text-field
             v-model="searchInput"
             placeholder="Search..."
@@ -336,51 +337,53 @@ async function onPOIssued() {
             density="compact"
             hide-details
             clearable
-            style="flex: 1; min-width: 0"
             @keyup.enter="commitSearch"
             @click:clear="clearSearch"
-
           />
-          <v-menu>
-            <template #activator="{ props }">
-              <v-btn
-                v-bind="props"
-                variant="outlined"
-                icon="mdi-filter-outline"
-                density="compact"
-                color="primary"
-                size="40"
-              />
-            </template>
-            <v-list density="compact" min-width="180">
-              <v-list-item
-                v-for="opt in statusOptions"
-                :key="String(opt.value)"
-                :title="opt.title"
-                :active="filterStatus === opt.value"
-                active-color="primary"
-                @click="filterStatus = opt.value"
-              />
-            </v-list>
-          </v-menu>
-          <v-btn
-            variant="outlined"
-            icon="mdi-refresh"
-            density="compact"
-            color="primary"
-            size="40"
-            :disabled="loading"
-            :loading="loading"
-            @click="refresh"
-          />
-          <v-btn
-            variant="flat"
-            icon="mdi-plus"
-            density="compact"
-            color="primary"
-            size="40"
-            @click="openNewPR"
-          />
+          <!-- Row 2: filter / refresh / new buttons -->
+          <div class="d-flex align-center" style="gap: 8px">
+            <v-menu>
+              <template #activator="{ props }">
+                <v-btn
+                  v-bind="props"
+                  variant="outlined"
+                  icon="mdi-filter-outline"
+                  density="compact"
+                  color="primary"
+                  size="40"
+                />
+              </template>
+              <v-list density="compact" min-width="180">
+                <v-list-item
+                  v-for="opt in statusOptions"
+                  :key="String(opt.value)"
+                  :title="opt.title"
+                  :active="filterStatus === opt.value"
+                  active-color="primary"
+                  @click="filterStatus = opt.value"
+                />
+              </v-list>
+            </v-menu>
+            <v-btn
+              variant="outlined"
+              icon="mdi-refresh"
+              density="compact"
+              color="primary"
+              size="40"
+              class="ml-auto"
+              :disabled="loading"
+              :loading="loading"
+              @click="refresh"
+            />
+            <v-btn
+              variant="flat"
+              icon="mdi-plus"
+              density="compact"
+              color="primary"
+              size="40"
+              @click="openNewPR"
+            />
+          </div>
         </div>
       </v-card-title>
 
@@ -762,5 +765,23 @@ async function onPOIssued() {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 8px;
   width: 100%;
+}
+
+/* Small screens / mobile: force 2 columns -> 6 cards = 3 rows x 2 columns */
+@media (max-width: 600px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .stats-grid .stat-card .v-card-text .v-avatar {
+    width: 28px !important;
+    height: 28px !important;
+    font-size: 14px !important;
+  }
+  .stats-grid .stat-card .text-subtitle-2 {
+    font-size: 0.75rem !important;
+  }
+  .stats-grid .stat-card .text-h6 {
+    font-size: 0.875rem !important;
+  }
 }
 </style>
