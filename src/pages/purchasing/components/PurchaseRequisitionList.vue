@@ -763,4 +763,22 @@ async function onPOIssued() {
   gap: 8px;
   width: 100%;
 }
+
+/* Small screens / mobile: force 2 columns -> 6 cards = 3 rows x 2 columns */
+@media (max-width: 600px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .stats-grid .stat-card .v-card-text .v-avatar {
+    width: 28px !important;
+    height: 28px !important;
+    font-size: 14px !important;
+  }
+  .stats-grid .stat-card .text-subtitle-2 {
+    font-size: 0.75rem !important;
+  }
+  .stats-grid .stat-card .text-h6 {
+    font-size: 0.875rem !important;
+  }
+}
 </style>
