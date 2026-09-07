@@ -113,7 +113,7 @@ export function useProductsWidget() {
   // Table headers
   const headers = computed(() => [
     { title: '', key: 'data-table-expand', sortable: false },
-    { title: 'ID', key: 'id', sortable: true },
+    { title: 'Category', key: 'category', sortable: true },
     { title: 'Product Name', key: 'product_name', sortable: true },
     { title: 'SKU', key: 'sku', sortable: true },
     { title: 'Stock', key: 'current_stock', sortable: true },
@@ -212,15 +212,22 @@ export function useProductsWidget() {
         : [-1]
       : undefined
 
+    // When no warehouse is selected (main warehouse), use the RPC to get
+    // eligible product IDs scoped to the selected category.
+    let eligibleIds = ids && ids.length > 0 ? ids : undefined
+    if (!selectedWarehouseId.value && typeFilter.value !== 'All') {
+      const rpcIds = await productsStore.fetchEligibleProductIds(typeFilter.value)
+      eligibleIds = rpcIds.length > 0 ? rpcIds : [-1]
+    }
+
     await productsStore.fetchProducts({
       search: searchQuery.value,
-      // type: typeFilter.value,
+      category: typeFilter.value !== 'All' ? typeFilter.value : undefined,
       orderBy: range ? 'expiry_date' : (sortBy.value[0]?.key as any) || 'created_at',
       ascending: range ? true : sortBy.value[0]?.order === 'asc',
       limit: itemsPerPage.value,
       offset: (page.value - 1) * itemsPerPage.value,
-      // eligibleIds: ids.length > 0 ? ids : undefined,
-      eligibleIds: ids && ids.length > 0 ? ids : undefined,
+      eligibleIds,
       expiryStart: range?.start,
       expiryEnd: range?.end,
     })
@@ -666,7 +673,7 @@ export function useProductsWidget() {
     }
     return map
   })
-  
+
   function canRequestReorder(productId: number): boolean {
     const info = reorderRequestInfo.value.get(productId)
     return !info || info.status === 'rejected'
