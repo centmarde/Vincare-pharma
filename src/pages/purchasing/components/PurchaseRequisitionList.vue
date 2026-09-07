@@ -327,7 +327,8 @@ async function onPOIssued() {
         </div>
 
         <!-- Mobile: search + icon filter (reuses same list) -->
-        <div v-if="mobile" class="d-flex align-center" style="gap: 8px">
+        <div v-if="mobile" class="d-flex flex-column" style="gap: 8px">
+          <!-- Row 1: search input -->
           <v-text-field
             v-model="searchInput"
             placeholder="Search..."
@@ -336,51 +337,53 @@ async function onPOIssued() {
             density="compact"
             hide-details
             clearable
-            style="flex: 1; min-width: 0"
             @keyup.enter="commitSearch"
             @click:clear="clearSearch"
-
           />
-          <v-menu>
-            <template #activator="{ props }">
-              <v-btn
-                v-bind="props"
-                variant="outlined"
-                icon="mdi-filter-outline"
-                density="compact"
-                color="primary"
-                size="40"
-              />
-            </template>
-            <v-list density="compact" min-width="180">
-              <v-list-item
-                v-for="opt in statusOptions"
-                :key="String(opt.value)"
-                :title="opt.title"
-                :active="filterStatus === opt.value"
-                active-color="primary"
-                @click="filterStatus = opt.value"
-              />
-            </v-list>
-          </v-menu>
-          <v-btn
-            variant="outlined"
-            icon="mdi-refresh"
-            density="compact"
-            color="primary"
-            size="40"
-            :disabled="loading"
-            :loading="loading"
-            @click="refresh"
-          />
-          <v-btn
-            variant="flat"
-            icon="mdi-plus"
-            density="compact"
-            color="primary"
-            size="40"
-            @click="openNewPR"
-          />
+          <!-- Row 2: filter / refresh / new buttons -->
+          <div class="d-flex align-center" style="gap: 8px">
+            <v-menu>
+              <template #activator="{ props }">
+                <v-btn
+                  v-bind="props"
+                  variant="outlined"
+                  icon="mdi-filter-outline"
+                  density="compact"
+                  color="primary"
+                  size="40"
+                />
+              </template>
+              <v-list density="compact" min-width="180">
+                <v-list-item
+                  v-for="opt in statusOptions"
+                  :key="String(opt.value)"
+                  :title="opt.title"
+                  :active="filterStatus === opt.value"
+                  active-color="primary"
+                  @click="filterStatus = opt.value"
+                />
+              </v-list>
+            </v-menu>
+            <v-btn
+              variant="outlined"
+              icon="mdi-refresh"
+              density="compact"
+              color="primary"
+              size="40"
+              class="ml-auto"
+              :disabled="loading"
+              :loading="loading"
+              @click="refresh"
+            />
+            <v-btn
+              variant="flat"
+              icon="mdi-plus"
+              density="compact"
+              color="primary"
+              size="40"
+              @click="openNewPR"
+            />
+          </div>
         </div>
       </v-card-title>
 
