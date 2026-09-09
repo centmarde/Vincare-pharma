@@ -182,12 +182,14 @@ async function handleLogout() {
             </template>
           </v-badge>
 
-          <!-- Hide title on mobile to minimize navbar -->
-          <div class="d-flex flex-column ms-2 d-none d-md-flex">
+          <!-- Hide the "Manufacturing Excellence" tagline on small screens -->
+          <div class="d-flex flex-column ms-2">
             <span class="text-subtitle-1 font-weight-bold text-primary">
               {{ navbarConfig.title }}
             </span>
-            <span class="text-caption text-medium-emphasis"> Manufacturing Excellence </span>
+            <span class="text-caption text-medium-emphasis d-none d-md-inline">
+              Manufacturing Excellence
+            </span>
           </div>
         </div>
       </template>

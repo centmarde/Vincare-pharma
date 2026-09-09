@@ -33,8 +33,7 @@ const notSet = (field: string) => `No ${field} set`
             :placeholder="mobile ? 'Search DR / order / customer' : 'Search DR / order / customer...'"
             prepend-inner-icon="mdi-magnify"
             variant="outlined" density="compact" hide-details
-            :style="mobile ? undefined : 'min-width: 240px'"
-            :block="mobile"
+            :style="mobile ? 'width: 100%' : 'min-width: 240px'"
             clearable
           />
         </v-card-title>

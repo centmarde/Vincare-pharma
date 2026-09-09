@@ -31,29 +31,29 @@ const {
 
       <!-- Metric cards -->
       <v-row dense class="mb-1">
-        <v-col cols="12" sm="6" md="3">
-          <v-card rounded="lg" elevation="1" :class="mobile ? 'pa-3' : 'pa-4'">
+        <v-col cols="6" sm="6" md="3" class="d-flex">
+          <v-card rounded="lg" elevation="1" class="flex-grow-1" :class="mobile ? 'pa-3' : 'pa-4'">
             <div class="text-caption text-medium-emphasis">Today's Sales</div>
             <div class="font-weight-bold" :class="mobile ? 'text-h6' : 'text-h5'">{{ formatCurrency(today.total) }}</div>
             <div class="text-caption text-medium-emphasis">{{ today.count }} transaction(s)</div>
           </v-card>
         </v-col>
-        <v-col cols="12" sm="6" md="3">
-          <v-card rounded="lg" elevation="1" :class="mobile ? 'pa-3' : 'pa-4'">
+        <v-col cols="6" sm="6" md="3" class="d-flex">
+          <v-card rounded="lg" elevation="1" class="flex-grow-1" :class="mobile ? 'pa-3' : 'pa-4'">
             <div class="text-caption text-medium-emphasis">Last 7 Days</div>
             <div class="font-weight-bold" :class="mobile ? 'text-h6' : 'text-h5'">{{ formatCurrency(week.total) }}</div>
             <div class="text-caption text-medium-emphasis">{{ week.count }} transaction(s)</div>
           </v-card>
         </v-col>
-        <v-col cols="12" sm="6" md="3">
-          <v-card rounded="lg" elevation="1" :class="mobile ? 'pa-3' : 'pa-4'">
+        <v-col cols="6" sm="6" md="3" class="d-flex">
+          <v-card rounded="lg" elevation="1" class="flex-grow-1" :class="mobile ? 'pa-3' : 'pa-4'">
             <div class="text-caption text-medium-emphasis">This Month</div>
             <div class="font-weight-bold" :class="mobile ? 'text-h6' : 'text-h5'">{{ formatCurrency(month.total) }}</div>
             <div class="text-caption text-medium-emphasis">{{ month.count }} transaction(s)</div>
           </v-card>
         </v-col>
-        <v-col cols="12" sm="6" md="3">
-          <v-card rounded="lg" elevation="1" :class="mobile ? 'pa-3' : 'pa-4'">
+        <v-col cols="6" sm="6" md="3" class="d-flex">
+          <v-card rounded="lg" elevation="1" class="flex-grow-1" :class="mobile ? 'pa-3' : 'pa-4'">
             <div class="text-caption text-medium-emphasis">Low / Out of Stock</div>
             <div class="font-weight-bold" :class="[mobile ? 'text-h6' : 'text-h5', lowStockCount > 0 ? 'text-warning' : '']">
               {{ lowStockCount }}
