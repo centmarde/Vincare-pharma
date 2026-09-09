@@ -2,7 +2,9 @@
 import { onMounted } from 'vue'
 import { useIncomeStatement } from '../composables/useIncomeStatement'
 import { formatCurrency } from '@/utils/helpers'
+import { useDisplay } from 'vuetify'
 
+const { mobile } = useDisplay()
 const { dateFrom, dateTo, statement, loading, load } = useIncomeStatement()
 
 onMounted(load)
@@ -11,12 +13,12 @@ onMounted(load)
 <template>
   <v-container fluid class="pa-0">
     <v-card class="elevation-0">
-      <v-card-title class="d-flex align-center ga-2 pb-2 flex-wrap">
+      <v-card-title class="d-flex align-center ga-2 pb-2 flex-wrap" :class="{ 'flex-column': mobile }">
         <span>Income Statement</span>
         <v-chip color="primary" size="x-small" label class="ml-2"
           >Accrual, GL-derived — authoritative</v-chip
         >
-        <v-spacer />
+        <v-spacer v-if="!mobile" />
         <v-text-field
           v-model="dateFrom"
           type="date"
@@ -24,7 +26,7 @@ onMounted(load)
           density="compact"
           variant="outlined"
           hide-details
-          style="max-width: 160px"
+          :style="mobile ? 'max-width: 100%' : 'max-width: 160px'"
           @update:model-value="load"
         />
         <v-text-field
@@ -34,7 +36,7 @@ onMounted(load)
           density="compact"
           variant="outlined"
           hide-details
-          style="max-width: 160px"
+          :style="mobile ? 'max-width: 100%' : 'max-width: 160px'"
           @update:model-value="load"
         />
       </v-card-title>
