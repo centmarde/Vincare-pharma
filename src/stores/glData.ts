@@ -149,6 +149,100 @@ export type IncomeStatement = {
   netIncome: number
 }
 
+/**
+ * A CASH-BASIS profit figure, derived from the SAME ledger as the accrual one so
+ * the two reconcile instead of being two unrelated queries.
+ *
+ * ⚠️ This is NOT an Income Statement. A statutory P&L is accrual — revenue when
+ * earned, expense when incurred. This recognises both when the money actually
+ * moves, which is what an owner means by "what did we actually make", and is a
+ * management view only. Never present it as the P&L, and never hand it to an
+ * examiner as one.
+ *
+ * Classification is by what each entry's cash line sits OPPOSITE:
+ *   cash IN  vs 1030 or 4010          -> collected revenue
+ *   cash OUT vs 2010                  -> paid to suppliers (purchases)
+ *   cash OUT vs 5000-8999             -> paid expenses, bucketed by account
+ * Anything else touching cash (loan drawdowns, capital injections, transfers
+ * between two cash accounts) is deliberately EXCLUDED -- it is not trading
+ * income or expense, and counting it would overstate performance.
+ */
+export type CashBasisRow = { code: string; name: string; amount: number }
+export type CashBasisStatement = {
+  from: string
+  to: string
+  collected: number
+  paidToSuppliers: number
+  paidExpenses: CashBasisRow[]
+  paidExpensesTotal: number
+  netCash: number
+  /** Cash movements excluded as non-trading, shown so the view is not silently lossy. */
+  excluded: CashBasisRow[]
+  excludedTotal: number
+}
+
+/**
+ * The same statement, one column per month, for comparing periods side by side.
+ *
+ * Each month is a REAL `gl_income_statement` call rather than a second
+ * implementation of the statement maths — a column that disagreed with what the
+ * single-period view shows for the same month is the first thing an accountant
+ * would catch, and re-deriving it in JS is how that happens.
+ *
+ * `total` is one more call over the whole range, NOT the sum of the columns:
+ * summing them would hide a gap if a month were ever missed.
+ */
+export type MonthlyIncomeStatement = {
+  from: string
+  to: string
+  /** 'YYYY-MM', ascending. */
+  months: string[]
+  perMonth: IncomeStatement[]
+  total: IncomeStatement
+}
+
+export type MonthlyCashBasisStatement = {
+  from: string
+  to: string
+  months: string[]
+  perMonth: CashBasisStatement[]
+  total: CashBasisStatement
+}
+
+/** Most months a business will report on at once. A date range spanning years
+ *  would otherwise mint a column (and a query) per month without limit. */
+export const maxStatementColumns = 24
+
+/**
+ * Month boundaries as STRINGS, never JS Date month arithmetic — `new Date()`
+ * parses an ISO date as UTC and renders it local, so in Asia/Manila a
+ * month-start can come back as the previous month. Same reason the GL's other
+ * period helpers are string-based.
+ */
+export function monthsBetween(from: string, to: string): string[] {
+  const out: string[] = []
+  let [y, m] = [Number(from.slice(0, 4)), Number(from.slice(5, 7))]
+  const endY = Number(to.slice(0, 4))
+  const endM = Number(to.slice(5, 7))
+  while ((y < endY || (y === endY && m <= endM)) && out.length < maxStatementColumns) {
+    out.push(`${y}-${String(m).padStart(2, '0')}`)
+    m += 1
+    if (m > 12) { m = 1; y += 1 }
+  }
+  return out
+}
+
+/** First and last day of a 'YYYY-MM', clamped to the requested range so the
+ *  first and last columns cover only the days actually asked for. */
+export function monthBounds(month: string, from: string, to: string): { start: string; end: string } {
+  const y = Number(month.slice(0, 4))
+  const m = Number(month.slice(5, 7))
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate()
+  const start = `${month}-01`
+  const end = `${month}-${String(lastDay).padStart(2, '0')}`
+  return { start: start < from ? from : start, end: end > to ? to : end }
+}
+
 export type BalanceSheetSection = { class: string; subsection: string; accounts: StatementAccountRow[]; subtotal: number }
 export type BalanceSheet = {
   asOf: string
@@ -193,6 +287,9 @@ export const useGLDataStore = defineStore('glData', () => {
   const trialBalance: Ref<TrialBalanceRow[]> = ref([])
   const incomeStatement: Ref<IncomeStatement | null> = ref(null)
   const balanceSheet: Ref<BalanceSheet | null> = ref(null)
+  const cashBasisStatement: Ref<CashBasisStatement | null> = ref(null)
+  const monthlyIncomeStatement: Ref<MonthlyIncomeStatement | null> = ref(null)
+  const monthlyCashBasisStatement: Ref<MonthlyCashBasisStatement | null> = ref(null)
 
   const loading = ref(false)
   const error: Ref<string> = ref('')
@@ -362,6 +459,181 @@ export const useGLDataStore = defineStore('glData', () => {
    * The closing balance is the last line's runningBalance, so the total the
    * drill-down shows is always the sum of the lines it is showing.
    */
+  /**
+   * Cash-basis performance for a period, classified from the ledger itself.
+   *
+   * Walks every posted/reversed entry in the range and looks at what each cash
+   * line sits opposite. Entries are read whole (all their lines) because the
+   * classification is a property of the ENTRY, not of one line -- a cash debit
+   * means nothing until you know what it was credited against.
+   *
+   * 'reversed' counts alongside 'posted' for the same reason every other balance
+   * query here does: a reversal leaves the original in the ledger and posts an
+   * offsetting entry, so the pair nets to zero only if both are counted.
+   */
+  const fetchCashBasisStatement = async (from: string, to: string) => {
+    loading.value = true
+    clearError()
+    try {
+      const cashCodes = new Set(['1010', '1020', '1100'])
+      const isExpenseCode = (c: string) => {
+        const n = parseInt(c, 10)
+        return !isNaN(n) && n >= 5000 && n <= 8999
+      }
+
+      // Paged: PostgREST caps a response at 1000 rows and truncates SILENTLY
+      // (200, fewer rows), which on a financial statement would just quietly
+      // understate every figure.
+      const PAGE = 1000
+      const rows: any[] = []
+      for (let offset = 0; ; offset += PAGE) {
+        const { data, error: e } = await supabase
+          .from('journal_entry_lines')
+          .select('journal_entry_id, account_code, debit, credit, entry:journal_entry_id(entry_date, status)')
+          .order('id', { ascending: true })
+          .range(offset, offset + PAGE - 1)
+        if (e) throw e
+        rows.push(...(data ?? []))
+        if (!data || data.length < PAGE) break
+      }
+
+      // Group surviving lines back into their entries.
+      const byEntry = new Map<string, { code: string; debit: number; credit: number }[]>()
+      for (const l of rows) {
+        const entry = Array.isArray(l.entry) ? l.entry[0] : l.entry
+        if (!entry) continue
+        if (entry.status !== 'posted' && entry.status !== 'reversed') continue
+        if (entry.entry_date < from || entry.entry_date > to) continue
+        const key = String(l.journal_entry_id)
+        const bucket = byEntry.get(key) ?? []
+        bucket.push({ code: l.account_code, debit: Number(l.debit ?? 0), credit: Number(l.credit ?? 0) })
+        byEntry.set(key, bucket)
+      }
+
+      let collected = 0
+      let paidToSuppliers = 0
+      const expenseTotals = new Map<string, number>()
+      const excludedTotals = new Map<string, number>()
+
+      for (const lines of byEntry.values()) {
+        for (const line of lines) {
+          if (!cashCodes.has(line.code)) continue
+          const counterparts = lines.filter((o) => !cashCodes.has(o.code))
+
+          if (line.debit > 0) {
+            // Money IN. Revenue only when it settles a receivable or is a
+            // direct cash sale; a loan drawdown or capital injection is not.
+            const isTrading = counterparts.some((o) => o.code === '1030' || o.code === '4010')
+            if (isTrading) collected += line.debit
+            else for (const o of counterparts) excludedTotals.set(o.code, (excludedTotals.get(o.code) ?? 0) + line.debit)
+          }
+
+          if (line.credit > 0) {
+            // Money OUT.
+            const supplier = counterparts.find((o) => o.code === '2010')
+            const expense = counterparts.find((o) => isExpenseCode(o.code))
+            if (supplier) paidToSuppliers += line.credit
+            else if (expense) expenseTotals.set(expense.code, (expenseTotals.get(expense.code) ?? 0) + line.credit)
+            else for (const o of counterparts) excludedTotals.set(o.code, (excludedTotals.get(o.code) ?? 0) + line.credit)
+          }
+        }
+      }
+
+      const nameFor = (code: string) => accounts.value.find((a) => a.code === code)?.name ?? code
+      const paidExpenses = [...expenseTotals.entries()]
+        .map(([code, amount]) => ({ code, name: nameFor(code), amount }))
+        .sort((a, b) => a.code.localeCompare(b.code))
+      const excluded = [...excludedTotals.entries()]
+        .map(([code, amount]) => ({ code, name: nameFor(code), amount }))
+        .sort((a, b) => a.code.localeCompare(b.code))
+
+      const paidExpensesTotal = paidExpenses.reduce((sum, e) => sum + e.amount, 0)
+      const statement: CashBasisStatement = {
+        from, to,
+        collected,
+        paidToSuppliers,
+        paidExpenses,
+        paidExpensesTotal,
+        netCash: collected - paidToSuppliers - paidExpensesTotal,
+        excluded,
+        excludedTotal: excluded.reduce((sum, e) => sum + e.amount, 0),
+      }
+      cashBasisStatement.value = statement
+      return statement
+    } catch (err) {
+      handleError(err, 'Failed to compute the cash-basis statement')
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * One `gl_income_statement` per month plus one for the whole range.
+   *
+   * Sequential rather than Promise.all: the GL RPCs were reinstated precisely
+   * because the JS versions fired 30-50 calls per render, so firing a dozen at
+   * once is the wrong instinct here. This runs on load and on a date change,
+   * not on every render, and `maxStatementColumns` bounds it.
+   */
+  const fetchMonthlyIncomeStatement = async (from: string, to: string) => {
+    loading.value = true
+    clearError()
+    try {
+      const months = monthsBetween(from, to)
+      const perMonth: IncomeStatement[] = []
+      for (const month of months) {
+        const { start, end } = monthBounds(month, from, to)
+        const { data, error: e } = await supabase.rpc('gl_income_statement', { p_from: start, p_to: end })
+        if (e) throw e
+        perMonth.push(data as IncomeStatement)
+      }
+      const { data: totalData, error: totalError } = await supabase.rpc('gl_income_statement', { p_from: from, p_to: to })
+      if (totalError) throw totalError
+
+      const statement: MonthlyIncomeStatement = {
+        from, to, months, perMonth, total: totalData as IncomeStatement,
+      }
+      monthlyIncomeStatement.value = statement
+      return statement
+    } catch (err) {
+      handleError(err, 'Failed to compute the monthly income statement')
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /** The cash view by month. Cheap next to the accrual one — the classification
+   *  already walks the ledger, so this just runs it per month. */
+  const fetchMonthlyCashBasisStatement = async (from: string, to: string) => {
+    loading.value = true
+    clearError()
+    try {
+      const months = monthsBetween(from, to)
+      const perMonth: CashBasisStatement[] = []
+      for (const month of months) {
+        const { start, end } = monthBounds(month, from, to)
+        const one = await fetchCashBasisStatement(start, end)
+        if (one) perMonth.push(one)
+      }
+      const total = await fetchCashBasisStatement(from, to)
+      if (!total) return null
+      const statement: MonthlyCashBasisStatement = { from, to, months, perMonth, total }
+      monthlyCashBasisStatement.value = statement
+      // fetchCashBasisStatement leaves the LAST period in cashBasisStatement;
+      // restore the full-range one so switching back to single-period shows the
+      // period asked for, not December.
+      cashBasisStatement.value = total
+      return statement
+    } catch (err) {
+      handleError(err, 'Failed to compute the monthly cash statement')
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
   const fetchAccountLedger = async (code: string, normalBalance: GLAccount['normal_balance']) => {
     loading.value = true
     clearError()
@@ -708,6 +980,9 @@ export const useGLDataStore = defineStore('glData', () => {
 
   return {
     accounts, journal, trialBalance, incomeStatement, balanceSheet, loading, error,
+    cashBasisStatement, fetchCashBasisStatement,
+    monthlyIncomeStatement, fetchMonthlyIncomeStatement,
+    monthlyCashBasisStatement, fetchMonthlyCashBasisStatement,
     fetchAccounts, createAccount, fetchJournal, fetchAccountLedger, postJournalEntry, postManualEntry, approveManualEntry, reverseEntry, reverseJournalEntry,
     projectEvents, fetchTrialBalance, fetchIncomeStatement, fetchBalanceSheet,
     clearError, resetStore,
