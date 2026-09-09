@@ -62,6 +62,10 @@ export const useWarehouseProductsDataStore = defineStore('warehouseProductsData'
     error.value = ''
   }
 
+  // Which warehouse the live channel is currently scoped to, so a scope change
+  // can be detected. Not a ref: nothing renders from it.
+  let subscribedWarehouseId: number | null = null
+
   const upsertWarehouseProductLocal = (warehouseProduct: WarehouseProductType) => {
     const idx = warehouseProducts.value.findIndex((wp) => wp.id === warehouseProduct.id)
     if (idx === -1) warehouseProducts.value.unshift(warehouseProduct)
@@ -84,9 +88,25 @@ export const useWarehouseProductsDataStore = defineStore('warehouseProductsData'
    * checkout fails when it validates that product against the real warehouse.
    * Omit only where every warehouse is genuinely wanted.
    */
-  const startRealtime = (warehouseId?: number | null) => {
-    // Avoid double subscriptions
-    if (realtimeChannel.value) return realtimeChannel.value
+  const startRealtime = async (warehouseId?: number | null) => {
+    // Re-subscribe when the SCOPE changes, not just when there is no channel.
+    // warehouseId is captured in the handler's closure below, so an existing
+    // channel keeps filtering on whichever warehouse it was opened for --
+    // returning early on a branch switch would leave the new branch with no
+    // live updates at all, which is worse than the unscoped version this
+    // replaced. Same warehouse: keep the channel and avoid a double subscribe.
+    // Normalised: callers pass `undefined` for "all warehouses" and the stored
+    // scope is `null`, and `undefined === null` is false -- comparing raw would
+    // tear down and rebuild the channel on every refresh.
+    const scope = warehouseId ?? null
+    if (realtimeChannel.value) {
+      if (subscribedWarehouseId === scope) return realtimeChannel.value
+      // Awaited, so the old channel is gone before the new one binds. Left
+      // running it would keep delivering events filtered to the PREVIOUS
+      // branch straight into the list now showing the new one.
+      await stopRealtime()
+    }
+    subscribedWarehouseId = scope
 
     realtimeStatus.value = 'subscribing'
 
@@ -102,7 +122,7 @@ export const useWarehouseProductsDataStore = defineStore('warehouseProductsData'
           if (eventType === 'INSERT' || eventType === 'UPDATE') {
             const row = payload.new as WarehouseProductType
             if (row?.id == null) return
-            if (warehouseId != null && row.warehouse_id !== warehouseId) return
+            if (scope != null && row.warehouse_id !== scope) return
             upsertWarehouseProductLocal(row)
           }
 
@@ -126,6 +146,7 @@ export const useWarehouseProductsDataStore = defineStore('warehouseProductsData'
 
   const stopRealtime = async () => {
     const channel = realtimeChannel.value
+    subscribedWarehouseId = null
     if (!channel) return
 
     realtimeChannel.value = null
