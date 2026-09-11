@@ -616,6 +616,7 @@ export const useGLDataStore = defineStore('glData', () => {
       return statement
     } catch (err) {
       handleError(err, 'Failed to compute the cash-basis statement')
+      if (requestId === statementSeq) cashBasisStatement.value = null
       return null
     } finally {
       if (requestId === statementSeq) loading.value = false
@@ -649,6 +650,7 @@ export const useGLDataStore = defineStore('glData', () => {
       return statement
     } catch (err) {
       handleError(err, 'Failed to compute the monthly income statement')
+      if (requestId === statementSeq) monthlyIncomeStatement.value = null
       return null
     } finally {
       if (requestId === statementSeq) loading.value = false
@@ -683,6 +685,7 @@ export const useGLDataStore = defineStore('glData', () => {
       return statement
     } catch (err) {
       handleError(err, 'Failed to compute the monthly cash statement')
+      if (requestId === statementSeq) monthlyCashBasisStatement.value = null
       return null
     } finally {
       if (requestId === statementSeq) loading.value = false
@@ -1003,6 +1006,11 @@ export const useGLDataStore = defineStore('glData', () => {
       return incomeStatement.value
     } catch (err) {
       handleError(err, 'Failed to compute income statement')
+      // Clear rather than leave the previous period published: the header is
+      // built from the pickers, which already moved, so keeping the old figures
+      // would put January's numbers under September's heading -- and the print
+      // dialog would reproduce that onto a letterheaded PDF.
+      if (requestId === statementSeq) incomeStatement.value = null
       return null
     } finally {
       // Only the newest request clears the spinner — a superseded one finishing

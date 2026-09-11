@@ -12,7 +12,7 @@ const {
   dateFrom, dateTo, basis, layout, basisOptions, layoutOptions,
   isCash, isMonthly, monthLabel,
   cashStatement, monthly, monthlyCash, periodRows, monthlyRows,
-  loading, load, setBasis, setLayout,
+  loading, error, load, setBasis, setLayout,
 } = useIncomeStatement()
 
 const title = computed(() => (isCash.value ? 'CASH RECEIVED & PAID' : 'INCOME STATEMENT'))
@@ -96,6 +96,20 @@ const showPrint = ref(false)
     </v-card>
 
     <v-progress-linear v-if="loading" indeterminate class="mb-2" />
+
+    <!-- A failed fetch clears the statement, so without this the sheet would
+         read "nothing posted in this period" — which is a claim about the
+         business, not about the request that failed. -->
+    <v-alert
+      v-if="error && !loading"
+      type="error"
+      variant="tonal"
+      density="compact"
+      class="mb-3 text-body-2"
+    >
+      {{ error }} — the figures below are not available for this period. Adjust the
+      dates or try again; nothing has been read from the ledger.
+    </v-alert>
 
     <!-- ── The statement sheet ────────────────────────────────────
          Narrow and centred for the single-period view, full width when there

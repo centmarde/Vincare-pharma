@@ -116,6 +116,12 @@ export function useIncomeStatement() {
   const monthly = computed(() => gl.monthlyIncomeStatement)
   const monthlyCash = computed(() => gl.monthlyCashBasisStatement)
   const loading = computed(() => gl.loading)
+  /**
+   * Surfaced so a failed fetch can say so. Without it the page falls through to
+   * "nothing posted in this period", which asserts something false about the
+   * business when the truth is that the request failed.
+   */
+  const error = computed(() => gl.error)
 
   const isCash = computed(() => basis.value === 'cash')
   const isMonthly = computed(() => layout.value === 'monthly')
@@ -244,6 +250,6 @@ export function useIncomeStatement() {
     dateFrom, dateTo, basis, layout, basisOptions, layoutOptions,
     isCash, isMonthly, monthLabel,
     statement, cashStatement, monthly, monthlyCash, periodRows, monthlyRows,
-    loading, load, setBasis, setLayout,
+    loading, error, load, setBasis, setLayout,
   }
 }
