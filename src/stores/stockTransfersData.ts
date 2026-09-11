@@ -81,22 +81,29 @@ async function findUnpricedProducts(productIds: number[]) {
   if (!ids.length) return { names: [], failed: false }
   const { data, error } = await supabase
     .from('products')
-    .select('id, product_name, selling_price')
+    .select('id, product_name, sku, selling_price')
     .in('id', ids)
   // A failed lookup is NOT "everything is priced". Swallowing the error here
   // would turn the guard into a no-op exactly when it cannot be trusted, so the
   // caller is told the check could not run and refuses rather than proceeding.
   if (error || !data) return { names: [], failed: true }
   return {
+    // Identified by SKU and id, not name alone. The catalogue carries duplicate
+    // names -- two rows can share a name AND a SKU with only one of them
+    // priced -- so naming the product is exactly the ambiguous part: the
+    // message would read as the row the user just priced when it is the other.
     names: data
       .filter((p) => p.selling_price == null || Number(p.selling_price) <= 0)
-      .map((p) => p.product_name ?? `#${p.id}`),
+      .map((p) => {
+        const name = p.product_name ?? 'Unnamed product'
+        return `${name} (SKU ${p.sku ?? '—'}, #${p.id})`
+      }),
     failed: false,
   }
 }
 
 function unpricedMessage(names: string[]) {
-  const shown = names.slice(0, 3).join(', ')
+  const shown = names.slice(0, 3).join('; ')
   const more = names.length > 3 ? ` and ${names.length - 3} more` : ''
   return `Cannot transfer ${shown}${more} — no selling price set. Set a selling price on the product first, otherwise the branch can only sell it for ₱0.00.`
 }
