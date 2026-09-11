@@ -163,6 +163,18 @@ watch(
                     <div class="text-body-2 font-weight-bold">
                         {{ formatCurrency(product.cost_price || 0) }}
                     </div>
+                    <!-- Selling price shown because the catalogue has duplicate
+                         names: two rows can share a name and a SKU with only one
+                         of them priced, and without this there is nothing on
+                         screen to tell them apart. Unpriced is called out
+                         rather than rendered as a plausible-looking zero. -->
+                    <div class="text-caption text-medium-emphasis mt-1">Selling</div>
+                    <div
+                        class="text-body-2 font-weight-bold"
+                        :class="Number(product.selling_price ?? 0) > 0 ? '' : 'text-error'"
+                    >
+                        {{ Number(product.selling_price ?? 0) > 0 ? formatCurrency(product.selling_price ?? 0) : 'Not set' }}
+                    </div>
                     </div>
                 </template>
             </v-list-item>
