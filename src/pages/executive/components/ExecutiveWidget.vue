@@ -41,7 +41,7 @@ const rightPanelView = ref<'actionRequired' | 'topProducts'>('actionRequired')
           class="flex-grow-1"
         />
       </v-col> -->
-      <v-col cols="12" lg="8" class="pa-2 d-flex flex-column">
+      <v-col cols="12" lg="8" class="pa-2 d-flex flex-column exec-chart-col">
         <div class="d-flex align-center mb-2 bg-surface-variant rounded-lg pa-1 toggle-switch flex-shrink-0" style="max-width: 220px;">
           <v-btn variant="text" size="small" class="text-none flex-grow-1"
             :class="{ 'toggle-active': chartVariant === 'bar' }" @click="chartVariant = 'bar'">Bar</v-btn>
@@ -53,7 +53,7 @@ const rightPanelView = ref<'actionRequired' | 'topProducts'>('actionRequired')
         <MonthlyChartLine v-else :monthly-data="dash.monthlyPnL.value" :loading="dash.loading.value" class="flex-grow-1" />
       </v-col>
 
-      <v-col cols="12" lg="4" class="pa-2 d-flex flex-column">
+      <v-col cols="12" lg="4" class="pa-2 d-flex flex-column exec-panel-col">
         <div
           class="d-flex align-center mb-3 bg-surface-variant rounded-lg pa-1 toggle-switch flex-shrink-0"
         >
@@ -90,6 +90,18 @@ const rightPanelView = ref<'actionRequired' | 'topProducts'>('actionRequired')
 
 <style>
 @import url('../css/executive.css');
+
+/* On small screens the two columns stack; show the Action Required /
+   Top Products panel BEFORE the monthly chart. Above `lg` they sit
+   side-by-side in DOM order (chart left, panel right). */
+@media (max-width: 1199.98px) {
+  .exec-panel-col {
+    order: 1;
+  }
+  .exec-chart-col {
+    order: 2;
+  }
+}
 
 .toggle-switch {
   border: 1px solid rgba(0, 0, 0, 0.06);
