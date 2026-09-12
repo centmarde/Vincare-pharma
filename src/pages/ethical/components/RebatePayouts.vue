@@ -38,11 +38,11 @@ const notSet = (field: string) => `No ${field} set`
 
           <!-- Summary cards -->
           <v-row dense class="mb-4">
-            <v-col cols="12" sm="6" md="4">
+            <v-col cols="6" sm="6" md="4" class="d-flex">
               <v-card
                 variant="tonal" color="warning" rounded="lg"
-                class="pa-4 d-flex flex-column justify-space-between"
-                style="height: 100%; min-height: 120px;"
+                class="pa-4 flex-grow-1 d-flex flex-column justify-space-between"
+                style="min-height: 120px;"
               >
                 <div class="d-flex align-center ga-2 mb-2">
                   <v-icon icon="mdi-clock-alert-outline" size="20" />
@@ -54,11 +54,11 @@ const notSet = (field: string) => `No ${field} set`
                 </div>
               </v-card>
             </v-col>
-            <v-col cols="12" sm="6" md="4">
+            <v-col cols="6" sm="6" md="4" class="d-flex">
               <v-card
                 variant="tonal" color="info" rounded="lg"
-                class="pa-4 d-flex flex-column justify-space-between"
-                style="height: 100%; min-height: 120px;"
+                class="pa-4 flex-grow-1 d-flex flex-column justify-space-between"
+                style="min-height: 120px;"
               >
                 <div class="d-flex align-center ga-2 mb-2">
                   <v-icon icon="mdi-check-decagram-outline" size="20" />

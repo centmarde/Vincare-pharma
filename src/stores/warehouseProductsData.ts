@@ -62,6 +62,17 @@ export const useWarehouseProductsDataStore = defineStore('warehouseProductsData'
     error.value = ''
   }
 
+  // Which warehouse the live channel is currently scoped to, so a scope change
+  // can be detected. Not a ref: nothing renders from it.
+  let subscribedWarehouseId: number | null = null
+  // Claimed before startRealtime's first await and re-checked after it. Two
+  // overlapping branch switches would otherwise both proceed: the first
+  // suspends tearing its channel down, the second builds and registers its own,
+  // then the first resumes and overwrites the tracked reference -- orphaning a
+  // still-subscribed channel that stopRealtime can no longer find, feeding a
+  // second warehouse's rows into the same shared list.
+  let subscribeSeq = 0
+
   const upsertWarehouseProductLocal = (warehouseProduct: WarehouseProductType) => {
     const idx = warehouseProducts.value.findIndex((wp) => wp.id === warehouseProduct.id)
     if (idx === -1) warehouseProducts.value.unshift(warehouseProduct)
@@ -84,9 +95,33 @@ export const useWarehouseProductsDataStore = defineStore('warehouseProductsData'
    * checkout fails when it validates that product against the real warehouse.
    * Omit only where every warehouse is genuinely wanted.
    */
-  const startRealtime = (warehouseId?: number | null) => {
-    // Avoid double subscriptions
-    if (realtimeChannel.value) return realtimeChannel.value
+  const startRealtime = async (warehouseId?: number | null) => {
+    // Re-subscribe when the SCOPE changes, not just when there is no channel.
+    // warehouseId is captured in the handler's closure below, so an existing
+    // channel keeps filtering on whichever warehouse it was opened for --
+    // returning early on a branch switch would leave the new branch with no
+    // live updates at all, which is worse than the unscoped version this
+    // replaced. Same warehouse: keep the channel and avoid a double subscribe.
+    // Normalised: callers pass `undefined` for "all warehouses" and the stored
+    // scope is `null`, and `undefined === null` is false -- comparing raw would
+    // tear down and rebuild the channel on every refresh.
+    const scope = warehouseId ?? null
+    if (realtimeChannel.value && subscribedWarehouseId === scope) return realtimeChannel.value
+
+    const requestId = ++subscribeSeq
+    if (realtimeChannel.value) {
+      // Awaited, so the old channel is gone before the new one binds. Left
+      // running it would keep delivering events filtered to the PREVIOUS
+      // branch straight into the list now showing the new one.
+      await stopRealtime()
+    }
+    // Superseded while that teardown was in flight: a newer call has already
+    // subscribed. Abandon this one rather than clobbering the newer channel --
+    // returning here is safe because nothing has been created yet (the channel
+    // is built synchronously below, so no third call can interleave).
+    if (requestId !== subscribeSeq) return realtimeChannel.value
+
+    subscribedWarehouseId = scope
 
     realtimeStatus.value = 'subscribing'
 
@@ -102,7 +137,7 @@ export const useWarehouseProductsDataStore = defineStore('warehouseProductsData'
           if (eventType === 'INSERT' || eventType === 'UPDATE') {
             const row = payload.new as WarehouseProductType
             if (row?.id == null) return
-            if (warehouseId != null && row.warehouse_id !== warehouseId) return
+            if (scope != null && row.warehouse_id !== scope) return
             upsertWarehouseProductLocal(row)
           }
 
@@ -126,6 +161,10 @@ export const useWarehouseProductsDataStore = defineStore('warehouseProductsData'
 
   const stopRealtime = async () => {
     const channel = realtimeChannel.value
+    // Invalidates any startRealtime waiting on a teardown, so an explicit stop
+    // is authoritative and cannot be undone by an in-flight subscribe.
+    subscribeSeq++
+    subscribedWarehouseId = null
     if (!channel) return
 
     realtimeChannel.value = null

@@ -1,22 +1,77 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useIncomeStatement } from '../composables/useIncomeStatement'
-import { formatCurrency } from '@/utils/helpers'
+import { formatDatePR_ISO } from '@/utils/helpers'
+import { useDisplay } from 'vuetify'
+import StatementBody from './StatementBody.vue'
+import IncomeStatementPrintDialog from './dialogs/IncomeStatementPrintDialog.vue'
 
-const { dateFrom, dateTo, statement, loading, load } = useIncomeStatement()
+const { mobile } = useDisplay()
 
-onMounted(load)
+const {
+  dateFrom, dateTo, basis, layout, basisOptions, layoutOptions,
+  isCash, isMonthly, monthLabel,
+  cashStatement, monthly, monthlyCash, periodRows, monthlyRows,
+  loading, error, load, setBasis, setLayout,
+} = useIncomeStatement()
+
+const title = computed(() => (isCash.value ? 'CASH RECEIVED & PAID' : 'INCOME STATEMENT'))
+const basisLine = computed(() =>
+  isCash.value ? 'Cash basis — management view' : 'Accrual basis',
+)
+const periodLine = computed(
+  () => `For the period ${formatDatePR_ISO(dateFrom.value)} to ${formatDatePR_ISO(dateTo.value)}`,
+)
+
+const showPrint = ref(false)
 </script>
 
 <template>
-  <v-container fluid class="pa-0">
-    <v-card class="elevation-0">
-      <v-card-title class="d-flex align-center ga-2 pb-2 flex-wrap">
-        <span>Income Statement</span>
-        <v-chip color="primary" size="x-small" label class="ml-2"
-          >Accrual, GL-derived — authoritative</v-chip
+  <v-container fluid class="pa-2">
+    <!-- ── Controls ───────────────────────────────────────────────
+         Kept OUT of the statement itself: the sheet below is the document, and
+         toolbars inside it are what made this read like a screen instead. -->
+    <v-card rounded="lg" class="mx-auto w-100 mb-3">
+      <v-card-text class="pa-3 pa-sm-4 d-flex align-center flex-wrap ga-2">
+        <v-btn-toggle
+          :model-value="layout"
+          mandatory
+          density="compact"
+          color="primary"
+          variant="outlined"
+          @update:model-value="setLayout"
         >
-        <v-spacer />
+          <v-btn v-for="l in layoutOptions" :key="l.value" :value="l.value" size="small" class="text-none">
+            {{ l.title }}
+          </v-btn>
+        </v-btn-toggle>
+
+        <v-btn-toggle
+          :model-value="basis"
+          mandatory
+          density="compact"
+          color="primary"
+          variant="outlined"
+          @update:model-value="setBasis"
+        >
+          <v-btn v-for="b in basisOptions" :key="b.value" :value="b.value" size="small" class="text-none">
+            {{ b.title }}
+          </v-btn>
+        </v-btn-toggle>
+
+        <v-btn
+          color="primary"
+          variant="flat"
+          class="text-none font-weight-bold"
+          prepend-icon="mdi-printer"
+          size="small"
+          @click="showPrint = true"
+        >
+          Print
+        </v-btn>
+
+        <v-spacer v-if="!mobile" />
+
         <v-text-field
           v-model="dateFrom"
           type="date"
@@ -24,7 +79,7 @@ onMounted(load)
           density="compact"
           variant="outlined"
           hide-details
-          style="max-width: 160px"
+          :style="mobile ? 'width: 100%' : 'max-width: 165px'"
           @update:model-value="load"
         />
         <v-text-field
@@ -34,83 +89,68 @@ onMounted(load)
           density="compact"
           variant="outlined"
           hide-details
-          style="max-width: 160px"
+          :style="mobile ? 'width: 100%' : 'max-width: 165px'"
           @update:model-value="load"
         />
-      </v-card-title>
-
-      <v-card-text>
-        <v-progress-linear v-if="loading" indeterminate class="mb-2" />
-
-        <template v-if="statement">
-          <div v-for="section in statement.sections" :key="section.subsection" class="mb-4">
-            <div class="text-subtitle-2 font-weight-bold mb-1">{{ section.subsection }}</div>
-            <v-table density="compact">
-              <tbody>
-                <tr v-for="a in section.accounts" :key="a.code">
-                  <td>{{ a.name }}</td>
-                  <td class="text-right" style="width: 160px">{{ formatCurrency(a.amount) }}</td>
-                </tr>
-              </tbody>
-              <tfoot>
-                <tr class="font-weight-medium border-t">
-                  <td>Total {{ section.subsection }}</td>
-                  <td class="text-right">{{ formatCurrency(section.subtotal) }}</td>
-                </tr>
-              </tfoot>
-            </v-table>
-          </div>
-
-          <v-divider class="my-3" />
-
-          <v-table density="compact">
-            <tbody>
-              <tr>
-                <td>Net Sales</td>
-                <td class="text-right" style="width: 160px">
-                  {{ formatCurrency(statement.netSales) }}
-                </td>
-              </tr>
-              <tr>
-                <td>Less: Cost of Sales</td>
-                <td class="text-right">({{ formatCurrency(statement.cogs) }})</td>
-              </tr>
-              <tr class="font-weight-bold">
-                <td>Gross Profit</td>
-                <td class="text-right">{{ formatCurrency(statement.grossProfit) }}</td>
-              </tr>
-              <tr>
-                <td>Less: Selling Expenses</td>
-                <td class="text-right">({{ formatCurrency(statement.sellingExpenses) }})</td>
-              </tr>
-              <tr>
-                <td>Less: Administrative & Operating Expenses</td>
-                <td class="text-right">({{ formatCurrency(statement.adminExpenses) }})</td>
-              </tr>
-              <tr class="font-weight-bold">
-                <td>Operating Income</td>
-                <td class="text-right">{{ formatCurrency(statement.operatingIncome) }}</td>
-              </tr>
-              <tr>
-                <td>Add: Other Income</td>
-                <td class="text-right">{{ formatCurrency(statement.otherIncome) }}</td>
-              </tr>
-              <tr>
-                <td>Less: Finance Costs</td>
-                <td class="text-right">({{ formatCurrency(statement.financeCosts) }})</td>
-              </tr>
-              <tr class="font-weight-bold text-h6" style="border-top: 2px solid currentColor">
-                <td>Net Income</td>
-                <td class="text-right">{{ formatCurrency(statement.netIncome) }}</td>
-              </tr>
-            </tbody>
-          </v-table>
-        </template>
-
-        <div v-else-if="!loading" class="text-center text-caption text-medium-emphasis py-4">
-          No data for this range.
-        </div>
       </v-card-text>
     </v-card>
+
+    <v-progress-linear v-if="loading" indeterminate class="mb-2" />
+
+    <!-- A failed fetch clears the statement, so without this the sheet would
+         read "nothing posted in this period" — which is a claim about the
+         business, not about the request that failed. -->
+    <v-alert
+      v-if="error && !loading"
+      type="error"
+      variant="tonal"
+      density="compact"
+      class="mb-3 text-body-2"
+    >
+      {{ error }} — the figures below are not available for this period. Adjust the
+      dates or try again; nothing has been read from the ledger.
+    </v-alert>
+
+    <!-- ── The statement sheet ────────────────────────────────────
+         Narrow and centred for the single-period view, full width when there
+         are month columns to compare. -->
+    <v-card rounded="lg" class="mx-auto w-100 statement-sheet">
+      <v-card-text class="pa-5 pa-sm-8">
+        <StatementBody
+          :title="title"
+          :period-line="periodLine"
+          :basis-line="basisLine"
+          :is-cash="isCash"
+          :is-monthly="isMonthly"
+          :period-rows="periodRows"
+          :monthly-rows="monthlyRows"
+          :monthly="monthly"
+          :cash-statement="cashStatement"
+          :monthly-cash="monthlyCash"
+          :month-label="monthLabel"
+        />
+      </v-card-text>
+    </v-card>
+
+    <IncomeStatementPrintDialog
+      v-model="showPrint"
+      :title="title"
+      :period-line="periodLine"
+      :basis-line="basisLine"
+      :is-cash="isCash"
+      :is-monthly="isMonthly"
+      :period-rows="periodRows"
+      :monthly-rows="monthlyRows"
+      :monthly="monthly"
+      :cash-statement="cashStatement"
+      :monthly-cash="monthlyCash"
+      :month-label="monthLabel"
+    />
   </v-container>
 </template>
+
+<style scoped>
+.statement-sheet {
+  background: rgb(var(--v-theme-surface));
+}
+</style>
