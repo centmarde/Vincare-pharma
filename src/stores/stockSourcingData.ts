@@ -119,11 +119,15 @@ export const useStockSourcingStore = defineStore('stockSourcing', () => {
    * On-hand per product AT ONE LOCATION. Products with no row at that location
    * are simply absent from the map — callers read a missing key as zero, which
    * is what "this branch has never held it" means.
+   *
+   * Returns `null` if the read FAILED, which is not the same as "nothing in
+   * stock": an empty map would let a dropped connection look like a genuine
+   * shortage and quietly produce an order sourced with nothing.
    */
   async function availabilityAt(
     locationId: StockLocationId,
     productIds: number[],
-  ): Promise<Map<number, number>> {
+  ): Promise<Map<number, number> | null> {
     const result = new Map<number, number>()
     const unique = [...new Set(productIds.filter((id) => id != null))]
     if (!unique.length) return result
@@ -159,7 +163,7 @@ export const useStockSourcingStore = defineStore('stockSourcing', () => {
       return result
     } catch (err) {
       handleError(err, 'Failed to read stock for this location')
-      return new Map()
+      return null
     }
   }
 
@@ -220,16 +224,18 @@ export const useStockSourcingStore = defineStore('stockSourcing', () => {
    * user approves and the figures that get written cannot disagree. Keep it that
    * way: a second copy of this arithmetic is the bug this design exists to avoid.
    *
-   * Read-only. It moves nothing.
+   * Read-only. It moves nothing. Returns `null` when the stock read failed, so
+   * a caller stops rather than treating a failed read as "nothing available".
    */
   async function planSourcing(
     locationId: StockLocationId,
     lines: { product_id: number; quantity: number }[],
-  ): Promise<SourcingLine[]> {
+  ): Promise<SourcingLine[] | null> {
     const onHand = await availabilityAt(
       locationId,
       lines.map((l) => l.product_id),
     )
+    if (!onHand) return null
     // Two lines can name the same product; the second must see what the first
     // already claimed, or both get promised the same units.
     const claimed = new Map<number, number>()
@@ -271,22 +277,39 @@ export const useStockSourcingStore = defineStore('stockSourcing', () => {
         return true
       }
 
+      // A branch can hold MORE THAN ONE row for the same product — nothing in
+      // the schema prevents it, and both this store and transfer-receiving
+      // insert a row when they find none. availabilityAt sums them, so drawing
+      // has to span them too; maybeSingle() would error on exactly the data
+      // availability just reported as in stock.
       const { data, error: readError } = await supabase
         .from('warehouse_products')
         .select('id, total_qty')
         .eq('warehouse_id', locationId)
         .eq('product_id', productId)
-        .maybeSingle()
+        .order('id', { ascending: true })
       if (readError) throw readError
-      // No row means the branch has never held it — there is nothing to draw,
-      // and inserting a negative row would invent stock that does not exist.
-      if (!data) return false
 
-      const { error: writeError } = await supabase
-        .from('warehouse_products')
-        .update({ total_qty: ((data.total_qty as number | null) ?? 0) - qty })
-        .eq('id', data.id)
-      if (writeError) throw writeError
+      const rows = data ?? []
+      const available = rows.reduce((sum, r) => sum + ((r.total_qty as number | null) ?? 0), 0)
+      // Fail closed. A partial draw would be recorded by the caller as a full
+      // one, so take all of it or none — no row means the branch has never held
+      // it, and inventing a negative row would conjure stock that never existed.
+      if (available < qty) return false
+
+      let remaining = qty
+      for (const row of rows) {
+        if (remaining <= 0) break
+        const onHand = (row.total_qty as number | null) ?? 0
+        const take = Math.min(remaining, onHand)
+        if (take <= 0) continue
+        const { error: writeError } = await supabase
+          .from('warehouse_products')
+          .update({ total_qty: onHand - take })
+          .eq('id', row.id)
+        if (writeError) throw writeError
+        remaining -= take
+      }
       return true
     } catch (err) {
       handleError(err, 'Failed to draw stock')
@@ -323,19 +346,23 @@ export const useStockSourcingStore = defineStore('stockSourcing', () => {
         return true
       }
 
+      // Same multi-row reality as drawStock. Everything goes back onto the
+      // lowest-id row so a return is deterministic and never creates yet
+      // another duplicate for a product the branch already carries.
       const { data, error: readError } = await supabase
         .from('warehouse_products')
         .select('id, total_qty')
         .eq('warehouse_id', locationId)
         .eq('product_id', productId)
-        .maybeSingle()
+        .order('id', { ascending: true })
       if (readError) throw readError
 
-      if (data) {
+      const target = (data ?? [])[0]
+      if (target) {
         const { error: writeError } = await supabase
           .from('warehouse_products')
-          .update({ total_qty: ((data.total_qty as number | null) ?? 0) + qty })
-          .eq('id', data.id)
+          .update({ total_qty: ((target.total_qty as number | null) ?? 0) + qty })
+          .eq('id', target.id)
         if (writeError) throw writeError
         return true
       }

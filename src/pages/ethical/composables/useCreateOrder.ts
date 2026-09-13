@@ -4,6 +4,7 @@ import { useToast } from 'vue-toastification'
 import { useEthicalDataStore } from '@/stores/ethicalData'
 import type { ProductPickerResult } from '@/stores/productsData'
 import { useAgentsDataStore } from '@/stores/agentsData'
+import { useOutletsDataStore } from '@/stores/outletsData'
 import { useStockSourcingStore } from '@/stores/stockSourcingData'
 import type { LocationStock, StockLocationId } from '@/stores/stockSourcingData'
 import { parseTermDays } from '@/utils/helpers'
@@ -34,6 +35,8 @@ type FormLine = {
 
 /** One line of the "where is this coming from" panel shown before submit. */
 export type SourcingPreviewRow = {
+  /** Unique per ROW, not per product: two lines may name the same product. */
+  key: string
   product_id: number
   product_name: string
   need: number
@@ -46,14 +49,19 @@ export type SourcingPreviewRow = {
 export function useCreateOrder(onCreated: () => void) {
   const ethical = useEthicalDataStore()
   const agentsStore = useAgentsDataStore()
+  const outletsStore = useOutletsDataStore()
   const sourcingStore = useStockSourcingStore()
 
   const { agents } = storeToRefs(agentsStore)
+  const { outlets } = storeToRefs(outletsStore)
   const { locations } = storeToRefs(sourcingStore)
 
   const loading = ref(false)
   const customerId = ref<number | null>(null)
   const agentId = ref<number | null>(null)
+  // WHO is selling — the ethical branch. Distinct from where the stock comes
+  // from: a branch whose own store is empty still sells, sourcing from main.
+  const outletId = ref<number | null>(null)
   // Where the stock comes from. null = the main warehouse, which is also the
   // default: it holds the bulk of the catalogue.
   const sourceLocationId = ref<StockLocationId>(null)
@@ -68,10 +76,12 @@ export function useCreateOrder(onCreated: () => void) {
   // — the version bump discards any old v1 draft that still carried them.
   // v4: outletId became sourceLocationId (an outlet id and a warehouse id are
   // different keys, so a restored v3 draft would point at the wrong location).
+  // v5: outletId is back ALONGSIDE sourceLocationId — branch and stock source
+  // are separate facts, so a v4 draft is missing the branch entirely.
   const draft = useFormDraft({
     key: 'ethical-create-order',
-    version: 4,
-    refs: { customerId, agentId, sourceLocationId, remarks, lines },
+    version: 5,
+    refs: { customerId, agentId, outletId, sourceLocationId, remarks, lines },
     isEmpty: () => customerId.value == null && agentId.value == null && !remarks.value
       && !lines.value.some((l) => l.product_id != null || l.unit_price > 0),
   })
@@ -82,6 +92,9 @@ export function useCreateOrder(onCreated: () => void) {
 
   const agentOptions = computed(() =>
     agents.value.map(a => ({ title: a.name, value: a.id })))
+
+  const outletOptions = computed(() =>
+    outlets.value.filter(o => o.channel === 'ethical' && o.is_active).map(o => ({ title: o.name, value: o.id })))
 
   const locationOptions = computed(() =>
     locations.value.map(l => ({ title: l.name, value: l.id })))
@@ -161,12 +174,15 @@ export function useCreateOrder(onCreated: () => void) {
   // 🔴 Hard floor — a line whose net lands under the product's cost is sold at a
   // real loss. Blocks submit. Lines with no cost_price on the master can't be
   // judged, so they're skipped rather than guessed at.
-  type BelowCostLine = { index: number; name: string; net: number; cost: number }
+  // Carries only WHICH line is underpriced — not the net or the cost behind the
+  // judgement. Selling staff must not see company cost, so the figures are not
+  // handed to the template at all rather than merely left unrendered.
+  type BelowCostLine = { index: number; name: string }
   const belowCostLines = computed<BelowCostLine[]>(() =>
     lines.value.flatMap((l, index) => {
       if (l.product_id == null || l.cost == null) return []
       const net = netUnitPrice(l.unit_price)
-      return net < l.cost ? [{ index, name: l.product_name, net, cost: l.cost }] : []
+      return net < l.cost ? [{ index, name: l.product_name }] : []
     }))
   const hasBelowCostLine = computed(() => belowCostLines.value.length > 0)
   const lineBelowCost = (i: number) => belowCostLines.value.some(b => b.index === i)
@@ -210,6 +226,12 @@ export function useCreateOrder(onCreated: () => void) {
         sourceLocationId.value,
         wanted.map(l => ({ product_id: l.product_id!, quantity: l.quantity })),
       )
+      // A failed read is not a shortage — show nothing rather than a panel
+      // claiming every line is short.
+      if (!plan) {
+        if (requestId === previewSeq) sourcingPreview.value = []
+        return
+      }
       // Only look up other locations for lines that actually came up short.
       const shortIds = plan.filter(p => p.short > 0).map(p => p.product_id)
       const elsewhere = shortIds.length
@@ -218,6 +240,7 @@ export function useCreateOrder(onCreated: () => void) {
 
       if (requestId !== previewSeq) return
       sourcingPreview.value = plan.map((p, i) => ({
+        key: `${i}-${p.product_id}`,
         product_id: p.product_id,
         product_name: wanted[i]?.product_name ?? `#${p.product_id}`,
         need: p.need,
@@ -279,11 +302,12 @@ export function useCreateOrder(onCreated: () => void) {
 
   async function submit() {
     if (!customerId.value) { toast.warning('Select a customer.'); return }
+    if (!outletId.value) { toast.warning('Select a branch.'); return }
     if (!validLines.value.length) { toast.warning('Add at least one product with quantity.'); return }
     // Never let a below-cost sale through — after discount + rebate this order
     // would realize less than the goods cost us.
     if (hasBelowCostLine.value) {
-      toast.error(`Cannot create: ${belowCostLines.value.length} line(s) sell below cost after discount and rebate.`)
+      toast.error(`Cannot create: ${belowCostLines.value.length} line(s) are priced below the allowed minimum.`)
       return
     }
 
@@ -291,6 +315,7 @@ export function useCreateOrder(onCreated: () => void) {
     const result = await ethical.createOrder({
       customerId: customerId.value,
       agentId: agentId.value,
+      outletId: outletId.value,
       sourceLocationId: sourceLocationId.value,
       discount: discountAmount.value || undefined,
       rebate: rebateAmount.value || undefined,
@@ -313,6 +338,7 @@ export function useCreateOrder(onCreated: () => void) {
   function reset() {
     customerId.value = null
     agentId.value = null
+    outletId.value = null
     sourceLocationId.value = null
     remarks.value = ''
     lines.value = []
@@ -323,9 +349,11 @@ export function useCreateOrder(onCreated: () => void) {
   async function init() {
     await initCustomerPicker()
     if (!agents.value.length) await agentsStore.fetchAgents({ activeOnly: true })
+    if (!outlets.value.length) await outletsStore.fetchOutlets()
     if (!locations.value.length) await sourcingStore.fetchLocations()
     // Restore a saved draft first, then fall back to defaults for anything blank.
     draft.restore()
+    if (!outletId.value) outletId.value = outletOptions.value[0]?.value ?? null
     if (!lines.value.length) addLine()
     // A restored draft can arrive with lines already on it, so the panel has to
     // be filled here — the watcher only fires on subsequent changes.
@@ -333,9 +361,9 @@ export function useCreateOrder(onCreated: () => void) {
   }
 
   return {
-    loading, customerId, agentId, sourceLocationId, remarks, lines,
+    loading, customerId, agentId, outletId, sourceLocationId, remarks, lines,
     customerSearch, customerOptions, selectedCustomer, agentOptions,
-    locationOptions, sourceLocationName,
+    outletOptions, locationOptions, sourceLocationName,
     sourcingPreview, sourcingLoading, shortSourcingRows, hasSourcingShortfall, refreshSourcing,
     subtotal, discountRate, discountAmount, rebateRate, rebateAmount, adsRate, adsAmount,
     termsDays, total, dueDatePreview, discountProfile, termsNeedReview,

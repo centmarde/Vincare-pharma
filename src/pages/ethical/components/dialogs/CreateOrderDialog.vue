@@ -32,6 +32,8 @@ const {
   selectedCustomer,
   agentId,
   agentOptions,
+  outletId,
+  outletOptions,
   sourceLocationId,
   locationOptions,
   sourceLocationName,
@@ -158,6 +160,20 @@ watch(
             @update:model-value="onCustomerChange"
           />
 
+          <!-- Branch = who is selling. Stock source = where the goods come
+               from. Usually the same place, but a branch whose store is empty
+               still sells and pulls from main, so they stay separate. -->
+          <v-select
+            v-model="outletId"
+            :items="outletOptions"
+            label="Branch"
+            item-title="title"
+            item-value="value"
+            class="flex-grow-1"
+            hint="Which branch is selling"
+            persistent-hint
+          />
+
           <v-select
             v-model="sourceLocationId"
             :items="locationOptions"
@@ -212,17 +228,19 @@ watch(
           density="compact"
           class="mb-4"
         >
-          <div class="font-weight-bold mb-1">Selling below cost — cannot create this order</div>
+          <div class="font-weight-bold mb-1">Price too low — cannot create this order</div>
 
+          <!-- Names the offending lines but NOT the company cost or the realized
+               net. Selling staff need to know which line to re-price; the cost
+               behind that judgement is not theirs to see. -->
           <div class="text-caption">
-            After {{ giveawayRate }}% discount + rebate, these lines realize less than the goods
-            cost:
+            After {{ giveawayRate }}% discount + rebate, these lines fall below the minimum
+            price allowed. Raise the unit price or reduce the giveaway:
           </div>
 
           <ul class="text-caption mt-1">
             <li v-for="belowCost in belowCostLines" :key="belowCost.index">
-              {{ belowCost.name }} — nets {{ formatCurrency(belowCost.net) }}/unit vs cost
-              {{ formatCurrency(belowCost.cost) }}
+              {{ belowCost.name }}
             </li>
           </ul>
         </v-alert>
@@ -239,8 +257,8 @@ watch(
           <strong>
             {{ formatCurrency(netRevenue) }}
           </strong>
-          of the {{ formatCurrency(subtotal) }} subtotal, which is below system price. Still above
-          cost, but the markup no longer funds the giveaway.
+          of the {{ formatCurrency(subtotal) }} subtotal, which is below system price. Still within
+          the allowed minimum, but the markup no longer funds the giveaway.
         </v-alert>
 
         <v-text-field
@@ -449,7 +467,7 @@ watch(
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in sourcingPreview" :key="row.product_id">
+              <tr v-for="row in sourcingPreview" :key="row.key">
                 <td>{{ row.product_name }}</td>
                 <td class="text-right">{{ row.need }}</td>
                 <td class="text-right">{{ row.take }}</td>

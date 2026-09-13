@@ -257,9 +257,16 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
   // drained the main warehouse on every order — invisible, because an empty
   // first tier is not an error. A shortfall now stays a shortfall and surfaces
   // as `awaiting_stock` for a transfer or a procurement request to resolve.
+  //
+  // BRANCH and SOURCE are two different facts and both are recorded. `outletId`
+  // is the ethical branch making the sale; `sourceLocationId` is where the goods
+  // physically come from. They are usually the same place, but not always — a
+  // branch whose own store is out pulls from the main warehouse, and collapsing
+  // the two would leave that order with no branch at all.
   const createOrder = async (payload: {
     customerId: number
     agentId?: number | null
+    outletId: number
     sourceLocationId: StockLocationId
     discount?: number
     rebate?: number
@@ -272,8 +279,22 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     clearError()
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
+    if (!payload.outletId) { toast.warning('Select a branch.'); loading.value = false; return { success: false } }
     if (payload.sourceLocationId === undefined) { toast.warning('Select where the stock comes from.'); loading.value = false; return { success: false } }
     if (!payload.lines.length) { toast.warning('Add at least one line item.'); loading.value = false; return { success: false } }
+
+    const { data: outlet, error: outletError } = await supabase
+      .from('outlets')
+      .select('channel')
+      .eq('id', payload.outletId)
+      .eq('is_active', true)
+      .maybeSingle()
+    if (outletError || !outlet) {
+      toast.error('Branch not found or inactive.'); loading.value = false; return { success: false }
+    }
+    if (outlet.channel !== 'ethical') {
+      toast.error('That branch is not an ethical branch.'); loading.value = false; return { success: false }
+    }
 
     // A branch must be a real warehouse. The main warehouse (null) has no row to
     // check — it is the products table itself.
@@ -319,9 +340,11 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
           // reference_no unique index already reserves the EO- prefix.
           reference_no: docNo,
           ethical_no: docNo, transaction_type: 'ethical_order', status: 'invoiced',
-          // warehouse_id records WHERE THE STOCK CAME FROM, and is the only
-          // record of it — null means the main warehouse. cancelOrder reads it
-          // back to return the goods to the same place they left.
+          // outlet_id = WHO SOLD IT (the ethical branch).
+          // warehouse_id = WHERE THE STOCK CAME FROM, and is the only record of
+          // it — null means the main warehouse. cancelOrder reads it back to
+          // return the goods to the same place they left.
+          outlet_id: payload.outletId,
           warehouse_id: payload.sourceLocationId,
           customer_id: payload.customerId, agent_id: payload.agentId ?? null,
           total_amount: total, remarks: payload.remarks || null, created_by: user.id,
@@ -351,6 +374,14 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
       payload.sourceLocationId,
       payload.lines.map((l) => ({ product_id: l.product_id, quantity: l.quantity })),
     )
+    // A failed stock read is NOT a shortage. Continuing here would book an order
+    // sourced with nothing and flag it awaiting_stock, turning a dropped
+    // connection into a backorder nobody ordered.
+    if (!plan) {
+      toast.error('Could not read stock for that location. The order was not created.')
+      loading.value = false
+      return { success: false }
+    }
 
     let anyShort = false
     for (const [index, line] of payload.lines.entries()) {
@@ -1022,6 +1053,12 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
       locationId,
       shortLines.map(l => ({ product_id: l.product_id, quantity: l.qty - l.delivered_qty })),
     )
+    // Same reasoning as createOrder: a failed read must not be mistaken for a
+    // shortage, or a recheck would silently confirm the order is still short.
+    if (!plan) {
+      toast.error('Could not read stock for that location. Nothing was changed.')
+      return []
+    }
 
     const shortfall: Shortfall[] = []
     for (const [index, line] of shortLines.entries()) {
