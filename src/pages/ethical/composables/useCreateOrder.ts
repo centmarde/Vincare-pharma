@@ -1,10 +1,11 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useEthicalDataStore } from '@/stores/ethicalData'
 import type { ProductPickerResult } from '@/stores/productsData'
 import { useAgentsDataStore } from '@/stores/agentsData'
-import { useOutletsDataStore } from '@/stores/outletsData'
+import { useStockSourcingStore } from '@/stores/stockSourcingData'
+import type { LocationStock, StockLocationId } from '@/stores/stockSourcingData'
 import { parseTermDays } from '@/utils/helpers'
 import { useCustomerPicker } from '@/composables/useCustomerPicker'
 import { useFormDraft } from '@/composables/useFormDraft'
@@ -31,31 +32,46 @@ type FormLine = {
   unit_price: number
 }
 
+/** One line of the "where is this coming from" panel shown before submit. */
+export type SourcingPreviewRow = {
+  product_id: number
+  product_name: string
+  need: number
+  take: number
+  short: number
+  /** Other locations holding this product, for a short line. */
+  elsewhere: LocationStock[]
+}
+
 export function useCreateOrder(onCreated: () => void) {
   const ethical = useEthicalDataStore()
   const agentsStore = useAgentsDataStore()
-  const outletsStore = useOutletsDataStore()
+  const sourcingStore = useStockSourcingStore()
 
   const { agents } = storeToRefs(agentsStore)
-  const { outlets } = storeToRefs(outletsStore)
+  const { locations } = storeToRefs(sourcingStore)
 
   const loading = ref(false)
   const customerId = ref<number | null>(null)
   const agentId = ref<number | null>(null)
-  const outletId = ref<number | null>(null)
+  // Where the stock comes from. null = the main warehouse, which is also the
+  // default: it holds the bulk of the catalogue.
+  const sourceLocationId = ref<StockLocationId>(null)
   const remarks = ref('')
   const lines = ref<FormLine[]>([])
 
   // Persist a draft so a reload / crash mid-entry doesn't wipe the order.
-  // outletId is deliberately excluded from the "touched" check — it auto-defaults
-  // to the first branch on open, so it isn't a sign the user actually started.
+  // sourceLocationId is deliberately excluded from the "touched" check — it
+  // defaults on open, so it isn't a sign the user actually started.
   // v2: discount/rebate/terms are no longer hand-entered refs (they derive from
   // the customer's trade profile now), so they're dropped from the persisted set
   // — the version bump discards any old v1 draft that still carried them.
+  // v4: outletId became sourceLocationId (an outlet id and a warehouse id are
+  // different keys, so a restored v3 draft would point at the wrong location).
   const draft = useFormDraft({
     key: 'ethical-create-order',
-    version: 3,
-    refs: { customerId, agentId, outletId, remarks, lines },
+    version: 4,
+    refs: { customerId, agentId, sourceLocationId, remarks, lines },
     isEmpty: () => customerId.value == null && agentId.value == null && !remarks.value
       && !lines.value.some((l) => l.product_id != null || l.unit_price > 0),
   })
@@ -67,8 +83,11 @@ export function useCreateOrder(onCreated: () => void) {
   const agentOptions = computed(() =>
     agents.value.map(a => ({ title: a.name, value: a.id })))
 
-  const outletOptions = computed(() =>
-    outlets.value.filter(o => o.channel === 'ethical' && o.is_active).map(o => ({ title: o.name, value: o.id })))
+  const locationOptions = computed(() =>
+    locations.value.map(l => ({ title: l.name, value: l.id })))
+
+  const sourceLocationName = computed(
+    () => sourcingStore.locationById(sourceLocationId.value).name)
 
   // PRICE = SYSTEM PRICE / DIVISOR, DIVISOR = (100 - MARKUP)% — the client's
   // trade-profile pricing formula (customersData.ts markup_percent). Falls
@@ -163,6 +182,71 @@ export function useCreateOrder(onCreated: () => void) {
     return markup == null ? true : giveawayRate.value > markup
   })
 
+  // ---- Sourcing preview ----------------------------------------------------
+  // Shows WHERE the stock comes from before the order is placed, so a shortfall
+  // is seen while it can still be acted on rather than discovered afterwards as
+  // an `awaiting_stock` order. Read-only: it moves no stock and creates nothing.
+  //
+  // It calls the SAME planner createOrder uses, so the split shown here and the
+  // split actually written cannot disagree.
+  const sourcingPreview = ref<SourcingPreviewRow[]>([])
+  const sourcingLoading = ref(false)
+  // Every async fetch here needs a ticket: the user changes location and lines
+  // faster than the round trips return, and without it a stale response
+  // overwrites a newer one and the panel describes the wrong location.
+  let previewSeq = 0
+
+  async function refreshSourcing() {
+    const requestId = ++previewSeq
+    const wanted = validLines.value
+    if (!wanted.length) {
+      sourcingPreview.value = []
+      return
+    }
+
+    sourcingLoading.value = true
+    try {
+      const plan = await sourcingStore.planSourcing(
+        sourceLocationId.value,
+        wanted.map(l => ({ product_id: l.product_id!, quantity: l.quantity })),
+      )
+      // Only look up other locations for lines that actually came up short.
+      const shortIds = plan.filter(p => p.short > 0).map(p => p.product_id)
+      const elsewhere = shortIds.length
+        ? await sourcingStore.availabilityAcross(shortIds)
+        : new Map<number, LocationStock[]>()
+
+      if (requestId !== previewSeq) return
+      sourcingPreview.value = plan.map((p, i) => ({
+        product_id: p.product_id,
+        product_name: wanted[i]?.product_name ?? `#${p.product_id}`,
+        need: p.need,
+        take: p.take,
+        short: p.short,
+        // The chosen source is already shown on the line; listing it again as
+        // an alternative would read as if stock were available twice.
+        elsewhere: (elsewhere.get(p.product_id) ?? [])
+          .filter(e => e.location.id !== sourceLocationId.value),
+      }))
+    } finally {
+      if (requestId === previewSeq) sourcingLoading.value = false
+    }
+  }
+
+  let sourcingDebounce: ReturnType<typeof setTimeout> | undefined
+  watch(
+    // Quantity and product changes both move the figures, so watch the values
+    // rather than the array identity.
+    () => [sourceLocationId.value, validLines.value.map(l => `${l.product_id}:${l.quantity}`).join(',')],
+    () => {
+      if (sourcingDebounce) clearTimeout(sourcingDebounce)
+      sourcingDebounce = setTimeout(() => { void refreshSourcing() }, 300)
+    },
+  )
+
+  const shortSourcingRows = computed(() => sourcingPreview.value.filter(r => r.short > 0))
+  const hasSourcingShortfall = computed(() => shortSourcingRows.value.length > 0)
+
   function addLine() {
     lines.value.push({
       product_id: null, product_name: '', brand: null, unit: '',
@@ -195,7 +279,6 @@ export function useCreateOrder(onCreated: () => void) {
 
   async function submit() {
     if (!customerId.value) { toast.warning('Select a customer.'); return }
-    if (!outletId.value) { toast.warning('Select a branch.'); return }
     if (!validLines.value.length) { toast.warning('Add at least one product with quantity.'); return }
     // Never let a below-cost sale through — after discount + rebate this order
     // would realize less than the goods cost us.
@@ -208,7 +291,7 @@ export function useCreateOrder(onCreated: () => void) {
     const result = await ethical.createOrder({
       customerId: customerId.value,
       agentId: agentId.value,
-      outletId: outletId.value,
+      sourceLocationId: sourceLocationId.value,
       discount: discountAmount.value || undefined,
       rebate: rebateAmount.value || undefined,
       ads: adsAmount.value || undefined,
@@ -230,25 +313,30 @@ export function useCreateOrder(onCreated: () => void) {
   function reset() {
     customerId.value = null
     agentId.value = null
-    outletId.value = null
+    sourceLocationId.value = null
     remarks.value = ''
     lines.value = []
+    sourcingPreview.value = []
     addLine()
   }
 
   async function init() {
     await initCustomerPicker()
     if (!agents.value.length) await agentsStore.fetchAgents({ activeOnly: true })
-    if (!outlets.value.length) await outletsStore.fetchOutlets()
+    if (!locations.value.length) await sourcingStore.fetchLocations()
     // Restore a saved draft first, then fall back to defaults for anything blank.
     draft.restore()
-    if (!outletId.value) outletId.value = outletOptions.value[0]?.value ?? null
     if (!lines.value.length) addLine()
+    // A restored draft can arrive with lines already on it, so the panel has to
+    // be filled here — the watcher only fires on subsequent changes.
+    await refreshSourcing()
   }
 
   return {
-    loading, customerId, agentId, outletId, remarks, lines,
-    customerSearch, customerOptions, selectedCustomer, agentOptions, outletOptions,
+    loading, customerId, agentId, sourceLocationId, remarks, lines,
+    customerSearch, customerOptions, selectedCustomer, agentOptions,
+    locationOptions, sourceLocationName,
+    sourcingPreview, sourcingLoading, shortSourcingRows, hasSourcingShortfall, refreshSourcing,
     subtotal, discountRate, discountAmount, rebateRate, rebateAmount, adsRate, adsAmount,
     termsDays, total, dueDatePreview, discountProfile, termsNeedReview,
     markupDivisorLabel,
