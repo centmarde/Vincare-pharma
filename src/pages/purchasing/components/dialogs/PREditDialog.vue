@@ -491,7 +491,9 @@ const companyCostTotal = computed(() => {
         </v-row>
       </v-card-text>
 
-      <ProductPickerDialog v-model="showProductPicker" @select="onProductSelected" />
+      <!-- show-cost: Purchasing buys, so it needs the company cost. Selling
+           channels deliberately omit this prop. -->
+      <ProductPickerDialog v-model="showProductPicker" show-cost @select="onProductSelected" />
     </v-card>
   </v-dialog>
 </template>

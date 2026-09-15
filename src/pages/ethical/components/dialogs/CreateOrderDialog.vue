@@ -34,6 +34,13 @@ const {
   agentOptions,
   outletId,
   outletOptions,
+  sourceLocationId,
+  locationOptions,
+  sourceLocationName,
+  sourcingPreview,
+  sourcingLoading,
+  shortSourcingRows,
+  hasSourcingShortfall,
   remarks,
   lines,
   subtotal,
@@ -153,6 +160,9 @@ watch(
             @update:model-value="onCustomerChange"
           />
 
+          <!-- Branch = who is selling. Stock source = where the goods come
+               from. Usually the same place, but a branch whose store is empty
+               still sells and pulls from main, so they stay separate. -->
           <v-select
             v-model="outletId"
             :items="outletOptions"
@@ -160,6 +170,19 @@ watch(
             item-title="title"
             item-value="value"
             class="flex-grow-1"
+            hint="Which branch is selling"
+            persistent-hint
+          />
+
+          <v-select
+            v-model="sourceLocationId"
+            :items="locationOptions"
+            label="Take stock from"
+            item-title="title"
+            item-value="value"
+            class="flex-grow-1"
+            hint="Stock is drawn only from here"
+            persistent-hint
           />
         </div>
 
@@ -205,17 +228,19 @@ watch(
           density="compact"
           class="mb-4"
         >
-          <div class="font-weight-bold mb-1">Selling below cost — cannot create this order</div>
+          <div class="font-weight-bold mb-1">Price too low — cannot create this order</div>
 
+          <!-- Names the offending lines but NOT the company cost or the realized
+               net. Selling staff need to know which line to re-price; the cost
+               behind that judgement is not theirs to see. -->
           <div class="text-caption">
-            After {{ giveawayRate }}% discount + rebate, these lines realize less than the goods
-            cost:
+            After {{ giveawayRate }}% discount + rebate, these lines fall below the minimum
+            price allowed. Raise the unit price or reduce the giveaway:
           </div>
 
           <ul class="text-caption mt-1">
             <li v-for="belowCost in belowCostLines" :key="belowCost.index">
-              {{ belowCost.name }} — nets {{ formatCurrency(belowCost.net) }}/unit vs cost
-              {{ formatCurrency(belowCost.cost) }}
+              {{ belowCost.name }}
             </li>
           </ul>
         </v-alert>
@@ -232,8 +257,8 @@ watch(
           <strong>
             {{ formatCurrency(netRevenue) }}
           </strong>
-          of the {{ formatCurrency(subtotal) }} subtotal, which is below system price. Still above
-          cost, but the markup no longer funds the giveaway.
+          of the {{ formatCurrency(subtotal) }} subtotal, which is below system price. Still within
+          the allowed minimum, but the markup no longer funds the giveaway.
         </v-alert>
 
         <v-text-field
@@ -399,6 +424,73 @@ watch(
                     variant="text"
                     @click="removeLine(i)"
                   />
+                </td>
+              </tr>
+            </tbody>
+          </v-table>
+        </div>
+
+        <!-- ── Where the stock comes from ─────────────────────────────
+             Shown before submit so a shortfall can be acted on now, instead of
+             being discovered afterwards as an awaiting-stock order. Nothing here
+             moves stock; the figures are re-checked at submit. -->
+        <div v-if="sourcingPreview.length" class="mb-4">
+          <div class="d-flex align-center ga-2 mb-2">
+            <v-icon icon="mdi-warehouse" size="small" />
+            <span class="text-subtitle-2 font-weight-bold">
+              Sourcing from {{ sourceLocationName }}
+            </span>
+            <v-progress-circular v-if="sourcingLoading" indeterminate size="14" width="2" />
+          </div>
+
+          <v-alert
+            v-if="hasSourcingShortfall"
+            type="warning"
+            variant="tonal"
+            density="compact"
+            class="mb-2 text-body-2"
+          >
+            {{ shortSourcingRows.length }} line(s) cannot be filled from
+            {{ sourceLocationName }}. The order can still be placed — the short
+            quantity stays awaiting stock, and you can request a transfer or notify
+            purchasing from the order once it exists.
+          </v-alert>
+
+          <v-table density="compact">
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th class="text-right">Needed</th>
+                <th class="text-right">From {{ sourceLocationName }}</th>
+                <th class="text-right">Short</th>
+                <th>Available elsewhere</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in sourcingPreview" :key="row.key">
+                <td>{{ row.product_name }}</td>
+                <td class="text-right">{{ row.need }}</td>
+                <td class="text-right">{{ row.take }}</td>
+                <td class="text-right">
+                  <span v-if="row.short > 0" class="text-error font-weight-bold">{{ row.short }}</span>
+                  <span v-else>—</span>
+                </td>
+                <td>
+                  <template v-if="row.short > 0 && row.elsewhere.length">
+                    <v-chip
+                      v-for="e in row.elsewhere"
+                      :key="String(e.location.id)"
+                      size="x-small"
+                      variant="tonal"
+                      class="mr-1"
+                    >
+                      {{ e.location.name }}: {{ e.qty }}
+                    </v-chip>
+                  </template>
+                  <span v-else-if="row.short > 0" class="text-medium-emphasis">
+                    Not in stock anywhere
+                  </span>
+                  <span v-else>—</span>
                 </td>
               </tr>
             </tbody>

@@ -5,9 +5,22 @@ import { formatCurrency } from '@/utils/helpers'
 import { storeToRefs } from 'pinia'
 import { onUnmounted, ref, watch } from 'vue'
 
-const props = defineProps<{
-  modelValue: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    modelValue: boolean
+    /**
+     * Show the company cost alongside the selling price.
+     *
+     * OFF by default, and deliberately opt-in rather than opt-out: this picker
+     * is shared by Purchasing (who need cost to buy) and by every selling
+     * channel (who must not see it — same rule that keeps supplier pricing out
+     * of In-House/Ethical). A new caller that forgets the prop leaks nothing;
+     * one that forgets to disable it would.
+     */
+    showCost?: boolean
+  }>(),
+  { showCost: false },
+)
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
@@ -159,10 +172,12 @@ watch(
                 </template>
                 <template #append>
                     <div class="text-right">
-                    <div class="text-caption text-medium-emphasis">Cost</div>
-                    <div class="text-body-2 font-weight-bold">
-                        {{ formatCurrency(product.cost_price || 0) }}
-                    </div>
+                    <template v-if="showCost">
+                        <div class="text-caption text-medium-emphasis">Cost</div>
+                        <div class="text-body-2 font-weight-bold">
+                            {{ formatCurrency(product.cost_price || 0) }}
+                        </div>
+                    </template>
                     <!-- Selling price shown because the catalogue has duplicate
                          names: two rows can share a name and a SKU with only one
                          of them priced, and without this there is nothing on

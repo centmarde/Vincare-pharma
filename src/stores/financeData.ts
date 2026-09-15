@@ -1673,7 +1673,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         supabase.from('transaction_items').select('product_id, qty_stock_in, transaction:transaction_id!inner(transaction_type)').eq('transaction.transaction_type', 'stock_in'),
         supabase.from('transaction_items').select('product_id, qty_stock_out, actual_count_stock_out, transaction:transaction_id!inner(transaction_type, status, outlet_id)').eq('transaction.transaction_type', 'stock_transfer'),
         supabase.from('transaction_items').select('product_id, transaction_id, qty_stock_out, transaction:transaction_id!inner(transaction_type, status, outlet_id)').eq('transaction.transaction_type', 'sale'),
-        supabase.from('transaction_items').select('product_id, stock_sources, transaction:transaction_id!inner(transaction_type, status)').eq('transaction.transaction_type', 'ethical_order'),
+        supabase.from('transaction_items').select('product_id, actual_count_stock_out, transaction:transaction_id!inner(transaction_type, status, warehouse_id)').eq('transaction.transaction_type', 'ethical_order'),
         supabase.from('transaction_items').select('product_id, actual_count_stock_out, transaction:transaction_id!inner(transaction_type)').eq('transaction.transaction_type', 'inhouse_order'),
         supabase.from('products').select('id, product_name, current_stock'),
         supabase.from('outlet_stock').select('product_id, outlet, quantity, product:product_id(product_name)'),
@@ -1715,14 +1715,24 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         if (voidedByPsd.has(r.transaction_id)) continue
         if (r.product_id != null && outletCodeById.get(t.outlet_id) === 'EXELMED') bump(expectedOutlet.EXELMED, r.product_id, -(r.qty_stock_out ?? 0))
       }
+      // An ethical order draws from ONE recorded location — transactions.warehouse_id,
+      // where null means the main warehouse — and the quantity that actually left
+      // is actual_count_stock_out.
+      //
+      // This replaces a read of stock_sources.ethical / .exelmed, which NOTHING
+      // ever wrote (the writer used the keys `branch` and `warehouse`), so this
+      // arm silently contributed almost nothing to the reconciliation.
+      //
+      // Only main-warehouse draws are counted: branch stock lives in
+      // warehouse_products, which this reconciliation does not model yet — it
+      // still compares against outlet_stock. Counting a branch draw against the
+      // main warehouse would manufacture drift that isn't there.
       for (const r of (ethicalRes.data || []) as any[]) {
         const t = r.transaction
         if (!t || t.status === 'cancelled') continue
-        const sources = r.stock_sources || {}
-        if (r.product_id != null) {
-          if (sources.ethical) bump(expectedOutlet.ETHICAL, r.product_id, -sources.ethical)
-          if (sources.exelmed) bump(expectedOutlet.EXELMED, r.product_id, -sources.exelmed)
-          if (sources.warehouse) bump(expectedWarehouse, r.product_id, -sources.warehouse)
+        if (r.product_id == null) continue
+        if (t.warehouse_id == null) {
+          bump(expectedWarehouse, r.product_id, -(r.actual_count_stock_out ?? 0))
         }
       }
       for (const r of (inhouseRes.data || []) as any[]) {
