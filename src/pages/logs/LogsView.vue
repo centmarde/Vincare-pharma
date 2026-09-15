@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useDisplay } from 'vuetify'
 import InnerLayoutWrapper from '@/layouts/InnerLayoutWrapper.vue'
 import LogsWidget from '@/pages/logs/components/LogsWidget.vue'
 import LogsCard from '@/pages/logs/components/LogsCard.vue'
@@ -10,8 +11,21 @@ import { useLogsDataStore } from '@/stores/logsData'
 const logsStore = useLogsDataStore()
 const { logs } = storeToRefs(logsStore)
 
+// Responsive: show tab bar on desktop, a dropdown select on small screens.
+const { mobile } = useDisplay()
+
 const moduleFilter = ref<string | null>(null)
 const activeTab = ref<'activity' | 'users'>('activity')
+
+interface TabOption {
+  value: 'activity' | 'users'
+  title: string
+}
+
+const tabOptions: TabOption[] = [
+  { value: 'activity', title: 'Transaction Activity Logs' },
+  { value: 'users', title: 'Users Activity Logs' },
+]
 
 // Compute module counts from all logs (one per transaction_id)
 const totalCount = computed(() => {
@@ -81,8 +95,25 @@ onMounted(async () => {
                   :total-count="totalCount"
                 />
               </v-col>
-							<v-col cols="12" sm="5">
+							<v-col cols="12">
+                <!-- Mobile: dropdown select -->
+                <v-select
+                  v-if="mobile"
+                  v-model="activeTab"
+                  :items="tabOptions"
+                  item-title="title"
+                  item-value="value"
+                  density="compact"
+                  variant="outlined"
+                  color="primary"
+                  label="Section"
+                  hide-details
+                  class="mb-2"
+                />
+
+                <!-- Desktop: tabs -->
                 <v-tabs
+                  v-else
                   v-model="activeTab"
                   density="compact"
                   color="primary"
@@ -91,11 +122,13 @@ onMounted(async () => {
                   slider-size="4"
                   grow
                 >
-                  <v-tab value="activity" class="text-none font-weight-bold">
-                    Transaction Activity Logs
-                  </v-tab>
-                  <v-tab value="users" class="text-none font-weight-bold">
-                    Users Activity Logs
+                  <v-tab
+                    v-for="tab in tabOptions"
+                    :key="tab.value"
+                    :value="tab.value"
+                    class="text-none font-weight-bold"
+                  >
+                    {{ tab.title }}
                   </v-tab>
                 </v-tabs>
               </v-col>

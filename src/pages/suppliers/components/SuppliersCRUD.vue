@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
+import { useDisplay } from 'vuetify'
 import { useSuppliers } from '../composables/useSuppliers'
 import { formatDatePR_ISO } from '@/utils/helpers'
 import  SupplierFormDialog  from './dialogs/SupplierFormDialog.vue'
+
+const { mobile } = useDisplay()
 
 const {
   suppliers, loading, error,
@@ -16,6 +19,39 @@ const {
 const search = ref('')
 const showFormModal = ref(false)
 const showDeleteModal = ref(false)
+
+// Client-side search for the mobile card list (the desktop table self-filters
+// via its built-in :search).
+const filteredSuppliers = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  if (!q) return suppliers.value ?? []
+  return (suppliers.value ?? []).filter((s) =>
+    [s.name, s.contact_person, s.contact_no, s.email, s.address]
+      .some((v) => v != null && String(v).toLowerCase().includes(q))
+  )
+})
+
+// ─── Mobile card pagination ─────────────────────────────────────────────
+const mobilePage = ref(1)
+const mobilePageSize = ref(5)
+const mobilePageSizeOptions = [5, 10, 15, 25, 50]
+
+const mobileTotalPages = computed(() =>
+  Math.max(1, Math.ceil((filteredSuppliers.value?.length ?? 0) / mobilePageSize.value))
+)
+
+const mobilePaginatedSuppliers = computed(() => {
+  const start = (mobilePage.value - 1) * mobilePageSize.value
+  return (filteredSuppliers.value ?? []).slice(start, start + mobilePageSize.value)
+})
+
+// Keep the current page valid when the list shrinks or the page size changes.
+watch(filteredSuppliers, () => {
+  if (mobilePage.value > mobileTotalPages.value) mobilePage.value = mobileTotalPages.value
+})
+watch(mobilePageSize, () => {
+  if (mobilePage.value > mobileTotalPages.value) mobilePage.value = mobileTotalPages.value
+})
 
 
 function openCreateModal() {
@@ -51,9 +87,12 @@ onMounted(fetchSuppliers)
     <v-card class="mx-auto w-100" rounded="lg" elevation="1">
 
       <!-- Header -->
-      <v-card-title class="d-flex justify-space-between align-center pa-5">
+      <v-card-title
+        class="d-flex flex-wrap align-center ga-3 pa-4 pa-sm-5"
+        :class="mobile ? 'flex-column' : 'justify-space-between'"
+      >
         <span class="text-h6 font-weight-bold">Suppliers</span>
-        <div class="d-flex align-center" style="gap: 12px">
+        <div class="d-flex flex-wrap align-center ga-2">
           <v-text-field
             v-model="search"
             placeholder="Search suppliers..."
@@ -61,7 +100,8 @@ onMounted(fetchSuppliers)
             variant="outlined"
             density="compact"
             hide-details
-            style="min-width: 260px"
+            class="flex-grow-1"
+            :style="mobile ? 'min-width: 0; width: 100%' : 'min-width: 260px'"
           />
           <v-btn
             color="primary"
@@ -79,6 +119,7 @@ onMounted(fetchSuppliers)
 
       <!-- Table -->
       <v-data-table
+        v-if="!mobile"
         :headers="headers"
         :items="suppliers"
         :search="search"
@@ -142,6 +183,100 @@ onMounted(fetchSuppliers)
           </div>
         </template>
       </v-data-table>
+
+      <!-- Mobile: Cards Grid -->
+      <v-row v-else dense>
+        <v-col v-for="supplier in mobilePaginatedSuppliers" :key="supplier.id" cols="12" sm="6">
+          <v-card variant="outlined" hover :elevation="2">
+            <v-card-title class="d-flex align-center gap-2 pb-2">
+              <span class="text-h6 font-weight-bold text-truncate flex-grow-1">{{ supplier.name }}</span>
+              <span
+                class="status-chip text-caption font-weight-bold"
+                :class="supplier.is_active ? 'status-chip--active' : 'status-chip--inactive'"
+              >
+                <span class="status-dot" />
+                {{ supplier.is_active ? 'Active' : 'Inactive' }}
+              </span>
+            </v-card-title>
+
+            <v-card-text class="pt-0">
+              <v-row dense>
+                <v-col cols="12">
+                  <div class="d-flex align-center ga-2">
+                    <v-icon size="16" color="grey">mdi-account-outline</v-icon>
+                    <span class="text-body-2">{{ supplier.contact_person ?? '—' }}</span>
+                  </div>
+                  <div class="d-flex align-center ga-2">
+                    <v-icon size="16" color="grey">mdi-phone</v-icon>
+                    <span class="text-body-2">{{ supplier.contact_no ?? '—' }}</span>
+                  </div>
+                  <div class="d-flex align-center ga-2">
+                    <v-icon size="16" color="grey">mdi-email-outline</v-icon>
+                    <span class="text-body-2 text-truncate">{{ supplier.email ?? '—' }}</span>
+                  </div>
+                  <div class="d-flex align-center ga-2">
+                    <v-icon size="16" color="grey">mdi-map-marker</v-icon>
+                    <span class="text-body-2 text-truncate">{{ supplier.address ?? '—' }}</span>
+                  </div>
+                </v-col>
+
+                <v-col cols="12" sm="6">
+                  <div class="text-caption text-medium-emphasis">Balance</div>
+                  <div
+                    class="font-weight-bold"
+                    :class="supplier.balance != null && supplier.balance < 0 ? 'text-error' : ''"
+                  >
+                    {{ supplier.balance != null ? `₱${Number(supplier.balance).toLocaleString()}` : '—' }}
+                  </div>
+                </v-col>
+                <v-col cols="12" sm="6">
+                  <div class="text-caption text-medium-emphasis">Date Added</div>
+                  <div class="text-body-2 text-medium-emphasis">{{ formatDatePR_ISO(supplier.created_at) }}</div>
+                </v-col>
+              </v-row>
+            </v-card-text>
+
+            <v-card-actions class="pt-0 px-4 pb-3 justify-end">
+              <v-btn
+                variant="text"
+                size="small"
+                color="secondary"
+                prepend-icon="mdi-pencil-outline"
+                @click="openEditModal(supplier)"
+              >
+                Edit
+              </v-btn>
+              <v-btn
+                variant="text"
+                size="small"
+                color="error"
+                prepend-icon="mdi-trash-can-outline"
+                @click="openDeleteModal(supplier)"
+              >
+                Delete
+              </v-btn>
+            </v-card-actions>
+          </v-card>
+        </v-col>
+      </v-row>
+
+      <!-- Mobile: pagination -->
+      <div v-if="filteredSuppliers.length > 0" class="d-flex justify-center align-center flex-wrap ga-3 pa-3">
+        <v-select
+          v-model="mobilePageSize"
+          :items="mobilePageSizeOptions"
+          label="Per page"
+          density="compact"
+          variant="outlined"
+          hide-details
+        />
+        <v-pagination
+          v-model="mobilePage"
+          :length="mobileTotalPages"
+          :total-visible="3"
+          density="comfortable"
+        />
+      </div>
 
     </v-card>
 

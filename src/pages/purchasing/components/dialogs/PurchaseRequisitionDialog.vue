@@ -531,7 +531,9 @@ watch(
       </v-card-text>
     </v-card>
 
-    <ProductPickerDialog v-model="showProductPicker" @select="onProductSelected" />
+    <!-- show-cost: Purchasing buys, so it needs the company cost. Selling
+           channels deliberately omit this prop. -->
+      <ProductPickerDialog v-model="showProductPicker" show-cost @select="onProductSelected" />
   </v-dialog>
 </template>
 

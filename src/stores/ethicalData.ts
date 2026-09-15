@@ -9,6 +9,8 @@ import { useCanvassDataStore } from '@/stores/canvassData'
 import { useDeliveryReceiptsDataStore } from '@/stores/deliveryReceiptsData'
 import { useGLDataStore } from '@/stores/glData'
 import { useCustomersDataStore } from '@/stores/customersData'
+import { useStockSourcingStore } from '@/stores/stockSourcingData'
+import type { StockLocationId } from '@/stores/stockSourcingData'
 import { glAccountCodeFor } from '@/stores/financeData'
 import { generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
 import type { ProductType } from '@/stores/productsData'
@@ -179,6 +181,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
   const drStore = useDeliveryReceiptsDataStore()
   const customersStore = useCustomersDataStore()
   const glStore = useGLDataStore()
+  const sourcingStore = useStockSourcingStore()
 
   const orders: Ref<EthicalOrderType[]> = ref([])
   const currentOrder: Ref<EthicalOrderType | undefined> = ref(undefined)
@@ -243,14 +246,28 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     return mapRow(data)
   }
 
-  // Header + branch-then-warehouse sourcing per line + ethical_details (was
+  // Header + single-location sourcing per line + ethical_details (was
   // ethical_create_order). Best-effort, not atomic: a failure partway through
   // can leave partial stock decrements against an order that never got created
   // or with only some lines sourced (accepted trade-off, JS-over-RPC convention).
+  //
+  // Stock comes from ONE location the user chose (`sourceLocationId`; null = the
+  // main warehouse) and nowhere else. The old behaviour fell through to
+  // products.current_stock whenever the branch came up short, which silently
+  // drained the main warehouse on every order — invisible, because an empty
+  // first tier is not an error. A shortfall now stays a shortfall and surfaces
+  // as `awaiting_stock` for a transfer or a procurement request to resolve.
+  //
+  // BRANCH and SOURCE are two different facts and both are recorded. `outletId`
+  // is the ethical branch making the sale; `sourceLocationId` is where the goods
+  // physically come from. They are usually the same place, but not always — a
+  // branch whose own store is out pulls from the main warehouse, and collapsing
+  // the two would leave that order with no branch at all.
   const createOrder = async (payload: {
     customerId: number
     agentId?: number | null
     outletId: number
+    sourceLocationId: StockLocationId
     discount?: number
     rebate?: number
     ads?: number        // in-kind marketing give — posts to 6010, not 6030
@@ -262,20 +279,34 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     clearError()
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
-    if (!payload.outletId) { toast.warning('Select a branch first.'); loading.value = false; return { success: false } }
+    if (!payload.outletId) { toast.warning('Select a branch.'); loading.value = false; return { success: false } }
+    if (payload.sourceLocationId === undefined) { toast.warning('Select where the stock comes from.'); loading.value = false; return { success: false } }
     if (!payload.lines.length) { toast.warning('Add at least one line item.'); loading.value = false; return { success: false } }
 
     const { data: outlet, error: outletError } = await supabase
       .from('outlets')
-      .select('channel, code')
+      .select('channel')
       .eq('id', payload.outletId)
       .eq('is_active', true)
       .maybeSingle()
     if (outletError || !outlet) {
-      toast.error('Outlet not found or inactive.'); loading.value = false; return { success: false }
+      toast.error('Branch not found or inactive.'); loading.value = false; return { success: false }
     }
     if (outlet.channel !== 'ethical') {
-      toast.error('Outlet is not an ethical outlet.'); loading.value = false; return { success: false }
+      toast.error('That branch is not an ethical branch.'); loading.value = false; return { success: false }
+    }
+
+    // A branch must be a real warehouse. The main warehouse (null) has no row to
+    // check — it is the products table itself.
+    if (payload.sourceLocationId != null) {
+      const { data: warehouse, error: warehouseError } = await supabase
+        .from('warehouses')
+        .select('id')
+        .eq('id', payload.sourceLocationId)
+        .maybeSingle()
+      if (warehouseError || !warehouse) {
+        toast.error('Stock location not found.'); loading.value = false; return { success: false }
+      }
     }
 
     const subtotal = payload.lines.reduce((sum, l) => sum + l.quantity * l.unit_price, 0)
@@ -309,7 +340,13 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
           // reference_no unique index already reserves the EO- prefix.
           reference_no: docNo,
           ethical_no: docNo, transaction_type: 'ethical_order', status: 'invoiced',
-          outlet_id: payload.outletId, customer_id: payload.customerId, agent_id: payload.agentId ?? null,
+          // outlet_id = WHO SOLD IT (the ethical branch).
+          // warehouse_id = WHERE THE STOCK CAME FROM, and is the only record of
+          // it — null means the main warehouse. cancelOrder reads it back to
+          // return the goods to the same place they left.
+          outlet_id: payload.outletId,
+          warehouse_id: payload.sourceLocationId,
+          customer_id: payload.customerId, agent_id: payload.agentId ?? null,
           total_amount: total, remarks: payload.remarks || null, created_by: user.id,
         })
         .select('id')
@@ -330,39 +367,40 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
       await customersStore.stampDepartmentIfBlank(payload.customerId, 'ethical')
     }
 
+    // The SAME planner the order form previewed with, so what the user approved
+    // and what gets written cannot disagree. Re-run here rather than trusting a
+    // figure passed in: another order may have taken the stock since.
+    const plan = await sourcingStore.planSourcing(
+      payload.sourceLocationId,
+      payload.lines.map((l) => ({ product_id: l.product_id, quantity: l.quantity })),
+    )
+    // A failed stock read is NOT a shortage. Continuing here would book an order
+    // sourced with nothing and flag it awaiting_stock, turning a dropped
+    // connection into a backorder nobody ordered.
+    if (!plan) {
+      toast.error('Could not read stock for that location. The order was not created.')
+      loading.value = false
+      return { success: false }
+    }
+
     let anyShort = false
-    for (const line of payload.lines) {
-      let need = line.quantity
+    for (const [index, line] of payload.lines.entries()) {
+      const planned = plan[index]
       let sourced = 0
-      const sources: Record<string, number> = {}
 
-      const { data: branchStock } = await supabase
-        .from('outlet_stock').select('quantity')
-        .eq('outlet_id', payload.outletId).eq('product_id', line.product_id).maybeSingle()
-      const branchOnHand = branchStock?.quantity ?? 0
-      const branchTake = Math.min(need, branchOnHand)
-      if (branchTake > 0) {
-        await supabase.from('outlet_stock')
-          .update({ quantity: branchOnHand - branchTake, updated_at: new Date().toISOString() })
-          .eq('outlet_id', payload.outletId).eq('product_id', line.product_id)
-        sources.branch = branchTake
-        sourced += branchTake
-        need -= branchTake
+      if (planned && planned.take > 0) {
+        const drawn = await sourcingStore.drawStock(
+          payload.sourceLocationId,
+          line.product_id,
+          planned.take,
+        )
+        // A failed draw must not be recorded as delivered stock, or the order
+        // claims goods that never left the shelf.
+        if (drawn) sourced = planned.take
+        else toast.warning(`Stock for product ${line.product_id} could not be drawn; line left unsourced.`)
       }
 
-      if (need > 0) {
-        const { data: product } = await supabase.from('products').select('current_stock').eq('id', line.product_id).maybeSingle()
-        const warehouseOnHand = product?.current_stock ?? 0
-        const warehouseTake = Math.min(need, warehouseOnHand)
-        if (warehouseTake > 0) {
-          await supabase.from('products').update({ current_stock: warehouseOnHand - warehouseTake }).eq('id', line.product_id)
-          sources.warehouse = warehouseTake
-          sourced += warehouseTake
-          need -= warehouseTake
-        }
-      }
-
-      if (need > 0) anyShort = true
+      if (sourced < line.quantity) anyShort = true
 
       // One insert per line now that line values live on transaction_items.
       // An ethical order is outbound -> qty_stock_out; the sourced count is
@@ -376,7 +414,12 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
           // projection time (or books no COGS at all when it is null).
           cost_price: line.cost_price ?? null,
           line_total: line.quantity * line.unit_price,
-          actual_count_stock_out: sourced, stock_sources: sources,
+          // stock_sources held a {branch, warehouse} split back when one line
+          // could be filled from two places at once. With a single chosen
+          // source there is nothing to split: WHERE is transactions.warehouse_id
+          // and HOW MANY is actual_count_stock_out, so a jsonb copy of the same
+          // two facts could only drift from them.
+          actual_count_stock_out: sourced, stock_sources: null,
         })
       if (itemError) {
         handleError(itemError, 'Failed to save order line item.')
@@ -895,8 +938,11 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     return { success: true, drId: dr.drId, drNo }
   }
 
-  // Restore branch + warehouse stock from stock_sources, only for invoiced,
-  // fully-fulfilled, uncollected orders (was ethical_cancel_order).
+  // Return the goods to the location they were drawn from, only for invoiced,
+  // fully-fulfilled, uncollected orders (was ethical_cancel_order). The source
+  // is transactions.warehouse_id (null = main warehouse); the quantity is the
+  // line's actual_count_stock_out — what actually left, which is not always what
+  // was ordered.
   const cancelOrder = async (orderId: number, reason: string) => {
     loading.value = true
     clearError()
@@ -905,7 +951,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
 
     const { data: order, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, outlet_id, ethical_details(fulfillment_status)')
+      .select('id, status, warehouse_id, ethical_details(fulfillment_status)')
       .eq('id', orderId)
       .eq('transaction_type', 'ethical_order')
       .maybeSingle()
@@ -927,13 +973,11 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
       toast.error('Cannot cancel: order has collections.'); loading.value = false; return { success: false }
     }
 
-    const { data: outlet } = await supabase.from('outlets').select('code').eq('id', order.outlet_id).maybeSingle()
-
     const { data: itemRows } = await supabase
-      .from('transaction_items').select('product_id, stock_sources').eq('transaction_id', orderId)
+      .from('transaction_items').select('product_id, actual_count_stock_out').eq('transaction_id', orderId)
     const items = (itemRows ?? []).map((row: any) => ({
-      product_id: row.product_id,
-      stock_sources: (row.stock_sources ?? null) as Record<string, number> | null,
+      product_id: row.product_id as number | null,
+      sourced: (row.actual_count_stock_out ?? 0) as number,
     }))
 
     // Best-effort restore, but — unlike other best-effort loops in this file —
@@ -943,28 +987,15 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     // below actually reflect what happened.
     let restoreFailed = false
     for (const item of items) {
-      const sources = (item.stock_sources ?? {}) as { branch?: number; warehouse?: number }
-      if (sources.branch != null) {
-        const { data: existingStock } = await supabase
-          .from('outlet_stock').select('quantity')
-          .eq('outlet_id', order.outlet_id).eq('product_id', item.product_id).maybeSingle()
-        if (existingStock) {
-          const { error } = await supabase.from('outlet_stock')
-            .update({ quantity: existingStock.quantity + sources.branch, updated_at: new Date().toISOString() })
-            .eq('outlet_id', order.outlet_id).eq('product_id', item.product_id)
-          if (error) { console.warn('cancelOrder: branch stock restore failed:', error.message); restoreFailed = true }
-        } else {
-          const { error } = await supabase.from('outlet_stock')
-            .insert({ outlet: outlet?.code ?? null, outlet_id: order.outlet_id, product_id: item.product_id, quantity: sources.branch })
-          if (error) { console.warn('cancelOrder: branch stock insert failed:', error.message); restoreFailed = true }
-        }
-      }
-      if (sources.warehouse != null) {
-        const { data: product } = await supabase.from('products').select('current_stock').eq('id', item.product_id).maybeSingle()
-        const { error } = await supabase.from('products')
-          .update({ current_stock: (product?.current_stock ?? 0) + sources.warehouse })
-          .eq('id', item.product_id)
-        if (error) { console.warn('cancelOrder: warehouse stock restore failed:', error.message); restoreFailed = true }
+      if (item.product_id == null || item.sourced <= 0) continue
+      const restored = await sourcingStore.returnStock(
+        order.warehouse_id as StockLocationId,
+        item.product_id,
+        item.sourced,
+      )
+      if (!restored) {
+        console.warn(`cancelOrder: stock restore failed for product ${item.product_id}`)
+        restoreFailed = true
       }
     }
 
@@ -993,61 +1024,55 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     return { success: true }
   }
 
-  // Re-attempt the branch-then-warehouse cascade for short lines (was
-  // ethical_recheck_stock).
+  // Re-attempt sourcing for short lines against the order's OWN location (was
+  // ethical_recheck_stock). It never reaches into another location: the order is
+  // bound to the source the user chose, and quietly filling it from elsewhere is
+  // what this refactor removed.
   const recheckStock = async (orderId: number): Promise<Shortfall[]> => {
     const { data: order, error: fetchError } = await supabase
-      .from('transactions').select('outlet_id').eq('id', orderId).eq('transaction_type', 'ethical_order').maybeSingle()
-    if (fetchError || !order?.outlet_id) { handleError(fetchError, 'Failed to recheck stock'); return [] }
+      .from('transactions').select('warehouse_id').eq('id', orderId).eq('transaction_type', 'ethical_order').maybeSingle()
+    if (fetchError || !order) { handleError(fetchError, 'Failed to recheck stock'); return [] }
+    const locationId = order.warehouse_id as StockLocationId
 
     // Supabase can't compare two columns server-side, so filter client-side.
     const { data: allLineRows } = await supabase
       .from('transaction_items')
-      .select('id, product_id, qty_stock_out, actual_count_stock_out, stock_sources')
+      .select('id, product_id, qty_stock_out, actual_count_stock_out')
       .eq('transaction_id', orderId)
     const allLines = (allLineRows ?? []).map((row: any) => ({
       id: row.id,
       product_id: row.product_id,
       qty: row.qty_stock_out ?? 0,
       delivered_qty: row.actual_count_stock_out ?? 0,
-      stock_sources: row.stock_sources as Record<string, number> | undefined,
     }))
     const shortLines = allLines.filter(l => l.delivered_qty < l.qty)
 
+    // One planner call for every short line, so two lines naming the same
+    // product can't both be promised the same units.
+    const plan = await sourcingStore.planSourcing(
+      locationId,
+      shortLines.map(l => ({ product_id: l.product_id, quantity: l.qty - l.delivered_qty })),
+    )
+    // Same reasoning as createOrder: a failed read must not be mistaken for a
+    // shortage, or a recheck would silently confirm the order is still short.
+    if (!plan) {
+      toast.error('Could not read stock for that location. Nothing was changed.')
+      return []
+    }
+
     const shortfall: Shortfall[] = []
-    for (const line of shortLines) {
-      let need = line.qty - (line.delivered_qty ?? 0)
+    for (const [index, line] of shortLines.entries()) {
+      const planned = plan[index]
       let sourced = 0
-      const sources = { ...(line.stock_sources ?? {}) } as { branch?: number; warehouse?: number }
 
-      const { data: branchStock } = await supabase
-        .from('outlet_stock').select('quantity')
-        .eq('outlet_id', order.outlet_id).eq('product_id', line.product_id).maybeSingle()
-      const branchOnHand = branchStock?.quantity ?? 0
-      const branchTake = Math.min(need, branchOnHand)
-      if (branchTake > 0) {
-        await supabase.from('outlet_stock')
-          .update({ quantity: branchOnHand - branchTake, updated_at: new Date().toISOString() })
-          .eq('outlet_id', order.outlet_id).eq('product_id', line.product_id)
-        sources.branch = (sources.branch ?? 0) + branchTake
-        sourced += branchTake
-        need -= branchTake
+      if (planned && planned.take > 0) {
+        const drawn = await sourcingStore.drawStock(locationId, line.product_id, planned.take)
+        if (drawn) sourced = planned.take
       }
-
-      if (need > 0) {
-        const { data: product } = await supabase.from('products').select('current_stock').eq('id', line.product_id).maybeSingle()
-        const warehouseOnHand = product?.current_stock ?? 0
-        const warehouseTake = Math.min(need, warehouseOnHand)
-        if (warehouseTake > 0) {
-          await supabase.from('products').update({ current_stock: warehouseOnHand - warehouseTake }).eq('id', line.product_id)
-          sources.warehouse = (sources.warehouse ?? 0) + warehouseTake
-          sourced += warehouseTake
-          need -= warehouseTake
-        }
-      }
+      const need = (line.qty - line.delivered_qty) - sourced
 
       await supabase.from('transaction_items')
-        .update({ actual_count_stock_out: (line.delivered_qty ?? 0) + sourced, stock_sources: sources })
+        .update({ actual_count_stock_out: (line.delivered_qty ?? 0) + sourced })
         .eq('id', line.id)
 
       if (need > 0) {
