@@ -240,6 +240,15 @@ function rowClass(row: StatementRow) {
   font-weight: inherit;
   padding: 0.3rem 0.75rem 0.3rem 0;
   white-space: nowrap;
+  /* The monthly view scrolls horizontally. Without this the label column
+     scrolls away with everything else, leaving a grid of figures nobody can
+     identify — a statement you cannot read the line names of is not a
+     statement. Needs an opaque background or the scrolling figures show
+     through underneath it. */
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: rgb(var(--v-theme-surface));
 }
 .stmt-amount {
   text-align: right;
@@ -337,6 +346,11 @@ function rowClass(row: StatementRow) {
   padding-right: 0.4rem;
   font-size: 0.66rem;
   max-width: 190px;
+  /* Print has no scroll container, so sticky buys nothing — and html2canvas
+     renders sticky/!transparent backgrounds literally, which would stamp a
+     theme-coloured block across the printed sheet. */
+  position: static;
+  background: transparent;
 }
 .is-print .stmt-col-head {
   font-size: 0.55rem;
