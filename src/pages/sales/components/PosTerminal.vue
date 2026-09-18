@@ -15,6 +15,7 @@ const {
   selectedWarehouseId, posWarehouseOptions,
   filteredProducts, subtotal, total, itemCount, isEmpty,
   addToCart, setQty, removeFromCart, clearCart, init, setWarehouse,
+  expiryCheckOk,
 } = pos
 
 const checkout = usePosCheckout(pos)
@@ -105,6 +106,13 @@ onMounted(init)
               <!-- An empty RESULT is not an empty BRANCH. Telling a cashier to
                    "transfer stock in" because their search typo matched nothing
                    is misleading, so the two cases read differently. -->
+              <!-- Background-only class: variant=outlined + color= recolours
+                   the text, not the card. -->
+              <div v-if="!expiryCheckOk" class="bg-orange-lighten-5 rounded-lg pa-3 mb-3 text-caption">
+                Expiry could not be checked, so expired items are not marked below.
+                Checkout will still refuse them.
+              </div>
+
               <div v-if="!filteredProducts.length" class="text-center pa-6 text-medium-emphasis">
                 <template v-if="isSearching">
                   No product matches "{{ search }}" in this branch.
@@ -119,11 +127,14 @@ onMounted(init)
                 <v-card
                   variant="outlined"
                   rounded="lg"
-                  class="pa-3 h-100 d-flex flex-column"
+                  :class="['pa-3 h-100 d-flex flex-column', p.is_expired ? 'bg-red-lighten-5' : '']"
                   hover
                   @click="addToCart(p)"
                 >
                   <div class="text-body-2 font-weight-medium text-truncate">{{ p.product_name }}</div>
+                  <v-chip v-if="p.is_expired" size="x-small" color="error" variant="flat" class="mb-1 align-self-start">
+                    EXPIRED
+                  </v-chip>
                   <!-- Brand is shown because search matches on it: a customer
                        asks for "Fluimucil" but the card is titled by molecule,
                        so without it a hit looks like an unrelated result. -->

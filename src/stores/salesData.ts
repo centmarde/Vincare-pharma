@@ -7,6 +7,7 @@ import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
 import type { ProductType } from '@/stores/productsData'
+import { useProductsDataStore } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
 import type { WarehouseType } from '@/stores/warehouseData'
 
@@ -109,6 +110,7 @@ function mapRowToSale(row: any): SaleType {
 
 export const useSalesDataStore = defineStore('salesData', () => {
   const authStore = useAuthUserStore()
+  const productsStore = useProductsDataStore()
 
   const sales: Ref<SaleType[]> = ref([])
   const currentSale: Ref<SaleType | undefined> = ref(undefined)
@@ -246,6 +248,28 @@ export const useSalesDataStore = defineStore('salesData', () => {
     const total = subtotal
     if (amountTendered < total) {
       toast.error(`Amount tendered (${amountTendered}) is less than total (${total}).`)
+      loading.value = false
+      return { success: false }
+    }
+
+    // Expired stock is not sellable. Checked here rather than only in the UI
+    // because this is the last point before a sale row exists, and the grid's
+    // copy of the set can be minutes old while expiry rolls over at midnight.
+    //
+    // Fails CLOSED: a set that could not be read is not evidence that nothing
+    // has expired, so the sale is refused rather than let through unverified.
+    if (!(await productsStore.ensureExpiredProductIds())) {
+      toast.error('Could not verify product expiry. The sale was not recorded.')
+      loading.value = false
+      return { success: false }
+    }
+    const expiredLines = productsStore.expiredAmong(lines.map(l => l.product_id))
+    if (expiredLines.length) {
+      const names = await productsStore.fetchProductsByIds(expiredLines)
+      const label = names.length
+        ? names.map(p => p.product_name).join(', ')
+        : expiredLines.join(', ')
+      toast.error(`Expired and cannot be sold: ${label}`)
       loading.value = false
       return { success: false }
     }

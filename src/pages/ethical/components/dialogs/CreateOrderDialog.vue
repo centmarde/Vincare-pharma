@@ -468,7 +468,12 @@ watch(
             </thead>
             <tbody>
               <tr v-for="row in sourcingPreview" :key="row.key">
-                <td>{{ row.product_name }}</td>
+                <td>
+                  {{ row.product_name }}
+                  <v-chip v-if="row.expired" size="x-small" color="error" variant="flat" class="ml-1">
+                    EXPIRED
+                  </v-chip>
+                </td>
                 <td class="text-right">{{ row.need }}</td>
                 <td class="text-right">{{ row.take }}</td>
                 <td class="text-right">
@@ -487,6 +492,9 @@ watch(
                       {{ e.location.name }}: {{ e.qty }}
                     </v-chip>
                   </template>
+                  <span v-else-if="row.expired" class="text-medium-emphasis">
+                    On hand but expired — not sellable
+                  </span>
                   <span v-else-if="row.short > 0" class="text-medium-emphasis">
                     Not in stock anywhere
                   </span>

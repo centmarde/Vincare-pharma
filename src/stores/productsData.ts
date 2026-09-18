@@ -109,12 +109,24 @@ export type StockStatusCounts = Record<StockStatusBucket, number>
 
 export type StockStatusRef = { year: number; month: number } | null
 
+/** Page size when pulling the expired-product set. The RPC caps at its own
+ *  `page_limit`, so the set is paged to exhaustion rather than truncated. */
+const expiredPageSize = 1000
+
+/** How long a fetched expired set stays trusted. Expiry rolls over at
+ *  midnight, so a long-lived session must not hold one indefinitely. */
+const expiredSetCacheMs = 5 * 60 * 1000
+
 export const useProductsDataStore = defineStore('productsData', () => {
   const authStore = useAuthUserStore()
   // State
   const products: Ref<ProductType[]> = ref([])
   const currentProduct: Ref<ProductType | undefined> = ref(undefined)
   const eligibleProductIds: Ref<Set<number>> = ref(new Set())
+  /** Products whose batch has already expired, per the warehouse `expired` bucket. */
+  const expiredProductIds: Ref<Set<number>> = ref(new Set())
+  /** Epoch ms of the last successful expired-set read; 0 = not usable. */
+  const expiredProductIdsFetchedAt = ref(0)
   const loading = ref(false)
   const error: Ref<string> = ref('')
   const pickerProducts = ref<ProductPickerResult[]>([])
@@ -243,6 +255,73 @@ export const useProductsDataStore = defineStore('productsData', () => {
       handleError(err, 'Failed to fetch eligible product IDs')
       return []
     }
+  }
+
+  /**
+   * Fills {@link expiredProductIds} from the warehouse's own `expired` bucket.
+   *
+   * Deliberately reads the ID list rather than re-deriving expiry in TS: the
+   * definition of "expired" stays in one place (the RPC's
+   * `expiry_date < current_date`), so the sales guard and the warehouse's
+   * Expired card can never disagree about which products they mean.
+   *
+   * Pages to exhaustion. `page_limit` defaults to 200 server-side, and a set
+   * silently truncated at the first page would leave the overflow sellable.
+   *
+   * @returns false when the read failed. Callers MUST block on false rather
+   * than treat it as "nothing is expired" — same fail-closed rule
+   * stockSourcingData.planSourcing follows for a failed stock read.
+   */
+  async function fetchExpiredProductIds(): Promise<boolean> {
+    try {
+      const ids = new Set<number>()
+      let offset = 0
+      for (;;) {
+        const { data, error: rpcError } = await supabase.rpc('get_stock_status_products', {
+          bucket_type: 'expired',
+          excluded_ids: [],
+          page_limit: expiredPageSize,
+          page_offset: offset,
+        })
+        if (rpcError) throw rpcError
+        const rows = (data ?? []) as { id: number; total_count: number }[]
+        if (!rows.length) break
+        for (const row of rows) ids.add(Number(row.id))
+        offset += rows.length
+        if (ids.size >= Number(rows[0]?.total_count ?? ids.size)) break
+      }
+      expiredProductIds.value = ids
+      expiredProductIdsFetchedAt.value = Date.now()
+      return true
+    } catch (err) {
+      handleError(err, 'Failed to check which products have expired')
+      // Leave any previous set in place but mark it unusable, so a caller
+      // cannot pass a guard on a stale copy it believes is current.
+      expiredProductIdsFetchedAt.value = 0
+      return false
+    }
+  }
+
+  /**
+   * Refetches the expired set when it is missing or older than
+   * {@link expiredSetCacheMs}. Expiry rolls over at midnight, so a set loaded
+   * earlier in a long-lived session is not safe to trust indefinitely.
+   *
+   * @returns false when the set could not be made current — block, don't sell.
+   */
+  async function ensureExpiredProductIds(force = false): Promise<boolean> {
+    const age = Date.now() - expiredProductIdsFetchedAt.value
+    if (!force && expiredProductIdsFetchedAt.value > 0 && age < expiredSetCacheMs) return true
+    return await fetchExpiredProductIds()
+  }
+
+  /** Which of `ids` have expired. Read {@link ensureExpiredProductIds} first. */
+  function expiredAmong(ids: (number | null | undefined)[]): number[] {
+    const seen = new Set<number>()
+    for (const id of ids) {
+      if (id != null && expiredProductIds.value.has(Number(id))) seen.add(Number(id))
+    }
+    return [...seen]
   }
 
   // Fetches just total_count for one bucket (page_limit: 1 keeps it cheap)
@@ -1143,6 +1222,8 @@ export const useProductsDataStore = defineStore('productsData', () => {
     products,
     currentProduct,
     eligibleProductIds,
+    expiredProductIds,
+    expiredProductIdsFetchedAt,
     loading,
     error,
     pickerProducts,
@@ -1158,6 +1239,9 @@ export const useProductsDataStore = defineStore('productsData', () => {
 
     // Actions
     fetchEligibleProductIds,
+    fetchExpiredProductIds,
+    ensureExpiredProductIds,
+    expiredAmong,
     fetchProducts,
     fetchProductsByIds,
     fetchProductById,
