@@ -185,8 +185,25 @@ const productName = (id: number | null) =>
               <thead><tr><th class="text-left">Product</th><th class="text-right">Ordered</th><th class="text-right">On hand</th><th class="text-right">Needed</th></tr></thead>
               <tbody>
                 <tr v-for="s in shortfall" :key="s.product_id">
-                  <td>{{ productName(s.product_id) }}</td><td class="text-right">{{ s.ordered }}</td>
-                  <td class="text-right">{{ s.on_hand }}</td><td class="text-right text-error font-weight-bold">{{ s.needed }}</td>
+                  <td>
+                    {{ productName(s.product_id) }}
+                    <!-- Without this the row reads as "we have none" and the
+                         purchaser goes looking for stock that is on the shelf. -->
+                    <v-chip v-if="s.blocked_reason === 'expired'" size="x-small" color="error" variant="flat" class="ml-1">
+                      EXPIRED
+                    </v-chip>
+                    <v-chip v-else-if="s.blocked_reason === 'short_dated'" size="x-small" color="warning" variant="flat" class="ml-1">
+                      UNDER 18 MONTHS
+                    </v-chip>
+                  </td>
+                  <td class="text-right">{{ s.ordered }}</td>
+                  <td class="text-right">
+                    {{ s.on_hand }}
+                    <div v-if="s.physical_on_hand" class="text-caption text-medium-emphasis">
+                      {{ s.physical_on_hand }} on shelf, not deliverable
+                    </div>
+                  </td>
+                  <td class="text-right text-error font-weight-bold">{{ s.needed }}</td>
                 </tr>
               </tbody>
             </v-table>

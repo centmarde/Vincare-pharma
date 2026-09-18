@@ -1,7 +1,25 @@
 // Shared types for the supplier-canvass flow (stock shortfall -> raise PRs),
 // used by both In-House and Ethical orders against the transactions hub.
 
-export type Shortfall = { product_id: number; ordered: number; on_hand: number; needed: number }
+export type Shortfall = {
+  product_id: number
+  ordered: number
+  /**
+   * USABLE stock — what can actually ship, which is what `needed` is derived
+   * from and what canvassing orders against. Zero when the batch is on the
+   * shelf but cannot legally go out (see `blocked_reason`).
+   */
+  on_hand: number
+  needed: number
+  /**
+   * Set when stock is physically present but unusable, so the UI can say
+   * "expired" rather than "out of stock" — sending staff to the warehouse
+   * instead of on a hunt for stock that is sitting right there.
+   */
+  blocked_reason?: 'expired' | 'short_dated'
+  /** Physical count on the shelf, when it differs from `on_hand`. */
+  physical_on_hand?: number
+}
 
 // One supplier's quote for a shortfall item during canvassing.
 export type CanvassQuote = {

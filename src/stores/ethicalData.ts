@@ -14,6 +14,7 @@ import type { StockLocationId } from '@/stores/stockSourcingData'
 import { glAccountCodeFor } from '@/stores/financeData'
 import { generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
 import type { ProductType } from '@/stores/productsData'
+import { useProductsDataStore } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
 import type { AgentType } from '@/stores/agentsData'
 import type { OutletType } from '@/stores/outletsData'
@@ -182,6 +183,7 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
   const customersStore = useCustomersDataStore()
   const glStore = useGLDataStore()
   const sourcingStore = useStockSourcingStore()
+  const productsStore = useProductsDataStore()
 
   const orders: Ref<EthicalOrderType[]> = ref([])
   const currentOrder: Ref<EthicalOrderType | undefined> = ref(undefined)
@@ -381,6 +383,18 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
       toast.error('Could not read stock for that location. The order was not created.')
       loading.value = false
       return { success: false }
+    }
+
+    // planSourcing zeroes an expired line rather than drawing it. Say so by
+    // name: otherwise the line just lands short and staff go looking for
+    // stock that is sitting on the shelf, unsellable.
+    const expiredPlanned = plan.filter((p) => p.expired).map((p) => p.product_id)
+    if (expiredPlanned.length) {
+      const expiredProducts = await productsStore.fetchProductsByIds(expiredPlanned)
+      const label = expiredProducts.length
+        ? expiredProducts.map((p) => p.product_name).join(', ')
+        : expiredPlanned.join(', ')
+      toast.warning(`Expired, so not sourced: ${label}. Those lines are left awaiting stock.`)
     }
 
     let anyShort = false
