@@ -155,3 +155,44 @@ export const maskMonthYearInput = (raw: string): string => {
   const digits = raw.replace(/\D/g, '').slice(0, 6)
   return digits.length <= 2 ? digits : `${digits.slice(0, 2)}/${digits.slice(2)}`
 }
+
+/**
+ * Full month names, index 0 = January — the JS month index, so it lines up with
+ * Date#getMonth() without an off-by-one at the call site.
+ *
+ * Lives here rather than in a composable because more than one screen needs it
+ * (the expiry report labels a month; the logs filter offers a month picker).
+ */
+export const monthNames = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+] as const
+
+/**
+ * Month name from a 1-BASED month number, as SQL and date strings carry it
+ * (1 = January). Returns an empty string outside 1-12 rather than `undefined`,
+ * so a bad value renders as a blank instead of the text "undefined".
+ * @param month - 1-based month number (1-12)
+ */
+export function monthName(month: number): string {
+  return monthNames[month - 1] ?? ''
+}
+
+/**
+ * "January 2026" from a year and a 1-BASED month.
+ * @param year - Full year
+ * @param month - 1-based month number (1-12)
+ */
+export function monthYearLabel(year: number, month: number): string {
+  return `${monthName(month)} ${year}`
+}

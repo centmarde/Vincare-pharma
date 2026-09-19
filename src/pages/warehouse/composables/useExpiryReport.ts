@@ -10,6 +10,7 @@ import {
 } from '@/utils/expiryInsights'
 import type { FindingSeverity } from '@/utils/expiryInsights'
 import { formatCurrency } from '@/utils/helpers'
+import { monthYearLabel } from '@/utils/dateFormats'
 
 /**
  * Drives the Expiring Inventory page and the report it prints.
@@ -27,21 +28,6 @@ const urgencyExpired = 0
 const urgencyCriticalDays = 30
 /** Within this many days — the watch band. */
 const urgencySoonDays = 60
-
-const monthNames = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-]
 
 export const reportFormats = [
   { value: 'executive', title: 'Executive summary', subtitle: 'One page — headline, top items, findings' },
@@ -115,12 +101,12 @@ export function useExpiryReport() {
 
   const monthLabel = computed(() => {
     if (!report.value) return ''
-    return `${monthNames[report.value.month - 1]} ${report.value.year}`
+    return monthYearLabel(report.value.year, report.value.month)
   })
 
   const monthOptions = computed(() =>
     availableMonths.value.map((m) => ({
-      title: `${monthNames[m.month - 1]} ${m.year}`,
+      title: monthYearLabel(m.year, m.month),
       subtitle: `${m.itemCount} item${m.itemCount === 1 ? '' : 's'}`,
       value: `${m.year}-${String(m.month).padStart(2, '0')}`,
     })),
