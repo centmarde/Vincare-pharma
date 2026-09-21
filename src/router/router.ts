@@ -50,6 +50,7 @@ import ChartOfAccountsView from '@/pages/finance/ChartOfAccountsView.vue'
 import SuppliersView from '@/pages/suppliers/SuppliersView.vue'
 import LogsView from '@/pages/logs/LogsView.vue'
 import WarehouseProductsListView from '@/pages/warehouse/ProductsListView.vue'
+import WarehouseExpiryReportView from '@/pages/warehouse/ExpiryReportView.vue'
 import WarehousesListView from '@/pages/warehouse/WareHouseListView.vue'
 /**
  * Route definitions for the application
@@ -122,6 +123,11 @@ const routes = setupLayouts([
   {
     path: '/warehouse/products',
     component: WarehouseProductsListView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/warehouse/expiry-report',
+    component: WarehouseExpiryReportView,
     meta: { requiresAuth: true },
   },
   {
