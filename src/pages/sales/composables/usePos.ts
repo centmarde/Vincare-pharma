@@ -50,6 +50,13 @@ export type PosProduct = {
   expiry_date: string | null
   unit_price: number
   available: number
+  /**
+   * The batch has passed its expiry date. Expired stock stays VISIBLE in the
+   * grid rather than being filtered out: a cashier scanning an expired item
+   * needs to be told why it will not ring up, and silent absence just reads
+   * as a broken scanner.
+   */
+  is_expired: boolean
 }
 
 export function usePos() {
@@ -58,6 +65,7 @@ export function usePos() {
   const productsStore = useProductsDataStore()
   const { warehouseProducts, loading } = storeToRefs(warehouseProductsStore)
   const { warehouses } = storeToRefs(warehousesStore)
+  const { expiredProductIds } = storeToRefs(productsStore)
   // Products for the rows on screen, fetched by id -- the shared catalogue is
   // capped at 1000 rows of ~1072, so a product a branch is holding can be
   // missing from it and render blank at zero price (it would also be unsellable
@@ -68,6 +76,12 @@ export function usePos() {
   const search = ref('')
   const cart = ref<CartLine[]>([])
   const selectedWarehouseId = ref<number | null>(null)
+  /**
+   * False when the expired-product set could not be read. The grid then
+   * cannot mark expired rows, so the UI says so instead of looking clean —
+   * checkout still refuses the sale, which is where the guarantee lives.
+   */
+  const expiryCheckOk = ref(true)
 
   // ─── Branch picker ────────────────────────────────────────────────
   // Every warehouse is sellable-from: there is no channel to filter on any
@@ -106,6 +120,7 @@ export function usePos() {
           expiry_date:  p?.expiry_date ?? null,
           unit_price:   p?.selling_price ?? 0,
           available:    s.total_qty ?? 0,
+          is_expired:   expiredProductIds.value.has(s.product_id as number),
         }
       }),
   )
@@ -141,6 +156,12 @@ export function usePos() {
   }
 
   function addToCart(product: PosProduct) {
+    // Convenience only — createSale re-checks against a freshly loaded set,
+    // because this one can be minutes old and expiry rolls over at midnight.
+    if (product.is_expired) {
+      toast.error(`${product.product_name} has expired and cannot be sold.`)
+      return
+    }
     const existing = cart.value.find(l => l.product_id === product.product_id)
     const available = liveAvailable(product.product_id)
     if (existing) {
@@ -206,6 +227,7 @@ export function usePos() {
   // ─── Init ─────────────────────────────────────────────────────────
   async function refreshStock() {
     if (!selectedWarehouseId.value) return
+    expiryCheckOk.value = await productsStore.ensureExpiredProductIds()
     await warehouseProductsStore.fetchWarehouseProducts({ warehouse_id: selectedWarehouseId.value })
     rowProducts.value = await productsStore.fetchProductsByIds(
       warehouseProducts.value.map(wp => wp.product_id).filter((id): id is number => id != null),
@@ -238,6 +260,7 @@ export function usePos() {
     products, filteredProducts,
     subtotal, total, itemCount, isEmpty,
     isSearching, resultCount, submitSearch, clearSearch,
+    expiryCheckOk,
     addToCart, setQty, removeFromCart, clearCart,
     init, refreshStock, setWarehouse,
   }

@@ -161,6 +161,13 @@ export const navigationConfig: NavigationGroup[] = [
         keywords: 'items, goods, merchandise, inventory list',
       },
       {
+        title: 'Expiring Inventory',
+        icon: 'mdi-calendar-alert',
+        route: '/warehouse/expiry-report',
+        permission: 'warehouse.expiry.view',
+        keywords: 'expiry, expired, expiring, shelf life, write-off, at risk',
+      },
+      {
         title: 'Stock Transfers',
         icon: 'mdi-truck-fast',
         route: '/warehouse/stock-transfers',

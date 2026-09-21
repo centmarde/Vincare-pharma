@@ -3,6 +3,7 @@ import type { Ref } from 'vue'
 import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import { getErrorMessage } from '@/utils/helpers'
+import { useProductsDataStore } from '@/stores/productsData'
 
 /**
  * WHERE STOCK LIVES — the single resolver.
@@ -48,6 +49,14 @@ export type SourcingLine = {
   need: number
   take: number
   short: number
+  /**
+   * The batch has expired, so `take` is 0 no matter what is physically on the
+   * shelf. Carried separately from `short` because the two need different
+   * words on screen: "we have none" sends staff to Purchasing, while "we have
+   * it but cannot sell it" sends them to the warehouse. Without this, a full
+   * shelf reporting nothing available just reads as a broken system.
+   */
+  expired: boolean
 }
 
 export const mainWarehouseName = 'Main Warehouse'
@@ -65,6 +74,7 @@ function chunk<T>(items: T[], size: number): T[][] {
 }
 
 export const useStockSourcingStore = defineStore('stockSourcing', () => {
+  const productsStore = useProductsDataStore()
   const locations: Ref<StockLocation[]> = ref([])
   const loading = ref(false)
   const error = ref('')
@@ -236,16 +246,33 @@ export const useStockSourcingStore = defineStore('stockSourcing', () => {
       lines.map((l) => l.product_id),
     )
     if (!onHand) return null
+
+    // Expired batches supply nothing. Applied HERE and not in availabilityAt
+    // on purpose: that function also feeds the expiry report, which has to
+    // keep showing what branches are physically holding.
+    //
+    // Fails closed for the same reason the stock read above does -- a set that
+    // could not be read is not evidence that nothing has expired.
+    if (!(await productsStore.ensureExpiredProductIds())) {
+      handleError(
+        new Error('expired-product set unavailable'),
+        'Could not verify product expiry for this location',
+      )
+      return null
+    }
+    const expiredIds = new Set(productsStore.expiredAmong(lines.map((l) => l.product_id)))
+
     // Two lines can name the same product; the second must see what the first
     // already claimed, or both get promised the same units.
     const claimed = new Map<number, number>()
     return lines.map((line) => {
       const need = Math.max(0, line.quantity)
       const already = claimed.get(line.product_id) ?? 0
-      const free = Math.max(0, (onHand.get(line.product_id) ?? 0) - already)
+      const expired = expiredIds.has(line.product_id)
+      const free = expired ? 0 : Math.max(0, (onHand.get(line.product_id) ?? 0) - already)
       const take = Math.min(need, free)
       claimed.set(line.product_id, already + take)
-      return { product_id: line.product_id, need, take, short: need - take }
+      return { product_id: line.product_id, need, take, short: need - take, expired }
     })
   }
 
@@ -259,6 +286,14 @@ export const useStockSourcingStore = defineStore('stockSourcing', () => {
     qty: number,
   ): Promise<boolean> {
     if (qty <= 0) return true
+    // The plan already refuses expired lines; this is the backstop at the point
+    // of mutation, so a caller that skips planSourcing cannot draw expired stock
+    // by accident. It loads the set itself rather than reading whatever happens
+    // to be cached -- an empty set from a call that never fetched would make
+    // this guard silently pass everything, which is the opposite of a backstop.
+    // Cheap in the per-line loop: ensure* is a no-op inside its TTL.
+    if (!(await productsStore.ensureExpiredProductIds())) return false
+    if (productsStore.expiredProductIds.has(productId)) return false
     clearError()
     try {
       if (locationId == null) {

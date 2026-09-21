@@ -1,4 +1,5 @@
 import type { SupplierOfferType } from '@/stores/supplierOffersData'
+import { toLocalISODate } from '@/utils/dateFormats'
 
 export type QualifiedOffer = SupplierOfferType & { months_to_expiry: number }
 export const QUALIFICATION_MONTHS = 18
@@ -45,4 +46,42 @@ export function qualifyOffers(offers: SupplierOfferType[], requiredByDate: strin
   }
   qualified.sort((a, b) => a.cost_price_per_unit - b.cost_price_per_unit)
   return { qualified, disqualified, recommended: qualified[0] ?? null }
+}
+
+export type ShelfLifeCheck =
+  | { ok: true }
+  | { ok: false; reason: 'expired' | 'short_dated' }
+
+/**
+ * Whether a batch may be delivered to a GOVERNMENT client.
+ *
+ * Government contracts reject stock carrying less than QUALIFICATION_MONTHS of
+ * shelf life on the day it is delivered. That is the same 18 months Purchasing
+ * buys to above, and not by coincidence: we buy at 18 months BECAUSE we have to
+ * deliver at 18. Keeping both in this file is the point — one number, both ends
+ * of the pipe, no second copy to drift.
+ *
+ * Applied to In-House, which IS the government channel by construction. It is
+ * deliberately NOT keyed off customers.agency_type: that column is populated on
+ * 4 of 5,278 rows, so keying off it would silently exempt nearly every customer.
+ *
+ * A product with NO expiry date PASSES. Many catalogue rows carry none, and
+ * plenty legitimately have no expiry (scissors, trays); blocking them would stop
+ * real deliveries. That is a known hole, tracked separately, not an oversight.
+ *
+ * @param expiryDate batch expiry as a date-only string
+ * @param asOf       the delivery date to test against; defaults to today
+ */
+export function govtShelfLife(
+  expiryDate: string | null | undefined,
+  asOf = new Date(),
+): ShelfLifeCheck {
+  if (!expiryDate) return { ok: true }
+  // Both sides of each comparison are parsed from a date-only string, so they
+  // land on the same midnight and the result cannot drift with the timezone.
+  const todayIso = toLocalISODate(asOf)
+  const expiry = new Date(expiryDate)
+  if (expiry < new Date(todayIso)) return { ok: false, reason: 'expired' }
+  if (expiry < minQualifyingExpiry(todayIso)) return { ok: false, reason: 'short_dated' }
+  return { ok: true }
 }

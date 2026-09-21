@@ -4,6 +4,7 @@ import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { prIdFromCoverage, isPRCoverageLive, type Shortfall } from '@/utils/canvassTypes'
+import { govtShelfLife } from '@/utils/qualification'
 
 const toast = useToast()
 
@@ -23,7 +24,11 @@ export type ProcurementLineType = {
   item_id: number
   product_id: number | null
   product_name: string
-  needed: number          // max(0, remaining_ordered - warehouse_on_hand) — read-only
+  needed: number          // max(0, remaining_ordered - USABLE warehouse stock) — read-only
+  /** Set when stock is on the shelf but not shippable for this order type. */
+  blocked_reason?: 'expired' | 'short_dated'
+  /** Physical shelf count, when it differs from what is usable. */
+  physical_on_hand?: number
 }
 
 export type ProcurementRequestType = {
@@ -187,7 +192,7 @@ export const useProcurementDataStore = defineStore('procurementData', () => {
 
       const [productsRes, prsRes] = await Promise.all([
         productIds.length
-          ? supabase.from('products').select('id, current_stock').in('id', productIds)
+          ? supabase.from('products').select('id, current_stock, expiry_date').in('id', productIds)
           : Promise.resolve({ data: [], error: null }),
         coveringPRIds.length
           ? supabase.from('transactions').select('id, status').in('id', coveringPRIds)
@@ -196,8 +201,10 @@ export const useProcurementDataStore = defineStore('procurementData', () => {
       if (productsRes.error) throw productsRes.error
       if (prsRes.error) throw prsRes.error
 
-      const onHand = new Map<number, number>()
-      for (const p of (productsRes.data ?? []) as any[]) onHand.set(p.id, p.current_stock ?? 0)
+      const onHand = new Map<number, { qty: number; expiry: string | null }>()
+      for (const p of (productsRes.data ?? []) as any[]) {
+        onHand.set(p.id, { qty: p.current_stock ?? 0, expiry: p.expiry_date ?? null })
+      }
       const prStatus = new Map<number, string | null>()
       for (const pr of (prsRes.data ?? []) as any[]) prStatus.set(pr.id, pr.status)
 
@@ -216,13 +223,26 @@ export const useProcurementDataStore = defineStore('procurementData', () => {
           }
           const remaining = (it.qty_stock_out ?? 0) - (it.actual_count_stock_out ?? 0)
           if (remaining <= 0) continue
-          const stock = it.product_id != null ? (onHand.get(it.product_id) ?? 0) : 0
-          const needed = Math.max(0, remaining - stock)
+          const row = it.product_id != null ? onHand.get(it.product_id) : undefined
+          const physical = row?.qty ?? 0
+          // Usable stock, not shelf stock. In-House is the government channel,
+          // so a batch under the shelf-life minimum cannot be delivered and is
+          // not stock the purchaser can count on; Ethical only has to clear
+          // expiry. Without this the purchaser's queue would report a smaller
+          // shortfall than the order dialog that raised the request — or none
+          // at all, so a notified order would show up here with nothing to buy.
+          const shelf = govtShelfLife(row?.expiry ?? null)
+          const usable =
+            shelf.ok || (c.order_type !== 'inhouse_order' && shelf.reason === 'short_dated')
+              ? physical
+              : 0
+          const needed = Math.max(0, remaining - usable)
           if (needed <= 0) continue
           lines.push({
             item_id: it.id, product_id: it.product_id,
             product_name: it.product?.product_name ?? `#${it.product_id}`,
             needed,
+            ...(usable === physical ? {} : { blocked_reason: shelf.ok ? undefined : shelf.reason, physical_on_hand: physical }),
           })
         }
         if (!lines.length) continue // stock has since covered it — staff's re-check will clear the order
@@ -249,7 +269,14 @@ export const useProcurementDataStore = defineStore('procurementData', () => {
   }
 
   const shortfallFor = (req: ProcurementRequestType): Shortfall[] =>
-    req.lines.map((l) => ({ product_id: l.product_id ?? 0, ordered: l.needed, on_hand: 0, needed: l.needed }))
+    req.lines.map((l) => ({
+      product_id: l.product_id ?? 0,
+      ordered: l.needed,
+      on_hand: 0,
+      needed: l.needed,
+      blocked_reason: l.blocked_reason,
+      physical_on_hand: l.physical_on_hand,
+    }))
 
   return {
     loading, error, queue,

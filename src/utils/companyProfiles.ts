@@ -63,6 +63,7 @@ export type PrintedDocumentKind =
   | 'disbursement_voucher'
   | 'rfq'
   | 'purchase_order'
+  | 'expiry_report'
 
 /**
  * Customer- and tax-facing documents issue from Exelmed (the entity that holds
@@ -77,6 +78,10 @@ const DEFAULTS: Record<PrintedDocumentKind, CompanyKey> = {
   disbursement_voucher: 'exelmed',
   rfq: 'vincare',
   purchase_order: 'vincare',
+  // Internal management report, not customer- or tax-facing. Issues from the
+  // operating entity that holds the warehouse; the print dialog still offers
+  // the chooser, since either entity may need to circulate it.
+  expiry_report: 'vincare',
 }
 
 /**
