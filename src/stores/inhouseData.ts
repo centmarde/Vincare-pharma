@@ -12,9 +12,11 @@ import type { ProductType } from '@/stores/productsData'
 import { useCustomersDataStore } from '@/stores/customersData'
 import type { CustomerType } from '@/stores/customersData'
 import type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult } from '@/utils/canvassTypes'
+import { govtShelfLife, QUALIFICATION_MONTHS } from '@/utils/qualification'
 import type { CollectionType } from '@/stores/ethicalData'
 
 const toast = useToast()
+
 
 // In-house government/LGU orders live in the transactions hub as
 // transaction_type = 'inhouse_order'; lines in transaction_items; negotiation
@@ -353,6 +355,45 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     return { success: true }
   }
 
+  /**
+   * Shortfall for a set of order lines, against WAREHOUSE stock.
+   *
+   * Stock failing govtShelfLife counts as UNUSABLE, not available. An order
+   * filled from an expired or short-dated batch cannot be delivered to a
+   * government client, so counting it would leave the order sitting `ready`
+   * and fail at the door — instead of raising a shortfall now and reaching
+   * Purchasing through the flow that already exists for exactly this.
+   *
+   * Measured as of TODAY. The real test is the shelf life on the delivery day,
+   * which nobody knows yet at agreement time, so this is a preview and
+   * deliver() re-checks authoritatively.
+   */
+  async function shortfallForLines(
+    lines: { product_id: number; qty: number }[],
+  ): Promise<Shortfall[]> {
+    const shortfall: Shortfall[] = []
+    for (const line of lines) {
+      const { data: product } = await supabase
+        .from('products')
+        .select('current_stock, expiry_date')
+        .eq('id', line.product_id)
+        .maybeSingle()
+      const physical = product?.current_stock ?? 0
+      const shelf = govtShelfLife(product?.expiry_date as string | null)
+      const onHand = shelf.ok ? physical : 0
+      if (onHand < line.qty) {
+        shortfall.push({
+          product_id: line.product_id,
+          ordered: line.qty,
+          on_hand: onHand,
+          needed: line.qty - onHand,
+          ...(shelf.ok ? {} : { blocked_reason: shelf.reason, physical_on_hand: physical }),
+        })
+      }
+    }
+    return shortfall
+  }
+
   // Read-only warehouse stock check, flag ready vs awaiting_stock (was inhouse_agree).
   const agreeOrder = async (orderId: number): Promise<{ success: boolean; shortfall?: Shortfall[] }> => {
     loading.value = true
@@ -375,16 +416,9 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       loading.value = false; return { success: false }
     }
 
-    const shortfall: Shortfall[] = []
     const lines = ((order.transaction_items ?? []) as unknown as { product_id: number; qty_stock_out: number | null }[])
       .map(li => ({ product_id: li.product_id, qty: li.qty_stock_out ?? 0 }))
-    for (const line of lines) {
-      const { data: product } = await supabase.from('products').select('current_stock').eq('id', line.product_id).maybeSingle()
-      const onHand = product?.current_stock ?? 0
-      if (onHand < line.qty) {
-        shortfall.push({ product_id: line.product_id, ordered: line.qty, on_hand: onHand, needed: line.qty - onHand } as Shortfall)
-      }
-    }
+    const shortfall = await shortfallForLines(lines)
 
     // Agreement is the PO stage — but only when the order can actually be
     // fulfilled from stock. Minting the company PO number (from the SHARED
@@ -434,16 +468,9 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       .maybeSingle()
     if (fetchError || !order) { handleError(fetchError, 'Failed to check stock'); return [] }
 
-    const shortfall: Shortfall[] = []
     const lines = ((order.transaction_items ?? []) as unknown as { product_id: number; qty_stock_out: number | null }[])
       .map(li => ({ product_id: li.product_id, qty: li.qty_stock_out ?? 0 }))
-    for (const line of lines) {
-      const { data: product } = await supabase.from('products').select('current_stock').eq('id', line.product_id).maybeSingle()
-      const onHand = product?.current_stock ?? 0
-      if (onHand < line.qty) {
-        shortfall.push({ product_id: line.product_id, ordered: line.qty, on_hand: onHand, needed: line.qty - onHand } as Shortfall)
-      }
-    }
+    const shortfall = await shortfallForLines(lines)
     return shortfall
   }
 
@@ -540,7 +567,26 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
         loading.value = false; return { success: false }
       }
 
-      const { data: product } = await supabase.from('products').select('current_stock').eq('id', item.product_id).maybeSingle()
+      const { data: product } = await supabase
+        .from('products')
+        .select('current_stock, expiry_date, product_name')
+        .eq('id', item.product_id)
+        .maybeSingle()
+
+      // The authoritative shelf-life gate. agreeOrder only previewed this
+      // against the stock of the day; weeks of negotiation can pass before
+      // anything ships, and a batch that qualified then may not now.
+      const shelf = govtShelfLife(product?.expiry_date as string | null)
+      if (!shelf.ok) {
+        const name = product?.product_name ?? `product ${item.product_id}`
+        toast.error(
+          shelf.reason === 'expired'
+            ? `${name} has expired and cannot be delivered.`
+            : `${name} has under ${QUALIFICATION_MONTHS} months of shelf life left, which a government client will not accept.`,
+        )
+        loading.value = false; return { success: false }
+      }
+
       if ((product?.current_stock ?? 0) < line.qty) {
         toast.error(`Insufficient warehouse stock for product ${item.product_id}.`)
         loading.value = false; return { success: false }

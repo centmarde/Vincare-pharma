@@ -42,6 +42,8 @@ export type SourcingPreviewRow = {
   need: number
   take: number
   short: number
+  /** Short because the batch expired, not because the shelf is empty. */
+  expired: boolean
   /** Other locations holding this product, for a short line. */
   elsewhere: LocationStock[]
 }
@@ -246,6 +248,7 @@ export function useCreateOrder(onCreated: () => void) {
         need: p.need,
         take: p.take,
         short: p.short,
+        expired: p.expired,
         // The chosen source is already shown on the line; listing it again as
         // an alternative would read as if stock were available twice.
         elsewhere: (elsewhere.get(p.product_id) ?? [])
