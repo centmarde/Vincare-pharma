@@ -136,7 +136,6 @@ async function confirmCreatePRFromSelection() {
           <v-list-item
             v-for="p in visibleProducts"
             :key="p.id"
-            @click="emit('edit-product', p); emit('update:modelValue', false)"
           >
             <template #prepend>
               <v-checkbox-btn
@@ -148,6 +147,9 @@ async function confirmCreatePRFromSelection() {
             </template>
             <v-list-item-title class="font-weight-medium">
               {{ p.product_name }}
+              <v-tooltip activator="parent" location="top">
+                {{ p.product_name || '' }}
+              </v-tooltip>
             </v-list-item-title>
             <v-list-item-subtitle>
               <template v-if="stockDialogType === 'out-of-stock' || stockDialogType === 'low-stock'">
@@ -159,11 +161,14 @@ async function confirmCreatePRFromSelection() {
               </template>
               <template v-else-if="stockDialogType === 'expiring-soon' || stockDialogType === 'expired'">
                 Expiry: {{ p.expiry_date ? formatMonthYear(p.expiry_date) : 'N/A' }}
+                <span class="text-grey">· Stock: {{ p.current_stock ?? 0 }}</span>
               </template>
+            </v-list-item-subtitle>
+            <v-list-item-subtitle class="text-caption text-grey">
+              SKU: {{ p.sku || 'No SKU' }} · Batch: {{ p.batch_no || '—' }}
             </v-list-item-subtitle>
             <template #append>
               <div class="d-flex align-center ga-2">
-                <v-chip size="small" variant="outlined">{{ p.sku || 'No SKU' }}</v-chip>
                 <!-- Ignore / Dismiss button -->
                 <v-menu location="bottom" offset-y>
                   <template #activator="{ props: menuProps }">
