@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import { parseMonthYear, formatMonthYear, maskMonthYearInput } from '@/utils/helpers'
+import { computeSellingPrice } from '@/utils/computationHelpers'
 import type { CreateProductData, UpdateProductData } from '@/stores/productsData'
 
 const props = defineProps<{
@@ -69,6 +70,24 @@ watch(() => props.productForm.expiry_date, (value) => {
   const d = value ? new Date(value) : null
   expiryText.value = d && !Number.isNaN(d.getTime()) ? formatMonthYear(d) : ''
 }, { immediate: true })
+
+// Real-time pricing: derive the selling price from the cost price
+// (selling = cost × SELLING_PRICE_MARKUP) as soon as the cost is entered.
+// Only drives the field while it is editable — restricted (reorder-level-only)
+// editors never have their stored prices touched.
+watch(
+  () => props.productForm.cost_price,
+  (cost) => {
+    if (isFieldDisabled.value) return
+    const selling = computeSellingPrice(cost)
+    if (selling !== null) {
+      props.productForm.selling_price = selling
+    } else if (props.productForm.selling_price != null) {
+      // Cost cleared/invalid — forget a stale auto-filled sale price.
+      props.productForm.selling_price = null
+    }
+  },
+)
 
 function commitExpiry(date: Date | null) {
   props.productForm.expiry_date = date
