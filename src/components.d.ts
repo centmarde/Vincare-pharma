@@ -17,6 +17,7 @@ declare module 'vue' {
     CustomerTermsChips: typeof import('./components/customers/CustomerTermsChips.vue')['default']
     CustomerTradeProfileFields: typeof import('./components/customers/CustomerTradeProfileFields.vue')['default']
     DeliveryReceiptDialog: typeof import('./components/deliveryReceipts/DeliveryReceiptDialog.vue')['default']
+    DisposeProductDialog: typeof import('./components/products/dialogs/DisposeProductDialog.vue')['default']
     FieldValue: typeof import('./components/customers/FieldValue.vue')['default']
     InnerNavBar: typeof import('./components/common/InnerNavBar.vue')['default']
     InsideNavbar1: typeof import('./components/common/insideNavbar/InsideNavbar1.vue')['default']
