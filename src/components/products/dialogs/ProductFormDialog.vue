@@ -161,7 +161,6 @@ watch(() => props.modelValue, (val) => {
               title="Basic Info"
               subtitle="Name & identifiers"
               color="primary"
-              :editable="!isFieldDisabled"
             >
               <template #icon>
                 <v-icon :icon="step > 1 ? 'mdi-check' : 'mdi-information-outline'"></v-icon>
@@ -174,7 +173,6 @@ watch(() => props.modelValue, (val) => {
               title="Pricing & Stock"
               subtitle="Cost & inventory"
               color="primary"
-              :editable="!isFieldDisabled"
             >
               <template #icon>
                 <v-icon :icon="step > 2 ? 'mdi-check' : 'mdi-currency-usd'"></v-icon>
@@ -186,7 +184,6 @@ watch(() => props.modelValue, (val) => {
               title="Additional Details"
               subtitle="Extra info"
               color="primary"
-              :editable="!isFieldDisabled"
             >
               <template #icon>
                 <v-icon icon="mdi-text-box-outline"></v-icon>
