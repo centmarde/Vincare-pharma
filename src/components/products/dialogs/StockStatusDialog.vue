@@ -5,12 +5,16 @@ import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { formatMonthYear } from '@/utils/helpers'
 import DisposeProductDialog from './DisposeProductDialog.vue'
 
+const disposableStockBuckets = ['expired', 'expiring-soon', 'low-stock']
+
 const props = defineProps<{
   modelValue: boolean
   products: ProductType[]
   activeCard: { icon: string; color: string; label: string } | null | undefined
   stockDialogType: string
   isPurchaser: boolean
+  canDispose: boolean
+  disposalRequestInfo: Map<number, { id: number; status: string }>
   selectedReorderProductIds: number[]
   reorderRequestInfo: Map<number, { id: number; status: string }>
   canRequestReorder: (productId: number) => boolean
@@ -31,6 +35,7 @@ const emit = defineEmits<{
   'edit-product': [product: ProductType]
   'toggle-reorder': [productId: number, checked: boolean]
   'request-reorder': [product: ProductType]
+  'request-disposal': [payload: { product: ProductType; qty: number; reason: string }]
   'create-pr': []
 }>()
 
@@ -42,14 +47,28 @@ const hasSearch = computed(() => props.searchQuery.trim().length > 0)
 const disposeTarget = ref<ProductType | null>(null)
 const showDisposeDialog = ref(false)
 
+const isDisposableBucket = computed(() =>
+  disposableStockBuckets.includes(props.stockDialogType),
+)
+
+function disposalStatus(productId: number): string | null {
+  return props.disposalRequestInfo.get(productId)?.status ?? null
+}
+
+function canDisposeProduct(product: ProductType): boolean {
+  if (!props.canDispose || !isDisposableBucket.value) return false
+  if ((product.current_stock ?? 0) <= 0) return false
+  return disposalStatus(product.id) !== 'pending'
+}
+
 function openDisposeDialog(product: ProductType) {
   disposeTarget.value = product
   showDisposeDialog.value = true
 }
 
-function handleDisposeConfirm(product: ProductType) {
-  // Disposal is handled by an executive request — see DisposeProductDialog.
-  // Additional backend/receipt logic can be wired here when implemented.
+function handleDisposeConfirm(payload: { product: ProductType; qty: number; reason: string }) {
+  emit('request-disposal', payload)
+  showDisposeDialog.value = false
   disposeTarget.value = null
 }
 
@@ -157,6 +176,7 @@ async function confirmCreatePRFromSelection() {
               <div class="d-flex align-center ga-2">
                 <!-- Dispose button -->
                 <v-btn
+                  v-if="canDisposeProduct(p)"
                   size="small"
                   variant="outlined"
                   color="error"
@@ -166,6 +186,26 @@ async function confirmCreatePRFromSelection() {
                 >
                   Dispose
                 </v-btn>
+                <v-chip
+                  v-else-if="disposalStatus(p.id) === 'pending'"
+                  size="small"
+                  color="error"
+                  variant="tonal"
+                  class="font-weight-medium"
+                >
+                  <v-icon start size="14">mdi-delete-clock-outline</v-icon>
+                  Disposal pending
+                </v-chip>
+                <v-chip
+                  v-else-if="disposalStatus(p.id) === 'approved'"
+                  size="small"
+                  color="grey"
+                  variant="tonal"
+                  class="font-weight-medium"
+                >
+                  <v-icon start size="14">mdi-delete-off-outline</v-icon>
+                  Disposed
+                </v-chip>
                 <v-btn
                   v-if="stockDialogType !== 'no-reorder-level' && canRequestReorder(p.id)"
                   size="small"

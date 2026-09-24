@@ -89,7 +89,47 @@ export const useHistoryDataStore = defineStore('historyData', () => {
         }
       })
 
-      requests.value = [...crRequests, ...logRequests].sort((a, b) => {
+      // ── Source 3: disposal approvals/rejections, logged via disposalsData ──
+      const { data: disposalData, error: disposalError } = await supabase
+        .from('logs')
+        .select(`*, transactions!inner ( reference_no, transaction_type )`)
+        .eq('module', 'disposal')
+        .in('action', ['dispose_approved', 'dispose_rejected'])
+        .eq('transactions.transaction_type', 'disposal')
+        .order('created_at', { ascending: false })
+
+      if (disposalError) throw disposalError
+
+      const disposalRequests: RequestHistoryItem[] = (disposalData || []).map((row: any) => {
+        const disposalRef = row.transactions?.reference_no ?? null
+        const isApproved = row.action === 'dispose_approved'
+
+        return {
+          id: row.id,
+          source: 'log',
+          created_at: row.created_at,
+          transaction_id: row.transaction_id,
+          request_type: 'disposal',
+          summary: disposalRef
+            ? `Disposal ${isApproved ? 'Approved' : 'Rejected'} ${disposalRef}`
+            : null,
+          reason: null,
+          status: isApproved ? 'approved' : 'rejected',
+          created_by: row.created_by ?? null,
+          created_by_email: authStore.users.find((u: any) => u.id === row.created_by)?.email ?? null,
+          resolved_by: row.created_by ?? null,
+          resolved_by_email:
+            authStore.users.find((u: any) => u.id === row.created_by)?.email ?? null,
+          resolved_at: row.created_at,
+          resolution_note: row.description ?? null,
+          from_transaction_no: disposalRef,
+          to_transaction_no: null,
+          requisition_no: disposalRef,
+          transaction_type: row.transactions?.transaction_type ?? null,
+        }
+      })
+
+      requests.value = [...crRequests, ...logRequests, ...disposalRequests].sort((a, b) => {
         const aDate = a.resolved_at ?? a.created_at
         const bDate = b.resolved_at ?? b.created_at
         return new Date(bDate).getTime() - new Date(aDate).getTime()

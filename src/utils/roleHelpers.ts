@@ -69,6 +69,17 @@ export function isPurchasingRole(
 /** Role ID for the Warehouse role. */
 export const WAREHOUSE_ROLE_ID = 3
 
+export const adminRoleId = 2
+
+export const disposalRequestRoleIds = [adminRoleId, WAREHOUSE_ROLE_ID, PURCHASING_ROLE_ID]
+
+export function canRequestDisposal(
+  role: { id: number } | number | string | null | undefined,
+): boolean {
+  const id = Number(typeof role === 'object' ? role?.id : role)
+  return disposalRequestRoleIds.includes(id)
+}
+
 /**
  * Role IDs that are restricted from editing/deleting products — can only edit reorder_level.
  * These are the Warehouse (3) and Purchaser (4) roles.

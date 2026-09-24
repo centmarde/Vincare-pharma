@@ -10,7 +10,8 @@ import {
 import { useLogsDataStore } from '@/stores/logsData'
 import type { ReorderPrefillItem } from '@/pages/purchasing/composables/usePurchaseRequisition'
 import { useAuthUserStore } from '@/stores/authUser'
-import { isPurchasingRole, isProductEditRestricted } from '@/utils/roleHelpers'
+import { useDisposalsDataStore } from '@/stores/disposalsData'
+import { isPurchasingRole, isProductEditRestricted, canRequestDisposal } from '@/utils/roleHelpers'
 import {
   useProductIgnore,
   IGNORE_DURATIONS,
@@ -44,6 +45,7 @@ export function useProductsWidget() {
   const toast = useToast()
   const productsStore = useProductsDataStore()
   const authStore = useAuthUserStore()
+  const disposalsStore = useDisposalsDataStore()
   const logsStore = useLogsDataStore()
   const productIgnore = useProductIgnore()
   const confirmDialog = useConfirmDialog()
@@ -56,6 +58,7 @@ export function useProductsWidget() {
   const EXPIRY_WARNING_DAYS = 540 // 18 months
   const isPurchaser = computed(() => isPurchasingRole(authStore.userRole))
   const isEditRestricted = computed(() => isProductEditRestricted(authStore.userRole))
+  const canDispose = computed(() => canRequestDisposal(authStore.userRole))
   const expiryFilterValue = ref<string>('')
 
   // Form state
@@ -679,6 +682,33 @@ export function useProductsWidget() {
     return !info || info.status === 'rejected'
   }
 
+  const disposalRequestInfo = computed(() => {
+    const map = new Map<number, { id: number; status: string }>()
+    for (const d of disposalsStore.disposalRequests) {
+      if (d.product?.id != null && !map.has(d.product.id)) {
+        map.set(d.product.id, { id: d.id, status: d.status })
+      }
+    }
+    return map
+  })
+
+  async function requestDisposal(payload: {
+    product: ProductType
+    qty: number
+    reason: string
+  }) {
+    const result = await disposalsStore.createDisposalRequest({
+      productId: payload.product.id,
+      qty: payload.qty,
+      reason: payload.reason,
+    })
+    if (!result.success) return
+
+    // The stock-status buckets are served by an RPC, so the dialog's list does
+    // not re-derive itself from the store — refresh it to pick up the new chip.
+    await refreshStockDialogProducts()
+  }
+
   // Purchaser-only bulk reorder-to-PR flow
   const selectedReorderProductIds = ref<number[]>([])
   const showPurchaseRequisitionDialog = ref(false)
@@ -941,6 +971,7 @@ export function useProductsWidget() {
       stockDialogPage.value = 1
       stockDialogSearchQuery.value = ''
       refreshStockDialogProducts()
+      disposalsStore.fetchDisposalRequests(true)
     }
   })
 
@@ -1005,6 +1036,9 @@ export function useProductsWidget() {
     //Stock order for Purchaser
     isEditRestricted,
     isPurchaser,
+    canDispose,
+    disposalRequestInfo,
+    requestDisposal,
     reorderRequestInfo,
     canRequestReorder, // NEW
     selectedReorderProductIds,
