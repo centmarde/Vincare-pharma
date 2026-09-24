@@ -8,6 +8,7 @@ import { useFinanceChangeRequests } from '@/pages/finance/stores/composables/use
 import { useSalesChangeRequests } from '@/pages/sales/stores/composables/useSalesChangeRequests'
 import { useSharedChangeRequests } from '../composables/useSharedChangeRequests'
 import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
+import { useExecutiveApproveDisposal } from '../composables/useExecutiveApproveDisposal'
 import { formatDatePR_ISO } from '@/utils/helpers'
 import { useRequestHistory } from '../composables/useRequestHistory'
 
@@ -36,11 +37,17 @@ const {
   loading: prLoading,
   refresh: refreshPRApprovals,
 } = useExecutiveApprovePR()
+const {
+  requests: pendingDisposals,
+  loading: disposalLoading,
+  refresh: refreshDisposals,
+} = useExecutiveApproveDisposal()
 const { mobile } = useDisplay()
 
 type MergedActionItem =
   | { kind: 'undo'; id: number; created_at: string; raw: any }
   | { kind: 'pr_approval'; id: number; created_at: string; raw: any }
+  | { kind: 'disposal'; id: number; created_at: string; raw: any }
 
 type ChangeRequestSource = 'pr' | 'finance' | 'sales' | 'shared'
 
@@ -65,7 +72,13 @@ const mergedItems = computed<MergedActionItem[]>(() => {
     created_at: pr.created_at,
     raw: pr,
   }))
-  return [...undoItems, ...prItems].sort(
+  const disposalItems: MergedActionItem[] = (pendingDisposals.value || []).map((d: any) => ({
+    kind: 'disposal',
+    id: d.id,
+    created_at: d.created_at,
+    raw: d,
+  }))
+  return [...undoItems, ...prItems, ...disposalItems].sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   )
 })
@@ -76,7 +89,8 @@ const loading = computed(
     financeLoading.value ||
     salesLoading.value ||
     sharedLoading.value ||
-    prLoading.value,
+    prLoading.value ||
+    disposalLoading.value,
 )
 
 const refreshing = ref(false)
@@ -90,6 +104,7 @@ async function refreshAll() {
       refreshSales(),
       refreshShared(),
       refreshPRApprovals(),
+      refreshDisposals(),
     ])
   } finally {
     refreshing.value = false
@@ -119,6 +134,18 @@ watch(
 function openRequest(item: MergedActionItem) {
   selectedReq.value = item
   selected.value = true
+}
+
+function itemColor(kind: MergedActionItem['kind']): string {
+  if (kind === 'undo') return 'red'
+  if (kind === 'disposal') return 'error'
+  return 'green'
+}
+
+function itemIcon(kind: MergedActionItem['kind']): string {
+  if (kind === 'undo') return 'mdi-cancel'
+  if (kind === 'disposal') return 'mdi-delete-alert-outline'
+  return 'mdi-file-document-check-outline'
 }
 
 const historyDialog = ref(false)
@@ -176,17 +203,8 @@ watch(historyDialog, (val) => {
         <template v-for="(item, i) in paginatedRequests" :key="`${item.kind}-${item.id}`">
           <v-list-item class="px-2 py-3 rounded-lg action-item" @click="openRequest(item)">
             <template #prepend>
-              <v-avatar
-                size="32"
-                rounded="lg"
-                :color="item.kind === 'undo' ? 'red' : 'green'"
-                variant="tonal"
-              >
-                <v-icon
-                  :color="item.kind === 'undo' ? 'red' : 'green'"
-                  :icon="item.kind === 'undo' ? 'mdi-cancel' : 'mdi-file-document-check-outline'"
-                  size="18"
-                />
+              <v-avatar size="32" rounded="lg" :color="itemColor(item.kind)" variant="tonal">
+                <v-icon :color="itemColor(item.kind)" :icon="itemIcon(item.kind)" size="18" />
               </v-avatar>
             </template>
 
@@ -226,6 +244,38 @@ watch(historyDialog, (val) => {
                   style="opacity: 0.7"
                 />
                 {{ item.raw.reason }}
+              </v-list-item-subtitle>
+            </template>
+
+            <!-- Disposal request row -->
+            <template v-else-if="item.kind === 'disposal'">
+              <v-list-item-title
+                :class="
+                  mobile
+                    ? 'd-flex flex-column align-start ga-1 mb-1'
+                    : 'd-flex align-center ga-2 mb-1'
+                "
+              >
+                <div class="d-flex align-center ga-2 w-100">
+                  <v-chip size="x-small" color="error" variant="tonal" label>Dispose</v-chip>
+                  <span class="text-body-2 font-weight-medium action-item-number">
+                    {{ item.raw.reference_no ?? `#${item.raw.id}` }}
+                  </span>
+                </div>
+                <span class="text-caption text-medium-emphasis">
+                  {{ formatDatePR_ISO(item.raw.created_at) }}
+                </span>
+              </v-list-item-title>
+
+              <v-list-item-subtitle
+                class="text-caption text-medium-emphasis"
+                :class="mobile ? 'reason-clamp' : ''"
+                style="white-space: normal; line-height: 1.4"
+              >
+                <v-icon icon="mdi-account-outline" size="12" class="mr-1" style="opacity: 0.7" />
+                {{ item.raw.requester_name ?? '—' }} ·
+                {{ item.raw.product?.product_name ?? 'Unknown product' }} ·
+                {{ item.raw.qty }} unit(s)
               </v-list-item-subtitle>
             </template>
 

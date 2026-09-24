@@ -7,7 +7,7 @@ export type RequestHistoryItem = {
   source: 'change_request' | 'log'
   created_at: string
   transaction_id: number
-  request_type: 'edit' | 'void' | 'undo_pr' | 'pr_approval'
+  request_type: 'edit' | 'void' | 'undo_pr' | 'pr_approval' | 'disposal'
   summary: string | null
   reason: string | null
   status: 'approved' | 'rejected'
