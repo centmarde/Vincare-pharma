@@ -71,11 +71,13 @@ type FetchProductsOptions = {
   expiryEnd?: string // 'YYYY-MM-DD'
 }
 
-// Mirrors search_products_with_sku's RETURNS TABLE exactly (see
-// supabase/migrations/20260823_search_products_with_sku_brand.sql).
-// supplier_name / supplier_is_active are deliberately NOT here: the RPC stopped
-// returning them because supplier identity is confidential. supplier_id stays —
-// Purchasing's PR dialogs set the line's supplier from it.
+// Mirrors products_master's RETURNS TABLE exactly (see
+// supabase/migrations/20260924_products_master.sql).
+// The picker is a product-name suggester only: it returns one row per distinct
+// product_name (duplicates across SKU/batch rows collapse to one), so these are
+// the only columns a caller can rely on. supplier_id — Purchasing's PR dialogs
+// set the line's supplier from it — is not here because the RPC no longer
+// returns it; resolve the supplier from the chosen name elsewhere if needed.
 export type ProductPickerResult = {
   id: number
   product_name: string | null
@@ -548,7 +550,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     loading.value = true
 
     try {
-      const { data, error } = await supabase.rpc('search_products_with_sku', {
+      const { data, error } = await supabase.rpc('products_master', {
         search_term: search,
         page_limit: limit,
       })
@@ -562,8 +564,8 @@ export const useProductsDataStore = defineStore('productsData', () => {
       // clobbering the list with matches for a term the user has moved past.
       if (requestId !== pickerRequestId) return
 
-      // current_stock and brand now come straight off the RPC — the second
-      // round-trip that used to fetch stock per search is gone.
+      // The RPC returns distinct product names only (own loader for cost/stock
+      // resolution elsewhere), so nothing extra is fetched here.
       pickerProducts.value = (data ?? []) as ProductPickerResult[]
       pickerTotalCount.value = data?.[0]?.total_count ?? 0
     } finally {

@@ -4,5 +4,6 @@ export function computeSellingPrice(costPrice: number | null | undefined): numbe
   if (costPrice == null) return null
   const cost = Number(costPrice)
   if (!Number.isFinite(cost) || cost <= 0) return null
-  return Number((cost * SELLING_PRICE_MARKUP).toFixed(2))
+  // round off ang resulta ngadto sa whole number (e.g. 200.75 -> 201, 201.00 -> 201)
+  return Math.round(cost * SELLING_PRICE_MARKUP)
 }
