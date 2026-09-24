@@ -4,6 +4,7 @@ import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import { maxDocSeq, insertWithDocRetry } from '@/utils/helpers'
 import type { CanvassSelection, CanvassPRResult } from '@/utils/canvassTypes'
+import { useProductsDataStore } from '@/stores/productsData'
 
 // Shared by In-House and Ethical: raising one purchase requisition per winning
 // supplier off a stock-shortfall canvass. Was the shared canvass_to_prs RPC
@@ -169,6 +170,8 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
         return { success: false, error: prItemError.message || 'Failed to save purchase requisition line items.' }
       }
     }
+
+    await useProductsDataStore().syncPRSellingPrices(results.map(r => r.pr_id))
 
     // ── Phase B: every PR is fully written. Now mirror the canvass decision
     //    back onto the order's own lines (drives the "PRs raised" sub-status)

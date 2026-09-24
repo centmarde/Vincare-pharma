@@ -78,6 +78,7 @@ const {
   canDispose,
   disposalRequestInfo,
   requestDisposal,
+  updateReorderLevel,
   reorderRequestInfo,
   canRequestReorder, // NEW
   selectedReorderProductIds,
@@ -633,6 +634,7 @@ function stockColor(item: any, stock: number) {
     :selected-reorder-product-ids="selectedReorderProductIds"
     :reorder-request-info="reorderRequestInfo"
     :can-request-reorder="canRequestReorder"
+    :update-reorder-level="updateReorderLevel"
     :reorder-reason-map="reorderReasonMap"
     :search-query="stockDialogSearchQuery"
     :page="stockDialogPage"

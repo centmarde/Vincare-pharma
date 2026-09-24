@@ -17,6 +17,12 @@ const props = defineProps<{
 
 const productsStore = useProductsDataStore()
 
+const skuInputItemIds = ref<Record<number, boolean>>({})
+
+function needsSkuInput(item: PRItem): boolean {
+  return skuInputItemIds.value[item.id] === true
+}
+
 /**
  * Looks up the SKU for each item directly by product_name (via the products
  * store) and fills each item's sku input with the matched product SKU — only
@@ -27,25 +33,35 @@ async function loadSkuValues() {
   const items = props.transactionItems
   const names = [...new Set(items.map((i) => (i.product_name || '').trim()).filter(Boolean))]
 
-  if (!names.length) return
+  if (names.length) {
+    const skuByName = await productsStore.fetchSkusByProductNames(names)
 
-  const skuByName = await productsStore.fetchSkusByProductNames(names)
+    for (const item of items) {
+      const key = (item.product_name || '').trim().toLowerCase()
+      const matchedSku = key ? skuByName.get(key) ?? '' : ''
+      // Populate the input directly, keeping any SKU the user typed/saved first.
+      if (matchedSku && !item.sku?.toString().trim()) {
+        item.sku = matchedSku
+      }
+    }
+  }
 
   for (const item of items) {
-    const key = (item.product_name || '').trim().toLowerCase()
-    const matchedSku = key ? skuByName.get(key) ?? '' : ''
-    // Populate the input directly, keeping any SKU the user typed/saved first.
-    if (matchedSku && !item.sku?.toString().trim()) {
-      item.sku = matchedSku
+    if (!item.sku?.toString().trim()) {
+      skuInputItemIds.value[item.id] = true
     }
   }
 }
 
+function itemIdentityKey(): string {
+  return props.transactionItems.map((item) => `${item.id}:${item.product_name ?? ''}`).join('|')
+}
+
 // Reload whenever the item rows change (e.g. the dialog opens with the PO/PR).
 watch(
-  () => props.transactionItems,
+  [() => props.transactionItems, itemIdentityKey],
   () => loadSkuValues(),
-  { immediate: true, deep: true },
+  { immediate: true },
 )
 
 // Track which expiry month picker menu is currently open (keyed by item row).
@@ -160,8 +176,17 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
             {{ formatCurrency((item.qty ?? 0) * (item.cost_per_unit ?? 0)) }}
           </td>
           <td class="text-center" style="width: 130px">
+            <v-text-field
+              v-if="skuEditMode && needsSkuInput(item)"
+              v-model="item.sku"
+              density="compact"
+              variant="outlined"
+              hide-details
+              placeholder="Enter SKU"
+              style="width: 120px"
+            />
             <v-chip
-              v-if="skuEditMode"
+              v-else-if="skuEditMode"
               :color="item.sku ? 'green' : 'error'"
               variant="tonal"
               size="small"
@@ -292,7 +317,16 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
               </div>
               <div style="flex: 1; min-width: 0;">
                 <div class="text-caption text-medium-emphasis mb-1 text-center">SKU</div>
-                <div class="d-flex align-center justify-center" style="min-height: 40px;">
+                <v-text-field
+                  v-if="needsSkuInput(item)"
+                  v-model="item.sku"
+                  density="compact"
+                  variant="outlined"
+                  hide-details
+                  placeholder="Enter SKU"
+                  style="width: 100%"
+                />
+                <div v-else class="d-flex align-center justify-center" style="min-height: 40px;">
                   <v-chip
                     :color="item.sku ? 'green' : 'error'"
                     variant="tonal"

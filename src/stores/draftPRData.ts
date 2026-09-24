@@ -5,12 +5,14 @@ import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
+import { useProductsDataStore } from '@/stores/productsData'
 import { qualifyOffers } from '@/utils/qualification'
 import { useSupplierOffersDataStore } from '@/stores/supplierOffersData'
 import type { SupplierOfferType } from '@/stores/supplierOffersData'
 import { maxDocSeq, insertWithDocRetry, formatCurrency } from '@/utils/helpers'
 import { prIdFromCoverage, isPRCoverageLive, type PRCoverage } from '@/utils/canvassTypes'
 import { carriedProductFields } from '@/utils/productBatch'
+import { computeSellingPrice } from '@/utils/computationHelpers'
 
 const toast = useToast()
 
@@ -154,6 +156,7 @@ async function resolveBatchProduct(
       status: 'active',
       current_stock: 0,
       cost_price: costPrice,
+      selling_price: computeSellingPrice(costPrice),
       ...carriedProductFields(product),
     })
     .select('id')
@@ -1089,6 +1092,8 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
         return { success: false, error: itemsError.message || 'Failed to save purchase requisition line items.' }
       }
     }
+
+    await useProductsDataStore().syncPRSellingPrices(createdPRs.map((pr) => pr.pr_id))
 
     // ── Phase C: every PR written — mirror onto the source order, log, mark the
     // draft converted. The PRs are never rolled back here (matches commitToPRs's
