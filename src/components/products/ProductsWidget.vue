@@ -75,6 +75,9 @@ const {
   //Stock order for Purchaser
   isEditRestricted,
   isPurchaser,
+  canDispose,
+  disposalRequestInfo,
+  requestDisposal,
   reorderRequestInfo,
   canRequestReorder, // NEW
   selectedReorderProductIds,
@@ -625,6 +628,8 @@ function stockColor(item: any, stock: number) {
     :active-card="activeStockCard"
     :stock-dialog-type="stockDialogType"
     :is-purchaser="isPurchaser"
+    :can-dispose="canDispose"
+    :disposal-request-info="disposalRequestInfo"
     :selected-reorder-product-ids="selectedReorderProductIds"
     :reorder-request-info="reorderRequestInfo"
     :can-request-reorder="canRequestReorder"
@@ -646,6 +651,7 @@ function stockColor(item: any, stock: number) {
     "
     @toggle-reorder="toggleReorderSelection"
     @request-reorder="requestReorder"
+    @request-disposal="requestDisposal"
     @create-pr="proceedCreatePRFromSelection"
   />
 
