@@ -4,6 +4,7 @@ export function computeSellingPrice(costPrice: number | null | undefined): numbe
   if (costPrice == null) return null
   const cost = Number(costPrice)
   if (!Number.isFinite(cost) || cost <= 0) return null
-  // round off ang resulta ngadto sa whole number (e.g. 200.75 -> 201, 201.00 -> 201)
-  return Math.round(cost * SELLING_PRICE_MARKUP)
+  // round off ngadto sa nearest 0.50 (e.g. 16.22 -> 16.50, 16.80 -> 17.00,
+  // 200.75 -> 201.00). Bisag unsa nga decimal, padayon nga i-round UP.
+  return Math.ceil(cost * SELLING_PRICE_MARKUP * 2) / 2
 }
