@@ -31,6 +31,7 @@ export type ProductType = {
   brand: string | null
   remarks: string | null
   is_reorder: boolean | null
+  is_disposed: boolean | null
   // Joined supplier data (via FK)
   suppliers: SupplierType | null
 }

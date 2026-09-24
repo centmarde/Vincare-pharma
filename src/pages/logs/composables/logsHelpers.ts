@@ -29,6 +29,7 @@ export function getActionColor(action: string | null): string {
   // Change requests + voids read before the generic rules below, which would
   // otherwise miss them ('change_requested' has no keyword match at all).
   if (lower === 'change_requested') return 'orange'
+  if (lower === 'dispose_requested') return 'orange'
   if (lower.includes('void')) return 'error'
   if (lower.includes('submit') || lower.includes('create')) return 'success'
   if (lower.includes('update') || lower.includes('edit')) return 'info'
@@ -45,6 +46,7 @@ export function getModuleColor(module: string | null): string {
   if (!module) return 'grey'
   const lower = module.toLowerCase()
   if (lower.includes('purchase_requisition') || lower.includes('requisition')) return 'purple'
+  if (lower.includes('disposal')) return 'deep-purple'
   if (lower.includes('purchase_order') || lower.includes('po')) return 'red'
   if (lower.includes('stock_in') || lower.includes('stock in')) return 'teal'
   if (lower.includes('stock_out') || lower.includes('stock out')) return 'orange'
@@ -67,6 +69,7 @@ export function getTimelineIcon(action: string | null): string {
   if (!action) return 'mdi-circle-small'
   const lower = action.toLowerCase()
   if (lower === 'change_requested') return 'mdi-file-document-edit-outline'
+  if (lower === 'dispose_requested') return 'mdi-delete-clock-outline'
   if (lower.includes('void')) return 'mdi-cancel'
   if (lower.includes('submit') || lower.includes('create')) return 'mdi-plus-circle-outline'
   if (lower.includes('update') || lower.includes('edit')) return 'mdi-pencil-circle-outline'
