@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import { useToast } from 'vue-toastification'
-import { categoryTitle, expenseCategories, expenseDepartments } from '@/stores/financeData'
+import { expenseDepartments } from '@/stores/financeData'
+import { useExpenseAccounts } from './useExpenseAccounts'
 import type { ExpenseCategory, ExpenseDepartment } from '@/stores/financeData'
 import { emptySignatories } from '@/stores/disbursementVouchersData'
 import type { VoucherType, VoucherInput, VoucherSignatoryField } from '@/stores/disbursementVouchersData'
@@ -30,6 +31,7 @@ const todayISO = () => new Date().toISOString().slice(0, 10)
 //     per-line). The printed box is split: PARTICULARS on the left, ACCOUNT
 //     NAME on the right. The header Reference/Remarks is separate and unchanged.
 type VoucherFormLine = {
+  /** A GL account code from the chart of accounts; '' until one is picked. */
   category: ExpenseCategory
   amount: number | null
 }
@@ -59,8 +61,12 @@ export const maxVoucherAccounts = 5
  */
 export const maxParticularsLines = 7
 
+// No default account. The old default was 'other', which the GL projector's
+// else-branch booked to 7080 Office Supplies — so a line left untouched was
+// charged somewhere real without anyone choosing it. Blank forces a choice and
+// is caught by `blockers` below.
 const emptyItem = (): VoucherFormLine => ({
-  category: 'other',
+  category: '',
   amount: null,
 })
 
@@ -146,7 +152,10 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
     }
   }
 
-  const categoryOptions = expenseCategories
+  // Charged-to accounts come from the chart of accounts, so adding one there
+  // is all it takes for it to appear here.
+  const { expenseAccountOptions, expenseAccountLabel, ensureLoaded: ensureAccountsLoaded } = useExpenseAccounts()
+  const categoryOptions = expenseAccountOptions
   const departmentOptions = expenseDepartments
 
   const accountOptions = computed(() =>
@@ -178,8 +187,16 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
     selectedAccount.value !== null && voucherTotal.value > selectedAccount.value.balance + 0.005,
   )
 
+  // A line only counts once it has BOTH an account and an amount. An amount
+  // with no account can't be posted anywhere, so counting it would let the
+  // form submit a line the GL has nowhere to put.
   const validItems = computed(() =>
-    items.value.filter((line) => Number(line.amount) > 0),
+    items.value.filter((line) => Number(line.amount) > 0 && !!line.category),
+  )
+
+  /** Lines where an amount was typed but no account picked — the likely slip. */
+  const linesMissingAccount = computed(() =>
+    items.value.filter((line) => Number(line.amount) > 0 && !line.category).length,
   )
 
   // What's still stopping a save. Drives a visible hint next to the submit
@@ -202,6 +219,11 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
     if (!voucherDate.value) missing.push('Date')
     if (cashAccountId.value === null) missing.push('Payment Mode')
     if (!validItems.value.length) missing.push('an account with an amount')
+    if (linesMissingAccount.value) {
+      missing.push(linesMissingAccount.value === 1
+        ? 'an account on the line that has an amount'
+        : `an account on each of the ${linesMissingAccount.value} lines that have amounts`)
+    }
     if (insufficientFunds.value) missing.push('a total within the account balance')
     if (tooManyAccounts.value) {
       missing.push(`no more than ${maxVoucherAccounts} accounts (move the rest to a second voucher)`)
@@ -256,7 +278,7 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
     // title on line 1 and the actual description further down, and stopping
     // early would blank it here and then overwrite it with titles on save.
     particulars.value = voucher.items.find(
-      (line) => line.particular.trim() && line.particular !== categoryTitle(line.category),
+      (line) => line.particular.trim() && line.particular !== expenseAccountLabel(line.category),
     )?.particular ?? ''
     remarks.value = voucher.remarks ?? ''
     signatories.value = { ...emptySignatories(), ...voucher.signatories }
@@ -305,7 +327,7 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
       items: validItems.value.map((line) => ({
         // Fanned out from the single header value; falls back to the category's
         // title when left blank so the column is never empty in the database.
-        particular: particulars.value.trim() || categoryTitle(line.category),
+        particular: particulars.value.trim() || expenseAccountLabel(line.category),
         category: line.category as ExpenseCategory,
         // Fanned out from the single header value.
         department: department.value,
@@ -319,7 +341,8 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
     payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, department, particulars, remarks, signatories, items,
     categoryOptions, departmentOptions, accountOptions, metaForAccount, selectedAccount,
     voucherTotal, insufficientFunds, canSubmit, blockers,
-    canAddItem, particularsLines, tooManyAccounts, particularsTooTall,
+    canAddItem, particularsLines, tooManyAccounts, particularsTooTall, linesMissingAccount,
+    expenseAccountLabel, ensureAccountsLoaded,
     resetForm, loadFrom, addItem, removeItem, buildPayload, setSignatory, applyCachedSignatories,
     restoreDraft: draft.restore,
     clearDraft: draft.clear,

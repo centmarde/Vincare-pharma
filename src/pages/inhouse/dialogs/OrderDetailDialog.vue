@@ -342,7 +342,7 @@ const productName = (id: number | null) =>
       :loading="crSubmitting"
       @submit="crSubmit" />
 
-    <ProductPickerDialog v-model="showProductPicker" @select="onProductSelected" />
+    <ProductPickerDialog v-model="showProductPicker" mode="batch" require-shelf-life @select="onProductSelected" />
 
     <!-- Printable Delivery Receipt, auto-opened after a delivery is recorded -->
     <DeliveryReceiptDialog v-model="showReceipt" :receipt="issuedReceipt" />

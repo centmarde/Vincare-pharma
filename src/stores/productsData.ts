@@ -71,22 +71,35 @@ type FetchProductsOptions = {
   expiryEnd?: string // 'YYYY-MM-DD'
 }
 
-// Mirrors products_master's RETURNS TABLE exactly (see
-// supabase/migrations/20260924_products_master.sql).
-// The picker is a product-name suggester only: it returns one row per distinct
-// product_name (duplicates across SKU/batch rows collapse to one), so these are
-// the only columns a caller can rely on. supplier_id — Purchasing's PR dialogs
-// set the line's supplier from it — is not here because the RPC no longer
-// returns it; resolve the supplier from the chosen name elsewhere if needed.
+// Mirrors products_batches's RETURNS TABLE exactly (see
+// supabase/migrations/20260925_products_batches.sql).
+//
+// ONE ROW PER BATCH, because one `products` row IS one batch. The picker
+// groups them by product_name for display: in `name` mode it shows only each
+// name's first row, in `batch` mode it expands to all of them. Rows arrive
+// FEFO-ordered within a name, so that first row is the first-expiring batch —
+// a defensible default, unlike products_master's min(id), which handed callers
+// an arbitrary batch with nothing on screen to judge it by.
+//
+// `stock` is LOCATION-RESOLVED by the RPC (main warehouse vs a branch), so it
+// is NOT interchangeable with products.current_stock — see stockSourcingData,
+// the single resolver this mirrors. supplier_id is returned (Purchasing's PR
+// dialogs set the line's supplier from it); supplier NAME deliberately is not.
 export type ProductPickerResult = {
   id: number
   product_name: string | null
   brand: string | null
   unit: string | null
-  current_stock: number | null
+  sku: string | null
+  batch_no: string | null
+  expiry_date: string | null
+  stock: number | null
   cost_price: number | null
   selling_price: number | null
   supplier_id: number | null
+  /** How many batch rows share this product_name, across the whole match. */
+  batch_count: number
+  /** Distinct product_names matching the search — the paging total. */
   total_count: number
 }
 
@@ -539,19 +552,32 @@ export const useProductsDataStore = defineStore('productsData', () => {
     }
   }
 
+  /**
+   * Loads the product picker list at BATCH grain (products_batches).
+   *
+   * @param locationId Where the caller is picking stock FOR, which decides what
+   * `stock` means on each row: `null` = the main warehouse
+   * (products.current_stock), an id = that branch (warehouse_products.total_qty).
+   * The two are not interchangeable — passing the wrong one reports another
+   * location's stock on the order. Purchasing passes null: a PR mints a new
+   * batch row and is not drawing from anywhere yet.
+   */
   async function fetchProductPicker({
     search = '',
     limit = 15,
+    locationId = null,
   }: {
     search?: string
     limit?: number
+    locationId?: number | null
   }) {
     const requestId = ++pickerRequestId
     loading.value = true
 
     try {
-      const { data, error } = await supabase.rpc('products_master', {
+      const { data, error } = await supabase.rpc('products_batches', {
         search_term: search,
+        location_id: locationId,
         page_limit: limit,
       })
 
@@ -564,8 +590,9 @@ export const useProductsDataStore = defineStore('productsData', () => {
       // clobbering the list with matches for a term the user has moved past.
       if (requestId !== pickerRequestId) return
 
-      // The RPC returns distinct product names only (own loader for cost/stock
-      // resolution elsewhere), so nothing extra is fetched here.
+      // Every column the picker and its callers read comes off this one RPC —
+      // unit, cost, selling price and supplier included — so selecting a row
+      // needs no follow-up query.
       pickerProducts.value = (data ?? []) as ProductPickerResult[]
       pickerTotalCount.value = data?.[0]?.total_count ?? 0
     } finally {

@@ -20,7 +20,34 @@ const toast = useToast()
 // exists in the hub (sale, ethical_order/collections, inhouse_order, stock_in,
 // remittance) via plain select + JS reduce, mirroring ethicalData.fetchCommissionSummary.
 
-export const expenseCategories = [
+/**
+ * What an expense is charged to: a GL account CODE from the chart of accounts
+ * ('7050'), not a fixed slug.
+ *
+ * It was a closed union of 13 slugs, which meant a hardcoded map in three
+ * places that all had to agree — the dropdown here, the slug -> account `case`
+ * in gl_project_events, and finance_details_category_check in the database.
+ * Miss the third and the category is selectable, prints on the voucher, and
+ * then fails only when the expense is recorded; that is exactly what
+ * 20260826_finance_details_allow_meals.sql was written to repair. Reading the
+ * chart of accounts instead means adding an account in Chart of Accounts is the
+ * whole job.
+ *
+ * Widened to `string` rather than a generated union because the valid set now
+ * lives in the database and changes without a rebuild.
+ */
+export type ExpenseCategory = string
+
+/**
+ * The 13 slugs categories used to be, kept ONLY to render rows written before
+ * the switch. Nothing writes these any more — new expenses store an account
+ * code — but historical finance_details and disbursement_voucher_items rows
+ * still hold them, and a report over last quarter has to label them.
+ *
+ * gl_project_events keeps the matching slug -> account fallback for the same
+ * reason. Do not add to this list; add an account to the chart instead.
+ */
+export const legacyExpenseCategories = [
   { value: 'rent', title: 'Rent' },
   { value: 'utilities', title: 'Utilities' },
   { value: 'supplies', title: 'Supplies' },
@@ -36,15 +63,46 @@ export const expenseCategories = [
   { value: 'meals', title: 'Meals' },
 ] as const
 
-export type ExpenseCategory = typeof expenseCategories[number]['value']
+/**
+ * An expense category's display label.
+ *
+ * Pass the chart of accounts and an account code resolves to its name
+ * ('7050' -> 'Fuel & Lubricant Expense'); without it, or for a code the chart
+ * no longer has, the legacy slug map answers and the raw value is the last
+ * resort so a label is never blank. Callers with access to the GL store should
+ * always pass `chart` — `useExpenseAccounts()` wraps this and is the one to
+ * reach for in a component.
+ */
+export const categoryTitle = (
+  value: ExpenseCategory | null | undefined,
+  chart?: readonly { code: string; name: string }[],
+): string => {
+  if (!value) return ''
+  const account = chart?.find((a) => a.code === value)
+  if (account) return account.name
+  return legacyExpenseCategories.find((c) => c.value === value)?.title ?? value
+}
 
-/** An expense category's display title ("fuel_lubricants" -> "Fuel & Lubricants"). */
-export const categoryTitle = (value: ExpenseCategory): string =>
-  expenseCategories.find((c) => c.value === value)?.title ?? value
-
+// Which department a disbursement is charged to. Shared by the voucher form,
+// Add Expense and the expense change-request editor, so a value added here
+// appears in all three at once.
+//
+// Deliberately NOT read from the `departments` table: that table is empty (0
+// rows), so a picker bound to it would offer nothing. If it is ever populated,
+// this list is the thing to replace — the same move the expense categories made
+// when they stopped being a hardcoded list and started reading the chart of
+// accounts.
+//
+// Safe to extend: finance_details.department carries no CHECK constraint
+// (verified by probe 2026-09-25), so a new value here needs no schema change —
+// unlike finance_details.category, whose CHECK had to be dropped for exactly
+// that reason.
 export const expenseDepartments = [
   { value: 'VP-Admin', title: 'VP-Admin' },
   { value: 'VP-Selling', title: 'VP-Selling' },
+  { value: 'EPT/ADMIN', title: 'EPT/ADMIN' },
+  { value: 'EPT/SELLING', title: 'EPT/SELLING' },
+  { value: 'ETHICAL', title: 'ETHICAL' },
 ] as const
 
 export type ExpenseDepartment = typeof expenseDepartments[number]['value']
@@ -499,8 +557,12 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     if (payload.amount <= 0) {
       toast.error('Expense amount must be positive.'); loading.value = false; return { success: false }
     }
-    if (!expenseCategories.some(c => c.value === payload.category)) {
-      toast.error(`Invalid expense category: ${payload.category}`); loading.value = false; return { success: false }
+    // The valid set is the chart of accounts now, so this can no longer be
+    // checked against a literal list. The picker only offers income-statement
+    // accounts and the GL projector falls back safely for anything historical,
+    // so the check here is just that one was chosen at all.
+    if (!payload.category) {
+      toast.error('An expense account must be selected.'); loading.value = false; return { success: false }
     }
     if (!payload.cashAccountId) {
       toast.error('A cash account must be selected.'); loading.value = false; return { success: false }

@@ -3,13 +3,14 @@ import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import {
   useFinanceDataStore,
-  expenseCategories, expenseDepartments, expensePaymentMethods,
+  expenseDepartments, expensePaymentMethods,
 } from '@/stores/financeData'
 import type { ExpenseType } from '@/stores/financeData'
 import { useFinanceChangeRequestStore } from '../stores/financeChangeRequest'
 import { useDisbursementVouchersStore } from '@/stores/disbursementVouchersData'
 import type { ChangeRequestField, ProposedChange, AppliedEdit } from '@/stores/changeRequestsData'
 import { formatCurrency } from '@/utils/helpers'
+import { useExpenseAccounts } from './useExpenseAccounts'
 import type { AddExpensePayload } from '@/utils/cashAccountTypes'
 
 export const headers = [
@@ -32,6 +33,19 @@ export function useExpenses() {
   const voucherStore = useDisbursementVouchersStore()
   const toast = useToast()
   const { expenses, cashAccounts, loading } = storeToRefs(financeStore)
+  // The CATEGORY column and the change-request editor both name accounts from
+  // the chart, so a stored code renders as its account name.
+  const {
+    expenseAccountOptions, expenseAccountLabel, ensureLoaded: ensureAccountsLoaded,
+  } = useExpenseAccounts()
+
+  /** Chart accounts as plain {title,value} pairs — the change-request editor's
+   *  select has no subheader support, so the group rows are dropped. */
+  const expenseAccountItems = computed(() =>
+    expenseAccountOptions.value
+      .filter((o): o is { value: string; title: string; subsection: string } => 'value' in o)
+      .map((o) => ({ title: o.title, value: o.value })),
+  )
 
   // ─── State (expense form fields live inside AddExpenseDialog) ──────
   const showFormDialog = ref(false)
@@ -48,7 +62,7 @@ export function useExpenses() {
 
   // ─── Actions ──────────────────────────────────────────────────────
   async function init() {
-    await Promise.all([financeStore.fetchExpenses(), financeStore.fetchCashAccounts()])
+    await Promise.all([financeStore.fetchExpenses(), financeStore.fetchCashAccounts(), ensureAccountsLoaded()])
     await Promise.all([loadPending(), loadVoucherRefs()])
   }
 
@@ -146,7 +160,9 @@ export function useExpenses() {
     if (!e) return []
     return [
       { key: 'amount', label: 'Amount', value: e.amount ?? 0, type: 'number' },
-      { key: 'category', label: 'Category', value: e.category, type: 'select', items: expenseCategories.map((c) => ({ title: c.title, value: c.value })) },
+      // Chart of accounts, same source as the Add Expense and voucher pickers,
+      // so a change request can't propose a category the two can't produce.
+      { key: 'category', label: 'Account', value: e.category, type: 'select', items: expenseAccountItems.value },
       { key: 'paid_at', label: 'Date', value: (e.paid_at ?? '').slice(0, 10), type: 'date' },
       { key: 'cash_account_id', label: 'Account', value: e.cash_account_id, type: 'select', items: cashAccounts.value.map((a) => ({ title: a.name, value: a.id })) },
       { key: 'department', label: 'Department', value: e.department, type: 'select', items: expenseDepartments.map((d) => ({ title: d.title, value: d.value })) },
@@ -184,7 +200,7 @@ export function useExpenses() {
     expenses, cashAccounts, loading,
     showFormDialog,
     showChangeDialog, changeTarget, changeFields, voidSummary, isPending, isEdited, editTooltip,
-    voucherFor,
+    voucherFor, expenseAccountLabel,
     init, openFormDialog, handleSubmit, openChangeDialog, submitChangeRequest,
   }
 }

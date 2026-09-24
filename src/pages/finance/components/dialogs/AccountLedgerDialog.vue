@@ -28,6 +28,7 @@ const rows = computed(() => [...props.lines].reverse())
 const referenceLabels: Record<string, string> = {
   sales_invoice: 'Sales Invoice',
   sales_return: 'Sales Return',
+  goods_return: 'Customer Return',
   payment: 'Payment',
   collection: 'Collection',
   purchase_invoice: 'Purchase Invoice',

@@ -397,6 +397,12 @@ export const navigationConfig: NavigationGroup[] = [
             route: '/finance/discrepancies',
             permission: 'finance.discrepancies.view',
           },
+          {
+            title: 'Opening Balances',
+            icon: 'mdi-table-arrow-down',
+            route: '/finance/opening-balances',
+            permission: 'finance.openingBalances.manage',
+          },
         ],
       },
       {
@@ -404,6 +410,12 @@ export const navigationConfig: NavigationGroup[] = [
         icon: 'mdi-table-check',
         route: '/finance/trial-balance',
         permission: 'finance.trialBalance.view',
+      },
+      {
+        title: 'Record Transaction',
+        icon: 'mdi-notebook-edit-outline',
+        route: '/finance/book-entry',
+        permission: 'finance.bookEntry.manage',
       },
       {
         title: 'General Journal',

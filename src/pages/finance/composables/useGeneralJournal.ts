@@ -11,6 +11,7 @@ const { confirmDialog } = useConfirmDialog()
 const REFERENCE_TYPE_OPTIONS: { value: ReferenceType; title: string }[] = [
   { value: 'sales_invoice', title: 'Sales Invoice' },
   { value: 'sales_return', title: 'Sales Return' },
+  { value: 'goods_return', title: 'Customer Return' },
   { value: 'payment', title: 'Payment' },
   { value: 'collection', title: 'Collection' },
   { value: 'purchase_invoice', title: 'Purchase Invoice' },

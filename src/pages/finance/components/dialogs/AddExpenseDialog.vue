@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { watch } from 'vue'
-import { expenseCategories, expenseDepartments } from '@/stores/financeData'
+import { expenseDepartments } from '@/stores/financeData'
+import { useExpenseAccounts, filterExpenseAccount } from '../../composables/useExpenseAccounts'
 import { DEFAULT_REPLENISH_THRESHOLD } from '@/utils/cashAccountTypes'
 import type { AddExpensePayload, ClassifiedCashAccount } from '@/utils/cashAccountTypes'
 import { formatCurrency } from '@/utils/helpers'
@@ -29,10 +30,16 @@ const {
   resetForm, buildPayload, restoreDraft,
 } = useAddExpense(() => props.accounts, () => props.replenishThreshold)
 
+const { expenseAccountOptions, ensureLoaded: ensureAccountsLoaded } = useExpenseAccounts()
+
 watch(() => props.modelValue, (open) => {
   // Restore any in-progress draft when opening; clear the form on close.
-  if (open) restoreDraft()
-  else resetForm()
+  if (open) {
+    // The account select reads the chart of accounts; cached after the first
+    // open, so this is a no-op thereafter.
+    void ensureAccountsLoaded()
+    restoreDraft()
+  } else resetForm()
 })
 
 const submit = () => {
@@ -57,13 +64,17 @@ const close = () => {
       <v-divider />
 
       <v-card-text class="pa-4 pa-sm-5">
-        <label class="field-label">Category <span class="text-error">*</span></label>
-        <v-select
+        <label class="field-label">Account <span class="text-error">*</span></label>
+        <!-- Same chart-of-accounts source as the disbursement voucher, so the
+             two can't drift and a new account shows up in both. -->
+        <v-autocomplete
           v-model="category"
-          :items="expenseCategories"
+          :items="expenseAccountOptions"
+          :custom-filter="filterExpenseAccount"
           item-title="title"
           item-value="value"
-          placeholder="Select category"
+          auto-select-first
+          placeholder="Type a name or code, e.g. fuel or 7050"
           variant="outlined"
           density="compact"
           hide-details

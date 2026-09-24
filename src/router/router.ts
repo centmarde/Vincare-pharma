@@ -47,6 +47,8 @@ import BalanceSheetView from '@/pages/finance/BalanceSheetView.vue'
 import TrialBalanceView from '@/pages/finance/TrialBalanceView.vue'
 import GeneralJournalView from '@/pages/finance/GeneralJournalView.vue'
 import ChartOfAccountsView from '@/pages/finance/ChartOfAccountsView.vue'
+import OpeningBalancesView from '@/pages/finance/OpeningBalancesView.vue'
+import BookEntryView from '@/pages/finance/BookEntryView.vue'
 import SuppliersView from '@/pages/suppliers/SuppliersView.vue'
 import LogsView from '@/pages/logs/LogsView.vue'
 import WarehouseProductsListView from '@/pages/warehouse/ProductsListView.vue'
@@ -290,6 +292,16 @@ const routes = setupLayouts([
   {
     path: '/finance/chart-of-accounts',
     component: ChartOfAccountsView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/finance/opening-balances',
+    component: OpeningBalancesView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/finance/book-entry',
+    component: BookEntryView,
     meta: { requiresAuth: true },
   },
   {

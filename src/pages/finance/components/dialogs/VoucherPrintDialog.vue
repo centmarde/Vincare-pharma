@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import html2pdf from 'html2pdf.js'
 import { useToast } from 'vue-toastification'
 import { voucherSignatories } from '@/stores/disbursementVouchersData'
 import type { VoucherItemType, VoucherType } from '@/stores/disbursementVouchersData'
-import { categoryTitle } from '@/stores/financeData'
+import { useExpenseAccounts } from '../../composables/useExpenseAccounts'
 import { maxVoucherAccounts } from '../../composables/useVoucherForm'
 import { companyFor, companyOptions, defaultCompanyFor } from '@/utils/companyProfiles'
 import type { CompanyKey } from '@/utils/companyProfiles'
@@ -22,6 +22,16 @@ const emit = defineEmits<{
 }>()
 
 const toast = useToast()
+
+// ACCOUNT NAME prints the name from the chart of accounts, resolved from the
+// code stored on the line. Older vouchers hold a legacy slug instead and are
+// resolved through the slug map, so both print a real name rather than a code.
+const { expenseAccountLabel, ensureLoaded: ensureAccountsLoaded } = useExpenseAccounts()
+
+// A voucher can be printed straight from the list without the form having been
+// opened, so the chart may not be loaded yet. Without this the ACCOUNT NAME
+// column would print bare codes.
+watch(() => props.modelValue, (open) => { if (open) void ensureAccountsLoaded() }, { immediate: true })
 
 // The box is split in two: PARTICULARS (the purpose of that specific spend,
 // stored in `particular`) and ACCOUNTS (the expense category it is charged to). Vouchers created before per-line explanations
@@ -43,7 +53,7 @@ const voucherParticulars = computed(() => {
   // era can carry the category-title fallback on line 1 and the description
   // further down, and stopping early would print it blank.
   const line = (props.voucher?.items ?? []).find(
-    (i: VoucherItemType) => i.particular.trim() && i.particular !== categoryTitle(i.category),
+    (i: VoucherItemType) => i.particular.trim() && i.particular !== expenseAccountLabel(i.category),
   )
   return line?.particular ?? ''
 })
@@ -211,7 +221,7 @@ async function handlePrint() {
 
                 <div class="dv-splitright">
                   <div class="dv-row" v-for="line in voucher.items" :key="line.id">
-                    <div class="dv-cell dv-acct dv-value">{{ categoryTitle(line.category) }}</div>
+                    <div class="dv-cell dv-acct dv-value">{{ expenseAccountLabel(line.category) }}</div>
                     <div class="dv-cell dv-nocol text-right dv-value">{{ formatCurrency(line.amount) }}</div>
                   </div>
                   <div class="dv-row dv-filler" v-for="n in fillerRows" :key="`filler-${n}`">

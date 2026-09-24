@@ -104,7 +104,12 @@ export type AccountLedgerLine = {
 }
 
 export type ReferenceType =
-  | 'sales_invoice' | 'sales_return' | 'payment' | 'collection' | 'purchase_invoice'
+  // 'sales_return' is the label the projector stamps on the REVERSAL of a POS
+  // void or an Ethical cancellation, keyed on the sale's own id. A genuine
+  // customer return is 'goods_return' — returns share the transactions id
+  // sequence, so reusing 'sales_return' would let a return's entry be mistaken
+  // for a void's and the void reversal skipped for good.
+  | 'sales_invoice' | 'sales_return' | 'goods_return' | 'payment' | 'collection' | 'purchase_invoice'
   | 'disbursement' | 'pdc' | 'payroll' | 'accrual' | 'depreciation' | 'loan'
   | 'bank_recon' | 'manual' | 'closing'
 
@@ -131,6 +136,20 @@ export type TrialBalanceRow = {
   debit_balance: number
   credit_balance: number
 }
+
+/**
+ * The account that absorbs the difference when opening balances are loaded.
+ *
+ * A dedicated equity account rather than plugging straight to 3010 Owner's
+ * Capital: the balancing figure stays visible as its own line until the
+ * accountant clears it, so a mistyped opening balance shows up instead of
+ * quietly becoming owner's capital. Same idea as QuickBooks/Xero.
+ */
+export const openingBalanceEquityCode = '3050'
+
+/** One row of the opening-balance screen. `target` is what the account SHOULD
+ *  read once posted, not the movement to apply. */
+export type OpeningBalanceInput = { account_code: string; target: number }
 
 export type StatementAccountRow = { code: string; name: string; amount: number }
 export type IncomeStatementSection = { subsection: string; accounts: StatementAccountRow[]; subtotal: number }
@@ -994,6 +1013,129 @@ export const useGLDataStore = defineStore('glData', () => {
     }
   }
 
+  /**
+   * Load opening balances for the balance sheet as ONE balanced journal entry.
+   *
+   * Why this exists: the accountant found the General Journal impractical for
+   * this, because every line has to be paired with its own contra. Here they
+   * state what each account should read and the contra is derived once, for
+   * the whole sheet, into `openingBalanceEquityCode`. Double-entry is intact —
+   * this posts a single balanced multi-line entry through the same
+   * postJournalEntry path as everything else.
+   *
+   * `target` is the balance the account should END UP with, not a movement.
+   * Each line posts only the DIFFERENCE from what the ledger already holds,
+   * which makes the screen safe to re-run: posting the same targets twice
+   * produces no second entry instead of doubling the balance sheet. It also
+   * means the cash accounts, whose opening balances createCashAccount already
+   * booked, need no special-casing — they're simply already at target.
+   *
+   * Amounts sit on each account's own normal side, so contra accounts behave
+   * without the caller thinking about it: a positive target on 1590
+   * Accumulated Depreciation is a CREDIT because that account's normal balance
+   * is credit. A negative target posts to the opposite side.
+   */
+  const postOpeningBalances = async (payload: {
+    entryDate: string
+    rows: OpeningBalanceInput[]
+    description?: string
+  }) => {
+    loading.value = true
+    clearError()
+    try {
+      const { user, error: authError } = await authStore.getCurrentUser()
+      if (authError || !user) { toast.error('User not authenticated.'); return { success: false as const } }
+
+      if (!accounts.value.length) await fetchAccounts()
+      const byCode = new Map(accounts.value.map((a) => [a.code, a]))
+
+      const equity = byCode.get(openingBalanceEquityCode)
+      if (!equity) {
+        toast.error(
+          `Account ${openingBalanceEquityCode} (Opening Balance Equity) does not exist. `
+          + 'Add it in Chart of Accounts before loading opening balances.',
+        )
+        return { success: false as const }
+      }
+
+      // Current balances come from the trial balance so this reconciles against
+      // exactly what the Balance Sheet and Trial Balance pages show, rather
+      // than a second balance computation that could disagree with them.
+      const tb = await fetchTrialBalance(payload.entryDate)
+      const currentOf = (code: string) => {
+        const row = tb.find((t) => t.account_code === code)
+        if (!row) return 0
+        const account = byCode.get(code)
+        return account?.normal_balance === 'credit'
+          ? Number(row.credit_balance ?? 0) - Number(row.debit_balance ?? 0)
+          : Number(row.debit_balance ?? 0) - Number(row.credit_balance ?? 0)
+      }
+
+      const lines: JournalLineInput[] = []
+      let sumDebit = 0
+      let sumCredit = 0
+
+      for (const row of payload.rows) {
+        const account = byCode.get(row.account_code)
+        if (!account) {
+          toast.error(`Unknown account: ${row.account_code}`); return { success: false as const }
+        }
+        if (account.section !== 'balance_sheet') {
+          toast.error(`${account.code} ${account.name} is not a balance sheet account.`)
+          return { success: false as const }
+        }
+        if (account.code === openingBalanceEquityCode) continue
+
+        // Only the gap gets posted; an account already at target contributes
+        // no line at all.
+        const delta = Number(row.target ?? 0) - currentOf(account.code)
+        if (Math.abs(delta) < 0.01) continue
+
+        const onNormalSide = delta > 0
+        const debit = (account.normal_balance === 'debit') === onNormalSide
+        const amount = Math.abs(delta)
+        lines.push(debit
+          ? { account_code: account.code, debit: amount, credit: 0 }
+          : { account_code: account.code, debit: 0, credit: amount })
+        if (debit) sumDebit += amount; else sumCredit += amount
+      }
+
+      if (!lines.length) {
+        toast.info('Every account already matches its target — nothing to post.')
+        return { success: false as const }
+      }
+
+      const plug = sumDebit - sumCredit
+      if (Math.abs(plug) >= 0.01) {
+        lines.push(plug > 0
+          ? { account_code: openingBalanceEquityCode, debit: 0, credit: plug }
+          : { account_code: openingBalanceEquityCode, debit: -plug, credit: 0 })
+      } else if (lines.length < 2) {
+        // A single line that needs no plug cannot be posted: an entry needs at
+        // least two lines, and one line alone is by definition unbalanced.
+        toast.error('That change cannot be posted on its own — it needs an offsetting account.')
+        return { success: false as const }
+      }
+
+      const result = await postJournalEntry(
+        payload.entryDate, 'manual', null,
+        payload.description?.trim() || 'Opening balances',
+        lines, user.id,
+      )
+      if (!result.success) {
+        toast.error(result.error || 'Failed to post opening balances.')
+        return { success: false as const }
+      }
+      toast.success(`Opening balances posted (${lines.length} lines).`)
+      return { success: true as const, lineCount: lines.length }
+    } catch (err) {
+      handleError(err, 'Failed to post opening balances')
+      return { success: false as const }
+    } finally {
+      loading.value = false
+    }
+  }
+
   const fetchIncomeStatement = async (from?: string, to?: string) => {
     const requestId = ++statementSeq
     loading.value = true
@@ -1051,6 +1193,7 @@ export const useGLDataStore = defineStore('glData', () => {
     monthlyIncomeStatement, fetchMonthlyIncomeStatement,
     monthlyCashBasisStatement, fetchMonthlyCashBasisStatement,
     fetchAccounts, createAccount, fetchJournal, fetchAccountLedger, postJournalEntry, postManualEntry, approveManualEntry, reverseEntry, reverseJournalEntry,
+    postOpeningBalances,
     projectEvents, fetchTrialBalance, fetchIncomeStatement, fetchBalanceSheet,
     clearError, resetStore,
   }
