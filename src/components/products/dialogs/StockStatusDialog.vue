@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { ProductType } from '@/stores/productsData'
-import { useProductIgnore, IGNORE_DURATIONS } from '@/components/products/composables/useProductIgnore'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { formatMonthYear } from '@/utils/helpers'
+import DisposeProductDialog from './DisposeProductDialog.vue'
 
 const props = defineProps<{
   modelValue: boolean
@@ -34,37 +34,23 @@ const emit = defineEmits<{
   'create-pr': []
 }>()
 
-const productIgnore = useProductIgnore()
 const { confirmDialog } = useConfirmDialog()
 
 const hasSearch = computed(() => props.searchQuery.trim().length > 0)
 
-// Products that are not currently ignored — ignored products are completely
-// removed from the dialog list.
-const visibleProducts = computed(() =>
-  props.products.filter((p) => !productIgnore.isIgnored(p.id)),
-)
+// Dispose dialog state
+const disposeTarget = ref<ProductType | null>(null)
+const showDisposeDialog = ref(false)
 
-async function confirmIgnoreProduct(product: ProductType, durationMs: number) {
-  const durationLabel =
-    durationMs === IGNORE_DURATIONS.ONE_DAY
-      ? '1 day'
-      : durationMs === IGNORE_DURATIONS.ONE_WEEK
-        ? '1 week'
-        : '1 month'
+function openDisposeDialog(product: ProductType) {
+  disposeTarget.value = product
+  showDisposeDialog.value = true
+}
 
-  const confirmed = await confirmDialog(
-    `Are you sure you want to ignore "${product.product_name}" for ${durationLabel}? It will be removed from this list until the ignore period expires.`,
-    {
-      title: 'Ignore Product',
-      confirmText: 'Ignore',
-      cancelText: 'Cancel',
-    },
-  )
-
-  if (confirmed) {
-    productIgnore.ignoreProduct(product.id, durationMs)
-  }
+function handleDisposeConfirm(product: ProductType) {
+  // Disposal is handled by an executive request — see DisposeProductDialog.
+  // Additional backend/receipt logic can be wired here when implemented.
+  disposeTarget.value = null
 }
 
 async function confirmCreatePRFromSelection() {
@@ -132,11 +118,10 @@ async function confirmCreatePRFromSelection() {
             Search
           </v-btn>
         </div>
-        <v-list v-if="visibleProducts.length > 0" density="comfortable">
+        <v-list v-if="products.length > 0" density="comfortable">
           <v-list-item
-            v-for="p in visibleProducts"
+            v-for="p in products"
             :key="p.id"
-            @click="emit('edit-product', p); emit('update:modelValue', false)"
           >
             <template #prepend>
               <v-checkbox-btn
@@ -148,6 +133,9 @@ async function confirmCreatePRFromSelection() {
             </template>
             <v-list-item-title class="font-weight-medium">
               {{ p.product_name }}
+              <v-tooltip activator="parent" location="top">
+                {{ p.product_name || '' }}
+              </v-tooltip>
             </v-list-item-title>
             <v-list-item-subtitle>
               <template v-if="stockDialogType === 'out-of-stock' || stockDialogType === 'low-stock'">
@@ -159,55 +147,25 @@ async function confirmCreatePRFromSelection() {
               </template>
               <template v-else-if="stockDialogType === 'expiring-soon' || stockDialogType === 'expired'">
                 Expiry: {{ p.expiry_date ? formatMonthYear(p.expiry_date) : 'N/A' }}
+                <span class="text-grey">· Stock: {{ p.current_stock ?? 0 }}</span>
               </template>
+            </v-list-item-subtitle>
+            <v-list-item-subtitle class="text-caption text-grey">
+              SKU: {{ p.sku || 'No SKU' }} · Batch: {{ p.batch_no || '—' }}
             </v-list-item-subtitle>
             <template #append>
               <div class="d-flex align-center ga-2">
-                <v-chip size="small" variant="outlined">{{ p.sku || 'No SKU' }}</v-chip>
-                <!-- Ignore / Dismiss button -->
-                <v-menu location="bottom" offset-y>
-                  <template #activator="{ props: menuProps }">
-                    <v-btn
-                      v-bind="menuProps"
-                      size="small"
-                      variant="outlined"
-                      color="blue"
-                      @click.stop
-                      class="ignore-btn"
-                    >
-                      <v-icon size="16">mdi-bell-off-outline</v-icon>
-                      <v-tooltip activator="parent" location="top">
-                        Ignore this product item
-                      </v-tooltip>
-                    </v-btn>
-                  </template>
-                  <v-list density="compact" min-width="200">
-                    <v-list-item
-                      @click.stop="confirmIgnoreProduct(p, IGNORE_DURATIONS.ONE_DAY)"
-                    >
-                      <template #prepend>
-                        <v-icon size="small">mdi-clock-outline</v-icon>
-                      </template>
-                      <v-list-item-title>Ignore for 1 day</v-list-item-title>
-                    </v-list-item>
-                    <v-list-item
-                      @click.stop="confirmIgnoreProduct(p, IGNORE_DURATIONS.ONE_WEEK)"
-                    >
-                      <template #prepend>
-                        <v-icon size="small">mdi-calendar-week</v-icon>
-                      </template>
-                      <v-list-item-title>Ignore for 1 week</v-list-item-title>
-                    </v-list-item>
-                    <v-list-item
-                      @click.stop="confirmIgnoreProduct(p, IGNORE_DURATIONS.ONE_MONTH)"
-                    >
-                      <template #prepend>
-                        <v-icon size="small">mdi-calendar-month</v-icon>
-                      </template>
-                      <v-list-item-title>Ignore for 1 month</v-list-item-title>
-                    </v-list-item>
-                  </v-list>
-                </v-menu>
+                <!-- Dispose button -->
+                <v-btn
+                  size="small"
+                  variant="outlined"
+                  color="error"
+                  prepend-icon="mdi-delete-alert-outline"
+                  class="text-none"
+                  @click.stop="openDisposeDialog(p)"
+                >
+                  Dispose
+                </v-btn>
                 <v-btn
                   v-if="stockDialogType !== 'no-reorder-level' && canRequestReorder(p.id)"
                   size="small"
@@ -305,6 +263,11 @@ async function confirmCreatePRFromSelection() {
         </div>
       </v-card-text>
     </v-card>
+    <DisposeProductDialog
+      v-model="showDisposeDialog"
+      :product="disposeTarget"
+      @confirm="handleDisposeConfirm"
+    />
   </v-dialog>
 </template>
 

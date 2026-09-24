@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { ProductPickerResult } from '@/stores/productsData'
 import { useProductsDataStore } from '@/stores/productsData'
-import { formatCurrency } from '@/utils/helpers'
 import { storeToRefs } from 'pinia'
 import { onUnmounted, ref, watch } from 'vue'
 
@@ -9,13 +8,11 @@ const props = withDefaults(
   defineProps<{
     modelValue: boolean
     /**
-     * Show the company cost alongside the selling price.
-     *
-     * OFF by default, and deliberately opt-in rather than opt-out: this picker
-     * is shared by Purchasing (who need cost to buy) and by every selling
-     * channel (who must not see it — same rule that keeps supplier pricing out
-     * of In-House/Ethical). A new caller that forgets the prop leaks nothing;
-     * one that forgets to disable it would.
+     * Kept for backward-compatibility with the Purchasing dialogs that pass
+     * `show-cost`. The picker is now a product-name suggester only — the
+     * `products_master` RPC returns no cost/supplier columns — so this prop no
+     * longer has any visible effect; it only stops the attribute from leaking
+     * onto the dialog's root element.
      */
     showCost?: boolean
   }>(),
@@ -67,18 +64,6 @@ function searchNow() {
 
 watch(searchInput, queueSearch)
 onUnmounted(() => { if (debounce) clearTimeout(debounce) })
-
-// On-hand stock, shown in place of the supplier — supplier identity is
-// confidential and must not be exposed to the staff picking products.
-function stockLabel(stock: number | null): string {
-  if (stock == null) return 'Stock unknown'
-  return `${stock.toLocaleString()} on hand`
-}
-
-function stockClass(stock: number | null): string {
-  if (stock == null) return 'text-medium-emphasis'
-  return stock <= 0 ? 'text-error font-weight-bold' : 'text-success'
-}
 
 async function loadMore() {
   loadingMore.value = true
@@ -132,7 +117,7 @@ watch(
       <div class="pa-4 pb-2">
         <v-text-field
           v-model="searchInput"
-          placeholder="Search by product, brand or SKU..."
+          placeholder="Search product name..."
           prepend-inner-icon="mdi-magnify"
           variant="outlined"
           density="compact"
@@ -161,36 +146,7 @@ watch(
                     <span class="font-weight-bold">{{ product.product_name || 'Unnamed product' }}</span>
                 </template>
                 <template #subtitle>
-                    <span class="text-caption">
-                        <!-- Brand is shown because the search matches it: the row
-                             is titled by molecule, so a "Fluimucil" hit would
-                             otherwise look like an unrelated result. -->
-                        <span v-if="product.brand" class="font-weight-medium">{{ product.brand }}</span>
-                        <span v-if="product.brand"> · </span>{{ product.unit || 'unit' }} ·
-                        <span :class="stockClass(product.current_stock)">{{ stockLabel(product.current_stock) }}</span>
-                    </span>
-                </template>
-                <template #append>
-                    <div class="text-right">
-                    <template v-if="showCost">
-                        <div class="text-caption text-medium-emphasis">Cost</div>
-                        <div class="text-body-2 font-weight-bold">
-                            {{ formatCurrency(product.cost_price || 0) }}
-                        </div>
-                    </template>
-                    <!-- Selling price shown because the catalogue has duplicate
-                         names: two rows can share a name and a SKU with only one
-                         of them priced, and without this there is nothing on
-                         screen to tell them apart. Unpriced is called out
-                         rather than rendered as a plausible-looking zero. -->
-                    <div class="text-caption text-medium-emphasis mt-1">Selling</div>
-                    <div
-                        class="text-body-2 font-weight-bold"
-                        :class="Number(product.selling_price ?? 0) > 0 ? '' : 'text-error'"
-                    >
-                        {{ Number(product.selling_price ?? 0) > 0 ? formatCurrency(product.selling_price ?? 0) : 'Not set' }}
-                    </div>
-                    </div>
+                    <span class="text-caption text-medium-emphasis">Select this product name</span>
                 </template>
             </v-list-item>
 
