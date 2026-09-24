@@ -709,6 +709,39 @@ export function useProductsWidget() {
     await refreshStockDialogProducts()
   }
 
+  async function updateReorderLevel(product: ProductType, reorderLevel: number): Promise<boolean> {
+    const oldReorderLevel = product.reorder_level
+    const result = await productsStore.updateProduct(product.id, { reorder_level: reorderLevel })
+    if (!result) {
+      toast.error('Failed to update reorder level: ' + (productsStore.error || 'Unknown error'))
+      return false
+    }
+
+    toast.success(`Reorder level for "${result.product_name}" set to ${reorderLevel}`)
+    try {
+      await logsStore.createLog({
+        action: 'update',
+        description: `Updated product "${result.product_name}" (SKU: ${result.sku ?? 'N/A'}). Changes: reorder_level=${oldReorderLevel ?? 'N/A'} → ${result.reorder_level ?? 'N/A'}`,
+        module: 'products',
+      })
+    } catch (logErr) {
+      console.error('[Logging] Failed to create product log:', logErr)
+    }
+
+    await Promise.all([refreshStockDialogProductsOnValidPage(), refreshStockStatusCounts()])
+    dropSelectionsNoLongerListed()
+    return true
+  }
+
+  // The RPC reports total_count on each row, so an emptied last page also reports a total of 0 — step back until rows come back.
+  async function refreshStockDialogProductsOnValidPage() {
+    await refreshStockDialogProducts()
+    while (stockDialogProducts.value.length === 0 && stockDialogPage.value > 1) {
+      stockDialogPage.value = stockDialogPage.value - 1
+      await refreshStockDialogProducts()
+    }
+  }
+
   // Purchaser-only bulk reorder-to-PR flow
   const selectedReorderProductIds = ref<number[]>([])
   const showPurchaseRequisitionDialog = ref(false)
@@ -720,6 +753,13 @@ export function useProductsWidget() {
       selectedReorderProductIds.value = selectedReorderProductIds.value.filter(
         (id) => id !== productId,
       )
+  }
+
+  function dropSelectionsNoLongerListed() {
+    const listedIds = stockDialogProducts.value.map((p) => p.id)
+    selectedReorderProductIds.value = selectedReorderProductIds.value.filter((id) =>
+      listedIds.includes(id),
+    )
   }
 
   function proceedCreatePRFromSelection() {
@@ -1039,6 +1079,7 @@ export function useProductsWidget() {
     canDispose,
     disposalRequestInfo,
     requestDisposal,
+    updateReorderLevel,
     reorderRequestInfo,
     canRequestReorder, // NEW
     selectedReorderProductIds,
