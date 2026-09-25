@@ -7,6 +7,8 @@ import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
 import { useExecutiveApproveDisposal } from '../composables/useExecutiveApproveDisposal'
 import type { PRItem } from '@/stores/purchaseRequisitionData'
+import { usePurchaseBreakdown } from '@/pages/purchasing/composables/usePurchaseBreakdown'
+import PurchaseChargeLines from '@/pages/purchasing/components/PurchaseChargeLines.vue'
 import { formatDatePR_ISO, formatExpiryMonthYear } from '@/utils/helpers'
 import { computed, ref, watch } from 'vue'
 
@@ -50,6 +52,21 @@ const totalAmount = computed(() =>
     0,
   ),
 )
+
+const { breakdown, hasCharges } = usePurchaseBreakdown(() => {
+  if (kind.value !== 'pr_approval') return null
+  return raw.value
+})
+
+const headerTotalLabel = computed(() => {
+  if (hasCharges.value) return 'Purchase Total'
+  return 'Total Amount'
+})
+
+const headerTotal = computed(() => {
+  if (breakdown.value && hasCharges.value) return breakdown.value.purchaseTotal
+  return totalAmount.value
+})
 
 const isApproving = ref(false)
 const isRejecting = ref(false)
@@ -215,9 +232,9 @@ function formatMoney(value: number | string | undefined) {
                 <div class="text-body-2 text-high-emphasis">{{ formatDatePR_ISO(raw.created_at) }}</div>
               </div>
               <div>
-                <div class="text-caption text-medium-emphasis">Total Amount</div>
+                <div class="text-caption text-medium-emphasis">{{ headerTotalLabel }}</div>
                 <div class="text-body-2 text-high-emphasis">
-                  {{ totalAmount.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' }) }}
+                  {{ headerTotal.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' }) }}
                 </div>
               </div>
             </div>
@@ -263,6 +280,23 @@ function formatMoney(value: number | string | undefined) {
             </div>
             <div v-else class="text-caption text-medium-emphasis pa-2">No items found.</div>
           </div>
+
+          <v-sheet
+            v-if="breakdown && hasCharges"
+            rounded="lg"
+            variant="tonal"
+            color="surface-variant"
+            class="pa-3 mb-4 text-caption"
+          >
+            <div class="text-high-emphasis">
+              <PurchaseChargeLines :breakdown="breakdown" />
+              <v-divider class="my-2" />
+              <div class="d-flex justify-space-between ga-4 font-weight-bold">
+                <span>Purchase Total</span>
+                <span>{{ formatMoney(breakdown.purchaseTotal) }}</span>
+              </div>
+            </div>
+          </v-sheet>
 
           <v-alert
             type="warning"

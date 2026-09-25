@@ -1,6 +1,11 @@
 import { generateDocNumber, getLatestReferenceNo, insertWithDocRetry } from '@/utils/helpers'
 import { carriedProductFields } from '@/utils/productBatch'
-import { computeSellingPrice } from '@/utils/computationHelpers'
+import {
+  computeSellingPrice,
+  computePurchaseBreakdown,
+  emptySupplierCharges,
+} from '@/utils/computationHelpers'
+import type { PurchaseBreakdown, SupplierCharges } from '@/utils/computationHelpers'
 import type { TransactionRPCRow } from './transactionsData'
 import { useProductsDataStore } from './productsData' // NEW
 import { useAuthUserStore } from './authUser'
@@ -38,6 +43,7 @@ export type RequisitionItemType = {
   supplier_id: string | null
   actual_count_stock_in?: number | null
   expiry_date?: string | null
+  batch_no?: string | null
   product_id?: number | null
   reorder_request_id?: number | null
 }
@@ -138,6 +144,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       supplier_name: ti.products?.suppliers?.name ?? '—',
       supplier_id: ti.products?.supplier_id != null ? String(ti.products.supplier_id) : null,
       expiry_date: ti.products?.expiry_date ?? null,
+      batch_no: ti.batch_no ?? null,
       actual_count_stock_in: ti.actual_count_stock_in ?? null,
     }))
   }
@@ -190,6 +197,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       supplier_name: it.supplier_name ?? '—',
       supplier_id: it.supplier_id != null ? String(it.supplier_id) : null,
       expiry_date: it.expiry_date ?? null,
+      batch_no: it.batch_no ?? null,
       actual_count_stock_in: it.actual_count_stock_in ?? null,
     }))
   }
@@ -237,7 +245,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
 
     // 1. Update transaction remarks + recalculate total_amount from the
     //    edited line items — matches savePurchaseRequisition's convention
-    //    (total_amount = Σ qty × cost_per_unit). Without this, editing a
+    //    (total_amount = Σ qty × cost_per_unit − discount + tax + shipping). Without this, editing a
     //    PR (cost/unit, qty, add/remove items) leaves the stored total
     //    stale, so approval dialogs show the wrong amount.
     const companyCostTotal = payload.items.reduce(
@@ -245,11 +253,32 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       0,
     )
 
+    const { data: storedCharges, error: chargesError } = await supabase
+      .from('transactions')
+      .select('purchase_discount_percent, purchase_tax_amount, purchase_shipping_amount')
+      .eq('id', payload.prId)
+      .single()
+
+    if (chargesError || !storedCharges) {
+      handleError(chargesError, 'Failed to load the requisition charges.')
+      toast.error('Failed to update purchase requisition.')
+      loading.value = false
+      return false
+    }
+
+    const breakdown = computePurchaseBreakdown(companyCostTotal, {
+      discount_percent: storedCharges.purchase_discount_percent,
+      tax_amount: storedCharges.purchase_tax_amount,
+      shipping_amount: storedCharges.purchase_shipping_amount,
+    })
+
     const { error: updateError } = await supabase
       .from('transactions')
       .update({
         remarks: payload.remarks,
-        total_amount: companyCostTotal,
+        subtotal: breakdown.netTotal,
+        purchase_discount_amount: breakdown.discountAmount,
+        total_amount: breakdown.purchaseTotal,
         updated_at: new Date().toISOString(),
       })
       .eq('id', payload.prId)
@@ -521,6 +550,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
             unit_price: item.cost_per_unit,
             cost_price: item.cost_per_unit,
             line_total: item.qty * item.cost_per_unit,
+            batch_no: item.batch_no?.trim() || null,
           })),
         )
         if (insertError) {
@@ -533,6 +563,8 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
 
       for (let index = 0; index < changedExistingItems.length; index++) {
         const item = changedExistingItems[index]
+        const onFileProductId = existingItems!.find((e) => e.id === item.id)?.product_id ?? null
+        const lineNowOrdersAnotherProduct = onFileProductId !== changedItemsProductIds[index]
         const { error: updateItemError } = await supabase
           .from('transaction_items')
           .update({
@@ -541,6 +573,8 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
             unit_price: item.cost_per_unit,
             cost_price: item.cost_per_unit,
             line_total: item.qty * item.cost_per_unit,
+            batch_no: item.batch_no?.trim() || null,
+            ...(lineNowOrdersAnotherProduct ? { reorder_request_id: null } : {}),
           })
           .eq('id', item.id)
 
@@ -562,6 +596,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
           unit_price: item.cost_per_unit,
           cost_price: item.cost_per_unit,
           line_total: item.qty * item.cost_per_unit,
+          batch_no: item.batch_no?.trim() || null,
         })
         .eq('id', item.id)
 
@@ -599,7 +634,9 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
       )
   }
 
-  async function savePurchaseRequisition(): Promise<SavePRResult> {
+  async function savePurchaseRequisition(
+    supplierCharges: SupplierCharges[],
+  ): Promise<SavePRResult> {
     loading.value = true
     error.value = ''
 
@@ -748,6 +785,11 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         return sum + item.qty * item.cost_per_unit
       }, 0)
 
+      const charges =
+        supplierCharges.find((entry) => entry.supplier_id === supplierId) ??
+        emptySupplierCharges(supplierId)
+      const breakdown = computePurchaseBreakdown(supplierTotal, charges)
+
       const {
         data: txData,
         docNo: prNumber,
@@ -764,7 +806,12 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
               transaction_type: 'purchase_requisition',
               status: 'pending_approval',
               remarks: currentPR.value.remarks ?? '',
-              total_amount: supplierTotal,
+              subtotal: breakdown.netTotal,
+              purchase_discount_percent: breakdown.discountPercent,
+              purchase_discount_amount: breakdown.discountAmount,
+              purchase_tax_amount: breakdown.taxAmount,
+              purchase_shipping_amount: breakdown.shippingAmount,
+              total_amount: breakdown.purchaseTotal,
               supplier_id: supplierId,
               created_by: user.id,
             })
@@ -797,6 +844,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
             unit_price: item.cost_per_unit,
             cost_price: item.cost_per_unit,
             line_total: item.qty * item.cost_per_unit,
+            batch_no: item.batch_no ?? null,
             reorder_request_id: item.reorder_request_id ?? null, // NEW
           }
         }),
@@ -835,7 +883,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         `
         *,
         transaction_items!transaction_items_transaction_id_fkey (
-          id, product_id, qty_stock_in, actual_count_stock_in, unit_price, cost_price,
+          id, product_id, qty_stock_in, actual_count_stock_in, unit_price, cost_price, batch_no,
           products ( id, product_name, unit, cost_price, sku, supplier_id, expiry_date, suppliers ( name ) )
         )
       `,
@@ -869,7 +917,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         `
         *,
         transaction_items!transaction_items_transaction_id_fkey (
-          id, product_id, qty_stock_in, actual_count_stock_in, unit_price, cost_price,
+          id, product_id, qty_stock_in, actual_count_stock_in, unit_price, cost_price, batch_no,
           products ( id, product_name, unit, cost_price, sku, supplier_id, expiry_date, suppliers ( name ) )
         )
       `,
@@ -881,6 +929,28 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
 
     const names = resolveUserNames(data.created_by, data.approved_by)
     return mapToPR(data, mapTransactionItems(data.transaction_items || []), names)
+  }
+
+  // PRs saved before the charge columns (and canvass-converted ones) have no subtotal, so their total_amount is the items total.
+  async function fetchPurchaseBreakdown(transactionId: number): Promise<PurchaseBreakdown | null> {
+    const { data, error: fetchError } = await supabase
+      .from('transactions')
+      .select(
+        'subtotal, total_amount, purchase_discount_percent, purchase_discount_amount, purchase_tax_amount, purchase_shipping_amount',
+      )
+      .eq('id', transactionId)
+      .single()
+
+    if (fetchError || !data) return null
+
+    return {
+      netTotal: data.subtotal ?? data.total_amount ?? 0,
+      discountPercent: data.purchase_discount_percent ?? 0,
+      discountAmount: data.purchase_discount_amount ?? 0,
+      taxAmount: data.purchase_tax_amount ?? 0,
+      shippingAmount: data.purchase_shipping_amount ?? 0,
+      purchaseTotal: data.total_amount ?? 0,
+    }
   }
 
   async function approvePR(prId: number) {
@@ -1104,6 +1174,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     resetStore,
     fetchPurchaseRequisition,
     fetchPRByRequisitionId,
+    fetchPurchaseBreakdown,
     approvePR,
     rejectPR,
 

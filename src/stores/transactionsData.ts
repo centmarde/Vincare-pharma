@@ -89,6 +89,7 @@ export type TransactionItemJoined = {
   supplier_id: number | null
   supplier_name: string | null
   expiry_date: string | null
+  batch_no: string | null
 }
 
 export type TransactionRPCRow = TransactionType & {

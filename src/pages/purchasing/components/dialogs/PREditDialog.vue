@@ -1,14 +1,23 @@
 <script setup lang="ts">
-import { endOfMonthISODate, formatCurrency } from '@/utils/helpers'
-import type { PR } from '@/stores/purchaseRequisitionData'
+import {
+  endOfMonthISODate,
+  formatCurrency,
+  formatExpiryMonthYear,
+  fromLocalISODate,
+  maskMonthYearInput,
+  parseMonthYear,
+} from '@/utils/helpers'
+import type { PR, PRItem } from '@/stores/purchaseRequisitionData'
 import { useDisplay } from 'vuetify'
 import { ref, watch, computed } from 'vue'
+import { useToast } from 'vue-toastification'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
 import { storeToRefs } from 'pinia'
 import ProductPickerDialog from '@/components/products/ProductPicker.vue'
 import type { ProductPickerResult } from '@/stores/productsData'
 
 const { mobile } = useDisplay()
+const toast = useToast()
 const supplierStore = useSuppliersDataStore()
 const { activeSuppliers } = storeToRefs(supplierStore)
 
@@ -31,15 +40,27 @@ const localRemarks = ref('')
 const showProductPicker = ref(false)
 const productPickerTargetIndex = ref<number | null>(null)
 const expiryMenuOpen = ref<Record<number, boolean>>({})
+const expiryPickerYear = ref(new Date().getFullYear())
+const expiryPickerView = ref<'months' | 'year'>('months')
+const expiryPickedMonth = ref<number | null>(null)
+const expiryYearPicked = ref(false)
+const editingExpiry = ref<{ index: number; text: string } | null>(null)
 
-const items = computed(() => props.pr?.items || [])
+const earliestExpiryYear = 2000
+const latestExpiryYear = 2099
+const earliestExpiryDate = `${earliestExpiryYear}-01-01`
+const latestExpiryDate = `${latestExpiryYear}-12-31`
+
+const items = ref<PRItem[]>([])
 
 watch(
-  () => props.pr,
-  (newPr) => {
-    if (newPr) {
-      localRemarks.value = newPr.remarks ?? ''
+  () => props.modelValue,
+  (isOpen) => {
+    if (isOpen && props.pr) {
+      items.value = props.pr.items.map((item) => ({ ...item }))
+      localRemarks.value = props.pr.remarks ?? ''
       expiryMenuOpen.value = {}
+      editingExpiry.value = null
     }
   },
   { immediate: true },
@@ -54,6 +75,7 @@ function onProductSelected(product: ProductPickerResult) {
   if (index === null || !items.value[index]) return
 
   const item = items.value[index]
+  if (item.product_id !== product.id) unlinkPickedProduct(item)
   item.product_name = product.product_name || item.product_name
   if (product.unit) item.unit = product.unit
   item.cost_per_unit = product.cost_price ?? item.cost_per_unit
@@ -68,10 +90,14 @@ function openProductPicker(index: number) {
   showProductPicker.value = true
 }
 
+function unlinkPickedProduct(item: PRItem) {
+  item.product_id = undefined
+}
+
 function addItem() {
   if (!props.pr) return
-  const maxNo = props.pr.items.reduce((max, item) => Math.max(max, item.no || 0), 0)
-  props.pr.items.push({
+  const maxNo = items.value.reduce((max, item) => Math.max(max, item.no || 0), 0)
+  items.value.push({
     id: Date.now(),
     no: maxNo + 1,
     unit: 'Box',
@@ -81,42 +107,105 @@ function addItem() {
     product_id: undefined,
     supplier_id: null,
     expiry_date: null,
+    batch_no: null,
   })
 }
 
 function removeItem(index: number) {
-  if (!props.pr) return
-  props.pr.items.splice(index, 1)
+  items.value.splice(index, 1)
 }
 
-function onExpiryMonthSelect(item: any, index: number, month: number) {
-  const current = item.expiry_date ? new Date(item.expiry_date) : new Date()
-  const year = current.getFullYear()
-  item.expiry_date = endOfMonthISODate(year, month)
+function parseExpiryText(text: string): Date | null {
+  const date = parseMonthYear(text)
+  if (!date) return null
+  const year = date.getFullYear()
+  if (year < earliestExpiryYear || year > latestExpiryYear) return null
+  return date
+}
+
+function expiryDateOf(item: PRItem): Date | null {
+  return item.expiry_date ? fromLocalISODate(item.expiry_date) : null
+}
+
+function setExpiryMonth(item: PRItem, year: number, monthIndex: number) {
+  item.expiry_date = endOfMonthISODate(year, monthIndex)
+  expiryPickerYear.value = year
+}
+
+function expiryFieldText(item: PRItem, index: number): string {
+  if (editingExpiry.value?.index === index) return editingExpiry.value.text
+  const date = expiryDateOf(item)
+  return date ? formatExpiryMonthYear(date) : ''
+}
+
+function startExpiryTyping(item: PRItem, index: number) {
+  const date = expiryDateOf(item)
+  editingExpiry.value = { index, text: date ? formatExpiryMonthYear(date) : '' }
+}
+
+function onExpiryTyped(item: PRItem, index: number, raw: string) {
+  const text = maskMonthYearInput(raw)
+  editingExpiry.value = { index, text }
+  const date = parseExpiryText(text)
+  if (date) setExpiryMonth(item, date.getFullYear(), date.getMonth())
+}
+
+function finishExpiryTyping(item: PRItem, index: number) {
+  if (editingExpiry.value?.index !== index) return
+  const text = editingExpiry.value.text
+  editingExpiry.value = null
+  if (!text) {
+    item.expiry_date = null
+    return
+  }
+  if (!parseExpiryText(text)) toast.info('Enter a valid expiry as MM/YYYY, e.g. 01/2029.')
+}
+
+function onExpiryMenuToggle(item: PRItem, index: number, isOpen: boolean) {
+  expiryMenuOpen.value[index] = isOpen
+  if (!isOpen) return
+  expiryPickerYear.value = expiryDateOf(item)?.getFullYear() ?? new Date().getFullYear()
+  expiryPickerView.value = 'months'
+  expiryPickedMonth.value = null
+  expiryYearPicked.value = false
+}
+
+function onExpiryPickerViewChange(mode: string) {
+  if (mode === 'months' || mode === 'year') expiryPickerView.value = mode
+}
+
+function completeExpiryPick(item: PRItem, index: number, year: number, month: number) {
+  setExpiryMonth(item, year, month)
   expiryMenuOpen.value[index] = false
 }
 
-function onExpiryYearSelect(item: any, index: number, year: number) {
-  const current = item.expiry_date ? new Date(item.expiry_date) : new Date()
-  const month = current.getMonth()
-  item.expiry_date = endOfMonthISODate(year, month)
+function onExpiryMonthSelect(item: PRItem, index: number, month: number) {
+  if (expiryYearPicked.value) {
+    completeExpiryPick(item, index, expiryPickerYear.value, month)
+    return
+  }
+  expiryPickedMonth.value = month
+  expiryPickerView.value = 'year'
 }
 
-function formatMonthYear(value: string | Date | null | undefined): string {
-  if (!value) return ''
-  const date = typeof value === 'string' ? new Date(value) : value
-  return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+function onExpiryYearSelect(item: PRItem, index: number, year: number) {
+  expiryPickerYear.value = year
+  if (expiryPickedMonth.value != null) {
+    completeExpiryPick(item, index, year, expiryPickedMonth.value)
+    return
+  }
+  expiryYearPicked.value = true
+  expiryPickerView.value = 'months'
 }
 
 function save() {
   if (!props.pr) return
-  emit('save', { items: [...props.pr.items], remarks: localRemarks.value })
+  emit('save', { items: [...items.value], remarks: localRemarks.value })
   close()
 }
 
 const companyCostTotal = computed(() => {
-  if (!props.pr) return 0
-  return props.pr.items.reduce((sum, item) => sum + (item.qty || 0) * (item.cost_per_unit || 0), 0)
+  return items.value.reduce((sum, item) => sum + (item.qty || 0) * (item.cost_per_unit || 0), 0)
 })
 </script>
 
@@ -151,7 +240,8 @@ const companyCostTotal = computed(() => {
             <v-col cols="1" class="pl-2">UNIT</v-col>
             <v-col cols="3" class="pl-2">PRODUCT NAME</v-col>
             <v-col cols="2" class="pl-2">SUPPLIER</v-col>
-            <v-col cols="2" class="pl-2">EXPIRY</v-col>
+            <v-col cols="1" class="pl-2">BATCH NO.</v-col>
+            <v-col cols="1" class="pl-2">EXPIRY</v-col>
             <v-col cols="1" class="pl-2">QTY</v-col>
             <v-col cols="1" class="pl-2">COST/UNIT</v-col>
             <v-col cols="1" class="text-right pr-2">COST TOTAL</v-col>
@@ -193,10 +283,12 @@ const companyCostTotal = computed(() => {
               <v-text-field
                 v-model="item.product_name"
                 placeholder="Product name"
+                autocomplete="off"
                 variant="outlined"
                 density="compact"
                 hide-details
                 append-inner-icon="mdi-database-search-outline"
+                @update:model-value="unlinkPickedProduct(item)"
                 @click:append-inner="openProductPicker(index)"
               />
             </v-col>
@@ -208,6 +300,7 @@ const companyCostTotal = computed(() => {
                 item-title="name"
                 item-value="id"
                 placeholder="Select supplier..."
+                autocomplete="off"
                 variant="outlined"
                 density="compact"
                 hide-details
@@ -215,30 +308,57 @@ const companyCostTotal = computed(() => {
               />
             </v-col>
 
-            <v-col cols="2" class="pl-2">
+            <v-col cols="1" class="pl-2">
+              <v-text-field
+                v-model="item.batch_no"
+                placeholder="Batch/Lot"
+                autocomplete="off"
+                variant="outlined"
+                density="compact"
+                hide-details
+              />
+            </v-col>
+
+            <v-col cols="1" class="pl-2">
               <v-menu
                 :model-value="expiryMenuOpen[index] ?? false"
-                @update:model-value="(val) => (expiryMenuOpen[index] = val)"
+                @update:model-value="(isOpen) => onExpiryMenuToggle(item, index, isOpen)"
                 :close-on-content-click="false"
                 location="bottom"
               >
                 <template #activator="{ props: menuProps }">
                   <v-text-field
                     v-bind="menuProps"
-                    :model-value="formatMonthYear(item.expiry_date)"
+                    :model-value="expiryFieldText(item, index)"
                     placeholder="MM/YYYY"
+                    maxlength="7"
+                    inputmode="numeric"
                     variant="outlined"
+                    autocomplete="off"
                     density="compact"
                     hide-details
-                    readonly
-                    prepend-inner-icon="mdi-calendar-month-outline"
+                    @focus="startExpiryTyping(item, index)"
+                    @update:model-value="(raw) => onExpiryTyped(item, index, raw)"
+                    @blur="finishExpiryTyping(item, index)"
                   />
                 </template>
                 <v-date-picker
-                  view-mode="months"
-                  @update:month="(m) => onExpiryMonthSelect(item, index, m)"
-                  @update:year="(y) => onExpiryYearSelect(item, index, y)"
-                />
+                  :model-value="expiryDateOf(item)"
+                  :year="expiryPickerYear"
+                  :view-mode="expiryPickerView"
+                  :min="earliestExpiryDate"
+                  :max="latestExpiryDate"
+                  @update:view-mode="onExpiryPickerViewChange"
+                  @update:month="(month) => onExpiryMonthSelect(item, index, month)"
+                >
+                  <template #year="{ year, props: yearButtonProps }">
+                    <v-btn
+                      :key="year.value"
+                      v-bind="yearButtonProps"
+                      @click="onExpiryYearSelect(item, index, year.value)"
+                    />
+                  </template>
+                </v-date-picker>
               </v-menu>
             </v-col>
 
@@ -250,6 +370,7 @@ const companyCostTotal = computed(() => {
                 variant="outlined"
                 density="compact"
                 hide-details
+                autocomplete="off"
               />
             </v-col>
 
@@ -261,6 +382,7 @@ const companyCostTotal = computed(() => {
                 variant="outlined"
                 density="compact"
                 hide-details
+                autocomplete="off"
               />
             </v-col>
 
@@ -328,6 +450,7 @@ const companyCostTotal = computed(() => {
                 density="compact"
                 hide-details
                 append-inner-icon="mdi-database-search-outline"
+                @update:model-value="unlinkPickedProduct(item)"
                 @click:append-inner="openProductPicker(index)"
               />
             </div>
@@ -387,32 +510,58 @@ const companyCostTotal = computed(() => {
                 <div class="field-label">Expiry Date</div>
                 <v-menu
                   :model-value="expiryMenuOpen[index] ?? false"
-                  @update:model-value="(val) => (expiryMenuOpen[index] = val)"
+                  @update:model-value="(isOpen) => onExpiryMenuToggle(item, index, isOpen)"
                   :close-on-content-click="false"
                   location="bottom"
                 >
                   <template #activator="{ props: menuProps }">
                     <v-text-field
                       v-bind="menuProps"
-                      :model-value="formatMonthYear(item.expiry_date)"
+                      :model-value="expiryFieldText(item, index)"
                       placeholder="MM/YYYY"
+                      maxlength="7"
+                      inputmode="numeric"
                       variant="outlined"
                       density="compact"
                       hide-details
-                      readonly
                       prepend-inner-icon="mdi-calendar-month-outline"
+                      @focus="startExpiryTyping(item, index)"
+                      @update:model-value="(raw) => onExpiryTyped(item, index, raw)"
+                      @blur="finishExpiryTyping(item, index)"
                     />
                   </template>
                   <v-date-picker
-                    view-mode="months"
-                    @update:month="(m) => onExpiryMonthSelect(item, index, m)"
-                    @update:year="(y) => onExpiryYearSelect(item, index, y)"
-                  />
+                    :model-value="expiryDateOf(item)"
+                    :year="expiryPickerYear"
+                    :view-mode="expiryPickerView"
+                    :min="earliestExpiryDate"
+                    :max="latestExpiryDate"
+                    @update:view-mode="onExpiryPickerViewChange"
+                    @update:month="(month) => onExpiryMonthSelect(item, index, month)"
+                  >
+                    <template #year="{ year, props: yearButtonProps }">
+                      <v-btn
+                        :key="year.value"
+                        v-bind="yearButtonProps"
+                        @click="onExpiryYearSelect(item, index, year.value)"
+                      />
+                    </template>
+                  </v-date-picker>
                 </v-menu>
               </v-col>
             </v-row>
 
             <v-row no-gutters class="mb-3" style="gap: 8px">
+              <v-col>
+                <div class="field-label">Batch No.</div>
+                <v-text-field
+                  v-model="item.batch_no"
+                  placeholder="Batch/Lot"
+                  variant="outlined"
+                  density="compact"
+                  hide-details
+                />
+              </v-col>
               <v-col>
                 <div class="field-label">Cost / Unit</div>
                 <v-text-field

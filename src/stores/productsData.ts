@@ -1243,6 +1243,13 @@ export const useProductsDataStore = defineStore('productsData', () => {
             })
             if (!result) throw new Error(`Failed to update product ID ${product_id}`)
           }
+          if (batch_no) {
+            const { error: batchError } = await supabase
+              .from('transaction_items')
+              .update({ batch_no })
+              .eq('id', transaction_item_id)
+            if (batchError) throw batchError
+          }
           continue
         }
 
@@ -1280,7 +1287,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
         // 3. Only now stamp the "this was received" marker
         const { error: tiError } = await supabase
           .from('transaction_items')
-          .update({ actual_count_stock_in })
+          .update({ actual_count_stock_in, ...(batch_no ? { batch_no } : {}) })
           .eq('id', transaction_item_id)
         if (tiError) throw tiError
       }

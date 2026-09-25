@@ -107,9 +107,20 @@ export function useFormDraft(opts: FormDraftOptions) {
     { deep: true },
   )
 
+  // A reload or closed tab never unmounts the form, so a write still waiting on the debounce would be lost.
+  function flushPendingWrite() {
+    if (!timer) return
+    clearTimeout(timer)
+    timer = null
+    write()
+  }
+
+  window.addEventListener('pagehide', flushPendingWrite)
+
   onBeforeUnmount(() => {
-    if (timer) { clearTimeout(timer); write() } // flush a pending debounced write
+    flushPendingWrite() // flush a pending debounced write
     stopWatch()
+    window.removeEventListener('pagehide', flushPendingWrite)
   })
 
   return { restore, clear }
