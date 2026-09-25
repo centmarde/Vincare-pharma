@@ -112,6 +112,12 @@ export type ReferenceType =
   | 'sales_invoice' | 'sales_return' | 'goods_return' | 'payment' | 'collection' | 'purchase_invoice'
   | 'disbursement' | 'pdc' | 'payroll' | 'accrual' | 'depreciation' | 'loan'
   | 'bank_recon' | 'manual' | 'closing'
+  // Stock written off in the warehouse. Deliberately NOT 'manual': the
+  // petty-cash replenishment loop books ('manual', <transactions id>), and a
+  // disposal is also a transactions row from the same id sequence, so sharing
+  // the type would let one document's entry be read as the other's
+  // already-booked marker.
+  | 'disposal'
 
 export type JournalEntry = {
   id: number

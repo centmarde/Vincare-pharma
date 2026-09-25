@@ -1,5 +1,7 @@
 import { generateDSNumber, insertWithDocRetry } from '@/utils/generativeHelpers'
 import { useAuthUserStore } from './authUser'
+import { useGLDataStore } from './glData'
+import { formatCurrency, toLocalISODate } from '@/utils/helpers'
 import { useLogsDataStore } from './logsData'
 import { useToast } from 'vue-toastification'
 import { supabase } from '@/lib/supabase'
@@ -63,6 +65,7 @@ const disposalSelect = `
 
 export const useDisposalsDataStore = defineStore('disposalsData', () => {
   const authStore = useAuthUserStore()
+  const glStore = useGLDataStore()
 
   const disposalRequests: Ref<DisposalRequest[]> = ref([])
   const disposalRegister: Ref<DisposalRequest[]> = ref([])
@@ -431,11 +434,52 @@ export const useDisposalsDataStore = defineStore('disposalsData', () => {
       : `STOCK NOT ADJUSTED — still ${onHand}, needs manual correction`
 
     const productName = product.product_name ?? `Product #${product.id}`
+
+    // Inventory leaves the BOOKS with the stock, not with the approval. If the
+    // decrement failed the goods are still on the shelf, so relieving 1040 for
+    // them would understate inventory and overstate the loss at once — hence
+    // this is gated on stockApplied rather than on the approval succeeding.
+    //
+    // Cost comes from the product master: a disposal has no line of its own to
+    // snapshot one onto. A product with no cost books nothing rather than a
+    // zero-value entry, which would be noise in the ledger.
+    let glNote: string
+    if (!stockApplied) {
+      glNote = 'no write-off posted — stock was not adjusted'
+    } else {
+      const writeOff = Math.round(Number(product.cost_price ?? 0) * disposal.qty * 100) / 100
+      if (writeOff <= 0) {
+        glNote = 'no write-off posted — product has no cost on file'
+      } else {
+        const posted = await glStore.postJournalEntry(
+          toLocalISODate(new Date()),
+          'disposal',
+          disposalId,
+          `Disposal ${disposal.reference_no ?? `#${disposal.id}`} — ${productName}`,
+          [
+            { account_code: '5050', debit: writeOff, credit: 0 },
+            { account_code: '1040', debit: 0, credit: writeOff },
+          ],
+          user.id,
+        )
+        if (posted.success) {
+          glNote = `wrote off ${formatCurrency(writeOff)} (DR 5050 / CR 1040)`
+        } else {
+          // Named, not swallowed: the stock is gone either way, so a silent
+          // failure leaves inventory overstated with nothing pointing at it.
+          glNote = `WRITE-OFF NOT POSTED (${posted.error ?? 'unknown error'}) — needs a manual journal entry`
+          toast.warning(
+            'Stock was disposed, but the write-off did not reach the ledger. Record it manually in General Journal.',
+          )
+        }
+      }
+    }
+
     await logDisposalEvent(
       actionApproved,
       disposal,
       user.id,
-      `Approved disposal ${disposal.reference_no ?? `#${disposal.id}`} — ${disposal.qty} unit(s) of "${productName}" (SKU ${product.sku || 'N/A'}, batch ${product.batch_no || '—'}), ${stockNote}`,
+      `Approved disposal ${disposal.reference_no ?? `#${disposal.id}`} — ${disposal.qty} unit(s) of "${productName}" (SKU ${product.sku || 'N/A'}, batch ${product.batch_no || '—'}), ${stockNote}, ${glNote}`,
     )
 
     await fetchDisposalRequests(true)
