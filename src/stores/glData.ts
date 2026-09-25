@@ -1163,6 +1163,46 @@ export const useGLDataStore = defineStore('glData', () => {
         return { success: false as const }
       }
 
+      // The description always CARRIES the "Opening balances" prefix, even when
+      // the accountant writes their own note. It is what makes a pending
+      // opening-balance draft findable: postManualEntry stores every manual
+      // entry as reference_type 'manual' with a null reference_id, so there is
+      // nothing else to tell one apart from an ordinary journal entry.
+      const description = payload.description?.trim()
+        ? `Opening balances — ${payload.description.trim()}`
+        : 'Opening balances'
+
+      // A draft is NOT in the ledger, so the trial balance read above still
+      // reports pre-draft figures. Submitting the same sheet twice therefore
+      // produces two drafts carrying identical lines, and approving both posts
+      // every delta twice — breaking the re-runnable guarantee this function's
+      // doc comment makes, and in the one direction nobody notices until the
+      // balance sheet stops tying.
+      //
+      // Scoped to opening-balance drafts on purpose: an unrelated manual entry
+      // awaiting approval is a separate, deliberate entry, not a recomputed
+      // delta, so blocking on that would be over-broad.
+      const { data: pendingDrafts, error: pendingError } = await supabase
+        .from('journal_entries')
+        .select('id, entry_no')
+        .eq('reference_type', 'manual')
+        .eq('status', 'draft')
+        .ilike('description', 'Opening balances%')
+        .limit(1)
+      if (pendingError) {
+        handleError(pendingError, 'Failed to check for pending opening balances')
+        toast.error('Could not check for a pending opening-balance draft. Nothing was drafted.')
+        return { success: false as const }
+      }
+      const pending = (pendingDrafts ?? [])[0]
+      if (pending) {
+        toast.error(
+          `${pending.entry_no ?? `Draft #${pending.id}`} is still awaiting approval. `
+          + 'Approve or reject it before drafting opening balances again — otherwise both post and the balances move twice.',
+        )
+        return { success: false as const }
+      }
+
       // DRAFTED, not posted. postJournalEntry inserts status:'posted'
       // directly, which is exactly the path postManualEntry exists to prevent:
       // the accounting directive requires a manual entry to be created as
@@ -1173,7 +1213,7 @@ export const useGLDataStore = defineStore('glData', () => {
       // draft shows up in General Journal where approveManualEntry can post it.
       const result = await postManualEntry({
         entryDate: payload.entryDate,
-        description: payload.description?.trim() || 'Opening balances',
+        description,
         lines,
       })
       if (!result.success) return { success: false as const }

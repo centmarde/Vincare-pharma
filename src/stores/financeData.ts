@@ -592,10 +592,27 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     // codes still carry 'utilities', 'supplies' and 'representation' on prod.
     // Rejecting those would make correcting an old expense impossible.
     if (!legacyExpenseCategories.some((c) => c.value === payload.category)) {
-      if (!glStore.accounts.length) await glStore.fetchAccounts()
-      const account = glStore.accounts.find((a) => a.code === payload.category)
-      if (!account || !(expenseAccountSubsections as readonly string[]).includes(account.subsection)) {
-        toast.error(`${payload.category} is not a valid expense account.`)
+      // Read live rather than from glStore.accounts: that list is cached from
+      // whenever a picker last loaded it, so an account deactivated since then
+      // still passes. This is the write boundary — it asks the database what is
+      // true now.
+      const { data: account, error: accountLookupError } = await supabase
+        .from('accounts')
+        .select('code, subsection, is_active')
+        .eq('code', payload.category)
+        .maybeSingle()
+      if (accountLookupError) {
+        toast.error('Could not verify the expense account. The expense was not recorded.')
+        loading.value = false
+        return { success: false }
+      }
+      if (!account || !account.is_active) {
+        toast.error(`${payload.category} is not an active account.`)
+        loading.value = false
+        return { success: false }
+      }
+      if (!(expenseAccountSubsections as readonly string[]).includes(account.subsection)) {
+        toast.error(`${payload.category} is not an expense account.`)
         loading.value = false
         return { success: false }
       }

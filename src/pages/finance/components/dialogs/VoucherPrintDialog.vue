@@ -26,7 +26,7 @@ const toast = useToast()
 // ACCOUNT NAME prints the name from the chart of accounts, resolved from the
 // code stored on the line. Older vouchers hold a legacy slug instead and are
 // resolved through the slug map, so both print a real name rather than a code.
-const { expenseAccountLabel, ensureLoaded: ensureAccountsLoaded } = useExpenseAccounts()
+const { expenseAccountLabel, allAccounts, ensureLoaded: ensureAccountsLoaded } = useExpenseAccounts()
 
 // A voucher can be printed straight from the list without the form having been
 // opened, so the chart may not be loaded yet. Without this the ACCOUNT NAME
@@ -96,8 +96,12 @@ async function handlePrint() {
   // Lubricant Expense") — and a PDF is handed over or filed, so there is no
   // second chance to notice. The open-watcher above starts the load; this makes
   // sure it finished before anything is captured.
-  const chart = await ensureAccountsLoaded()
-  if (!chart?.length) {
+  await ensureAccountsLoaded()
+  // Checked against the FULL chart, not the active one: a historical voucher's
+  // accounts may all have been retired since, and their names still resolve
+  // from allAccounts. Requiring an active account would block printing exactly
+  // the old vouchers most likely to need reprinting.
+  if (!allAccounts.value.length) {
     toast.error('Could not load the chart of accounts. The voucher was not printed.')
     return
   }

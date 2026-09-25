@@ -75,7 +75,19 @@ export function useOpeningBalances() {
   /** Set when the figures on screen could not be read and so cannot be trusted. */
   const loadFailed = ref(false)
 
+  /**
+   * Only the newest load() may publish.
+   *
+   * The date field and Refresh can overlap. Without this an older call that
+   * finishes last replaces the rows with ANOTHER date's balances, and submit()
+   * then pairs the current entryDate with those stale figures — posting deltas
+   * measured against the wrong day. Same guard the product picker uses against
+   * out-of-order search results.
+   */
+  let loadSeq = 0
+
   async function load() {
+    const seq = ++loadSeq
     glStore.clearError()
     const [accounts, tb] = await Promise.all([
       glStore.fetchAccounts(),
@@ -85,6 +97,9 @@ export function useOpeningBalances() {
     // Same fail-open trap as the post path: a failed read returns [], every
     // CURRENT column then renders 0, and the sheet invites the accountant to
     // "correct" balances that were never actually read. Say so instead.
+    // A superseded call must publish neither rows nor failure state.
+    if (seq !== loadSeq) return
+
     loadFailed.value = !!glStore.error
     if (loadFailed.value) {
       toast.error('Could not read current balances. The figures below are not reliable.')
