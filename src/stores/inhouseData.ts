@@ -13,6 +13,7 @@ import { useCustomersDataStore } from '@/stores/customersData'
 import type { CustomerType } from '@/stores/customersData'
 import type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult } from '@/utils/canvassTypes'
 import { govtShelfLife, QUALIFICATION_MONTHS } from '@/utils/qualification'
+import { useShortDatedApprovalStore } from '@/pages/inhouse/stores/shortDatedApproval'
 import type { CollectionType } from '@/stores/ethicalData'
 
 const toast = useToast()
@@ -118,6 +119,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
   const canvassStore = useCanvassDataStore()
   const drStore = useDeliveryReceiptsDataStore()
   const customersStore = useCustomersDataStore()
+  const shortDatedStore = useShortDatedApprovalStore()
 
   const orders: Ref<InhouseOrderType[]> = ref([])
   const loading = ref(false)
@@ -543,6 +545,13 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       loading.value = false; return { success: false }
     }
 
+    // Read ONCE for the whole order, not per line: the approval is a
+    // per-order decision ("this order may ship short-dated stock"), and asking
+    // per line would both re-query needlessly and imply a granularity the
+    // executive was never offered. Read at delivery rather than cached, since
+    // an approval can land while the order waits.
+    const shortDatedApproved = await shortDatedStore.hasApproval(orderId)
+
     // Move stock + bump delivered_qty per line, collecting the DR line data as we
     // go. The DR document itself is written by the DR store afterwards.
     const drLines: { product_id: number | null; qty: number; unit_price: number | null }[] = []
@@ -577,12 +586,17 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       // against the stock of the day; weeks of negotiation can pass before
       // anything ships, and a batch that qualified then may not now.
       const shelf = govtShelfLife(product?.expiry_date as string | null)
-      if (!shelf.ok) {
+      // EXPIRED is absolute — no approval can make expired goods deliverable.
+      // SHORT-DATED is a contract term the business may waive, so an executive
+      // approval on this order lets it through; without one it still blocks,
+      // now pointing at how to get it.
+      const blocked = !shelf.ok && (shelf.reason === 'expired' || !shortDatedApproved)
+      if (blocked) {
         const name = product?.product_name ?? `product ${item.product_id}`
         toast.error(
           shelf.reason === 'expired'
             ? `${name} has expired and cannot be delivered.`
-            : `${name} has under ${QUALIFICATION_MONTHS} months of shelf life left, which a government client will not accept.`,
+            : `${name} has under ${QUALIFICATION_MONTHS} months of shelf life left. A government client will not accept it without executive approval — request it from the order.`,
         )
         loading.value = false; return { success: false }
       }

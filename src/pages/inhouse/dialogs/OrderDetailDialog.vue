@@ -10,7 +10,7 @@ import type { ProductPickerResult } from '@/stores/productsData'
 import ProductPickerDialog from '@/components/products/ProductPicker.vue'
 import type { CollectionType } from '@/stores/ethicalData'
 import { expensePaymentMethods } from '@/stores/financeData'
-import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import { formatCurrency, formatDatePR_ISO, formatExpiryLabel } from '@/utils/helpers'
 
 const props = defineProps<{
   modelValue: boolean
@@ -27,6 +27,7 @@ const {
   payAmount, payReference, payRemarks,
   requestedAt, requestNote,
   items, isNegotiating, isAwaitingStock, isReady, isDelivered, isPartiallyPaid, isPaid, canRecordPayment,
+  shortDatedBatches, shortDatedRequest, shortDatedNote, requestShortDatedApproval,
   proposedTotal, proposedCost, ratioLabel, ratioClass, profitLabel, marginLabel, deliveredPct, remaining, balance, paidPct,
   payCashAccountId, cashAccountOptions,
   applyPickedProduct, recordCounter, agree, recheck, deliver, recordPayment, notifyPurchasing,
@@ -234,6 +235,99 @@ const productName = (id: number | null) =>
         </v-card>
 
         <!-- ── FULFILLMENT ─────────────────────────────── -->
+        <!-- Short-dated stock: a government client will not accept under 18
+             months of shelf life, so delivery is blocked until an executive
+             waives it for this order. Expired lines are never listed here —
+             no approval can make expired goods deliverable. -->
+        <v-card
+          v-if="shortDatedBatches.length && (isReady || isDelivered)"
+          variant="outlined"
+          rounded="lg"
+          class="mb-4 bg-amber-lighten-5"
+        >
+          <v-card-text class="pa-4">
+            <div class="d-flex align-center ga-2 mb-2">
+              <v-icon icon="mdi-clock-alert-outline" color="warning" />
+              <span class="text-subtitle-2 font-weight-bold">Short-dated stock</span>
+              <v-chip
+                v-if="shortDatedRequest"
+                size="x-small"
+                variant="flat"
+                :color="shortDatedRequest.status === 'approved' ? 'success'
+                  : shortDatedRequest.status === 'rejected' ? 'error' : 'warning'"
+              >
+                {{ shortDatedRequest.status.toUpperCase() }}
+              </v-chip>
+            </div>
+
+            <p class="text-body-2 text-medium-emphasis mb-3">
+              {{ shortDatedBatches.length }} line(s) have under 18 months of shelf life left.
+              A government client will not accept them, so delivery is blocked until an
+              executive approves it for this order.
+            </p>
+
+            <v-table density="compact" class="mb-3 bg-transparent">
+              <thead>
+                <tr>
+                  <th class="text-left">Product</th>
+                  <th class="text-left">Batch</th>
+                  <th class="text-left">Expiry</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="b in shortDatedBatches" :key="b.product_id">
+                  <td>{{ b.product_name }}</td>
+                  <td>{{ b.batch_no || '\u2014' }}</td>
+                  <td>{{ formatExpiryLabel(b.expiry_date) }}</td>
+                </tr>
+              </tbody>
+            </v-table>
+
+            <template v-if="shortDatedRequest && shortDatedRequest.status === 'approved'">
+              <div class="text-body-2 text-success font-weight-medium">
+                Approved — this order may be delivered.
+                <span v-if="shortDatedRequest.resolution_note">
+                  ({{ shortDatedRequest.resolution_note }})
+                </span>
+              </div>
+            </template>
+
+            <template v-else-if="shortDatedRequest && shortDatedRequest.status === 'pending'">
+              <div class="text-body-2 text-medium-emphasis">
+                Awaiting an executive decision. Delivery stays blocked until then.
+              </div>
+            </template>
+
+            <template v-else>
+              <div v-if="shortDatedRequest" class="text-body-2 text-error mb-2">
+                Rejected<span v-if="shortDatedRequest.resolution_note">
+                  — {{ shortDatedRequest.resolution_note }}</span>.
+                You may request again if the situation has changed.
+              </div>
+              <v-textarea
+                v-model="shortDatedNote"
+                label="Why should this ship anyway? (optional)"
+                rows="2"
+                auto-grow
+                variant="outlined"
+                density="compact"
+                hide-details
+                class="mb-2"
+              />
+              <v-btn
+                color="warning"
+                size="small"
+                variant="tonal"
+                :loading="loading"
+                prepend-icon="mdi-account-tie"
+                @click="requestShortDatedApproval"
+              >
+                Request Executive Approval
+              </v-btn>
+            </template>
+          </v-card-text>
+        </v-card>
+
         <v-card v-if="isReady || isDelivered || isPartiallyPaid || isPaid" variant="outlined" rounded="lg" class="mb-4">
           <v-card-title class="text-subtitle-2 font-weight-bold pa-3">Fulfillment</v-card-title>
           <v-divider />
