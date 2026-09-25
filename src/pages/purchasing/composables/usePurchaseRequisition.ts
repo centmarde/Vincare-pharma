@@ -12,7 +12,7 @@ import type { PurchaseBreakdown, SupplierCharges } from '@/utils/computationHelp
 
 export const unitOptions = ['Box', 'Pc(s)', 'Unit(s)', 'Set', 'Kg', 'M']
 
-type PRFormItem = {
+export type PRFormItem = {
   no: number
   unit: string
   product_name: string
@@ -34,7 +34,7 @@ type SubmitResult = {
   error?: string
 }
 
-type SupplierPurchaseSummary = PurchaseBreakdown & {
+export type SupplierPurchaseSummary = PurchaseBreakdown & {
   charges: SupplierCharges
 }
 

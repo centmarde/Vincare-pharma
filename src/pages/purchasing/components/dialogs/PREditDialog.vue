@@ -14,6 +14,7 @@ import { useToast } from 'vue-toastification'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
 import { storeToRefs } from 'pinia'
 import ProductPickerDialog from '@/components/products/ProductPicker.vue'
+import PREditItemsMobile from '../../mobile/PREditItemsMobile.vue'
 import type { ProductPickerResult } from '@/stores/productsData'
 
 const { mobile } = useDisplay()
@@ -419,186 +420,29 @@ const companyCostTotal = computed(() => {
           </v-row>
         </template>
 
-        <!-- ── MOBILE CARD VIEW ── -->
-        <template v-else>
-          <div
-            v-for="(item, index) in items"
-            :key="item.id"
-            class="mobile-item-card mb-3 pa-3 rounded-lg border"
-          >
-            <!-- Card header: item number + remove -->
-            <div class="d-flex justify-space-between align-center mb-3">
-              <span class="text-caption font-weight-bold text-medium-emphasis">
-                ITEM {{ index + 1 }}
-              </span>
-              <v-btn
-                icon="mdi-close"
-                variant="tonal"
-                color="red-lighten-1"
-                size="x-small"
-                @click="removeItem(index)"
-              />
-            </div>
-
-            <!-- Product name -->
-            <div class="mb-2">
-              <div class="field-label">PRODUCT NAME</div>
-              <v-text-field
-                v-model="item.product_name"
-                placeholder="Product name"
-                variant="outlined"
-                density="compact"
-                hide-details
-                append-inner-icon="mdi-database-search-outline"
-                @update:model-value="unlinkPickedProduct(item)"
-                @click:append-inner="openProductPicker(index)"
-              />
-            </div>
-
-            <!-- Unit + Qty side by side -->
-            <v-row no-gutters class="mb-2" style="gap: 8px">
-              <v-col>
-                <div class="field-label">Unit</div>
-                <v-select
-                  v-model="item.unit"
-                  :items="[
-                    'Box',
-                    'Pack',
-                    'Piece',
-                    'Bottle',
-                    'Tube',
-                    'Vial',
-                    'Ampoule',
-                    'Blister',
-                    'Strip',
-                  ]"
-                  variant="outlined"
-                  density="compact"
-                  hide-details
-                />
-              </v-col>
-              <v-col>
-                <div class="field-label">Quantity</div>
-                <v-text-field
-                  v-model.number="item.qty"
-                  type="number"
-                  placeholder="0"
-                  variant="outlined"
-                  density="compact"
-                  hide-details
-                />
-              </v-col>
-            </v-row>
-
-            <!-- Supplier + Expiry side by side -->
-            <v-row no-gutters class="mb-2" style="gap: 8px">
-              <v-col>
-                <div class="field-label">Supplier</div>
-                <v-select
-                  v-model="item.supplier_id"
-                  :items="supplierOptions"
-                  item-title="name"
-                  item-value="id"
-                  placeholder="Select supplier..."
-                  variant="outlined"
-                  density="compact"
-                  hide-details
-                  clearable
-                />
-              </v-col>
-              <v-col>
-                <div class="field-label">Expiry Date</div>
-                <v-menu
-                  :model-value="expiryMenuOpen[index] ?? false"
-                  @update:model-value="(isOpen) => onExpiryMenuToggle(item, index, isOpen)"
-                  :close-on-content-click="false"
-                  location="bottom"
-                >
-                  <template #activator="{ props: menuProps }">
-                    <v-text-field
-                      v-bind="menuProps"
-                      :model-value="expiryFieldText(item, index)"
-                      placeholder="MM/YYYY"
-                      maxlength="7"
-                      inputmode="numeric"
-                      variant="outlined"
-                      density="compact"
-                      hide-details
-                      prepend-inner-icon="mdi-calendar-month-outline"
-                      @focus="startExpiryTyping(item, index)"
-                      @update:model-value="(raw) => onExpiryTyped(item, index, raw)"
-                      @blur="finishExpiryTyping(item, index)"
-                    />
-                  </template>
-                  <v-date-picker
-                    :model-value="expiryDateOf(item)"
-                    :year="expiryPickerYear"
-                    :view-mode="expiryPickerView"
-                    :min="earliestExpiryDate"
-                    :max="latestExpiryDate"
-                    @update:view-mode="onExpiryPickerViewChange"
-                    @update:month="(month) => onExpiryMonthSelect(item, index, month)"
-                  >
-                    <template #year="{ year, props: yearButtonProps }">
-                      <v-btn
-                        :key="year.value"
-                        v-bind="yearButtonProps"
-                        @click="onExpiryYearSelect(item, index, year.value)"
-                      />
-                    </template>
-                  </v-date-picker>
-                </v-menu>
-              </v-col>
-            </v-row>
-
-            <v-row no-gutters class="mb-3" style="gap: 8px">
-              <v-col>
-                <div class="field-label">Batch No.</div>
-                <v-text-field
-                  v-model="item.batch_no"
-                  placeholder="Batch/Lot"
-                  variant="outlined"
-                  density="compact"
-                  hide-details
-                />
-              </v-col>
-              <v-col>
-                <div class="field-label">Cost / Unit</div>
-                <v-text-field
-                  v-model.number="item.cost_per_unit"
-                  type="number"
-                  placeholder="0.00"
-                  variant="outlined"
-                  density="compact"
-                  hide-details
-                />
-              </v-col>
-            </v-row>
-
-            <!-- Computed totals row -->
-            <v-divider class="mb-2" />
-            <div class="d-flex justify-end align-center">
-              <div class="text-caption">
-                <span class="text-medium-emphasis">Cost Total </span>
-                <span class="font-weight-bold text-blue-darken-2">
-                  {{ formatCurrency((item.qty || 0) * (item.cost_per_unit || 0)) }}
-                </span>
-              </div>
-            </div>
-          </div>
-          <!-- Add Item button for mobile -->
-          <v-btn
-            variant="outlined"
-            color="primary"
-            size="small"
-            class="text-none mb-3"
-            prepend-icon="mdi-plus"
-            block
-            @click="addItem"
-          >
-            Add Item
-          </v-btn>
-        </template>
+        <PREditItemsMobile
+          v-else
+          :items="items"
+          :supplier-options="supplierOptions"
+          :expiry-menu-open="expiryMenuOpen"
+          :expiry-picker-year="expiryPickerYear"
+          :expiry-picker-view="expiryPickerView"
+          :earliest-expiry-date="earliestExpiryDate"
+          :latest-expiry-date="latestExpiryDate"
+          :expiry-field-text="expiryFieldText"
+          :expiry-date-of="expiryDateOf"
+          @add-item="addItem"
+          @remove-item="removeItem"
+          @unlink-product="unlinkPickedProduct"
+          @pick-product="openProductPicker"
+          @expiry-menu-toggle="onExpiryMenuToggle"
+          @expiry-typing-start="startExpiryTyping"
+          @expiry-typed="onExpiryTyped"
+          @expiry-typing-finish="finishExpiryTyping"
+          @expiry-view-change="onExpiryPickerViewChange"
+          @expiry-month-select="onExpiryMonthSelect"
+          @expiry-year-select="onExpiryYearSelect"
+        />
 
         <v-divider class="my-6" />
 
@@ -653,18 +497,5 @@ const companyCostTotal = computed(() => {
 }
 :deep(.v-field--focused .v-field__outline) {
   --v-field-border-opacity: 0.5;
-}
-
-.mobile-item-card {
-  background-color: rgb(var(--v-theme-surface));
-}
-
-.field-label {
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: rgba(var(--v-theme-on-surface), 0.5);
-  margin-bottom: 4px;
 }
 </style>
