@@ -45,6 +45,7 @@ as $$
   cross join ref r
   where p.sku is not null
     and p.sku != 'null'
+    and p.is_disposed is not true
     and not (p.id = any(excluded_ids))
     and (search_term = '' or p.product_name ilike '%' || search_term || '%')
     and case bucket_type

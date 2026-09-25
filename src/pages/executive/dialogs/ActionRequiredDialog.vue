@@ -5,8 +5,11 @@ import { useSalesChangeRequests } from '@/pages/sales/stores/composables/useSale
 import { useSharedChangeRequests } from '../composables/useSharedChangeRequests'
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
+import { useExecutiveApproveDisposal } from '../composables/useExecutiveApproveDisposal'
 import type { PRItem } from '@/stores/purchaseRequisitionData'
-import { formatDatePR_ISO, formatExpiryMonthYear } from '@/utils/helpers'
+import { usePurchaseBreakdown } from '@/pages/purchasing/composables/usePurchaseBreakdown'
+import PurchaseChargeLines from '@/pages/purchasing/components/PurchaseChargeLines.vue'
+import { formatCurrency, formatDatePR_ISO, formatExpiryMonthYear } from '@/utils/helpers'
 import { computed, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import ActionRequiredDialogMobile from '../mobile/ActionRequiredDialogMobile.vue'
@@ -18,6 +21,7 @@ const financeChangeRequests = useFinanceChangeRequests()
 const salesChangeRequests = useSalesChangeRequests()
 const sharedChangeRequests = useSharedChangeRequests()
 const { approve: approvePR, reject: rejectPR } = useExecutiveApprovePR()
+const { approve: approveDisposal, reject: rejectDisposal } = useExecutiveApproveDisposal()
 const prStore = usePurchaseRequisitionStore()
 
 
@@ -32,8 +36,13 @@ const selected = defineModel<boolean>('modelValue', { default: false })
 const props = defineProps<{ request?: any }>()
 
 const request = computed(() => props.request)
-const kind = computed(() => request.value?.kind as 'undo' | 'pr_approval' | undefined)
+const kind = computed(() => request.value?.kind as 'undo' | 'pr_approval' | 'disposal' | undefined)
 const raw = computed(() => request.value?.raw)
+
+const disposalStockAfter = computed(() => {
+  const onHand = raw.value?.product?.current_stock ?? 0
+  return Math.max(0, onHand - (raw.value?.qty ?? 0))
+})
 
 // Compute the total live from line items (Σ qty × cost_per_unit) instead of
 // trusting the stored transactions.total_amount column, which can be stale
@@ -45,6 +54,21 @@ const totalAmount = computed(() =>
     0,
   ),
 )
+
+const { breakdown, hasCharges } = usePurchaseBreakdown(() => {
+  if (mobile.value || kind.value !== 'pr_approval') return null
+  return raw.value
+})
+
+const headerTotalLabel = computed(() => {
+  if (hasCharges.value) return 'Purchase Total'
+  return 'Total Amount'
+})
+
+const headerTotal = computed(() => {
+  if (breakdown.value && hasCharges.value) return breakdown.value.purchaseTotal
+  return totalAmount.value
+})
 
 const isApproving = ref(false)
 const isRejecting = ref(false)
@@ -102,14 +126,23 @@ async ([open, k, txId]) => {
   }
 })
 
+async function runApprove() {
+  if (kind.value === 'undo') return changeRequestOwner(raw.value.source).approve(raw.value.id)
+  if (kind.value === 'disposal') return approveDisposal(raw.value.id)
+  return approvePR(raw.value.id)
+}
+
+async function runReject(reason: string) {
+  if (kind.value === 'undo') return changeRequestOwner(raw.value.source).reject(raw.value.id, reason)
+  if (kind.value === 'disposal') return rejectDisposal(raw.value.id, reason)
+  return rejectPR(raw.value.id, reason)
+}
+
 async function onApprove() {
   if (!raw.value || isApproving.value) return
   isApproving.value = true
   try {
-    const result =
-      kind.value === 'undo'
-        ? await changeRequestOwner(raw.value.source).approve(raw.value.id)
-        : await approvePR(raw.value.id)
+    const result = await runApprove()
     if (result.success) selected.value = false
   } finally {
     isApproving.value = false
@@ -125,10 +158,7 @@ async function confirmReject() {
   isRejecting.value = true
   try {
     const reason = rejectReason.value.trim() || 'Rejected by approver.'
-    const result =
-      kind.value === 'undo'
-        ? await changeRequestOwner(raw.value.source).reject(raw.value.id, reason)
-        : await rejectPR(raw.value.id, reason)
+    const result = await runReject(reason)
     if (result.success) selected.value = false
   } finally {
     isRejecting.value = false
@@ -195,9 +225,9 @@ async function confirmReject() {
                 <div class="text-body-2 text-high-emphasis">{{ formatDatePR_ISO(raw.created_at) }}</div>
               </div>
               <div>
-                <div class="text-caption text-medium-emphasis">Total Amount</div>
+                <div class="text-caption text-medium-emphasis">{{ headerTotalLabel }}</div>
                 <div class="text-body-2 text-high-emphasis">
-                  {{ totalAmount.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' }) }}
+                  {{ headerTotal.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' }) }}
                 </div>
               </div>
             </div>
@@ -231,6 +261,25 @@ async function confirmReject() {
                 </tr>
               </tbody>
             </v-table>
+
+            <div v-if="breakdown && hasCharges" class="d-flex justify-end mt-3">
+              <v-sheet
+                rounded="lg"
+                variant="tonal"
+                color="surface-variant"
+                min-width="280"
+                class="pa-3 text-caption"
+              >
+                <div class="text-high-emphasis">
+                  <PurchaseChargeLines :breakdown="breakdown" />
+                  <v-divider class="my-2" />
+                  <div class="d-flex justify-space-between ga-4 font-weight-bold">
+                    <span>Purchase Total</span>
+                    <span>{{ formatCurrency(breakdown.purchaseTotal) }}</span>
+                  </div>
+                </div>
+              </v-sheet>
+            </div>
           </div>
 
           <v-alert
@@ -242,6 +291,93 @@ async function confirmReject() {
           >
             Approving will move this purchase requisition to
             <strong>Approved</strong> status and resolve any linked reorder requests.
+          </v-alert>
+        </template>
+
+        <!-- ═══ DISPOSAL BRANCH ═══ -->
+        <template v-else-if="kind === 'disposal'">
+          <v-sheet rounded="lg" variant="tonal" color="surface-variant" class="pa-3 mb-4">
+            <div class="d-flex align-center ga-3">
+              <v-avatar size="36" rounded="lg" color="error" variant="tonal" class="flex-shrink-0">
+                <v-icon color="error" icon="mdi-delete-alert-outline" size="18" />
+              </v-avatar>
+              <div class="flex-grow-1" style="min-width: 0">
+                <div class="d-flex align-center ga-2 flex-wrap">
+                  <span class="text-body-2 font-weight-bold">
+                    {{ raw.reference_no ?? `#${raw.id}` }}
+                  </span>
+                  <v-chip size="x-small" color="error" variant="tonal" label>Dispose</v-chip>
+                  <v-chip size="x-small" variant="tonal" color="green" label>Warehouse</v-chip>
+                </div>
+                <div class="text-caption text-medium-emphasis mt-1">
+                  <div class="text-caption text-medium-emphasis">Reason for disposal:</div>
+                  <!-- <v-chip size="x-small" variant="tonal" color="info" label>Reason:</v-chip> -->
+                  <div class="text-body-2 text-high-emphasis">{{ raw.reason || 'No reason given.' }}</div>
+                </div>
+              </div>
+            </div>
+
+            <v-divider class="my-3" />
+
+            <div class="d-flex ga-6 flex-wrap">
+              <div>
+                <div class="text-caption text-medium-emphasis">Requested by</div>
+                <div class="text-body-2 text-high-emphasis">{{ raw.requester_name ?? '—' }}</div>
+              </div>
+              <div>
+                <div class="text-caption text-medium-emphasis">Requested on</div>
+                <div class="text-body-2 text-high-emphasis">
+                  {{ formatDatePR_ISO(raw.created_at) }}
+                </div>
+              </div>
+              <div>
+                <div class="text-caption text-medium-emphasis">Value at cost</div>
+                <div class="text-body-2 text-high-emphasis">
+                  {{ formatCurrency(raw.total_cost ?? 0) }}
+                </div>
+              </div>
+            </div>
+          </v-sheet>
+
+          <div class="mb-4">
+            <div class="text-caption font-weight-bold text-medium-emphasis mb-2">PRODUCT</div>
+            <v-table density="compact" class="rounded-lg border">
+              <thead>
+                <tr>
+                  <th class="text-caption">Product Name</th>
+                  <th class="text-caption">SKU</th>
+                  <th class="text-caption">Batch</th>
+                  <th class="text-caption text-right">Expiry</th>
+                  <th class="text-caption text-right">On hand</th>
+                  <th class="text-caption text-right">Dispose qty</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="text-caption">{{ raw.product?.product_name ?? '—' }}</td>
+                  <td class="text-caption">{{ raw.product?.sku ?? 'No SKU' }}</td>
+                  <td class="text-caption">{{ raw.product?.batch_no ?? '—' }}</td>
+                  <td class="text-caption text-right">
+                    {{ formatExpiryMonthYear(raw.product?.expiry_date) }}
+                  </td>
+                  <td class="text-caption text-right">{{ raw.product?.current_stock ?? 0 }}</td>
+                  <td class="text-caption text-right font-weight-bold">{{ raw.qty }}</td>
+                </tr>
+              </tbody>
+            </v-table>
+          </div>
+
+          <v-alert
+            type="warning"
+            variant="tonal"
+            density="compact"
+            icon="mdi-information-outline"
+            class="mb-4 text-caption"
+          >
+            Approving permanently reduces stock from
+            <strong>{{ raw.product?.current_stock ?? 0 }}</strong> to
+            <strong>{{ disposalStockAfter }}</strong
+            >. This cannot be undone.
           </v-alert>
         </template>
 

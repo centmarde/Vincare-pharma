@@ -5,12 +5,15 @@ import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
+import { useProductsDataStore } from '@/stores/productsData'
 import { qualifyOffers } from '@/utils/qualification'
 import { useSupplierOffersDataStore } from '@/stores/supplierOffersData'
 import type { SupplierOfferType } from '@/stores/supplierOffersData'
 import { maxDocSeq, insertWithDocRetry, formatCurrency } from '@/utils/helpers'
 import { prIdFromCoverage, isPRCoverageLive, type PRCoverage } from '@/utils/canvassTypes'
 import { carriedProductFields } from '@/utils/productBatch'
+import { computeSellingPrice } from '@/utils/computationHelpers'
+import type { SupplierCharges } from '@/utils/computationHelpers'
 
 const toast = useToast()
 
@@ -30,6 +33,7 @@ export type DraftPRItemType = {
   supplier_name?: string | null
   unit_price?: number | null
   expiry_date?: string | null
+  batch_no?: string | null
   reorder_request_id?: number | null
   reorder_reason?: string | null
 }
@@ -48,6 +52,7 @@ export type DraftPRType = {
   source_order_id: number | null
   source_order_type: string | null
   converted_pr_id: number | null
+  supplier_charges?: SupplierCharges[] | null
   items: DraftPRItemType[]
 }
 
@@ -73,6 +78,7 @@ export type ManualDraftLineInput = {
   qty: number
   cost_per_unit: number
   expiry_date: string | null
+  batch_no: string | null
   reorder_request_id: number | null
   reorder_reason: string | null
 }
@@ -88,6 +94,13 @@ export type ConvertResult = {
   pr_no?: string
   warnings?: ConvertWarning[]
   error?: string
+}
+
+export type SaveManualDraftResult = {
+  success: boolean
+  draftId?: number
+  draftMissing?: boolean
+  needsAnotherSave?: boolean
 }
 
 type CoverageCheck = { covered: boolean; error?: string }
@@ -154,6 +167,7 @@ async function resolveBatchProduct(
       status: 'active',
       current_stock: 0,
       cost_price: costPrice,
+      selling_price: computeSellingPrice(costPrice),
       ...carriedProductFields(product),
     })
     .select('id')
@@ -183,7 +197,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       id: row.id,
       draft_pr_id: row.draft_pr_id,
       product_id: row.product_id,
-      product_name: row.product?.product_name ?? row.product_name ?? null,
+      product_name: row.product_name ?? row.product?.product_name ?? null,
       unit: row.unit ?? null,
       qty: row.qty,
       shortfall_qty: row.shortfall_qty ?? null,
@@ -195,6 +209,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       supplier_name: row.offer?.supplier?.name ?? null,
       unit_price: row.offer?.cost_price_per_unit ?? row.cost_per_unit ?? null,
       expiry_date: row.offer?.expiry_date ?? row.expiry_date ?? null,
+      batch_no: row.batch_no ?? null,
       reorder_request_id: row.reorder_request_id ?? null,
       reorder_reason: row.reorder_reason ?? null,
     }
@@ -568,11 +583,15 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return true
   }
 
-  async function saveManualDraft(payload: {
-    draftId?: number | null
-    remarks?: string | null
-    lines: ManualDraftLineInput[]
-  }) {
+  async function saveManualDraft(
+    payload: {
+      draftId?: number | null
+      remarks?: string | null
+      supplierCharges: SupplierCharges[]
+      lines: ManualDraftLineInput[]
+    },
+    options?: { successMessage?: string },
+  ): Promise<SaveManualDraftResult> {
     loading.value = true
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) {
@@ -592,6 +611,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
           origin: 'manual',
           status: 'draft',
           remarks: payload.remarks ?? null,
+          supplier_charges: payload.supplierCharges,
           created_by: user.id,
           source_order_id: null,
           source_order_type: null,
@@ -611,6 +631,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
         .select('id')
         .eq('id', draftId)
         .eq('origin', 'manual')
+        .eq('status', 'draft')
         .maybeSingle()
       if (findError) {
         handleError(findError, 'Failed to save draft.')
@@ -621,7 +642,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       if (!existing) {
         toast.error('That draft is no longer available.')
         loading.value = false
-        return { success: false }
+        return { success: false, draftMissing: true }
       }
 
       const { data: existingItems, error: existingItemsError } = await supabase
@@ -648,6 +669,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
           qty: line.qty,
           cost_per_unit: line.cost_per_unit,
           expiry_date: line.expiry_date,
+          batch_no: line.batch_no,
           reorder_request_id: line.reorder_request_id,
           reorder_reason: line.reorder_reason,
         })),
@@ -681,14 +703,18 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     if (!isNewDraft) {
       const { error: updateError } = await supabase
         .from('draft_purchase_requisitions')
-        .update({ remarks: payload.remarks ?? null, updated_at: new Date().toISOString() })
+        .update({
+          remarks: payload.remarks ?? null,
+          supplier_charges: payload.supplierCharges,
+          updated_at: new Date().toISOString(),
+        })
         .eq('id', draftId)
         .eq('origin', 'manual')
       if (updateError) {
         handleError(updateError, 'Failed to save draft.')
-        toast.warning('Items saved, but the notes could not be updated — try saving again.')
+        toast.warning('Items saved, but the notes and charges could not be updated — try saving again.')
         loading.value = false
-        return { success: true, draftId: draftId as number }
+        return { success: true, draftId: draftId as number, needsAnotherSave: true }
       }
     }
 
@@ -696,10 +722,10 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     if (cleanupFailed) {
       toast.warning('Draft saved, but its previous lines could not be cleared — reopen and save again to remove the duplicates.')
     } else {
-      toast.success('Draft saved.')
+      toast.success(options?.successMessage ?? 'Draft saved.')
     }
     loading.value = false
-    return { success: true, draftId: draftId as number }
+    return { success: true, draftId: draftId as number, needsAnotherSave: cleanupFailed }
   }
 
   async function fetchManualDrafts(): Promise<DraftPRType[]> {
@@ -1089,6 +1115,8 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
         return { success: false, error: itemsError.message || 'Failed to save purchase requisition line items.' }
       }
     }
+
+    await useProductsDataStore().syncPRSellingPrices(createdPRs.map((pr) => pr.pr_id))
 
     // ── Phase C: every PR written — mirror onto the source order, log, mark the
     // draft converted. The PRs are never rolled back here (matches commitToPRs's

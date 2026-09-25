@@ -2,6 +2,7 @@ import { useSuppliersDataStore, type SupplierType } from '@/stores/suppliersData
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import { useLogsDataStore } from '@/stores/logsData'
+import { usePurchaseBreakdown } from './usePurchaseBreakdown'
 import { ref, computed, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { storeToRefs } from 'pinia'
@@ -42,9 +43,17 @@ export function useIssuePOModal(
   })
 
   // ─── Computed ─────────────────────────────────────────────────────
-  const declaredValue = computed(() =>
+  const itemsTotal = computed(() =>
     props.pr?.items.reduce((sum, i) => sum + i.qty * (i.cost_per_unit ?? 0), 0) ?? 0
   )
+
+  const { breakdown, hasCharges } = usePurchaseBreakdown(() => props.pr)
+
+  // With charges, the PO carries the saved Purchase Total (after discount, plus tax and shipping), not the items sum.
+  const declaredValue = computed(() => {
+    if (breakdown.value && hasCharges.value) return breakdown.value.purchaseTotal
+    return itemsTotal.value
+  })
 
   const emptyRows = computed(() =>
     Math.max(0, 7 - (props.pr?.items.length ?? 0))
@@ -98,7 +107,7 @@ export function useIssuePOModal(
   return {
     company, shipViaOptions, shipMethodOptions, today,
     form, showConfirm, loading,
-    declaredValue, emptyRows, uniqueSuppliers,
+    declaredValue, breakdown, hasCharges, emptyRows, uniqueSuppliers,
     updateCompany, promptIssuePO, closeConfirm, handleConfirmIssue,
   }
 }

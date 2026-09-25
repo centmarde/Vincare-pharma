@@ -91,6 +91,12 @@ const authStore = useAuthUserStore()
 const toast = useToast()
 const router = useRouter()
 
+// Navigate to the account home page after successful login. Any unread
+// "What's New" version logs are handled (dialog) on that page.
+const goHome = () => {
+  router.push('/account/home')
+}
+
 // Form refs and reactive data
 const formRef = ref()
 const formValid = ref(false)
@@ -147,7 +153,10 @@ const handleLogin = async () => {
     } else {
       toast.success('Login successful!')
       resetForm()
-      router.push('/')
+
+      // Land on /account/home first; the "What's New" dialog (if any unread
+      // version logs exist) is handled there.
+      goHome()
     }
   } catch (error: any) {
     toast.error(error.message || 'An unexpected error occurred')

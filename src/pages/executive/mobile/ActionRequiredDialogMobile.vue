@@ -5,7 +5,10 @@ import { useSalesChangeRequests } from '@/pages/sales/stores/composables/useSale
 import { useSharedChangeRequests } from '../composables/useSharedChangeRequests'
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
+import { useExecutiveApproveDisposal } from '../composables/useExecutiveApproveDisposal'
 import type { PRItem } from '@/stores/purchaseRequisitionData'
+import { usePurchaseBreakdown } from '@/pages/purchasing/composables/usePurchaseBreakdown'
+import PurchaseChargeLines from '@/pages/purchasing/components/PurchaseChargeLines.vue'
 import { formatDatePR_ISO, formatExpiryMonthYear } from '@/utils/helpers'
 import { computed, ref, watch } from 'vue'
 
@@ -14,6 +17,7 @@ const financeChangeRequests = useFinanceChangeRequests()
 const salesChangeRequests = useSalesChangeRequests()
 const sharedChangeRequests = useSharedChangeRequests()
 const { approve: approvePR, reject: rejectPR } = useExecutiveApprovePR()
+const { approve: approveDisposal, reject: rejectDisposal } = useExecutiveApproveDisposal()
 const prStore = usePurchaseRequisitionStore()
 
 // A change request must be approved through the store that owns it — each one
@@ -30,8 +34,13 @@ const selected = defineModel<boolean>('modelValue', { default: false })
 const props = defineProps<{ request?: any }>()
 
 const request = computed(() => props.request)
-const kind = computed(() => request.value?.kind as 'undo' | 'pr_approval' | undefined)
+const kind = computed(() => request.value?.kind as 'undo' | 'pr_approval' | 'disposal' | undefined)
 const raw = computed(() => request.value?.raw)
+
+const disposalStockAfter = computed(() => {
+  const onHand = raw.value?.product?.current_stock ?? 0
+  return Math.max(0, onHand - (raw.value?.qty ?? 0))
+})
 
 // Compute the total live from line items (Σ qty × cost_per_unit) instead of
 // trusting the stored transactions.total_amount column, which can be stale
@@ -43,6 +52,21 @@ const totalAmount = computed(() =>
     0,
   ),
 )
+
+const { breakdown, hasCharges } = usePurchaseBreakdown(() => {
+  if (kind.value !== 'pr_approval') return null
+  return raw.value
+})
+
+const headerTotalLabel = computed(() => {
+  if (hasCharges.value) return 'Purchase Total'
+  return 'Total Amount'
+})
+
+const headerTotal = computed(() => {
+  if (breakdown.value && hasCharges.value) return breakdown.value.purchaseTotal
+  return totalAmount.value
+})
 
 const isApproving = ref(false)
 const isRejecting = ref(false)
@@ -108,14 +132,23 @@ async ([open, k, txId]) => {
   }
 })
 
+async function runApprove() {
+  if (kind.value === 'undo') return changeRequestOwner(raw.value.source).approve(raw.value.id)
+  if (kind.value === 'disposal') return approveDisposal(raw.value.id)
+  return approvePR(raw.value.id)
+}
+
+async function runReject(reason: string) {
+  if (kind.value === 'undo') return changeRequestOwner(raw.value.source).reject(raw.value.id, reason)
+  if (kind.value === 'disposal') return rejectDisposal(raw.value.id, reason)
+  return rejectPR(raw.value.id, reason)
+}
+
 async function onApprove() {
   if (!raw.value || isApproving.value) return
   isApproving.value = true
   try {
-    const result =
-      kind.value === 'undo'
-        ? await changeRequestOwner(raw.value.source).approve(raw.value.id)
-        : await approvePR(raw.value.id)
+    const result = await runApprove()
     if (result.success) selected.value = false
   } finally {
     isApproving.value = false
@@ -131,10 +164,7 @@ async function confirmReject() {
   isRejecting.value = true
   try {
     const reason = rejectReason.value.trim() || 'Rejected by approver.'
-    const result =
-      kind.value === 'undo'
-        ? await changeRequestOwner(raw.value.source).reject(raw.value.id, reason)
-        : await rejectPR(raw.value.id, reason)
+    const result = await runReject(reason)
     if (result.success) selected.value = false
   } finally {
     isRejecting.value = false
@@ -202,9 +232,9 @@ function formatMoney(value: number | string | undefined) {
                 <div class="text-body-2 text-high-emphasis">{{ formatDatePR_ISO(raw.created_at) }}</div>
               </div>
               <div>
-                <div class="text-caption text-medium-emphasis">Total Amount</div>
+                <div class="text-caption text-medium-emphasis">{{ headerTotalLabel }}</div>
                 <div class="text-body-2 text-high-emphasis">
-                  {{ totalAmount.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' }) }}
+                  {{ headerTotal.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' }) }}
                 </div>
               </div>
             </div>
@@ -251,6 +281,23 @@ function formatMoney(value: number | string | undefined) {
             <div v-else class="text-caption text-medium-emphasis pa-2">No items found.</div>
           </div>
 
+          <v-sheet
+            v-if="breakdown && hasCharges"
+            rounded="lg"
+            variant="tonal"
+            color="surface-variant"
+            class="pa-3 mb-4 text-caption"
+          >
+            <div class="text-high-emphasis">
+              <PurchaseChargeLines :breakdown="breakdown" />
+              <v-divider class="my-2" />
+              <div class="d-flex justify-space-between ga-4 font-weight-bold">
+                <span>Purchase Total</span>
+                <span>{{ formatMoney(breakdown.purchaseTotal) }}</span>
+              </div>
+            </div>
+          </v-sheet>
+
           <v-alert
             type="warning"
             variant="tonal"
@@ -260,6 +307,107 @@ function formatMoney(value: number | string | undefined) {
           >
             Approving will move this purchase requisition to
             <strong>Approved</strong> status and resolve any linked reorder requests.
+          </v-alert>
+        </template>
+
+        <!-- ═══ DISPOSAL BRANCH ═══ -->
+        <template v-else-if="kind === 'disposal'">
+          <v-sheet rounded="lg" variant="tonal" color="surface-variant" class="pa-3 mb-4">
+            <div class="d-flex align-center ga-3">
+              <v-avatar size="36" rounded="lg" color="error" variant="tonal" class="flex-shrink-0">
+                <v-icon color="error" icon="mdi-delete-alert-outline" size="18" />
+              </v-avatar>
+              <div class="flex-grow-1" style="min-width: 0">
+                <div class="d-flex align-center ga-2 flex-wrap">
+                  <span class="text-body-2 font-weight-bold">
+                    {{ raw.reference_no ?? `#${raw.id}` }}
+                  </span>
+                  <v-chip size="x-small" color="error" variant="tonal" label>Dispose</v-chip>
+                </div>
+                <div class="text-caption text-medium-emphasis mt-1">
+                  {{ raw.product?.product_name ?? 'Unknown product' }}
+                </div>
+              </div>
+            </div>
+
+            <v-divider class="my-3" />
+
+            <div class="d-flex flex-column" style="gap: 10px">
+              <div>
+                <div class="text-caption text-medium-emphasis">Requested by</div>
+                <div class="text-body-2 text-high-emphasis">{{ raw.requester_name ?? '—' }}</div>
+              </div>
+              <div>
+                <div class="text-caption text-medium-emphasis">Requested on</div>
+                <div class="text-body-2 text-high-emphasis">
+                  {{ formatDatePR_ISO(raw.created_at) }}
+                </div>
+              </div>
+              <div>
+                <div class="text-caption text-medium-emphasis">Value at cost</div>
+                <div class="text-body-2 text-high-emphasis">
+                  {{ formatMoney(raw.total_cost) }}
+                </div>
+              </div>
+            </div>
+          </v-sheet>
+
+          <div class="mb-4">
+            <div class="text-caption font-weight-bold text-medium-emphasis mb-2">PRODUCT</div>
+            <v-sheet rounded="lg" variant="tonal" color="surface-variant" class="pa-3">
+              <div class="text-body-2 mb-2">{{ raw.product?.product_name ?? '—' }}</div>
+              <div class="d-flex flex-wrap" style="gap: 8px 16px">
+                <div class="text-caption">
+                  <span class="text-medium-emphasis">SKU:</span>
+                  <span class="font-weight-medium ms-1">{{ raw.product?.sku ?? 'No SKU' }}</span>
+                </div>
+                <div class="text-caption">
+                  <span class="text-medium-emphasis">Batch:</span>
+                  <span class="font-weight-medium ms-1">{{ raw.product?.batch_no ?? '—' }}</span>
+                </div>
+                <div class="text-caption">
+                  <span class="text-medium-emphasis">Expiry:</span>
+                  <span class="font-weight-medium ms-1">
+                    {{ formatExpiryMonthYear(raw.product?.expiry_date) }}
+                  </span>
+                </div>
+                <div class="text-caption">
+                  <span class="text-medium-emphasis">On hand:</span>
+                  <span class="font-weight-medium ms-1">{{ raw.product?.current_stock ?? 0 }}</span>
+                </div>
+                <div class="text-caption">
+                  <span class="text-medium-emphasis">Dispose qty:</span>
+                  <span class="font-weight-bold ms-1">{{ raw.qty }}</span>
+                </div>
+              </div>
+            </v-sheet>
+          </div>
+
+          <div class="mb-4">
+            <div class="text-caption font-weight-bold text-medium-emphasis mb-1">
+              REASON FOR DISPOSAL
+            </div>
+            <v-sheet
+              rounded="lg"
+              variant="tonal"
+              color="surface-variant"
+              class="pa-3 text-body-2 border-s-lg border-error"
+            >
+              {{ raw.reason ?? '—' }}
+            </v-sheet>
+          </div>
+
+          <v-alert
+            type="warning"
+            variant="tonal"
+            density="compact"
+            icon="mdi-information-outline"
+            class="mb-4 text-caption"
+          >
+            Approving permanently reduces stock from
+            <strong>{{ raw.product?.current_stock ?? 0 }}</strong> to
+            <strong>{{ disposalStockAfter }}</strong
+            >. This cannot be undone.
           </v-alert>
         </template>
 

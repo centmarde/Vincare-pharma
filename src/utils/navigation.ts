@@ -168,6 +168,13 @@ export const navigationConfig: NavigationGroup[] = [
         keywords: 'expiry, expired, expiring, shelf life, write-off, at risk',
       },
       {
+        title: 'Disposed Products',
+        icon: 'mdi-delete-alert-outline',
+        route: '/warehouse/disposed-products',
+        permission: 'warehouse.disposal.view',
+        keywords: 'disposal, disposed, destroyed, write-off, expired stock, scrap',
+      },
+      {
         title: 'Stock Transfers',
         icon: 'mdi-truck-fast',
         route: '/warehouse/stock-transfers',
