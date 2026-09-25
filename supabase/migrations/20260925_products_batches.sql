@@ -97,7 +97,13 @@ as $$
     count(*) over (partition by m.product_name)::bigint as batch_count,
     n.total_count
   from matched m
-  join names n on n.product_name = m.product_name
+  -- `is not distinct from`, not `=`: a NULL product_name groups into one row
+  -- in `names` and so counts toward total_count and consumes a page_limit
+  -- slot, but `=` is never true for NULL, so every such row was dropped from
+  -- the output. The picker reads hasMore as groups.length < total_count, so a
+  -- single NULL-name group left "See more" showing forever and returning
+  -- nothing. The picker already renders 'Unnamed product' for this case.
+  join names n on n.product_name is not distinct from m.product_name
   -- FEFO: first-expiring first, the standard pick order for pharma. Undated
   -- batches sort last rather than first, so a missing expiry never outranks a
   -- real one.

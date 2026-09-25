@@ -52,12 +52,19 @@ function signatoryBorder(index: number) {
 
 // Prefill on open: an existing draft loads its own values, a new voucher picks
 // up any autosaved draft instead.
-watch(() => props.modelValue, (open) => {
+watch(() => props.modelValue, async (open) => {
   if (!open) return
-  // The charged-to select reads the chart of accounts, so make sure it's in
-  // memory before the dialog paints. Fire-and-forget: the store caches, so a
-  // reopen is a no-op, and the select fills in as soon as it resolves.
-  void ensureAccountsLoaded()
+  // AWAITED, not fire-and-forget: loadFrom decides whether a stored particular
+  // is a real description or a legacy copy of the account's own title, and it
+  // decides by comparing against that title. With the chart still empty every
+  // title lookup misses, so a real description can be judged legacy, blanked,
+  // and then written over the top on the next save. The select filling in late
+  // was harmless; this is not.
+  await ensureAccountsLoaded()
+  // The dialog can be dismissed while the chart loads. Populating it now would
+  // fill a form the user has already closed, and leave that state behind for
+  // the next open.
+  if (!props.modelValue) return
   resetForm()
   if (props.editing) loadFrom(props.editing)
   else restoreDraft()

@@ -5,6 +5,7 @@ import { useGLDataStore } from '@/stores/glData'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useFinanceDataStore, glAccountCodeFor } from '@/stores/financeData'
 import { bookTemplateById, bookTemplateGroups } from '@/utils/bookTemplates'
+import { toLocalISODate } from '@/utils/helpers'
 import type { BookField, BookLine, BookTemplate } from '@/utils/bookTemplates'
 
 // Books entry — record the transactions that have no operational screen.
@@ -19,7 +20,11 @@ import type { BookField, BookLine, BookTemplate } from '@/utils/bookTemplates'
 // in his book, so the screen shows exactly what will post before he commits —
 // the templates remove the typing, not the visibility.
 
-const todayISO = () => new Date().toISOString().slice(0, 10)
+// toLocalISODate, not toISOString(): the latter returns the UTC calendar
+// date, so at UTC+8 anything recorded before 08:00 local defaults to
+// YESTERDAY — and on the 1st of a month lands in the previous month, after
+// that month may already have been reported.
+const todayISO = () => toLocalISODate(new Date())
 
 export function useBookEntry() {
   const glStore = useGLDataStore()

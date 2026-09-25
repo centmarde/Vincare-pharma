@@ -546,6 +546,7 @@ export {
   formatDateShort,
   parseMonthYear,
   formatMonthYear,
+  formatExpiryLabel,
   maskMonthYearInput,
   endOfMonthISODate,
   formatDatePR_ISO,

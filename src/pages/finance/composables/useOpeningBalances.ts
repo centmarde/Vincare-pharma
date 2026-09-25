@@ -2,6 +2,7 @@ import { ref, computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useGLDataStore, openingBalanceEquityCode } from '@/stores/glData'
+import { toLocalISODate } from '@/utils/helpers'
 import type { GLAccount, OpeningBalanceInput } from '@/stores/glData'
 
 // Opening balances for the balance sheet.
@@ -14,7 +15,9 @@ import type { GLAccount, OpeningBalanceInput } from '@/stores/glData'
 // balance per account here and the contra is derived ONCE, for the whole
 // sheet, into Opening Balance Equity.
 
-const todayISO = () => new Date().toISOString().slice(0, 10)
+// toLocalISODate, not toISOString(): see useBookEntry — the UTC calendar date
+// backdates every entry made before 08:00 local.
+const todayISO = () => toLocalISODate(new Date())
 
 /** Section headings, in balance sheet reading order. */
 const sectionOrder = [
@@ -42,8 +45,16 @@ export type OpeningBalanceRow = {
   normalBalance: GLAccount['normal_balance']
   /** What the ledger holds today, on the account's normal side. */
   current: number
-  /** What the accountant says it should be; null = leave alone. */
-  target: number | null
+  /**
+   * What the accountant says it should be; null = leave alone.
+   *
+   * Typed to include '' because that is what `v-model.number` actually leaves
+   * in the field when the user CLEARS it (parseFloat('') is NaN, so Vue keeps
+   * the empty string). Declaring this `number | null` made the type lie about
+   * the runtime value: `Number('') === 0`, so a cleared field read as a
+   * deliberate zero and posted the account down to zero.
+   */
+  target: number | '' | null
 }
 
 export function useOpeningBalances() {
@@ -61,11 +72,23 @@ export function useOpeningBalances() {
     () => !!rows.value.length && !glStore.accounts.some((a) => a.code === openingBalanceEquityCode),
   )
 
+  /** Set when the figures on screen could not be read and so cannot be trusted. */
+  const loadFailed = ref(false)
+
   async function load() {
+    glStore.clearError()
     const [accounts, tb] = await Promise.all([
       glStore.fetchAccounts(),
       glStore.fetchTrialBalance(entryDate.value),
     ])
+
+    // Same fail-open trap as the post path: a failed read returns [], every
+    // CURRENT column then renders 0, and the sheet invites the accountant to
+    // "correct" balances that were never actually read. Say so instead.
+    loadFailed.value = !!glStore.error
+    if (loadFailed.value) {
+      toast.error('Could not read current balances. The figures below are not reliable.')
+    }
 
     // Keep whatever the user has already typed across a reload of the figures,
     // so changing the date doesn't silently wipe a half-filled sheet.
@@ -105,9 +128,24 @@ export function useOpeningBalances() {
     return out
   })
 
+  /**
+   * The row's target as a real number, or null when it is blank or unusable.
+   *
+   * The ONE place the raw field is interpreted. deltaFor, submit and
+   * fillFromCurrent all go through it, so the preview on screen and the figures
+   * actually posted cannot disagree about what "blank" means.
+   */
+  function targetOf(row: OpeningBalanceRow): number | null {
+    if (row.target === null || row.target === '') return null
+    const value = Number(row.target)
+    return Number.isFinite(value) ? value : null
+  }
+
   /** What each row will actually move, on its normal side. Zero = no line. */
-  const deltaFor = (row: OpeningBalanceRow) =>
-    row.target === null ? 0 : Number(row.target) - row.current
+  const deltaFor = (row: OpeningBalanceRow) => {
+    const target = targetOf(row)
+    return target === null ? 0 : target - row.current
+  }
 
   /** Only the rows that will produce a journal line. */
   const changedRows = computed(() => rows.value.filter((r) => Math.abs(deltaFor(r)) >= 0.01))
@@ -131,6 +169,7 @@ export function useOpeningBalances() {
   const blockers = computed(() => {
     const missing: string[] = []
     if (!entryDate.value) missing.push('a date')
+    if (loadFailed.value) missing.push('the current balances to load successfully')
     if (!changedRows.value.length) missing.push('at least one account that differs from its current balance')
     if (equityAccountMissing.value) {
       missing.push(`account ${openingBalanceEquityCode} (Opening Balance Equity) to exist in Chart of Accounts`)
@@ -147,7 +186,7 @@ export function useOpeningBalances() {
   /** Prefill every blank target with its current balance, so the accountant
    *  edits only what changes rather than retyping the sheet. */
   function fillFromCurrent() {
-    for (const row of rows.value) if (row.target === null) row.target = row.current
+    for (const row of rows.value) if (targetOf(row) === null) row.target = row.current
   }
 
   async function submit() {
@@ -156,7 +195,9 @@ export function useOpeningBalances() {
     try {
       const payload: OpeningBalanceInput[] = changedRows.value.map((r) => ({
         account_code: r.code,
-        target: Number(r.target),
+        // Non-null by construction: changedRows only holds rows with a non-zero
+        // delta, and a blank target has a delta of zero.
+        target: targetOf(r) ?? 0,
       }))
       const result = await glStore.postOpeningBalances({
         entryDate: entryDate.value,
@@ -182,7 +223,7 @@ export function useOpeningBalances() {
   onMounted(load)
 
   return {
-    loading, posting,
+    loading, posting, loadFailed,
     entryDate, description, rows, groups,
     deltaFor, changedRows, plug,
     equityAccountMissing, openingBalanceEquityCode,

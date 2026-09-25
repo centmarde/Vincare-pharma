@@ -164,6 +164,8 @@ declare module 'vue-router/auto-routes' {
     '/purchasing/components/DraftPREditPage': RouteRecordInfo<'/purchasing/components/DraftPREditPage', '/purchasing/components/DraftPREditPage', Record<never, never>, Record<never, never>>,
     '/purchasing/components/DraftPRReview': RouteRecordInfo<'/purchasing/components/DraftPRReview', '/purchasing/components/DraftPRReview', Record<never, never>, Record<never, never>>,
     '/purchasing/components/ProcurementRequests': RouteRecordInfo<'/purchasing/components/ProcurementRequests', '/purchasing/components/ProcurementRequests', Record<never, never>, Record<never, never>>,
+    '/purchasing/components/PurchaseChargeLines': RouteRecordInfo<'/purchasing/components/PurchaseChargeLines', '/purchasing/components/PurchaseChargeLines', Record<never, never>, Record<never, never>>,
+    '/purchasing/components/PurchaseChargeRows': RouteRecordInfo<'/purchasing/components/PurchaseChargeRows', '/purchasing/components/PurchaseChargeRows', Record<never, never>, Record<never, never>>,
     '/purchasing/components/PurchaseOrderList': RouteRecordInfo<'/purchasing/components/PurchaseOrderList', '/purchasing/components/PurchaseOrderList', Record<never, never>, Record<never, never>>,
     '/purchasing/components/PurchaseRequisitionList': RouteRecordInfo<'/purchasing/components/PurchaseRequisitionList', '/purchasing/components/PurchaseRequisitionList', Record<never, never>, Record<never, never>>,
     '/purchasing/ProcurementRequestsView': RouteRecordInfo<'/purchasing/ProcurementRequestsView', '/purchasing/ProcurementRequestsView', Record<never, never>, Record<never, never>>,

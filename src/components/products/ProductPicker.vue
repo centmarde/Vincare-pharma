@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ProductPickerResult } from '@/stores/productsData'
 import { useProductsDataStore } from '@/stores/productsData'
-import { formatCurrency, formatMonthYear } from '@/utils/helpers'
+import { formatCurrency, formatExpiryLabel } from '@/utils/helpers'
 import { govtShelfLife, QUALIFICATION_MONTHS } from '@/utils/qualification'
 import { storeToRefs } from 'pinia'
 import { computed, onUnmounted, ref, watch } from 'vue'
@@ -145,13 +145,6 @@ async function loadMore() {
   }
 }
 
-/** '2027-10-01' -> 'Oct 2027'. An undated batch says so rather than render blank. */
-function expiryLabel(value: string | null): string {
-  if (!value) return 'No expiry'
-  const d = new Date(value)
-  return Number.isNaN(d.getTime()) ? 'No expiry' : formatMonthYear(d)
-}
-
 function stockLabel(stock: number | null): string {
   if (stock == null) return 'Stock unknown'
   return `${stock.toLocaleString()} on hand`
@@ -284,7 +277,7 @@ watch(
                     ·
                     <span :class="stockClass(group.totalStock)">{{ stockLabel(group.totalStock) }}</span>
                     <template v-if="group.batches.length === 1">
-                      · Exp {{ expiryLabel(group.head.expiry_date) }}
+                      · Exp {{ formatExpiryLabel(group.head.expiry_date) }}
                     </template>
                   </template>
                   <span v-else> · {{ group.head.sku || 'no SKU' }}</span>
@@ -336,7 +329,7 @@ watch(
               >
                 <template #title>
                   <span class="text-body-2">
-                    Batch {{ batch.batch_no || '—' }} · Exp {{ expiryLabel(batch.expiry_date) }}
+                    Batch {{ batch.batch_no || '—' }} · Exp {{ formatExpiryLabel(batch.expiry_date) }}
                   </span>
                 </template>
                 <template #subtitle>

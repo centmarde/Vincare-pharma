@@ -91,6 +91,17 @@ const tooManyAccounts = computed(
 )
 
 async function handlePrint() {
+  // The ACCOUNT NAME column resolves each line's code through the chart. If the
+  // chart is not loaded the column prints bare codes ("7050" instead of "Fuel &
+  // Lubricant Expense") — and a PDF is handed over or filed, so there is no
+  // second chance to notice. The open-watcher above starts the load; this makes
+  // sure it finished before anything is captured.
+  const chart = await ensureAccountsLoaded()
+  if (!chart?.length) {
+    toast.error('Could not load the chart of accounts. The voucher was not printed.')
+    return
+  }
+
   await nextTick()
   const el = printArea.value
   if (!el || !props.voucher) return

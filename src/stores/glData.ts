@@ -1062,6 +1062,19 @@ export const useGLDataStore = defineStore('glData', () => {
       // exactly what the Balance Sheet and Trial Balance pages show, rather
       // than a second balance computation that could disagree with them.
       const tb = await fetchTrialBalance(payload.entryDate)
+      // fetchTrialBalance swallows its own errors and returns [], which is
+      // indistinguishable from "every account sits at zero". Taken at face
+      // value, every delta below becomes the FULL target instead of the gap,
+      // and accounts that already carry a balance get posted a SECOND time —
+      // the cash accounts createCashAccount booked among them. That is exactly
+      // the re-runnable guarantee this function's doc comment makes, so it
+      // must not be allowed to fail open. The store's error ref is the only
+      // thing that separates the two cases; clearError() ran at the top of
+      // this function, so anything set here came from the fetch.
+      if (error.value) {
+        toast.error('Could not read the current balances. Nothing was posted.')
+        return { success: false as const }
+      }
       const currentOf = (code: string) => {
         const row = tb.find((t) => t.account_code === code)
         if (!row) return 0
