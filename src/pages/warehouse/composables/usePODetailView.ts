@@ -1,7 +1,9 @@
 import { ref, computed } from 'vue'
 import { useToast } from 'vue-toastification'
-import type { PR } from '@/stores/purchaseRequisitionData'
+import type { PR, PRItem } from '@/stores/purchaseRequisitionData'
 import { useProductsDataStore } from '@/stores/productsData'
+import type { SkuConflict } from '@/stores/productsData'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
 
 type PODetailEmits = {
@@ -19,6 +21,7 @@ export function usePODetailView(
 ) {
   const productsStore = useProductsDataStore()
   const toast = useToast()
+  const { confirmDialog } = useConfirmDialog()
 
   const savingAll = ref(false)
 
@@ -42,8 +45,8 @@ export function usePODetailView(
     () => transactionItems.value.filter((item) => !item.batch_no?.toString().trim()).length,
   )
 
-  async function saveAllItems(): Promise<boolean> {
-    const validItems = transactionItems.value.filter(
+  async function saveAllItems(receivingItems: PRItem[]): Promise<boolean> {
+    const validItems = receivingItems.filter(
       (item) =>
         item.product_id &&
         item.sku?.toString().trim() &&
@@ -78,6 +81,36 @@ export function usePODetailView(
     }
   }
 
+  function describeSkuConflict(conflict: SkuConflict): string {
+    if (conflict.inThisReceipt) {
+      return `• SKU "${conflict.sku}" is entered for both ${conflict.receivingProduct} and ${conflict.existingProduct} in this delivery.`
+    }
+    return `• SKU "${conflict.sku}" on ${conflict.receivingProduct} is already used by ${conflict.existingProduct}.`
+  }
+
+  async function confirmDuplicateSkus(receivingItems: PRItem[]): Promise<boolean> {
+    const skuItems = receivingItems
+      .filter((item) => item.sku?.toString().trim())
+      .map((item) => ({
+        sku: item.sku!.toString().trim(),
+        productName: item.product_name ?? '',
+      }))
+
+    const conflicts = await productsStore.findSkuConflicts(skuItems)
+    if (conflicts === null) {
+      toast.error('Could not check for duplicate SKUs. Please try again.')
+      return false
+    }
+    if (!conflicts.length) return true
+
+    const conflictLines = conflicts.map((conflict) => describeSkuConflict(conflict))
+
+    return confirmDialog(
+      `${conflictLines.join('\n')}\n\nThe SKU will still be saved. Continue receiving?`,
+      { title: 'Duplicate SKU', confirmText: 'Save anyway', cancelText: 'Go back' },
+    )
+  }
+
   async function handleMarkAsReceived() {
     if (missingSkuCount.value > 0) {
       toast.error(`Please fill in SKU for all ${missingSkuCount.value} item(s).`)
@@ -95,7 +128,17 @@ export function usePODetailView(
       toast.error('No purchase order selected.')
       return
     }
-    const saved = await saveAllItems()
+
+    const receivingItems = transactionItems.value.map((item) => ({ ...item }))
+
+    savingAll.value = true
+    const confirmed = await confirmDuplicateSkus(receivingItems)
+    savingAll.value = false
+    if (!confirmed) {
+      return
+    }
+
+    const saved = await saveAllItems(receivingItems)
     if (!saved) {
       return
     }

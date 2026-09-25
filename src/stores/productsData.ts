@@ -1,6 +1,7 @@
 import { generateRONumber, insertWithDocRetry } from '@/utils/generativeHelpers'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import type { SupplierType } from '@/stores/suppliersData'
+import { computeSellingPrice } from '@/utils/computationHelpers'
 import { useAuthUserStore } from './authUser'
 import { useLogsDataStore } from './logsData'
 import { useToast } from 'vue-toastification'
@@ -31,6 +32,7 @@ export type ProductType = {
   brand: string | null
   remarks: string | null
   is_reorder: boolean | null
+  is_disposed: boolean | null
   // Joined supplier data (via FK)
   suppliers: SupplierType | null
 }
@@ -98,6 +100,13 @@ export type ReceiveStockUpdate = {
   expiry_date?: string | null
   batch_no?: string | null
   cost_price?: number | null
+}
+
+export type SkuConflict = {
+  sku: string
+  receivingProduct: string
+  existingProduct: string
+  inThisReceipt: boolean
 }
 
 export type StockStatusBucket =
@@ -611,6 +620,79 @@ export const useProductsDataStore = defineStore('productsData', () => {
     }
 
     return results
+  }
+
+  // A brand-new SKU typed on two items is not in the database yet, so the receipt is checked against itself too.
+  function findSkuConflictsWithinReceipt(
+    items: { sku: string; productName: string }[],
+  ): SkuConflict[] {
+    const namesBySku = new Map<string, string[]>()
+
+    for (const item of items) {
+      const names = namesBySku.get(item.sku) ?? []
+      const itemName = item.productName.trim().toLowerCase()
+      const alreadyListed = names.some((name) => name.trim().toLowerCase() === itemName)
+      if (!alreadyListed) names.push(item.productName)
+      namesBySku.set(item.sku, names)
+    }
+
+    const conflicts: SkuConflict[] = []
+
+    for (const [sku, names] of namesBySku) {
+      for (let index = 1; index < names.length; index++) {
+        conflicts.push({
+          sku,
+          receivingProduct: names[index],
+          existingProduct: names[0],
+          inThisReceipt: true,
+        })
+      }
+    }
+
+    return conflicts
+  }
+
+  // Batch rows of one product legitimately share a SKU, so only a different product_name counts as a clash.
+  async function findSkuConflicts(
+    items: { sku: string; productName: string }[],
+  ): Promise<SkuConflict[] | null> {
+    const skus = [...new Set(items.map((item) => item.sku))]
+    if (!skus.length) return []
+
+    const { data, error: fetchError } = await supabase
+      .from('products')
+      .select('product_name, sku')
+      .in('sku', skus)
+
+    if (fetchError) {
+      console.warn('[productsData] Failed to check for duplicate SKUs', fetchError.message)
+      return null
+    }
+
+    const conflicts: SkuConflict[] = findSkuConflictsWithinReceipt(items)
+
+    for (const item of items) {
+      const receivingName = item.productName.trim().toLowerCase()
+      const existingNames = new Set<string>()
+
+      for (const row of data ?? []) {
+        const rowName = (row.product_name ?? '').trim() || 'an unnamed product'
+        if (row.sku?.trim() === item.sku && rowName.toLowerCase() !== receivingName) {
+          existingNames.add(rowName)
+        }
+      }
+
+      for (const existingProduct of existingNames) {
+        conflicts.push({
+          sku: item.sku,
+          receivingProduct: item.productName,
+          existingProduct,
+          inThisReceipt: false,
+        })
+      }
+    }
+
+    return conflicts
   }
 
   /**
@@ -1143,12 +1225,21 @@ export const useProductsDataStore = defineStore('productsData', () => {
           const appliedExpiryChanged = expiry_date != null && expiry_date !== applied.expiry_date
           if (appliedExpiryChanged) await assertExpiryEditable(applied, transaction_item_id)
 
-          if (sku || appliedExpiryChanged || batch_no || cost_price != null) {
+          const appliedSellingPrice = computeSellingPrice(cost_price ?? applied.cost_price)
+
+          if (
+            sku ||
+            appliedExpiryChanged ||
+            batch_no ||
+            cost_price != null ||
+            appliedSellingPrice != null
+          ) {
             const result = await updateProduct(product_id, {
               ...(sku ? { sku } : {}),
               ...(appliedExpiryChanged ? { expiry_date } : {}),
               ...(batch_no ? { batch_no } : {}),
               ...(cost_price != null ? { cost_price } : {}),
+              ...(appliedSellingPrice != null ? { selling_price: appliedSellingPrice } : {}),
             })
             if (!result) throw new Error(`Failed to update product ID ${product_id}`)
           }
@@ -1167,6 +1258,8 @@ export const useProductsDataStore = defineStore('productsData', () => {
         const expiryChanged = expiry_date != null && expiry_date !== product.expiry_date
         if (expiryChanged) await assertExpiryEditable(product, transaction_item_id)
 
+        const sellingPrice = computeSellingPrice(cost_price ?? product.cost_price)
+
         // 2. Apply the stock increment first
         const result = await updateProduct(product_id, {
           current_stock: newStock,
@@ -1174,6 +1267,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
           ...(expiryChanged ? { expiry_date } : {}),
           ...(batch_no ? { batch_no } : {}),
           ...(cost_price != null ? { cost_price } : {}),
+          ...(sellingPrice != null ? { selling_price: sellingPrice } : {}),
         })
         if (!result) throw new Error(`Failed to update product ID ${product_id}`)
 
@@ -1195,6 +1289,47 @@ export const useProductsDataStore = defineStore('productsData', () => {
       handleError(err, 'Failed saving received stock information.')
       return false
     }
+  }
+
+  // A PR can reuse a product row that was never priced or was priced by hand, so every
+  // product on a newly raised PR is brought to the fixed markup over its own cost_price.
+  const syncPRSellingPrices = async (prIds: number[]): Promise<boolean> => {
+    if (!prIds.length) return true
+
+    const { data: lines, error: linesError } = await supabase
+      .from('transaction_items')
+      .select('product_id, products ( id, cost_price, selling_price )')
+      .in('transaction_id', prIds)
+
+    if (linesError) {
+      console.warn('syncPRSellingPrices: could not read PR products:', linesError.message)
+      toast.warning('PR saved, but the selling prices could not be updated.')
+      return false
+    }
+
+    const checkedProductIds = new Set<number>()
+
+    for (const line of lines ?? []) {
+      const product = Array.isArray(line.products) ? line.products[0] : line.products
+      if (!product || checkedProductIds.has(product.id)) continue
+      checkedProductIds.add(product.id)
+
+      const sellingPrice = computeSellingPrice(product.cost_price)
+      if (sellingPrice == null || sellingPrice === Number(product.selling_price)) continue
+
+      const { error: updateError } = await supabase
+        .from('products')
+        .update({ selling_price: sellingPrice })
+        .eq('id', product.id)
+
+      if (updateError) {
+        console.warn('syncPRSellingPrices: could not update product', product.id, updateError.message)
+        toast.warning('PR saved, but some selling prices could not be updated.')
+        return false
+      }
+    }
+
+    return true
   }
 
   const upsertProductLocal = (product: ProductType) => {
@@ -1249,9 +1384,11 @@ export const useProductsDataStore = defineStore('productsData', () => {
     fetchProductById,
     fetchProductPicker,
     fetchSkusByProductNames,
+    findSkuConflicts,
     setProductsReorderFlag,
     createProduct,
     updateProduct,
+    syncPRSellingPrices,
     deleteProduct,
     updateProductSkuAndCount,
     clearError,

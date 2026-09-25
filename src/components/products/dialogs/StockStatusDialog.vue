@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { ProductType } from '@/stores/productsData'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { formatMonthYear } from '@/utils/helpers'
 import DisposeProductDialog from './DisposeProductDialog.vue'
+
+const disposableStockBuckets = ['expired', 'expiring-soon', 'low-stock']
 
 const props = defineProps<{
   modelValue: boolean
@@ -11,9 +13,12 @@ const props = defineProps<{
   activeCard: { icon: string; color: string; label: string } | null | undefined
   stockDialogType: string
   isPurchaser: boolean
+  canDispose: boolean
+  disposalRequestInfo: Map<number, { id: number; status: string }>
   selectedReorderProductIds: number[]
   reorderRequestInfo: Map<number, { id: number; status: string }>
   canRequestReorder: (productId: number) => boolean
+  updateReorderLevel: (product: ProductType, reorderLevel: number) => Promise<boolean>
   reorderReasonMap: Record<string, string>
   searchQuery: string
   page: number
@@ -31,8 +36,47 @@ const emit = defineEmits<{
   'edit-product': [product: ProductType]
   'toggle-reorder': [productId: number, checked: boolean]
   'request-reorder': [product: ProductType]
+  'request-disposal': [payload: { product: ProductType; qty: number; reason: string }]
   'create-pr': []
 }>()
+
+const editingProductId = ref<number | null>(null)
+const reorderLevelInput = ref<number | null>(null)
+const savingReorderLevel = ref(false)
+
+const isReorderLevelValid = computed(
+  () => Number.isInteger(reorderLevelInput.value) && Number(reorderLevelInput.value) > 0,
+)
+
+function startEditingReorderLevel(product: ProductType) {
+  if (editingProductId.value === product.id) return
+  editingProductId.value = product.id
+  reorderLevelInput.value = product.reorder_level
+}
+
+function cancelEditingReorderLevel() {
+  editingProductId.value = null
+  reorderLevelInput.value = null
+}
+
+watch(
+  () => props.modelValue,
+  (isOpen) => {
+    if (!isOpen) cancelEditingReorderLevel()
+  },
+)
+
+async function saveReorderLevel(product: ProductType) {
+  if (!isReorderLevelValid.value || savingReorderLevel.value) return
+
+  savingReorderLevel.value = true
+  const saved = await props.updateReorderLevel(product, Number(reorderLevelInput.value))
+  savingReorderLevel.value = false
+
+  if (saved && editingProductId.value === product.id) {
+    cancelEditingReorderLevel()
+  }
+}
 
 const { confirmDialog } = useConfirmDialog()
 
@@ -42,14 +86,28 @@ const hasSearch = computed(() => props.searchQuery.trim().length > 0)
 const disposeTarget = ref<ProductType | null>(null)
 const showDisposeDialog = ref(false)
 
+const isDisposableBucket = computed(() =>
+  disposableStockBuckets.includes(props.stockDialogType),
+)
+
+function disposalStatus(productId: number): string | null {
+  return props.disposalRequestInfo.get(productId)?.status ?? null
+}
+
+function canDisposeProduct(product: ProductType): boolean {
+  if (!props.canDispose || !isDisposableBucket.value) return false
+  if ((product.current_stock ?? 0) <= 0) return false
+  return disposalStatus(product.id) !== 'pending'
+}
+
 function openDisposeDialog(product: ProductType) {
   disposeTarget.value = product
   showDisposeDialog.value = true
 }
 
-function handleDisposeConfirm(product: ProductType) {
-  // Disposal is handled by an executive request — see DisposeProductDialog.
-  // Additional backend/receipt logic can be wired here when implemented.
+function handleDisposeConfirm(payload: { product: ProductType; qty: number; reason: string }) {
+  emit('request-disposal', payload)
+  showDisposeDialog.value = false
   disposeTarget.value = null
 }
 
@@ -122,6 +180,7 @@ async function confirmCreatePRFromSelection() {
           <v-list-item
             v-for="p in products"
             :key="p.id"
+            @click="startEditingReorderLevel(p)"
           >
             <template #prepend>
               <v-checkbox-btn
@@ -153,10 +212,48 @@ async function confirmCreatePRFromSelection() {
             <v-list-item-subtitle class="text-caption text-grey">
               SKU: {{ p.sku || 'No SKU' }} · Batch: {{ p.batch_no || '—' }}
             </v-list-item-subtitle>
+            <div
+              v-if="editingProductId === p.id"
+              class="d-flex align-center ga-2 mt-3"
+              @click.stop
+              @keydown.stop
+            >
+              <v-text-field
+                v-model.number="reorderLevelInput"
+                type="number"
+                min="1"
+                step="1"
+                label="Reorder Level"
+                prepend-inner-icon="mdi-alert"
+                color="info"
+                autocomplete="off"
+                variant="outlined"
+                density="compact"
+                hide-details="auto"
+                autofocus
+                :rules="[() => isReorderLevelValid || 'Must be a whole number greater than 0']"
+                @keydown.enter="saveReorderLevel(p)"
+                @keydown.esc="cancelEditingReorderLevel"
+              ></v-text-field>
+              <v-btn
+                color="info"
+                variant="flat"
+                class="text-none"
+                :disabled="!isReorderLevelValid"
+                :loading="savingReorderLevel"
+                @click="saveReorderLevel(p)"
+              >
+                Save
+              </v-btn>
+              <v-btn variant="text" class="text-none" @click="cancelEditingReorderLevel">
+                Cancel
+              </v-btn>
+            </div>
             <template #append>
               <div class="d-flex align-center ga-2">
                 <!-- Dispose button -->
                 <v-btn
+                  v-if="canDisposeProduct(p)"
                   size="small"
                   variant="outlined"
                   color="error"
@@ -166,6 +263,26 @@ async function confirmCreatePRFromSelection() {
                 >
                   Dispose
                 </v-btn>
+                <v-chip
+                  v-else-if="disposalStatus(p.id) === 'pending'"
+                  size="small"
+                  color="error"
+                  variant="tonal"
+                  class="font-weight-medium"
+                >
+                  <v-icon start size="14">mdi-delete-clock-outline</v-icon>
+                  Disposal pending
+                </v-chip>
+                <v-chip
+                  v-else-if="disposalStatus(p.id) === 'approved'"
+                  size="small"
+                  color="grey"
+                  variant="tonal"
+                  class="font-weight-medium"
+                >
+                  <v-icon start size="14">mdi-delete-off-outline</v-icon>
+                  Disposed
+                </v-chip>
                 <v-btn
                   v-if="stockDialogType !== 'no-reorder-level' && canRequestReorder(p.id)"
                   size="small"

@@ -1,5 +1,6 @@
 import { generateDocNumber, getLatestReferenceNo, insertWithDocRetry } from '@/utils/helpers'
 import { carriedProductFields } from '@/utils/productBatch'
+import { computeSellingPrice } from '@/utils/computationHelpers'
 import type { TransactionRPCRow } from './transactionsData'
 import { useProductsDataStore } from './productsData' // NEW
 import { useAuthUserStore } from './authUser'
@@ -486,6 +487,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
             expiry_date: item.expiry_date ?? null,
             current_stock: 0,
             cost_price: item.cost_per_unit,
+            selling_price: computeSellingPrice(item.cost_per_unit),
             ...carriedProductFields(source),
           }
         })
@@ -570,6 +572,8 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         return false
       }
     }
+
+    await useProductsDataStore().syncPRSellingPrices([payload.prId])
 
     toast.success('Purchase requisition updated successfully.')
     loading.value = false
@@ -694,6 +698,7 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
           expiry_date: item.expiry_date ?? null,
           current_stock: 0,
           cost_price: item.cost_per_unit,
+          selling_price: computeSellingPrice(item.cost_per_unit),
           ...carriedProductFields(source),
         }
       })
@@ -805,6 +810,8 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
         return { success: false }
       }
     }
+
+    await useProductsDataStore().syncPRSellingPrices(createdPRs.map((pr) => pr.transactionId))
 
     toast.success(
       createdPRs.length === 1

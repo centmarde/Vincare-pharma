@@ -22,6 +22,8 @@ export function getRequestTypeLabel(type: string): string {
       return 'Void'
     case 'edit':
       return 'Edit'
+    case 'disposal':
+      return 'Disposal'
     default:
       return type
   }

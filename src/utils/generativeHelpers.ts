@@ -171,3 +171,8 @@ export async function generateRONumber(): Promise<string> {
   return generateNextNumber('reference_no', `RO-${new Date().getFullYear()}-`)
 }
 
+/** Generate a Disposal number (DS-YYYY-NNN) — minted into reference_no. */
+export async function generateDSNumber(): Promise<string> {
+  return generateNextNumber('reference_no', `DS-${new Date().getFullYear()}-`)
+}
+
