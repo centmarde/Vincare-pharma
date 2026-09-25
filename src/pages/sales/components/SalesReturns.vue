@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AcceptReturnDialog from '../dialogs/AcceptReturnDialog.vue'
+import IssueReplacementDialog from '../dialogs/IssueReplacementDialog.vue'
 import { useSalesReturns } from '../composables/useSalesReturns'
 
 const {
@@ -7,6 +8,7 @@ const {
   totalCredited, writeOffValue, conditionSummary,
   settlementLabel, settlementColor,
   showAcceptDialog, openAcceptDialog, onReturnCreated,
+  showReplacementDialog, replacementTarget, openReplacementDialog, onReplacementIssued,
   formatCurrency, formatDate,
 } = useSalesReturns()
 </script>
@@ -78,6 +80,17 @@ const {
             </div>
           </template>
 
+          <template #[`item.actions`]="{ item }">
+            <v-btn
+              size="small"
+              variant="tonal"
+              prepend-icon="mdi-swap-horizontal"
+              @click="openReplacementDialog(item)"
+            >
+              Issue Replacement
+            </v-btn>
+          </template>
+
           <template #no-data>
             <div class="text-center pa-8 text-medium-emphasis">
               No returns recorded yet.
@@ -97,5 +110,10 @@ const {
     </v-card>
 
     <AcceptReturnDialog v-model="showAcceptDialog" @created="onReturnCreated" />
+    <IssueReplacementDialog
+      v-model="showReplacementDialog"
+      :return-row="replacementTarget"
+      @issued="onReplacementIssued"
+    />
   </v-container>
 </template>

@@ -20,6 +20,8 @@ export function useSalesReturns() {
 
   const search = ref('')
   const showAcceptDialog = ref(false)
+  const showReplacementDialog = ref(false)
+  const replacementTarget = ref<SalesReturnType | null>(null)
 
   const headers = [
     { title: 'Return No.', key: 'return_no', sortable: true },
@@ -28,6 +30,7 @@ export function useSalesReturns() {
     { title: 'Items', key: 'lines', sortable: false },
     { title: 'Settlement', key: 'settlement', sortable: true },
     { title: 'Credit', key: 'total_amount', sortable: true, align: 'end' as const },
+    { title: '', key: 'actions', sortable: false, align: 'end' as const },
   ]
 
   const filtered = computed(() => {
@@ -80,6 +83,16 @@ export function useSalesReturns() {
     await returnsStore.fetchReturns()
   }
 
+  function openReplacementDialog(row: SalesReturnType) {
+    replacementTarget.value = row
+    showReplacementDialog.value = true
+  }
+
+  async function onReplacementIssued() {
+    replacementTarget.value = null
+    await refresh()
+  }
+
   function openAcceptDialog() {
     showAcceptDialog.value = true
   }
@@ -95,6 +108,7 @@ export function useSalesReturns() {
     totalCredited, writeOffValue, conditionSummary,
     settlementLabel, settlementColor,
     showAcceptDialog, openAcceptDialog, onReturnCreated,
+    showReplacementDialog, replacementTarget, openReplacementDialog, onReplacementIssued,
     refresh,
     formatCurrency, formatDate,
   }

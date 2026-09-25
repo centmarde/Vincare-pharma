@@ -7,7 +7,7 @@ import { useAuthUserStore } from '@/stores/authUser'
 import { useLogsDataStore } from '@/stores/logsData'
 import { useStockSourcingStore } from '@/stores/stockSourcingData'
 import type { StockLocationId } from '@/stores/stockSourcingData'
-import { generateNextNumber, insertWithDocRetry, getErrorMessage } from '@/utils/helpers'
+import { generateNextNumber, insertWithDocRetry, getErrorMessage, formatCurrency } from '@/utils/helpers'
 
 // Customer returns. The company never refunds money — goods come back and other
 // goods go out in their place, worth less or more. This store owns the INBOUND
@@ -356,6 +356,180 @@ export const useSalesReturnsDataStore = defineStore('salesReturnsData', () => {
     }
   }
 
+  /**
+   * Issues replacement goods against a recorded return.
+   *
+   * Recorded as an ordinary POS sale — it relieves stock and recognises
+   * revenue like any other — but with payment_method 'customer_credit', which
+   * the GL projector books as DR 2065 instead of debiting cash. That is what
+   * consumes the credit the return created; without it the sale would claim
+   * money arrived and leave 2065 outstanding for ever.
+   *
+   * ONE replacement per return, by design. Any value the replacement does not
+   * use stays in 2065 as a real balance — that is the whole reason the credit
+   * lives in a liability account rather than being tracked in the app. Issuing
+   * more against the remainder is a further feature, not something to fake by
+   * summing remarks.
+   */
+  async function issueReplacement(payload: {
+    returnId: number
+    lines: { product_id: number; qty: number; unit_price: number; cost_price?: number | null }[]
+  }): Promise<{ success: boolean; saleId?: number; saleNo?: string | null }> {
+    loading.value = true
+    clearError()
+
+    const { returnId, lines } = payload
+
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) {
+      toast.error('User not authenticated.')
+      loading.value = false
+      return { success: false }
+    }
+
+    const validLines = lines.filter((l) => l.product_id != null && l.qty > 0)
+    if (!validLines.length) {
+      toast.warning('Add at least one replacement item.')
+      loading.value = false
+      return { success: false }
+    }
+
+    const source = await fetchReturnById(returnId)
+    if (!source) {
+      toast.error('Return not found.')
+      loading.value = false
+      return { success: false }
+    }
+
+    const settlesTag = `Settles ${source.return_no ?? `return #${returnId}`}`
+
+    try {
+      // One replacement per return. Checked against the tag this function
+      // itself writes, so a double-click or a retry after a partial failure
+      // cannot draw stock twice against the same credit.
+      const { data: existing, error: existingError } = await supabase
+        .from('transactions')
+        .select('id')
+        .eq('transaction_type', 'sale')
+        .ilike('remarks', `${settlesTag}%`)
+        .limit(1)
+      if (existingError) throw existingError
+      if (existing?.length) {
+        toast.warning('A replacement has already been issued against this return.')
+        loading.value = false
+        return { success: false }
+      }
+
+      const total = validLines.reduce((sum, l) => sum + l.qty * Number(l.unit_price ?? 0), 0)
+      // Refused rather than split: taking MORE than the credit means the
+      // customer owes the difference, and there is no payment path here — the
+      // company does not take money on a return. The rest is an ordinary sale.
+      if (total > source.total_amount + 0.009) {
+        toast.error(
+          `Replacement (${formatCurrency(total)}) exceeds the credit on this return (${formatCurrency(source.total_amount)}). Reduce it, or ring the rest up as a normal sale.`,
+        )
+        loading.value = false
+        return { success: false }
+      }
+
+      const year = new Date().getFullYear()
+      const { data: created, docNo: saleNo, error: insertError } = await insertWithDocRetry<{ id: number }>(
+        () => generateNextNumber('sale_no', `SO-${year}-`, ['reference_no']),
+        async (docNo) =>
+          supabase
+            .from('transactions')
+            .insert({
+              reference_no: docNo,
+              sale_no: docNo,
+              transaction_type: 'sale',
+              status: 'completed',
+              warehouse_id: source.warehouse_id,
+              customer_id: source.customer_id,
+              total_amount: total,
+              subtotal: total,
+              // The link back to the return. Remarks rather than a new column,
+              // following the change-request reissue precedent ("Replaces
+              // EXP-2026-004"), and it is what the duplicate guard above reads.
+              remarks: settlesTag,
+              created_by: user.id,
+            })
+            .select('id')
+            .single(),
+      )
+      if (insertError || !created) throw insertError ?? new Error('Failed to record the replacement.')
+
+      const { error: itemsError } = await supabase.from('transaction_items').insert(
+        validLines.map((l) => ({
+          transaction_id: created.id,
+          product_id: l.product_id,
+          qty_stock_out: l.qty,
+          unit_price: l.unit_price,
+          line_total: l.qty * Number(l.unit_price ?? 0),
+          cost_price: l.cost_price ?? null,
+        })),
+      )
+      if (itemsError) {
+        await rollbackReturn(created.id)
+        throw itemsError
+      }
+
+      // payment_method is what the GL projector keys the debit off. Written to
+      // pos_sale_details because that is where the POS loop reads it from.
+      const { error: detailsError } = await supabase.from('pos_sale_details').insert({
+        transaction_id: created.id,
+        payment_method: 'customer_credit',
+        subtotal: total,
+        amount_tendered: 0,
+        change_due: 0,
+      })
+      if (detailsError) {
+        await rollbackReturn(created.id)
+        throw detailsError
+      }
+
+      // Stock leaves AFTER the document is safely written, same ordering as
+      // createReturn: a replacement whose stock did not move is recoverable by
+      // hand, stock drawn against a document that failed to save is not.
+      const failed: number[] = []
+      for (const line of validLines) {
+        const ok = await sourcingStore.drawStock(source.warehouse_id, line.product_id, line.qty)
+        if (!ok) failed.push(line.product_id)
+      }
+
+      try {
+        await logsStore.createLog({
+          action: 'sales_return_replacement',
+          description: `${saleNo} issued against ${source.return_no ?? `return #${returnId}`} — ${formatCurrency(total)} of ${formatCurrency(source.total_amount)} credit used`,
+          module: 'sales',
+          transaction_id: created.id,
+        })
+      } catch (logErr) {
+        console.error('[Logging] Failed to log replacement:', logErr)
+      }
+
+      if (failed.length) {
+        toast.warning(
+          `${saleNo} recorded, but ${failed.length} line(s) could not be drawn from stock. Check warehouse stock.`,
+        )
+      } else {
+        const left = source.total_amount - total
+        toast.success(
+          left > 0.009
+            ? `${saleNo} issued. ${formatCurrency(left)} credit remains on account.`
+            : `${saleNo} issued. Credit fully used.`,
+        )
+      }
+
+      await fetchReturns()
+      return { success: true, saleId: created.id, saleNo }
+    } catch (err) {
+      handleError(err, 'Failed to issue the replacement')
+      toast.error(error.value || 'Failed to issue the replacement.')
+      return { success: false }
+    } finally {
+      loading.value = false
+    }
+  }
   return {
     returns,
     currentReturn,
@@ -364,6 +538,7 @@ export const useSalesReturnsDataStore = defineStore('salesReturnsData', () => {
     fetchReturns,
     fetchReturnById,
     createReturn,
+    issueReplacement,
     clearError,
   }
 })

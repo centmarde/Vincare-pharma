@@ -195,6 +195,7 @@ declare module 'vue-router/auto-routes' {
     '/sales/CustomersView': RouteRecordInfo<'/sales/CustomersView', '/sales/CustomersView', Record<never, never>, Record<never, never>>,
     '/sales/dialogs/AcceptReturnDialog': RouteRecordInfo<'/sales/dialogs/AcceptReturnDialog', '/sales/dialogs/AcceptReturnDialog', Record<never, never>, Record<never, never>>,
     '/sales/dialogs/CustomerFormDialog': RouteRecordInfo<'/sales/dialogs/CustomerFormDialog', '/sales/dialogs/CustomerFormDialog', Record<never, never>, Record<never, never>>,
+    '/sales/dialogs/IssueReplacementDialog': RouteRecordInfo<'/sales/dialogs/IssueReplacementDialog', '/sales/dialogs/IssueReplacementDialog', Record<never, never>, Record<never, never>>,
     '/sales/dialogs/PosPaymentDialog': RouteRecordInfo<'/sales/dialogs/PosPaymentDialog', '/sales/dialogs/PosPaymentDialog', Record<never, never>, Record<never, never>>,
     '/sales/dialogs/PosReceiptDialog': RouteRecordInfo<'/sales/dialogs/PosReceiptDialog', '/sales/dialogs/PosReceiptDialog', Record<never, never>, Record<never, never>>,
     '/sales/dialogs/VoidSaleDialog': RouteRecordInfo<'/sales/dialogs/VoidSaleDialog', '/sales/dialogs/VoidSaleDialog', Record<never, never>, Record<never, never>>,
