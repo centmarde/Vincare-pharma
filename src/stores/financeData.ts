@@ -97,6 +97,27 @@ export const categoryTitle = (
 // (verified by probe 2026-09-25), so a new value here needs no schema change —
 // unlike finance_details.category, whose CHECK had to be dropped for exactly
 // that reason.
+/**
+ * Chart subsections a disbursement may be charged to, in picker order.
+ *
+ * Lives here rather than in useExpenseAccounts because recordExpense has to
+ * validate against the same set — a store cannot import a composable, and two
+ * copies of this list would drift into "selectable but unrecordable", which is
+ * precisely what the finance_details.category CHECK used to cause.
+ *
+ * Administrative & Operating first because it is the bulk of what gets
+ * disbursed. Cost of Sales is included because Freight & Handling lives there,
+ * which also brings COGS and Purchases along — those are posted by the sales
+ * and purchasing flows rather than disbursed, so if they start getting
+ * miscoded on vouchers, drop 'Cost of Sales' and they disappear everywhere.
+ */
+export const expenseAccountSubsections = [
+  'Administrative & Operating Expenses',
+  'Selling Expenses',
+  'Cost of Sales',
+  'Finance Costs',
+] as const
+
 export const expenseDepartments = [
   { value: 'VP-Admin', title: 'VP-Admin' },
   { value: 'VP-Selling', title: 'VP-Selling' },
@@ -557,12 +578,27 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     if (payload.amount <= 0) {
       toast.error('Expense amount must be positive.'); loading.value = false; return { success: false }
     }
-    // The valid set is the chart of accounts now, so this can no longer be
-    // checked against a literal list. The picker only offers income-statement
-    // accounts and the GL projector falls back safely for anything historical,
-    // so the check here is just that one was chosen at all.
     if (!payload.category) {
       toast.error('An expense account must be selected.'); loading.value = false; return { success: false }
+    }
+    // ExpenseCategory is `string` now, so "a value was chosen" is not enough:
+    // a caller can pass a revenue code like 4010, or an unknown one, and it
+    // lands in finance_details for the GL projector to mis-book. The picker
+    // cannot protect this boundary — only the store can.
+    //
+    // Legacy slugs are accepted DELIBERATELY: the change-request reissue path
+    // (financeChangeRequest / changeRequestsData) replays a historical expense
+    // back through here, and rows written before categories became account
+    // codes still carry 'utilities', 'supplies' and 'representation' on prod.
+    // Rejecting those would make correcting an old expense impossible.
+    if (!legacyExpenseCategories.some((c) => c.value === payload.category)) {
+      if (!glStore.accounts.length) await glStore.fetchAccounts()
+      const account = glStore.accounts.find((a) => a.code === payload.category)
+      if (!account || !(expenseAccountSubsections as readonly string[]).includes(account.subsection)) {
+        toast.error(`${payload.category} is not a valid expense account.`)
+        loading.value = false
+        return { success: false }
+      }
     }
     if (!payload.cashAccountId) {
       toast.error('A cash account must be selected.'); loading.value = false; return { success: false }

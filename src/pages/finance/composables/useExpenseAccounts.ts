@@ -1,7 +1,7 @@
 import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useGLDataStore } from '@/stores/glData'
-import { categoryTitle } from '@/stores/financeData'
+import { categoryTitle, expenseAccountSubsections } from '@/stores/financeData'
 import type { ExpenseCategory } from '@/stores/financeData'
 import type { GLAccount } from '@/stores/glData'
 
@@ -14,22 +14,10 @@ import type { GLAccount } from '@/stores/glData'
 // `case` in gl_project_events and a CHECK constraint in the database; see the
 // ExpenseCategory docblock in financeData.ts for why that went.
 
-/**
- * Subsections offered, in the order they appear in the picker.
- *
- * Administrative & Operating first because it is the bulk of what gets
- * disbursed (28 of the 39 accounts). Cost of Sales is included because Freight
- * & Handling lives there and was one of the original categories, which also
- * brings COGS and Purchases along — those are posted by the sales and
- * purchasing flows rather than disbursed, so if they start getting miscoded on
- * vouchers, drop 'Cost of Sales' from this list and they disappear everywhere.
- */
-const offeredSubsections = [
-  'Administrative & Operating Expenses',
-  'Selling Expenses',
-  'Cost of Sales',
-  'Finance Costs',
-] as const
+// The offered subsections live in financeData so recordExpense can validate
+// against the very same list, and the two cannot drift into "selectable but
+// unrecordable" — see expenseAccountSubsections there for why that matters.
+const offeredSubsections = expenseAccountSubsections
 
 /**
  * Matches an account by NAME or by CODE, so an accountant who knows the chart
@@ -58,7 +46,7 @@ export type ExpenseAccountOption =
 
 export function useExpenseAccounts() {
   const glStore = useGLDataStore()
-  const { accounts } = storeToRefs(glStore)
+  const { accounts, allAccounts } = storeToRefs(glStore)
 
   /**
    * Load the chart if it isn't in memory yet. Safe to call on every dialog
@@ -67,8 +55,15 @@ export function useExpenseAccounts() {
    * briefly empty.
    */
   async function ensureLoaded() {
-    if (accounts.value.length) return accounts.value
-    return glStore.fetchAccounts()
+    // Two lists, two jobs: `accounts` (active only) is what may be CHOSEN, and
+    // `allAccounts` (including retired ones) is what a saved document's code is
+    // RESOLVED against. Without the second, deactivating an account makes every
+    // voucher and expense report that already used it print a bare code.
+    const [active] = await Promise.all([
+      accounts.value.length ? accounts.value : glStore.fetchAccounts(),
+      allAccounts.value.length ? allAccounts.value : glStore.fetchAllAccounts(),
+    ])
+    return active
   }
 
   /**
@@ -105,14 +100,16 @@ export function useExpenseAccounts() {
    * deactivated, must still print its real name rather than a bare code.
    */
   const expenseAccountLabel = (value: ExpenseCategory | null | undefined): string =>
-    categoryTitle(value, accounts.value)
+    categoryTitle(value, allAccounts.value.length ? allAccounts.value : accounts.value)
 
   /** Whether a stored value is a live account code (vs. a legacy slug). */
   const isAccountCode = (value: ExpenseCategory | null | undefined): boolean =>
-    !!value && accounts.value.some((a) => a.code === value)
+    !!value && (allAccounts.value.length ? allAccounts.value : accounts.value)
+      .some((a) => a.code === value)
 
   return {
     accounts,
+    allAccounts,
     expenseAccounts,
     expenseAccountOptions,
     expenseAccountLabel,

@@ -302,6 +302,16 @@ export const useGLDataStore = defineStore('glData', () => {
   const authStore = useAuthUserStore()
 
   const accounts: Ref<GLAccount[]> = ref([])
+  /**
+   * The chart INCLUDING deactivated accounts, for label resolution only.
+   *
+   * Kept separate from `accounts` on purpose: that list feeds every picker, and
+   * folding inactive accounts into it would offer them for new entries. This
+   * one answers "what was this code called", which a saved voucher or a
+   * historical expense report still needs after an account is retired —
+   * otherwise those documents fall back to printing the bare code.
+   */
+  const allAccounts: Ref<GLAccount[]> = ref([])
   const journal: Ref<JournalEntry[]> = ref([])
   const trialBalance: Ref<TrialBalanceRow[]> = ref([])
   const incomeStatement: Ref<IncomeStatement | null> = ref(null)
@@ -323,6 +333,20 @@ export const useGLDataStore = defineStore('glData', () => {
 
   const handleError = (err: unknown, msg: string) => { error.value = err instanceof Error ? err.message : msg }
   const clearError = () => { error.value = '' }
+
+  /** The chart including inactive accounts. Labels only — never picker options. */
+  const fetchAllAccounts = async () => {
+    clearError()
+    try {
+      const { data, error: e } = await supabase.from('accounts').select('*').order('code')
+      if (e) throw e
+      allAccounts.value = (data || []) as GLAccount[]
+      return allAccounts.value
+    } catch (err) {
+      handleError(err, 'Failed to fetch the full chart of accounts')
+      return []
+    }
+  }
 
   const fetchAccounts = async () => {
     loading.value = true
@@ -1014,7 +1038,10 @@ export const useGLDataStore = defineStore('glData', () => {
   }
 
   /**
-   * Load opening balances for the balance sheet as ONE balanced journal entry.
+   * Draft opening balances for the balance sheet as ONE balanced journal entry.
+   *
+   * The entry is created as a DRAFT and reaches the ledger only once a manager
+   * approves it in General Journal — manual entries may not post themselves.
    *
    * Why this exists: the accountant found the General Journal impractical for
    * this, because every line has to be paired with its own contra. Here they
@@ -1130,16 +1157,23 @@ export const useGLDataStore = defineStore('glData', () => {
         return { success: false as const }
       }
 
-      const result = await postJournalEntry(
-        payload.entryDate, 'manual', null,
-        payload.description?.trim() || 'Opening balances',
-        lines, user.id,
+      // DRAFTED, not posted. postJournalEntry inserts status:'posted'
+      // directly, which is exactly the path postManualEntry exists to prevent:
+      // the accounting directive requires a manual entry to be created as
+      // 'draft' and approved before it reaches the ledger. Opening balances
+      // move the whole balance sheet by arbitrary amounts, so they are the last
+      // thing that should bypass that. Going through postManualEntry also
+      // reuses its per-line active-account check and its balance check, and the
+      // draft shows up in General Journal where approveManualEntry can post it.
+      const result = await postManualEntry({
+        entryDate: payload.entryDate,
+        description: payload.description?.trim() || 'Opening balances',
+        lines,
+      })
+      if (!result.success) return { success: false as const }
+      toast.success(
+        `Opening balances drafted (${lines.length} lines) — approve them in General Journal to post.`,
       )
-      if (!result.success) {
-        toast.error(result.error || 'Failed to post opening balances.')
-        return { success: false as const }
-      }
-      toast.success(`Opening balances posted (${lines.length} lines).`)
       return { success: true as const, lineCount: lines.length }
     } catch (err) {
       handleError(err, 'Failed to post opening balances')
@@ -1201,11 +1235,12 @@ export const useGLDataStore = defineStore('glData', () => {
   }
 
   return {
-    accounts, journal, trialBalance, incomeStatement, balanceSheet, loading, error,
+    accounts, allAccounts, journal, trialBalance, incomeStatement, balanceSheet, loading, error,
     cashBasisStatement, fetchCashBasisStatement,
     monthlyIncomeStatement, fetchMonthlyIncomeStatement,
     monthlyCashBasisStatement, fetchMonthlyCashBasisStatement,
-    fetchAccounts, createAccount, fetchJournal, fetchAccountLedger, postJournalEntry, postManualEntry, approveManualEntry, reverseEntry, reverseJournalEntry,
+    fetchAccounts,
+    fetchAllAccounts, createAccount, fetchJournal, fetchAccountLedger, postJournalEntry, postManualEntry, approveManualEntry, reverseEntry, reverseJournalEntry,
     postOpeningBalances,
     projectEvents, fetchTrialBalance, fetchIncomeStatement, fetchBalanceSheet,
     clearError, resetStore,

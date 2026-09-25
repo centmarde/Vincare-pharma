@@ -18,7 +18,7 @@ const {
       <v-card-title class="d-flex align-center ga-2 pb-2 flex-wrap">
         <span>Opening Balances</span>
         <v-chip v-if="changedRows.length" color="info" size="small" label>
-          {{ changedRows.length }} to post
+          {{ changedRows.length }} to record
         </v-chip>
         <v-spacer />
         <v-text-field
@@ -32,9 +32,10 @@ const {
       <v-card-text>
         <p class="text-body-2 text-medium-emphasis mb-3">
           Enter what each account <strong>should</strong> read as of this date. Only the difference
-          from its current balance is posted, so this screen is safe to run more than once — an
-          account already at its target contributes nothing. Everything posts as one balanced
+          from its current balance is recorded, so this screen is safe to run more than once — an
+          account already at its target contributes nothing. Everything is drafted as one balanced
           journal entry, with the difference going to Opening Balance Equity.
+          <strong>It reaches the ledger only once approved in General Journal.</strong>
         </p>
 
         <v-alert
@@ -42,7 +43,7 @@ const {
           type="error" variant="tonal" density="compact" class="mb-3"
         >
           Account {{ openingBalanceEquityCode }} (Opening Balance Equity) does not exist yet.
-          Add it in Chart of Accounts before posting.
+          Add it in Chart of Accounts before recording balances.
         </v-alert>
 
         <v-progress-linear v-if="loading" indeterminate class="mb-2" />
@@ -54,7 +55,7 @@ const {
               <th class="text-left">Account</th>
               <th class="text-right">Current</th>
               <th class="text-right" style="width: 180px">Target</th>
-              <th class="text-right">Will post</th>
+              <th class="text-right">Will record</th>
             </tr>
           </thead>
           <tbody>
@@ -119,7 +120,7 @@ const {
           color="primary" variant="flat" class="text-none"
           :disabled="!canSubmit" :loading="posting" @click="submit"
         >
-          Post Opening Balances
+          Draft Opening Balances
         </v-btn>
       </v-card-actions>
     </v-card>
