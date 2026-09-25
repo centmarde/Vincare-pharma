@@ -66,6 +66,7 @@ begin
         'sku',                    p.sku,
         'supplier_id',            p.supplier_id,
         'expiry_date',            p.expiry_date,
+        'batch_no',               ti.batch_no,
         'supplier_name',          s.name
       ) order by ti.id) as items
       from transaction_items ti
