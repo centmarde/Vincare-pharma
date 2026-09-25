@@ -1,16 +1,34 @@
 <script setup lang="ts">
+import { watch } from 'vue'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useToast } from 'vue-toastification'
 import { storeToRefs } from 'pinia'
 import InnerLayoutWrapper from '@/layouts/InnerLayoutWrapper.vue'
 import HomeLogs from '@/pages/hometab/HomeLogs.vue'
 import HomeAnnouncements from '@/pages/hometab/HomeAnnouncements.vue'
+import VersionLogsDialog from '@/components/common/VersionLogsDialog.vue'
+import { useUserVersionLogsDataStore } from '@/stores/userVersionLogsData'
 
 const authStore = useAuthUserStore()
 const toast = useToast()
+const versionLogsStore = useUserVersionLogsDataStore()
 
 // Reactive references from the auth store
 const { userName, loading, userRole } = storeToRefs(authStore)
+const { versionLogDialogVisible } = storeToRefs(versionLogsStore)
+
+// Once the authenticated user is known, check for unread version logs and
+// (if any exist) show the "What's New" dialog. The user lands here first
+// after login; marking the logs as read is handled inside the dialog.
+watch(
+  () => authStore.userData?.id,
+  (userId) => {
+    if (userId) {
+      versionLogsStore.fetchUnreadVersionLogs(userId)
+    }
+  },
+  { immediate: true },
+)
 
 const handleLogout = async () => {
   try {
@@ -65,4 +83,7 @@ const handleLogout = async () => {
       </v-container>
     </template>
   </InnerLayoutWrapper>
+
+  <!-- "What's New" version logs dialog (shown when the user has unread logs) -->
+  <VersionLogsDialog v-model="versionLogDialogVisible" />
 </template>
