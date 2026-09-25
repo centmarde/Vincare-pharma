@@ -206,6 +206,13 @@ export const navigationConfig: NavigationGroup[] = [
         permission: 'sales.pos.use',
       },
       {
+        title: 'Sales Returns',
+        icon: 'mdi-keyboard-return',
+        route: '/sales/returns',
+        permission: 'sales.returns.manage',
+        keywords: 'return, exchange, swap, refund, credit, damaged, expired',
+      },
+      {
         title: 'Inventory',
         icon: 'mdi-clipboard-list',
         route: '/sales/inventory',

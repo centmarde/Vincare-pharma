@@ -19,6 +19,7 @@ import WareHouseView from '@/pages/warehouse/WareHouseView.vue'
 import StockTransfersReviewView from '@/pages/warehouse/StockTransfersReviewView.vue'
 import SalesView from '@/pages/sales/SalesView.vue'
 import StockTransfersView from '@/pages/sales/StockTransfersView.vue'
+import SalesReturnsView from '@/pages/sales/SalesReturnsView.vue'
 import PosView from '@/pages/sales/PosView.vue'
 import RemittanceView from '@/pages/sales/RemittanceView.vue'
 import InventoryView from '@/pages/sales/InventoryView.vue'
@@ -141,6 +142,11 @@ const routes = setupLayouts([
   {
     path: '/warehouse/stock-transfers',
     component: StockTransfersReviewView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/sales/returns',
+    component: SalesReturnsView,
     meta: { requiresAuth: true },
   },
   {
