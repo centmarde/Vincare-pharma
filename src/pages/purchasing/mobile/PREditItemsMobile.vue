@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import type { PRItem } from '@/stores/purchaseRequisitionData'
 import { formatCurrency } from '@/utils/helpers'
-
-const unitOptions = ['Box', 'Pack', 'Piece', 'Bottle', 'Tube', 'Vial', 'Ampoule', 'Blister', 'Strip']
+import { unitOptions } from '../composables/usePurchaseRequisition'
 
 defineProps<{
   items: PRItem[]

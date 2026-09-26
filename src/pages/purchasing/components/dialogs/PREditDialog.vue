@@ -16,6 +16,7 @@ import { storeToRefs } from 'pinia'
 import ProductPickerDialog from '@/components/products/ProductPicker.vue'
 import PREditItemsMobile from '../../mobile/PREditItemsMobile.vue'
 import type { ProductPickerResult } from '@/stores/productsData'
+import { unitOptions } from '../../composables/usePurchaseRequisition'
 
 const { mobile } = useDisplay()
 const toast = useToast()
@@ -263,17 +264,7 @@ const companyCostTotal = computed(() => {
             <v-col cols="1" class="pl-2">
               <v-select
                 v-model="item.unit"
-                :items="[
-                  'Box',
-                  'Pack',
-                  'Piece',
-                  'Bottle',
-                  'Tube',
-                  'Vial',
-                  'Ampoule',
-                  'Blister',
-                  'Strip',
-                ]"
+                :items="unitOptions"
                 variant="outlined"
                 density="compact"
                 hide-details

@@ -10,7 +10,34 @@ import { useFormDraft } from '@/composables/useFormDraft'
 import { computePurchaseBreakdown, emptySupplierCharges } from '@/utils/computationHelpers'
 import type { PurchaseBreakdown, SupplierCharges } from '@/utils/computationHelpers'
 
-export const unitOptions = ['Box', 'Pc(s)', 'Unit(s)', 'Set', 'Kg', 'M']
+export const unitOptions = [
+  'Ampoule',
+  'Bag',
+  'Blister',
+  'Bottle',
+  'Box',
+  'Canister',
+  'Capsule',
+  'Carton',
+  'Gallon',
+  'Jar',
+  'Kit',
+  'Nebule',
+  'Pack',
+  'Pair',
+  'Pcs',
+  'Piece',
+  'Roll',
+  'Sachet',
+  'Set',
+  'Strip',
+  'Suppository',
+  'Tablet',
+  'Tray',
+  'Tube',
+  'Unit',
+  'Vial',
+]
 
 export type PRFormItem = {
   no: number
