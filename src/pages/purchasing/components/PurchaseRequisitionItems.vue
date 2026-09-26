@@ -24,7 +24,7 @@ const { mobile } = useDisplay()
   <template v-if="!mobile">
     <v-row class="text-caption font-weight-bold mb-1 px-1" no-gutters>
       <v-col cols="auto" style="width: 36px" class="text-center">NO.</v-col>
-      <v-col cols="auto" style="width: 110px" class="pl-2">UNIT</v-col>
+      <v-col cols="auto" style="width: 160px" class="pl-2">UNIT</v-col>
       <v-col class="pl-2">PRODUCT</v-col>
       <v-col cols="auto" style="width: 180px" class="pl-2">SUPPLIER</v-col>
       <v-col cols="auto" style="width: 160px" class="pl-2">BATCH NO.</v-col>
@@ -45,7 +45,7 @@ const { mobile } = useDisplay()
         {{ index + 1 }}
       </v-col>
 
-      <v-col cols="auto" style="width: 110px" class="pl-2">
+      <v-col cols="auto" style="width: 160px" class="pl-2">
         <v-select
           v-model="item.unit"
           :items="unitOptions"
