@@ -19,6 +19,7 @@ const {
   init,
   openChangeDialog,
   submitChangeRequest,
+  expenseAccountLabel,
 } = useExpenses()
 
 const router = useRouter()
@@ -106,7 +107,7 @@ onMounted(init)
         </template>
 
         <template #item.category="{ item }">
-          <v-chip size="small" variant="tonal" color="primary">{{ item.category }}</v-chip>
+          <v-chip size="small" variant="tonal" color="primary">{{ expenseAccountLabel(item.category) }}</v-chip>
         </template>
 
         <template #item.remarks="{ item }">

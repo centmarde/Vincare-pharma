@@ -5,6 +5,9 @@ import type { InhouseOrderType, Shortfall, NegotiationRound } from '@/stores/inh
 import { useDeliveryReceiptsDataStore, type DeliveryReceiptType } from '@/stores/deliveryReceiptsData'
 import type { ProductPickerResult } from '@/stores/productsData'
 import { useProcurementDataStore } from '@/stores/procurementData'
+import { useShortDatedApprovalStore } from '@/pages/inhouse/stores/shortDatedApproval'
+import type { ShortDatedBatch, ShortDatedRequest } from '@/pages/inhouse/stores/shortDatedApproval'
+import { govtShelfLife } from '@/utils/qualification'
 import { useFinanceDataStore } from '@/stores/financeData'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
@@ -17,6 +20,7 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   const store = useInhouseDataStore()
   const drStore = useDeliveryReceiptsDataStore()
   const procurementStore = useProcurementDataStore()
+  const shortDatedStore = useShortDatedApprovalStore()
   const authStore = useAuthUserStore()
   const financeStore = useFinanceDataStore()
   // Inside the composable body, not at module scope — a factory called on
@@ -43,6 +47,13 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   // send a request and Purchasing does the sourcing (lead-dev directive).
   const requestedAt = ref<string | null>(null)
   const requestNote = ref('')
+
+  // Short-dated executive approval. Government contracts reject stock with
+  // under 18 months left, so deliver() blocks it — an executive may waive that
+  // for a given order, and this is how it gets asked for and shown.
+  const shortDatedBatches = ref<ShortDatedBatch[]>([])
+  const shortDatedRequest = ref<ShortDatedRequest | null>(null)
+  const shortDatedNote = ref('')
 
   // negotiate panel: editable per-line offer prices + a note
   const lineEdits = ref<Record<number, number>>({})
@@ -138,6 +149,9 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     payAmount.value = null
     payCashAccountId.value = null
     requestedAt.value = null
+    shortDatedBatches.value = []
+    shortDatedRequest.value = null
+    shortDatedNote.value = ''
     requestNote.value = ''
     if (!o) return
     for (const it of o.items ?? []) {
@@ -152,6 +166,9 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     payAmount.value = (o.total_amount ?? 0) - (o.amount_paid ?? 0)
     void loadRounds(o.id)
     if (o.status === 'awaiting_stock') { void refreshShortfall(o.id); void loadRequestStatus(o.id) }
+    // Only matters once the order can actually ship: a short-dated batch is
+    // not a problem while the order is still being negotiated.
+    if (o.status === 'ready' || o.status === 'delivered') void loadShortDated(o.id)
     if (o.status === 'delivered' || o.status === 'partial' || o.status === 'paid') {
       void loadPayments(o.id)
       // Deposit accounts are only needed once the order can take a payment.
@@ -165,6 +182,43 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   // (recheck() → store.recheckStock), never a side effect of viewing.
   async function refreshShortfall(id: number) { shortfall.value = await store.computeShortfall(id) }
   async function loadPayments(id: number) { payments.value = await store.fetchPayments(id) }
+
+  /**
+   * Which of this order’s lines are short-dated, and whether an approval
+   * already exists for them.
+   *
+   * Read-only — EXPIRED lines are excluded because no approval can make
+   * expired goods deliverable, so offering to request one would be a lie.
+   */
+  async function loadShortDated(id: number) {
+    const o = order()
+    const lines = o?.items ?? []
+    shortDatedBatches.value = lines
+      .filter((li: any) => {
+        const shelf = govtShelfLife(li.product?.expiry_date ?? null)
+        return !shelf.ok && shelf.reason === 'short_dated'
+      })
+      .map((li: any) => ({
+        product_id: li.product_id,
+        product_name: li.product?.product_name ?? `Product #${li.product_id}`,
+        batch_no: li.product?.batch_no ?? null,
+        expiry_date: li.product?.expiry_date ?? null,
+      }))
+    shortDatedRequest.value = await shortDatedStore.requestFor(id)
+  }
+
+  async function requestShortDatedApproval() {
+    const o = order(); if (!o) return
+    loading.value = true
+    const result = await shortDatedStore.requestApproval({
+      orderId: o.id,
+      orderNo: o.order_no ?? null,
+      batches: shortDatedBatches.value,
+      reason: shortDatedNote.value || null,
+    })
+    loading.value = false
+    if (result.success) { shortDatedNote.value = ''; await loadShortDated(o.id) }
+  }
   async function loadRequestStatus(id: number) {
     const latest = await procurementStore.fetchLatestRequest(id)
     requestedAt.value = latest?.created_at ?? null
@@ -281,6 +335,8 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     receivedBy, issuedReceipt,
     payAmount, payReference, payRemarks, payCashAccountId, cashAccountOptions,
     requestedAt, requestNote,
+    shortDatedBatches, shortDatedRequest, shortDatedNote,
+    loadShortDated, requestShortDatedApproval,
     items, status, isNegotiating, isAwaitingStock, isReady, isDelivered, isPartiallyPaid, isPaid, canRecordPayment,
     proposedTotal, proposedCost, proposedRatio, ratioLabel, ratioClass, profitLabel, marginLabel, deliveredPct, remaining, balance, paidPct,
     applyPickedProduct, recordCounter, agree, recheck, deliver, recordPayment, notifyPurchasing,

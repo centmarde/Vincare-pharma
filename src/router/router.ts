@@ -19,6 +19,7 @@ import WareHouseView from '@/pages/warehouse/WareHouseView.vue'
 import StockTransfersReviewView from '@/pages/warehouse/StockTransfersReviewView.vue'
 import SalesView from '@/pages/sales/SalesView.vue'
 import StockTransfersView from '@/pages/sales/StockTransfersView.vue'
+import SalesReturnsView from '@/pages/sales/SalesReturnsView.vue'
 import PosView from '@/pages/sales/PosView.vue'
 import RemittanceView from '@/pages/sales/RemittanceView.vue'
 import InventoryView from '@/pages/sales/InventoryView.vue'
@@ -47,6 +48,8 @@ import BalanceSheetView from '@/pages/finance/BalanceSheetView.vue'
 import TrialBalanceView from '@/pages/finance/TrialBalanceView.vue'
 import GeneralJournalView from '@/pages/finance/GeneralJournalView.vue'
 import ChartOfAccountsView from '@/pages/finance/ChartOfAccountsView.vue'
+import OpeningBalancesView from '@/pages/finance/OpeningBalancesView.vue'
+import BookEntryView from '@/pages/finance/BookEntryView.vue'
 import SuppliersView from '@/pages/suppliers/SuppliersView.vue'
 import LogsView from '@/pages/logs/LogsView.vue'
 import WarehouseProductsListView from '@/pages/warehouse/ProductsListView.vue'
@@ -139,6 +142,11 @@ const routes = setupLayouts([
   {
     path: '/warehouse/stock-transfers',
     component: StockTransfersReviewView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/sales/returns',
+    component: SalesReturnsView,
     meta: { requiresAuth: true },
   },
   {
@@ -296,6 +304,16 @@ const routes = setupLayouts([
   {
     path: '/finance/chart-of-accounts',
     component: ChartOfAccountsView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/finance/opening-balances',
+    component: OpeningBalancesView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/finance/book-entry',
+    component: BookEntryView,
     meta: { requiresAuth: true },
   },
   {

@@ -1,10 +1,18 @@
 <script setup lang="ts">
 import { company } from '@/pages/purchasing/composables/usePODetailModal'
 import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
-import { formatCurrency, formatDatePO_Written, formatExpiryMonthYear } from '@/utils/helpers'
+import {
+  formatCurrency,
+  formatDatePO_Written,
+  formatExpiryMonthYear,
+  fromLocalISODate,
+  maskMonthYearInput,
+  parseMonthYear,
+} from '@/utils/helpers'
 import type { PR, PRItem } from '@/stores/purchaseRequisitionData'
 import { useProductsDataStore } from '@/stores/productsData'
 import { ref, watch } from 'vue'
+import { useToast } from 'vue-toastification'
 
 const props = defineProps<{
   po: PurchaseOrder | null
@@ -16,6 +24,7 @@ const props = defineProps<{
 }>()
 
 const productsStore = useProductsDataStore()
+const toast = useToast()
 
 const skuInputItemIds = ref<Record<number, boolean>>({})
 
@@ -66,11 +75,35 @@ watch(
 
 // Track which expiry month picker menu is currently open (keyed by item row).
 const expiryMenuOpen = ref<Record<number, boolean>>({})
+const expiryPickerYear = ref(new Date().getFullYear())
+const expiryPickerView = ref<'months' | 'year'>('months')
+const expiryPickedMonth = ref<number | null>(null)
+const expiryYearPicked = ref(false)
+const editingExpiry = ref<{ index: number; text: string } | null>(null)
 
-// Text shown in the read-only expiry field. Empty returns '' so the MM/YYYY
+const earliestExpiryYear = 2000
+const latestExpiryYear = 2099
+const earliestExpiryDate = `${earliestExpiryYear}-01-01`
+const latestExpiryDate = `${latestExpiryYear}-12-31`
+
+function parseExpiryText(text: string): Date | null {
+  const date = parseMonthYear(text)
+  if (!date) return null
+  const year = date.getFullYear()
+  if (year < earliestExpiryYear || year > latestExpiryYear) return null
+  return date
+}
+
+function expiryDateOf(item: PRItem): Date | null {
+  return item.expiry_date ? fromLocalISODate(item.expiry_date) : null
+}
+
+// Text shown in the expiry field. Empty returns '' so the MM/YYYY
 // placeholder is visible, otherwise renders as MM/YYYY (e.g. "09/2031").
-function expiryFieldText(item: PRItem): string {
-  return formatExpiryMonthYear(item.expiry_date) === '—' ? '' : formatExpiryMonthYear(item.expiry_date)
+function expiryFieldText(item: PRItem, index: number): string {
+  if (editingExpiry.value?.index === index) return editingExpiry.value.text
+  const date = expiryDateOf(item)
+  return date ? formatExpiryMonthYear(date) : ''
 }
 
 // Build a local-timezone-safe "YYYY-MM-DD" string for the last day of the
@@ -80,16 +113,69 @@ function expiryDateString(year: number, month0: number): string {
   return `${year}-${String(month0 + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 }
 
-function onExpiryMonthSelect(item: PRItem, index: number, month: number) {
-  const year = item.expiry_date ? new Date(item.expiry_date).getFullYear() : new Date().getFullYear()
-  item.expiry_date = expiryDateString(year, month)
+function setExpiryMonth(item: PRItem, year: number, monthIndex: number) {
+  item.expiry_date = expiryDateString(year, monthIndex)
+  expiryPickerYear.value = year
+}
+
+function startExpiryTyping(item: PRItem, index: number) {
+  const date = expiryDateOf(item)
+  editingExpiry.value = { index, text: date ? formatExpiryMonthYear(date) : '' }
+}
+
+function onExpiryTyped(item: PRItem, index: number, raw: string) {
+  const text = maskMonthYearInput(raw)
+  editingExpiry.value = { index, text }
+  const date = parseExpiryText(text)
+  if (date) setExpiryMonth(item, date.getFullYear(), date.getMonth())
+}
+
+function finishExpiryTyping(item: PRItem, index: number) {
+  if (editingExpiry.value?.index !== index) return
+  const text = editingExpiry.value.text
+  editingExpiry.value = null
+  if (!text) {
+    item.expiry_date = null
+    return
+  }
+  if (!parseExpiryText(text)) toast.info('Enter a valid expiry as MM/YYYY, e.g. 01/2029.')
+}
+
+function onExpiryMenuToggle(item: PRItem, index: number, isOpen: boolean) {
+  expiryMenuOpen.value[index] = isOpen
+  if (!isOpen) return
+  expiryPickerYear.value = expiryDateOf(item)?.getFullYear() ?? new Date().getFullYear()
+  expiryPickerView.value = 'months'
+  expiryPickedMonth.value = null
+  expiryYearPicked.value = false
+}
+
+function onExpiryPickerViewChange(mode: string) {
+  if (mode === 'months' || mode === 'year') expiryPickerView.value = mode
+}
+
+function completeExpiryPick(item: PRItem, index: number, year: number, month: number) {
+  setExpiryMonth(item, year, month)
   expiryMenuOpen.value[index] = false
 }
 
+function onExpiryMonthSelect(item: PRItem, index: number, month: number) {
+  if (expiryYearPicked.value) {
+    completeExpiryPick(item, index, expiryPickerYear.value, month)
+    return
+  }
+  expiryPickedMonth.value = month
+  expiryPickerView.value = 'year'
+}
+
 function onExpiryYearSelect(item: PRItem, index: number, year: number) {
-  const current = item.expiry_date ? new Date(item.expiry_date) : new Date()
-  item.expiry_date = expiryDateString(year, current.getMonth())
-  expiryMenuOpen.value[index] = false
+  expiryPickerYear.value = year
+  if (expiryPickedMonth.value != null) {
+    completeExpiryPick(item, index, year, expiryPickedMonth.value)
+    return
+  }
+  expiryYearPicked.value = true
+  expiryPickerView.value = 'months'
 }
 
 </script>
@@ -183,6 +269,7 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
               variant="outlined"
               hide-details
               placeholder="Enter SKU"
+              autocomplete="off"
               style="width: 120px"
             />
             <v-chip
@@ -205,6 +292,7 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
               variant="outlined"
               hide-details
               min="1"
+              autocomplete="off"
               class="input-number"
               style="width: 120px"
             />
@@ -218,6 +306,7 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
               variant="outlined"
               hide-details
               placeholder="Enter batch no"
+              autocomplete="off"
               style="width: 120px"
             />
             <span v-else>{{ item.batch_no ?? '—' }}</span>
@@ -226,28 +315,45 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
             <v-menu
               v-if="skuEditMode"
               :model-value="expiryMenuOpen[index] ?? false"
-              @update:model-value="(val) => (expiryMenuOpen[index] = val)"
+              @update:model-value="(isOpen) => onExpiryMenuToggle(item, index, isOpen)"
               :close-on-content-click="false"
               location="bottom"
             >
               <template #activator="{ props: menuProps }">
                 <v-text-field
                   v-bind="menuProps"
-                  :model-value="expiryFieldText(item)"
+                  :model-value="expiryFieldText(item, index)"
                   placeholder="MM/YYYY"
+                  maxlength="7"
+                  inputmode="numeric"
                   density="compact"
                   variant="outlined"
                   hide-details
-                  readonly
+                  autocomplete="off"
                   prepend-inner-icon="mdi-calendar-month-outline"
                   style="width: 140px"
+                  @focus="startExpiryTyping(item, index)"
+                  @update:model-value="(raw) => onExpiryTyped(item, index, raw)"
+                  @blur="finishExpiryTyping(item, index)"
                 />
               </template>
               <v-date-picker
-                view-mode="months"
-                @update:month="(m) => onExpiryMonthSelect(item, index, m)"
-                @update:year="(y) => onExpiryYearSelect(item, index, y)"
-              />
+                :model-value="expiryDateOf(item)"
+                :year="expiryPickerYear"
+                :view-mode="expiryPickerView"
+                :min="earliestExpiryDate"
+                :max="latestExpiryDate"
+                @update:view-mode="onExpiryPickerViewChange"
+                @update:month="(month) => onExpiryMonthSelect(item, index, month)"
+              >
+                <template #year="{ year, props: yearButtonProps }">
+                  <v-btn
+                    :key="year.value"
+                    v-bind="yearButtonProps"
+                    @click="onExpiryYearSelect(item, index, year.value)"
+                  />
+                </template>
+              </v-date-picker>
             </v-menu>
             <span v-else>{{ formatExpiryMonthYear(item.expiry_date) }}</span>
           </td>
@@ -312,6 +418,7 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
                   variant="outlined"
                   hide-details
                   min="1"
+                  autocomplete="off"
                   style="width: 100%"
                 />
               </div>
@@ -324,6 +431,7 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
                   variant="outlined"
                   hide-details
                   placeholder="Enter SKU"
+                  autocomplete="off"
                   style="width: 100%"
                 />
                 <div v-else class="d-flex align-center justify-center" style="min-height: 40px;">
@@ -347,6 +455,7 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
                   variant="outlined"
                   hide-details
                   placeholder="Batch no"
+                  autocomplete="off"
                   style="width: 100%"
                 />
               </div>
@@ -354,28 +463,45 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
                 <div class="text-caption text-medium-emphasis mb-1">Expiry</div>
                 <v-menu
                   :model-value="expiryMenuOpen[index] ?? false"
-                  @update:model-value="(val) => (expiryMenuOpen[index] = val)"
+                  @update:model-value="(isOpen) => onExpiryMenuToggle(item, index, isOpen)"
                   :close-on-content-click="false"
                   location="bottom"
                 >
                   <template #activator="{ props: menuProps }">
                     <v-text-field
                       v-bind="menuProps"
-                      :model-value="expiryFieldText(item)"
+                      :model-value="expiryFieldText(item, index)"
                       placeholder="MM/YYYY"
+                      maxlength="7"
+                      inputmode="numeric"
                       density="compact"
                       variant="outlined"
                       hide-details
-                      readonly
+                      autocomplete="off"
                       prepend-inner-icon="mdi-calendar-month-outline"
                       style="width: 100%"
+                      @focus="startExpiryTyping(item, index)"
+                      @update:model-value="(raw) => onExpiryTyped(item, index, raw)"
+                      @blur="finishExpiryTyping(item, index)"
                     />
                   </template>
                   <v-date-picker
-                    view-mode="months"
-                    @update:month="(m) => onExpiryMonthSelect(item, index, m)"
-                    @update:year="(y) => onExpiryYearSelect(item, index, y)"
-                  />
+                    :model-value="expiryDateOf(item)"
+                    :year="expiryPickerYear"
+                    :view-mode="expiryPickerView"
+                    :min="earliestExpiryDate"
+                    :max="latestExpiryDate"
+                    @update:view-mode="onExpiryPickerViewChange"
+                    @update:month="(month) => onExpiryMonthSelect(item, index, month)"
+                  >
+                    <template #year="{ year, props: yearButtonProps }">
+                      <v-btn
+                        :key="year.value"
+                        v-bind="yearButtonProps"
+                        @click="onExpiryYearSelect(item, index, year.value)"
+                      />
+                    </template>
+                  </v-date-picker>
                 </v-menu>
               </div>
             </div>

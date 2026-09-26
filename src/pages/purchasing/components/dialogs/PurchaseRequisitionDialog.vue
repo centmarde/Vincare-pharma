@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { usePurchaseRequisition, unitOptions } from '../../composables/usePurchaseRequisition'
+import { usePurchaseRequisition } from '../../composables/usePurchaseRequisition'
 import type { ReorderPrefillItem } from '../../composables/usePurchaseRequisition'
 import type { ProductPickerResult } from '@/stores/productsData'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
 import ProductPickerDialog from '@/components/products/ProductPicker.vue'
-import { formatCurrency } from '@/utils/helpers'
+import PurchaseRequisitionItems from '../PurchaseRequisitionItems.vue'
+import SupplierChargesSummary from '../SupplierChargesSummary.vue'
 import { useDisplay } from 'vuetify'
 import { storeToRefs } from 'pinia'
 import { ref, watch } from 'vue'
@@ -33,14 +34,19 @@ const {
   currentDraftId,
   companyCostTotal,
   supplierCount,
+  supplierSummaries,
+  purchaseGrandTotal,
   addItem,
   removeItem,
+  unlinkPickedProduct,
   handleSubmit,
   saveDraft,
   loadDraft,
   reset,
   clearForm,
   addReorderItems,
+  hasUnsavedDraftChanges,
+  saveDraftOnClose,
 } = usePurchaseRequisition()
 
 // ─── Product picker ─────────────────────────────────────────────
@@ -57,6 +63,7 @@ function onProductSelected(product: ProductPickerResult) {
   if (index === null || !items.value[index]) return
 
   const item = items.value[index]
+  if (item.product_id !== product.id) unlinkPickedProduct(item)
   item.product_name = product.product_name || item.product_name
   if (product.unit) item.unit = product.unit
   item.cost_per_unit = product.cost_price ?? item.cost_per_unit
@@ -66,29 +73,9 @@ function onProductSelected(product: ProductPickerResult) {
   productPickerTargetIndex.value = null
 }
 
-// ─── Expiry date (month/year only) picker ──────────────────────
-// Keyed by row index since each line item gets its own popover
-const expiryMenuOpen = ref<Record<number, boolean>>({})
-const expiryViewMode = ref<Record<number, 'month' | 'months' | 'year'>>({})
-
-function onExpiryMonthSelect(item: { expiry_date: Date | null }, index: number, month: number) {
-  const year = item.expiry_date ? item.expiry_date.getFullYear() : new Date().getFullYear()
-  item.expiry_date = new Date(year, month + 1, 0)   // last day of the selected month
-  expiryMenuOpen.value[index] = false
-}
-
-function onExpiryYearSelect(item: { expiry_date: Date | null }, index: number, year: number) {
-  const month = item.expiry_date ? item.expiry_date.getMonth() : 0
-  item.expiry_date = new Date(year, month + 1, 0)   // keep same "last day of month" semantics
-}
-
-function formatMonthYear(value: Date | null): string {
-  if (!value) return ''
-  return value.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-}
-
-function close() {
+async function close() {
   // reset()
+  await saveDraftOnClose()
   emit('update:modelValue', false)
 }
 
@@ -121,22 +108,25 @@ watch(
       supplierStore.fetchSuppliers({ activeOnly: true })
 
       if (props.draftId != null) {
-        const loaded = await loadDraft(props.draftId)
-        if (!loaded) {
-          reset()
-          currentDraftId.value = null
-          toast.error('That draft is no longer available.')
-          close()
+        const keepsUnsavedEdits =
+          props.draftId === currentDraftId.value && hasUnsavedDraftChanges.value
+        if (!keepsUnsavedEdits) {
+          const loaded = await loadDraft(props.draftId)
+          if (!loaded) {
+            reset()
+            currentDraftId.value = null
+            toast.error('That draft is no longer available.')
+            close()
+          }
         }
       } else if (props.prefillItems?.length) {
         reset()
         addReorderItems(props.prefillItems)
-      } else if (currentDraftId.value != null) {
+      } else if (currentDraftId.value != null && !hasUnsavedDraftChanges.value) {
         reset()
       }
-      expiryMenuOpen.value = {}
     }
-  }
+  },
 )
 </script>
 
@@ -157,13 +147,7 @@ watch(
           <span class="text-subtitle-1 text-sm-h6 font-weight-bold"
             >Place Purchase Requisition</span
           >
-          <v-chip
-            v-if="currentDraftId"
-            size="small"
-            variant="tonal"
-            color="primary"
-            class="ml-3"
-          >
+          <v-chip v-if="currentDraftId" size="small" variant="tonal" color="primary" class="ml-3">
             Draft #{{ currentDraftId }}
           </v-chip>
         </div>
@@ -175,266 +159,13 @@ watch(
       <v-divider />
 
       <v-card-text class="pa-3 pa-sm-5">
-        <!-- ── DESKTOP TABLE VIEW ── -->
-        <template v-if="!mobile">
-          <!-- Table Header -->
-          <v-row class="text-caption font-weight-bold mb-1 px-1" no-gutters>
-            <v-col cols="auto" style="width: 36px" class="text-center">NO.</v-col>
-            <v-col cols="1" class="pl-2">UNIT</v-col>
-            <v-col cols="3" class="pl-2">PRODUCT</v-col>
-            <v-col cols="2" class="pl-2">SUPPLIER</v-col>
-            <v-col cols="2" class="pl-2">EXPIRY</v-col>
-            <v-col cols="1" class="pl-2">QTY</v-col>
-            <v-col cols="1" class="pl-2">COST/UNIT</v-col>
-            <v-col cols="1" class="text-right pr-2">COST TOTAL</v-col>
-            <v-col cols="auto" style="width: 40px" />
-          </v-row>
-
-          <!-- Desktop Line Items -->
-          <v-row
-            v-for="(item, index) in items"
-            :key="index"
-            class="align-center mb-2 px-1"
-            no-gutters
-          >
-            <v-col cols="auto" style="width: 36px" class="text-center text-body-2">
-              {{ index + 1 }}
-            </v-col>
-
-            <v-col cols="1" class="pl-2">
-              <v-select
-                v-model="item.unit"
-                :items="unitOptions"
-                variant="outlined"
-                density="compact"
-                hide-details
-              />
-            </v-col>
-
-            <v-col cols="3" class="pl-2">
-              <v-text-field
-                v-model="item.product_name"
-                placeholder="Item description"
-                variant="outlined"
-                density="compact"
-                hide-details
-                append-inner-icon="mdi-database-search-outline"
-                @click:append-inner="openProductPicker(index)"
-              />
-            </v-col>
-
-            <v-col cols="2" class="pl-2">
-              <v-select
-                v-model="item.supplier_id"
-                :items="activeSuppliers"
-                item-title="name"
-                item-value="id"
-                placeholder="Select supplier..."
-                variant="outlined"
-                density="compact"
-                hide-details
-                clearable
-              />
-            </v-col>
-
-            <v-col cols="2" class="pl-2">
-              <v-menu
-                    :model-value="expiryMenuOpen[index] ?? false"
-                    @update:model-value="(val) => (expiryMenuOpen[index] = val)"
-                    :close-on-content-click="false"
-                    location="bottom"
-                    >
-                    <template #activator="{ props: menuProps }">
-                        <v-text-field
-                        v-bind="menuProps"
-                        :model-value="formatMonthYear(item.expiry_date)"
-                        placeholder="MM/YYYY"
-                        variant="outlined"
-                        density="compact"
-                        hide-details
-                        readonly
-                        prepend-inner-icon="mdi-calendar-month-outline"
-                        />
-                    </template>
-                    <v-date-picker
-                        view-mode="months"
-                        @update:month="(m) => onExpiryMonthSelect(item, index, m)"
-                        @update:year="(y) => onExpiryYearSelect(item, index, y)"
-                    />
-                </v-menu>
-            </v-col>
-
-            <v-col cols="1" class="pl-2">
-              <v-text-field
-                v-model.number="item.qty"
-                type="number"
-                placeholder="Qty"
-                variant="outlined"
-                density="compact"
-                hide-details
-              />
-            </v-col>
-
-            <v-col cols="1" class="pl-2">
-              <v-text-field
-                v-model.number="item.cost_per_unit"
-                type="number"
-                placeholder="0.00"
-                variant="outlined"
-                density="compact"
-                hide-details
-              />
-            </v-col>
-
-            <v-col cols="1" class="text-right pr-2">
-              <span class="text-body-2 font-weight-bold text-blue-darken-2">
-                {{ formatCurrency((item.qty || 0) * (item.cost_per_unit || 0)) }}
-              </span>
-            </v-col>
-
-            <v-col cols="auto" style="width: 40px" class="text-center">
-              <v-btn
-                icon="mdi-close"
-                variant="tonal"
-                color="red-lighten-1"
-                size="small"
-                @click="removeItem(index)"
-              />
-            </v-col>
-          </v-row>
-        </template>
-
-        <!-- ── MOBILE CARD VIEW ── -->
-        <template v-else>
-          <div
-            v-for="(item, index) in items"
-            :key="index"
-            class="mobile-item-card mb-3 pa-3 rounded-lg border"
-          >
-            <!-- Card header: item number + remove -->
-            <div class="d-flex justify-space-between align-center mb-3">
-              <span class="text-caption font-weight-bold text-medium-emphasis">
-                ITEM {{ index + 1 }}
-              </span>
-              <v-btn
-                icon="mdi-close"
-                variant="tonal"
-                color="red-lighten-1"
-                size="x-small"
-                @click="removeItem(index)"
-              />
-            </div>
-
-            <!-- Description -->
-            <div class="mb-2">
-              <div class="field-label">Product Description</div>
-              <v-text-field
-                v-model="item.product_name"
-                placeholder="Item description"
-                variant="outlined"
-                density="compact"
-                hide-details
-                append-inner-icon="mdi-database-search-outline"
-                @click:append-inner="openProductPicker(index)"
-              />
-            </div>
-
-            <!-- Unit + Qty side by side -->
-            <v-row no-gutters class="mb-2" style="gap: 8px">
-              <v-col>
-                <div class="field-label">Unit</div>
-                <v-select
-                  v-model="item.unit"
-                  :items="unitOptions"
-                  variant="outlined"
-                  density="compact"
-                  hide-details
-                />
-              </v-col>
-              <v-col>
-                <div class="field-label">Quantity</div>
-                <v-text-field
-                  v-model.number="item.qty"
-                  type="number"
-                  placeholder="0"
-                  variant="outlined"
-                  density="compact"
-                  hide-details
-                />
-              </v-col>
-            </v-row>
-
-            <!-- Supplier + Expiry side by side -->
-            <v-row no-gutters class="mb-2" style="gap: 8px">
-              <v-col>
-                <div class="field-label">Supplier</div>
-                <v-select
-                  v-model="item.supplier_id"
-                  :items="activeSuppliers"
-                  item-title="name"
-                  item-value="id"
-                  placeholder="Select supplier..."
-                  variant="outlined"
-                  density="compact"
-                  hide-details
-                  clearable
-                />
-              </v-col>
-              <v-col>
-                <div class="field-label">Expiry Date</div>
-                <v-menu
-                    :model-value="expiryMenuOpen[index] ?? false"
-                    @update:model-value="(val) => (expiryMenuOpen[index] = val)"
-                    :close-on-content-click="false"
-                    location="bottom"
-                    >
-                    <template #activator="{ props: menuProps }">
-                        <v-text-field
-                        v-bind="menuProps"
-                        :model-value="formatMonthYear(item.expiry_date)"
-                        placeholder="MM/YYYY"
-                        variant="outlined"
-                        density="compact"
-                        hide-details
-                        readonly
-                        prepend-inner-icon="mdi-calendar-month-outline"
-                        />
-                    </template>
-                    <v-date-picker
-                        view-mode="months"
-                        @update:month="(m) => onExpiryMonthSelect(item, index, m)"
-                        @update:year="(y) => onExpiryYearSelect(item, index, y)"
-                    />
-                </v-menu>
-              </v-col>
-            </v-row>
-
-            <v-row no-gutters class="mb-3" style="gap: 8px">
-              <v-col>
-                <div class="field-label">Cost / Unit</div>
-                <v-text-field
-                  v-model.number="item.cost_per_unit"
-                  type="number"
-                  placeholder="0.00"
-                  variant="outlined"
-                  density="compact"
-                  hide-details
-                />
-              </v-col>
-            </v-row>
-
-            <!-- Computed totals row -->
-            <v-divider class="mb-2" />
-            <div class="d-flex justify-end align-center">
-              <div class="text-caption">
-                <span class="text-medium-emphasis">Cost Total </span>
-                <span class="font-weight-bold text-blue-darken-2">
-                  {{ formatCurrency((item.qty || 0) * (item.cost_per_unit || 0)) }}
-                </span>
-              </div>
-            </div>
-          </div>
-        </template>
+        <PurchaseRequisitionItems
+          :items="items"
+          :suppliers="activeSuppliers"
+          @remove-item="removeItem"
+          @unlink-product="unlinkPickedProduct"
+          @pick-product="openProductPicker"
+        />
 
         <!-- Add Item / Clear Form -->
         <div class="d-flex ga-2" :class="{ 'flex-column': mobile }">
@@ -467,29 +198,20 @@ watch(
 
         <v-divider class="my-6" />
 
-        <!-- Justification -->
-        <label class="text-subtitle-2 font-weight-bold d-block mb-2">Justification / Notes</label>
-        <v-textarea
-          v-model="currentPR.remarks"
-          placeholder="Reason for requisition..."
-          variant="outlined"
-          rows="3"
-          hide-details
-          class="mb-6"
-        />
-
-        <!-- Summary -->
-        <v-row align="end">
-          <v-col cols="12" md="6" :order="mobile ? 1 : 2">
-            <v-card variant="flat" rounded="lg" class="pa-4 border mb-4 mb-md-0">
-              <div class="d-flex justify-space-between align-center">
-                <span class="text-body-2">Total Cost</span>
-                <span class="text-h6 font-weight-bold">{{ formatCurrency(companyCostTotal) }}</span>
-              </div>
-            </v-card>
-          </v-col>
-
-          <v-col cols="12" md="6" :order="mobile ? 2 : 1" class="d-flex flex-column justify-end">
+        <v-row align="start">
+          <v-col cols="12" md="6" :order="mobile ? 2 : 1" class="d-flex flex-column">
+            <!-- Justification -->
+            <label class="text-subtitle-2 font-weight-bold d-block mb-2"
+              >Justification / Notes</label
+            >
+            <v-textarea
+              v-model="currentPR.remarks"
+              placeholder="Reason for requisition..."
+              variant="outlined"
+              rows="3"
+              hide-details
+              class="mb-6"
+            />
             <v-btn
               color="primary"
               size="large"
@@ -520,12 +242,23 @@ watch(
                 <strong>(Pending Approval)</strong> → Manager approves → Issue PO.
               </template>
               <template v-else>
-                Saved as one record <strong>(Pending Approval)</strong> → Manager approves → Issue PO.
+                Saved as one record <strong>(Pending Approval)</strong> → Manager approves → Issue
+                PO.
               </template>
             </div>
             <div class="text-caption text-medium-emphasis mt-1">
               A draft stays editable and is not sent for approval.
             </div>
+          </v-col>
+
+          <!-- Summary -->
+          <v-col cols="12" md="6" :order="mobile ? 1 : 2">
+            <SupplierChargesSummary
+              :supplier-summaries="supplierSummaries"
+              :suppliers="activeSuppliers"
+              :company-cost-total="companyCostTotal"
+              :purchase-grand-total="purchaseGrandTotal"
+            />
           </v-col>
         </v-row>
       </v-card-text>
@@ -533,7 +266,7 @@ watch(
 
     <!-- show-cost: Purchasing buys, so it needs the company cost. Selling
            channels deliberately omit this prop. -->
-      <ProductPickerDialog v-model="showProductPicker" show-cost @select="onProductSelected" />
+    <ProductPickerDialog v-model="showProductPicker" show-cost @select="onProductSelected" />
   </v-dialog>
 </template>
 
@@ -543,18 +276,5 @@ watch(
 }
 :deep(.v-field--focused .v-field__outline) {
   --v-field-border-opacity: 0.5;
-}
-
-.mobile-item-card {
-  background-color: rgb(var(--v-theme-surface));
-}
-
-.field-label {
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: rgba(var(--v-theme-on-surface), 0.5);
-  margin-bottom: 4px;
 }
 </style>

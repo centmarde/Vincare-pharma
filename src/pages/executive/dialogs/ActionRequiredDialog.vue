@@ -6,7 +6,10 @@ import { useSharedChangeRequests } from '../composables/useSharedChangeRequests'
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
 import { useExecutiveApproveDisposal } from '../composables/useExecutiveApproveDisposal'
+import { useExecutiveApproveShortDated } from '../composables/useExecutiveApproveShortDated'
 import type { PRItem } from '@/stores/purchaseRequisitionData'
+import { usePurchaseBreakdown } from '@/pages/purchasing/composables/usePurchaseBreakdown'
+import PurchaseChargeLines from '@/pages/purchasing/components/PurchaseChargeLines.vue'
 import { formatCurrency, formatDatePR_ISO, formatExpiryMonthYear } from '@/utils/helpers'
 import { computed, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
@@ -20,6 +23,7 @@ const salesChangeRequests = useSalesChangeRequests()
 const sharedChangeRequests = useSharedChangeRequests()
 const { approve: approvePR, reject: rejectPR } = useExecutiveApprovePR()
 const { approve: approveDisposal, reject: rejectDisposal } = useExecutiveApproveDisposal()
+const { approve: approveShortDated, reject: rejectShortDated } = useExecutiveApproveShortDated()
 const prStore = usePurchaseRequisitionStore()
 
 
@@ -34,7 +38,7 @@ const selected = defineModel<boolean>('modelValue', { default: false })
 const props = defineProps<{ request?: any }>()
 
 const request = computed(() => props.request)
-const kind = computed(() => request.value?.kind as 'undo' | 'pr_approval' | 'disposal' | undefined)
+const kind = computed(() => request.value?.kind as 'undo' | 'pr_approval' | 'disposal' | 'short_dated' | undefined)
 const raw = computed(() => request.value?.raw)
 
 const disposalStockAfter = computed(() => {
@@ -52,6 +56,21 @@ const totalAmount = computed(() =>
     0,
   ),
 )
+
+const { breakdown, hasCharges } = usePurchaseBreakdown(() => {
+  if (mobile.value || kind.value !== 'pr_approval') return null
+  return raw.value
+})
+
+const headerTotalLabel = computed(() => {
+  if (hasCharges.value) return 'Purchase Total'
+  return 'Total Amount'
+})
+
+const headerTotal = computed(() => {
+  if (breakdown.value && hasCharges.value) return breakdown.value.purchaseTotal
+  return totalAmount.value
+})
 
 const isApproving = ref(false)
 const isRejecting = ref(false)
@@ -112,12 +131,14 @@ async ([open, k, txId]) => {
 async function runApprove() {
   if (kind.value === 'undo') return changeRequestOwner(raw.value.source).approve(raw.value.id)
   if (kind.value === 'disposal') return approveDisposal(raw.value.id)
+  if (kind.value === 'short_dated') return approveShortDated(raw.value.id)
   return approvePR(raw.value.id)
 }
 
 async function runReject(reason: string) {
   if (kind.value === 'undo') return changeRequestOwner(raw.value.source).reject(raw.value.id, reason)
   if (kind.value === 'disposal') return rejectDisposal(raw.value.id, reason)
+  if (kind.value === 'short_dated') return rejectShortDated(raw.value.id, reason)
   return rejectPR(raw.value.id, reason)
 }
 
@@ -208,9 +229,9 @@ async function confirmReject() {
                 <div class="text-body-2 text-high-emphasis">{{ formatDatePR_ISO(raw.created_at) }}</div>
               </div>
               <div>
-                <div class="text-caption text-medium-emphasis">Total Amount</div>
+                <div class="text-caption text-medium-emphasis">{{ headerTotalLabel }}</div>
                 <div class="text-body-2 text-high-emphasis">
-                  {{ totalAmount.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' }) }}
+                  {{ headerTotal.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' }) }}
                 </div>
               </div>
             </div>
@@ -244,6 +265,25 @@ async function confirmReject() {
                 </tr>
               </tbody>
             </v-table>
+
+            <div v-if="breakdown && hasCharges" class="d-flex justify-end mt-3">
+              <v-sheet
+                rounded="lg"
+                variant="tonal"
+                color="surface-variant"
+                min-width="280"
+                class="pa-3 text-caption"
+              >
+                <div class="text-high-emphasis">
+                  <PurchaseChargeLines :breakdown="breakdown" />
+                  <v-divider class="my-2" />
+                  <div class="d-flex justify-space-between ga-4 font-weight-bold">
+                    <span>Purchase Total</span>
+                    <span>{{ formatCurrency(breakdown.purchaseTotal) }}</span>
+                  </div>
+                </div>
+              </v-sheet>
+            </div>
           </div>
 
           <v-alert

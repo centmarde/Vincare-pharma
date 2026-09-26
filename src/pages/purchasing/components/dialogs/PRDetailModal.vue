@@ -5,6 +5,7 @@ import type { PR } from '@/stores/purchaseRequisitionData'
 import { useDisplay } from 'vuetify'
 import { ref } from 'vue'
 import PREditDialog from './PREditDialog.vue'
+import PurchaseChargeLines from '../PurchaseChargeLines.vue'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
 const { mobile } = useDisplay()
@@ -20,7 +21,7 @@ const emit = defineEmits<{
 
 const showEditDialog = ref<boolean>(false)
 
-const { statusConfig, companyCostTotal } = usePRDetailModal(props)
+const { statusConfig, breakdown, hasCharges, totalLabel, totalAmount } = usePRDetailModal(props)
 
 const { confirmDialog: showUnapproveDialog, inputValue } = useConfirmDialog()
 
@@ -108,6 +109,7 @@ async function onUnapprove() {
               <th class="table-header text-caption">PRODUCT NAME</th>
               <th class="table-header text-caption">QTY</th>
               <th class="table-header text-caption">SUPPLIER</th>
+              <th class="table-header text-caption">BATCH NO.</th>
               <th class="table-header text-caption">EXPIRY</th>
               <th class="table-header text-caption">COST/UNIT</th>
               <th class="table-header text-caption">COST TOTAL</th>
@@ -120,6 +122,7 @@ async function onUnapprove() {
               <td class="text-body-2">{{ item.product_name }}</td>
               <td class="text-body-2">{{ item.qty.toLocaleString() }}</td>
               <td class="text-body-2">{{ item.supplier_name ?? '—' }}</td>
+              <td class="text-body-2">{{ item.batch_no || '—' }}</td>
               <td class="text-body-2">{{ formatExpiryMonthYear(item.expiry_date) }}</td>
               <td class="text-body-2">{{ formatCurrency(item.cost_per_unit ?? 0) }}</td>
               <td class="text-body-2">
@@ -159,6 +162,9 @@ async function onUnapprove() {
                   >{{ item.supplier_name ?? '—' }}
                 </div>
                 <div>
+                  <span class="text-medium-emphasis">Batch: </span>{{ item.batch_no || '—' }}
+                </div>
+                <div>
                   <span class="text-medium-emphasis">Expiry: </span
                   >{{ formatExpiryMonthYear(item.expiry_date) }}
                 </div>
@@ -185,16 +191,22 @@ async function onUnapprove() {
             :class="mobile ? 'pa-3 border' : 'pa-4 border'"
             :min-width="mobile ? '100%' : '340'"
           >
+            <div
+              v-if="breakdown && hasCharges"
+              :class="mobile ? 'text-caption mb-2' : 'text-body-2 mb-2'"
+            >
+              <PurchaseChargeLines :breakdown="breakdown" />
+            </div>
             <div class="d-flex justify-space-between align-center">
               <span
                 :class="
                   mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'
                 "
-                >Total Cost</span
+                >{{ totalLabel }}</span
               >
               <span
                 :class="mobile ? 'text-body-2 font-weight-bold' : 'text-body-1 font-weight-bold'"
-                >{{ formatCurrency(companyCostTotal) }}</span
+                >{{ formatCurrency(totalAmount) }}</span
               >
             </div>
           </v-card>

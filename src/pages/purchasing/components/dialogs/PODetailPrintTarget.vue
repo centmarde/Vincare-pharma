@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { usePODetailModal, company } from '../../composables/usePODetailModal'
+import { usePurchaseBreakdown } from '../../composables/usePurchaseBreakdown'
+import PurchaseChargeRows from '../PurchaseChargeRows.vue'
 import { formatCurrency, formatDatePO_Written, formatExpiryMonthYear } from '@/utils/helpers'
 import type { PurchaseOrder } from '../../composables/usePODetailModal'
 import type { PR } from '@/stores/purchaseRequisitionData'
@@ -14,6 +16,7 @@ const props = defineProps<{
 const noopEmit = (_e: 'update:modelValue', _value: boolean) => {}
 
 const { printArea, poNumber, emptyRows, uniqueSuppliers, showActualQty, handlePrint } = usePODetailModal(props, noopEmit)
+const { breakdown, hasCharges } = usePurchaseBreakdown(() => props.po)
 
 defineExpose({ handlePrint })
 </script>
@@ -111,6 +114,7 @@ defineExpose({ handlePrint })
             <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">QTY</th>
             <th v-if="showActualQty" style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">ACTUAL QTY</th>
             <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">SUPPLIER</th>
+            <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">BATCH NO.</th>
             <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">EXPIRY</th>
             <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">UNIT PRICE</th>
             <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">TOTAL</th>
@@ -123,17 +127,23 @@ defineExpose({ handlePrint })
             <td class="text-right">{{ item.qty }}</td>
             <td v-if="showActualQty" class="text-right">{{ item.actual_count_stock_in ?? '—' }}</td>
             <td class="text-right">{{ item.supplier_name }}</td>
+            <td class="text-right">{{ item.batch_no || '—' }}</td>
             <td class="text-right">{{ formatExpiryMonthYear(item.expiry_date) }}</td>
             <td class="text-right">{{ formatCurrency(item.cost_per_unit) }}</td>
             <td class="text-right">{{ formatCurrency(item.qty * item.cost_per_unit) }}</td>
           </tr>
           <tr v-for="n in emptyRows" :key="`empty-${n}`" class="empty-row">
-            <td :colspan="showActualQty ? 8 : 7">&nbsp;</td>
+            <td :colspan="showActualQty ? 9 : 8">&nbsp;</td>
           </tr>
         </tbody>
         <tfoot>
+          <PurchaseChargeRows
+            v-if="breakdown && hasCharges"
+            :breakdown="breakdown"
+            :label-colspan="showActualQty ? 8 : 7"
+          />
           <tr class="bg-grey-lighten-3">
-            <td :colspan="showActualQty ? 7 : 6" class="text-black font-weight-bold" style="text-align:right;">TOTAL</td>
+            <td :colspan="showActualQty ? 8 : 7" class="text-black font-weight-bold" style="text-align:right;">TOTAL</td>
             <td style="text-align:right; font-weight:700; padding: 10px 12px; color: #000;">
               {{ formatCurrency(po?.total_amount ?? 0) }}
             </td>

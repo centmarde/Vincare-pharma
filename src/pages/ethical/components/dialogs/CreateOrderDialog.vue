@@ -558,6 +558,6 @@ watch(
       </template>
     </v-card>
 
-    <ProductPickerDialog v-model="showProductPicker" @select="onProductSelected" />
+    <ProductPickerDialog v-model="showProductPicker" mode="batch" :location-id="sourceLocationId" @select="onProductSelected" />
   </v-dialog>
 </template>

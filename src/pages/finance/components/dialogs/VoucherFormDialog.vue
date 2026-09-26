@@ -2,6 +2,7 @@
 import { watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import { maxParticularsLines, useVoucherForm } from '../../composables/useVoucherForm'
+import { filterExpenseAccount } from '../../composables/useExpenseAccounts'
 import { voucherSignatories } from '@/stores/disbursementVouchersData'
 import type { VoucherType, VoucherInput } from '@/stores/disbursementVouchersData'
 import type { ClassifiedCashAccount } from '@/utils/cashAccountTypes'
@@ -27,7 +28,7 @@ const {
   voucherTotal, insufficientFunds, canSubmit, blockers, signatories,
   canAddItem, particularsLines, particularsTooTall,
   resetForm, loadFrom, addItem, removeItem, buildPayload, restoreDraft,
-  setSignatory, applyCachedSignatories,
+  setSignatory, applyCachedSignatories, ensureAccountsLoaded,
 } = useVoucherForm(() => props.accounts)
 
 // The form deliberately mirrors the printed voucher cell-for-cell, so what the
@@ -51,8 +52,19 @@ function signatoryBorder(index: number) {
 
 // Prefill on open: an existing draft loads its own values, a new voucher picks
 // up any autosaved draft instead.
-watch(() => props.modelValue, (open) => {
+watch(() => props.modelValue, async (open) => {
   if (!open) return
+  // AWAITED, not fire-and-forget: loadFrom decides whether a stored particular
+  // is a real description or a legacy copy of the account's own title, and it
+  // decides by comparing against that title. With the chart still empty every
+  // title lookup misses, so a real description can be judged legacy, blanked,
+  // and then written over the top on the next save. The select filling in late
+  // was harmless; this is not.
+  await ensureAccountsLoaded()
+  // The dialog can be dismissed while the chart loads. Populating it now would
+  // fill a form the user has already closed, and leave that state behind for
+  // the next open.
+  if (!props.modelValue) return
   resetForm()
   if (props.editing) loadFrom(props.editing)
   else restoreDraft()
@@ -310,14 +322,21 @@ function handleSubmit() {
                    the purpose is written once on the header. -->
               <v-row dense>
                 <v-col cols="12">
-                  <v-select
+                  <!-- Accounts come from the chart of accounts, grouped by
+                       subsection. Adding an account there adds it here.
+                       Autocomplete rather than select: 39 accounts is too many
+                       to scroll, and the filter matches code or name. -->
+                  <v-autocomplete
                     v-model="line.category"
                     :items="categoryOptions"
+                    :custom-filter="filterExpenseAccount"
                     item-title="title"
                     item-value="value"
-                    label="Category"
+                    label="Account"
+                    placeholder="Type a name or code, e.g. fuel or 7050"
                     variant="outlined"
                     density="compact"
+                    auto-select-first
                     hide-details
                   />
                 </v-col>
