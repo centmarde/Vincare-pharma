@@ -9,6 +9,7 @@ import { useSalesChangeRequests } from '@/pages/sales/stores/composables/useSale
 import { useSharedChangeRequests } from '../composables/useSharedChangeRequests'
 import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
 import { useExecutiveApproveDisposal } from '../composables/useExecutiveApproveDisposal'
+import { useExecutiveApproveShortDated } from '../composables/useExecutiveApproveShortDated'
 import { formatDatePR_ISO } from '@/utils/helpers'
 import { useRequestHistory } from '../composables/useRequestHistory'
 
@@ -42,12 +43,18 @@ const {
   loading: disposalLoading,
   refresh: refreshDisposals,
 } = useExecutiveApproveDisposal()
+const {
+  requests: pendingShortDated,
+  loading: shortDatedLoading,
+  refresh: refreshShortDated,
+} = useExecutiveApproveShortDated()
 const { mobile } = useDisplay()
 
 type MergedActionItem =
   | { kind: 'undo'; id: number; created_at: string; raw: any }
   | { kind: 'pr_approval'; id: number; created_at: string; raw: any }
   | { kind: 'disposal'; id: number; created_at: string; raw: any }
+  | { kind: 'short_dated'; id: number; created_at: string; raw: any }
 
 type ChangeRequestSource = 'pr' | 'finance' | 'sales' | 'shared'
 
@@ -78,7 +85,13 @@ const mergedItems = computed<MergedActionItem[]>(() => {
     created_at: d.created_at,
     raw: d,
   }))
-  return [...undoItems, ...prItems, ...disposalItems].sort(
+  const shortDatedItems: MergedActionItem[] = (pendingShortDated.value || []).map((s: any) => ({
+    kind: 'short_dated',
+    id: s.id,
+    created_at: s.created_at,
+    raw: s,
+  }))
+  return [...undoItems, ...prItems, ...disposalItems, ...shortDatedItems].sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   )
 })
@@ -90,7 +103,8 @@ const loading = computed(
     salesLoading.value ||
     sharedLoading.value ||
     prLoading.value ||
-    disposalLoading.value,
+    disposalLoading.value ||
+    shortDatedLoading.value,
 )
 
 const refreshing = ref(false)
@@ -105,6 +119,7 @@ async function refreshAll() {
       refreshShared(),
       refreshPRApprovals(),
       refreshDisposals(),
+      refreshShortDated(),
     ])
   } finally {
     refreshing.value = false
@@ -139,12 +154,14 @@ function openRequest(item: MergedActionItem) {
 function itemColor(kind: MergedActionItem['kind']): string {
   if (kind === 'undo') return 'red'
   if (kind === 'disposal') return 'error'
+  if (kind === 'short_dated') return 'warning'
   return 'green'
 }
 
 function itemIcon(kind: MergedActionItem['kind']): string {
   if (kind === 'undo') return 'mdi-cancel'
   if (kind === 'disposal') return 'mdi-delete-alert-outline'
+  if (kind === 'short_dated') return 'mdi-clock-alert-outline'
   return 'mdi-file-document-check-outline'
 }
 
@@ -244,6 +261,40 @@ watch(historyDialog, (val) => {
                   style="opacity: 0.7"
                 />
                 {{ item.raw.reason }}
+              </v-list-item-subtitle>
+            </template>
+
+            <!-- Short-dated delivery approval row. What is being decided:
+                 a government order carries stock with under 18 months of
+                 shelf life, which the contract says the client will not
+                 accept. Delivery stays blocked until this is approved. -->
+            <template v-else-if="item.kind === 'short_dated'">
+              <v-list-item-title
+                :class="
+                  mobile
+                    ? 'd-flex flex-column align-start ga-1 mb-1'
+                    : 'd-flex align-center ga-2 mb-1'
+                "
+              >
+                <div class="d-flex align-center ga-2 w-100">
+                  <v-chip size="x-small" color="warning" variant="tonal" label>Short-dated</v-chip>
+                  <span class="text-body-2 font-weight-medium action-item-number">
+                    {{ item.raw.order_no ?? `#${item.raw.transaction_id}` }}
+                  </span>
+                </div>
+                <span class="text-caption text-medium-emphasis">
+                  {{ formatDatePR_ISO(item.raw.created_at) }}
+                </span>
+              </v-list-item-title>
+
+              <v-list-item-subtitle
+                class="text-caption text-medium-emphasis"
+                :class="mobile ? 'reason-clamp' : ''"
+                style="white-space: normal; line-height: 1.4"
+              >
+                {{ item.raw.summary }}
+                <span v-if="item.raw.customer_name"> — {{ item.raw.customer_name }}</span>
+                <span v-if="item.raw.reason"> · {{ item.raw.reason }}</span>
               </v-list-item-subtitle>
             </template>
 

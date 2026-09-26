@@ -6,6 +6,7 @@ import { useSharedChangeRequests } from '../composables/useSharedChangeRequests'
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
 import { useExecutiveApproveDisposal } from '../composables/useExecutiveApproveDisposal'
+import { useExecutiveApproveShortDated } from '../composables/useExecutiveApproveShortDated'
 import type { PRItem } from '@/stores/purchaseRequisitionData'
 import { usePurchaseBreakdown } from '@/pages/purchasing/composables/usePurchaseBreakdown'
 import PurchaseChargeLines from '@/pages/purchasing/components/PurchaseChargeLines.vue'
@@ -22,6 +23,7 @@ const salesChangeRequests = useSalesChangeRequests()
 const sharedChangeRequests = useSharedChangeRequests()
 const { approve: approvePR, reject: rejectPR } = useExecutiveApprovePR()
 const { approve: approveDisposal, reject: rejectDisposal } = useExecutiveApproveDisposal()
+const { approve: approveShortDated, reject: rejectShortDated } = useExecutiveApproveShortDated()
 const prStore = usePurchaseRequisitionStore()
 
 
@@ -36,7 +38,7 @@ const selected = defineModel<boolean>('modelValue', { default: false })
 const props = defineProps<{ request?: any }>()
 
 const request = computed(() => props.request)
-const kind = computed(() => request.value?.kind as 'undo' | 'pr_approval' | 'disposal' | undefined)
+const kind = computed(() => request.value?.kind as 'undo' | 'pr_approval' | 'disposal' | 'short_dated' | undefined)
 const raw = computed(() => request.value?.raw)
 
 const disposalStockAfter = computed(() => {
@@ -129,12 +131,14 @@ async ([open, k, txId]) => {
 async function runApprove() {
   if (kind.value === 'undo') return changeRequestOwner(raw.value.source).approve(raw.value.id)
   if (kind.value === 'disposal') return approveDisposal(raw.value.id)
+  if (kind.value === 'short_dated') return approveShortDated(raw.value.id)
   return approvePR(raw.value.id)
 }
 
 async function runReject(reason: string) {
   if (kind.value === 'undo') return changeRequestOwner(raw.value.source).reject(raw.value.id, reason)
   if (kind.value === 'disposal') return rejectDisposal(raw.value.id, reason)
+  if (kind.value === 'short_dated') return rejectShortDated(raw.value.id, reason)
   return rejectPR(raw.value.id, reason)
 }
 

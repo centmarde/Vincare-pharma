@@ -1,14 +1,16 @@
 import { ref, computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useFinanceDataStore, expenseCategories } from '@/stores/financeData'
+import { useFinanceDataStore } from '@/stores/financeData'
 import type { ExpenseCategory, ExpenseType } from '@/stores/financeData'
-
-const categoryTitle = (value: ExpenseCategory) =>
-  expenseCategories.find((c) => c.value === value)?.title ?? value
+import { useExpenseAccounts } from './useExpenseAccounts'
 
 export function useExpenseReport() {
   const store = useFinanceDataStore()
   const { expenses, loading } = storeToRefs(store)
+  // Was a second, local copy of categoryTitle over the hardcoded slug list —
+  // it would have labelled every account-code category as a bare code. The
+  // shared resolver reads the chart and keeps the legacy slug fallback.
+  const { expenseAccountLabel: categoryTitle, ensureLoaded: ensureAccountsLoaded } = useExpenseAccounts()
 
   const dateFrom = ref<string | null>(null)
   const dateTo = ref<string | null>(null)
@@ -69,7 +71,8 @@ export function useExpenseReport() {
     return { categoryTotals, total }
   })
 
-  onMounted(load)
+  // The report labels categories from the chart, so load both.
+  onMounted(() => { void ensureAccountsLoaded(); load() })
 
   return {
     loading, dateFrom, dateTo, applyFilter, clearFilter,

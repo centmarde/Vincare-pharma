@@ -153,7 +153,7 @@ onMounted(init)
       </v-card-actions>
     </v-card>
 
-    <ProductPickerDialog v-model="showProductPicker" @select="onProductSelected" />
+    <ProductPickerDialog v-model="showProductPicker" mode="batch" require-shelf-life @select="onProductSelected" />
   </v-dialog>
 </template>
 

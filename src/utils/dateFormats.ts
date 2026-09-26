@@ -92,6 +92,24 @@ export function toLocalISODate(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
+/**
+ * A batch's expiry as "October 2027", or "No expiry" when it has none.
+ *
+ * Goes through fromLocalISODate rather than new Date(value): a date-only string
+ * parses as UTC midnight, so west of Greenwich a batch expiring on the 1st
+ * renders as the PREVIOUS month. It reads correctly at UTC+8 today, which is
+ * exactly why it is worth centralising — the bug is invisible here and would
+ * appear the moment this runs anywhere else.
+ *
+ * Shared so the picker and the POS grid cannot drift apart on what a batch's
+ * expiry says.
+ */
+export function formatExpiryLabel(value: string | null | undefined): string {
+  if (!value) return 'No expiry'
+  const date = fromLocalISODate(value)
+  return date ? formatMonthYear(date) : 'No expiry'
+}
+
 // new Date('2026-09-01') reads as UTC midnight and lands a day early west of Greenwich.
 export function fromLocalISODate(value: string): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)

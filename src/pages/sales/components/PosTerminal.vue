@@ -3,10 +3,13 @@ import { onMounted } from 'vue'
 import { usePosCheckout } from '../composables/usePosCheckout'
 import PosPaymentDialog from '../dialogs/PosPaymentDialog.vue'
 import PosReceiptDialog from '../dialogs/PosReceiptDialog.vue'
-import { formatCurrency } from '@/utils/helpers'
+import { formatCurrency, formatExpiryLabel } from '@/utils/helpers'
 import { usePos } from '../composables/usePos'
 import { useDisplay } from 'vuetify'
 
+// Batch and expiry are shown on every card: one `products` row IS one batch,
+// so two cards can carry the same name and price and differ only here. Without
+// it a cashier picking between them is guessing, and FEFO cannot be followed.
 const { mobile } = useDisplay()
 const pos = usePos()
 const {
@@ -138,9 +141,12 @@ onMounted(init)
                   <!-- Brand is shown because search matches on it: a customer
                        asks for "Fluimucil" but the card is titled by molecule,
                        so without it a hit looks like an unrelated result. -->
-                  <div class="text-caption text-medium-emphasis text-truncate mb-2">
+                  <div class="text-caption text-medium-emphasis text-truncate">
                     <span v-if="p.brand" class="font-weight-medium">{{ p.brand }}</span>
                     <span v-if="p.brand"> · </span>{{ p.sku ?? '—' }}
+                  </div>
+                  <div class="text-caption text-medium-emphasis text-truncate mb-2">
+                    Batch {{ p.batch_no || '—' }} · Exp {{ formatExpiryLabel(p.expiry_date) }}
                   </div>
                   <v-spacer />
                   <div class="d-flex justify-space-between align-center ga-1">
