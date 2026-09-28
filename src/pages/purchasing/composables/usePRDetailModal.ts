@@ -20,14 +20,10 @@ export function usePRDetailModal(props: { pr: PR }) {
 
   const { breakdown, hasCharges } = usePurchaseBreakdown(() => props.pr)
 
-  const totalLabel = computed(() => {
-    if (hasCharges.value) return 'Purchase Total'
-    return 'Total Cost'
-  })
+  const totalLabel = computed(() => 'Purchase Total')
 
-  // Without charges the items sum is shown as before, so an older PR with a stale saved total doesn't change.
   const totalAmount = computed(() => {
-    if (breakdown.value && hasCharges.value) return breakdown.value.purchaseTotal
+    if (breakdown.value) return breakdown.value.purchaseTotal
     return companyCostTotal.value
   })
 

@@ -30,7 +30,7 @@ const emit = defineEmits<{
   'issue-po': [item: PR]
 }>()
 
-const { totalQty, totalCost, itemSummary, itemNames, statusConfig, statusOptions } =
+const { totalQty, itemSummary, itemNames, statusConfig, statusOptions } =
   useTransactionsData()
 
 // I-group ang unique nga supplier names sa mga items para ma-display sa SUPPLIER column.
@@ -159,7 +159,7 @@ const uniqueSuppliers = (pr: PR): string[] => {
       </template>
 
       <template #item.total_amount="{ item }">
-        <span class="text-body-2">{{ formatCurrency(totalCost(item.items)) }}</span>
+        <span class="text-body-2">{{ formatCurrency(item.total_amount ?? 0) }}</span>
       </template>
 
       <template #item.suppliers="{ item }">

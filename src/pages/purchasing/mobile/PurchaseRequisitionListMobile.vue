@@ -25,7 +25,7 @@ const emit = defineEmits<{
   'change-page': [newPage: number]
 }>()
 
-const { totalQty, totalCost, itemSummary, statusConfig, statusOptions } = useTransactionsData()
+const { totalQty, itemSummary, statusConfig, statusOptions } = useTransactionsData()
 
 const totalPages = computed(() => Math.max(1, Math.ceil(props.totalItems / props.itemsPerPage)))
 
@@ -158,7 +158,7 @@ function clearFilters() {
 
         <div class="d-flex align-center justify-space-between ga-2">
           <span class="text-subtitle-1 font-weight-bold">
-            {{ formatCurrency(totalCost(item.items)) }}
+            {{ formatCurrency(item.total_amount ?? 0) }}
           </span>
           <div class="d-flex align-center ga-2">
             <v-btn
