@@ -110,7 +110,16 @@ export function usePODetailModal(
         margin:      10,
         filename:    `${poNumber.value}.pdf`,
         image:       { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false },
+        // windowWidth pinned to what the element actually needs, so a wide
+        // 9-column PO table is rendered whole and then scaled to the page
+        // instead of having the rightmost TOTAL column clipped at the box edge.
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          windowWidth: Math.max(el.scrollWidth, el.offsetWidth),
+        },
         jsPDF:       { unit: 'mm', format: 'a4', orientation: 'portrait' },
       })
       .from(el)

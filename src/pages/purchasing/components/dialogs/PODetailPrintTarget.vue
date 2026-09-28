@@ -16,7 +16,7 @@ const props = defineProps<{
 const noopEmit = (_e: 'update:modelValue', _value: boolean) => {}
 
 const { printArea, poNumber, emptyRows, uniqueSuppliers, showActualQty, handlePrint } = usePODetailModal(props, noopEmit)
-const { breakdown, hasCharges } = usePurchaseBreakdown(() => props.po)
+const { breakdown } = usePurchaseBreakdown(() => props.po)
 
 defineExpose({ handlePrint })
 </script>
@@ -138,7 +138,7 @@ defineExpose({ handlePrint })
         </tbody>
         <tfoot>
           <PurchaseChargeRows
-            v-if="breakdown && hasCharges"
+            v-if="breakdown"
             :breakdown="breakdown"
             :label-colspan="showActualQty ? 8 : 7"
           />
@@ -176,15 +176,35 @@ defineExpose({ handlePrint })
   position: fixed;
   top: 0;
   left: -9999px;
-  width: 860px;
+  width: 920px;
   pointer-events: none;
 }
 .print-area {
   background: #fff;
-  padding: 32px;
+  padding: 24px;
 }
 .empty-row td {
   height: 32px !important;
   border-bottom: 1px solid rgba(0,0,0,0.05) !important;
+}
+.po-table {
+  width: 100%;
+}
+.po-table th,
+.po-table td {
+  font-size: 0.72rem;
+  padding: 6px 8px !important;
+  white-space: normal;
+}
+.po-table th {
+  color: #fff;
+}
+.po-table td {
+  color: #000;
+  line-height: 1.35;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+.po-table tfoot td {
+  border-bottom: none;
 }
 </style>

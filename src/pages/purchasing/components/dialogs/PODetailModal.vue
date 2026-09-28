@@ -22,7 +22,7 @@ const emit = defineEmits<{
 }>()
 
 const { printArea, poNumber, emptyRows, uniqueSuppliers, showActualQty, handlePrint } = usePODetailModal(props, emit)
-const { breakdown, hasCharges } = usePurchaseBreakdown(() => props.po)
+const { breakdown } = usePurchaseBreakdown(() => props.po)
 </script>
 
 <template>
@@ -175,7 +175,7 @@ const { breakdown, hasCharges } = usePurchaseBreakdown(() => props.po)
             </tbody>
             <tfoot>
               <PurchaseChargeRows
-                v-if="breakdown && hasCharges"
+                v-if="breakdown"
                 :breakdown="breakdown"
                 :label-colspan="showActualQty ? 8 : 7"
               />
@@ -232,7 +232,7 @@ const { breakdown, hasCharges } = usePurchaseBreakdown(() => props.po)
                 </div>
               </v-card-text>
             </v-card>
-            <div v-if="breakdown && hasCharges" class="text-caption px-3 mb-2">
+            <div v-if="breakdown" class="text-caption px-3 mb-2">
               <PurchaseChargeLines :breakdown="breakdown" />
             </div>
             <v-card variant="outlined" rounded="lg" class="bg-grey-lighten-3">

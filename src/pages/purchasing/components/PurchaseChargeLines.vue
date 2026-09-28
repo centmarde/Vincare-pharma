@@ -16,12 +16,12 @@ defineProps<{
     <span class="text-medium-emphasis">Less {{ breakdown.discountPercent }}% Discount</span>
     <span>{{ formatCurrency(breakdown.discountAmount) }}</span>
   </div>
-  <div class="d-flex justify-space-between ga-4">
-    <span class="text-medium-emphasis">Add Purchase Tax</span>
+  <div v-if="breakdown.taxAmount > 0" class="d-flex justify-space-between ga-4">
+    <span class="text-medium-emphasis">Purchase Tax</span>
     <span>{{ formatCurrency(breakdown.taxAmount) }}</span>
   </div>
-  <div class="d-flex justify-space-between ga-4">
-    <span class="text-medium-emphasis">Add Shipping Charges</span>
+  <div v-if="breakdown.shippingAmount > 0" class="d-flex justify-space-between ga-4">
+    <span class="text-medium-emphasis">Shipping Charges</span>
     <span>{{ formatCurrency(breakdown.shippingAmount) }}</span>
   </div>
 </template>
