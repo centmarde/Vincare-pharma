@@ -13,18 +13,18 @@ defineProps<{
     <td :colspan="labelColspan" class="text-right">NET TOTAL AMOUNT</td>
     <td class="text-right px-3">{{ formatCurrency(breakdown.netTotal) }}</td>
   </tr>
-  <tr v-if="breakdown.discountAmount > 0">
+  <tr>
     <td :colspan="labelColspan" class="text-right">
       LESS {{ breakdown.discountPercent }}% DISCOUNT
     </td>
     <td class="text-right px-3">{{ formatCurrency(breakdown.discountAmount) }}</td>
   </tr>
-  <tr v-if="breakdown.taxAmount > 0">
-    <td :colspan="labelColspan" class="text-right">ADD PURCHASE TAX</td>
+  <tr>
+    <td :colspan="labelColspan" class="text-right"> PURCHASE TAX</td>
     <td class="text-right px-3">{{ formatCurrency(breakdown.taxAmount) }}</td>
   </tr>
   <tr v-if="breakdown.shippingAmount > 0">
-    <td :colspan="labelColspan" class="text-right">ADD SHIPPING CHARGES</td>
+    <td :colspan="labelColspan" class="text-right"> SHIPPING CHARGES</td>
     <td class="text-right px-3">{{ formatCurrency(breakdown.shippingAmount) }}</td>
   </tr>
 </template>

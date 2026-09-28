@@ -4,6 +4,7 @@ import { formatCurrency, formatDatePR_ISO, formatExpiryMonthYear } from '@/utils
 import type { PR } from '@/stores/purchaseRequisitionData'
 import { useDisplay } from 'vuetify'
 import PREditDialog from '@/pages/purchasing/components/dialogs/PREditDialog.vue'
+import PurchaseChargeLines from '@/pages/purchasing/components/PurchaseChargeLines.vue'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
 const { mobile } = useDisplay()
@@ -18,7 +19,7 @@ const emit = defineEmits<{
 }>()
 const showEditDialog = ref<boolean>(false)
 const { confirmDialog: showUnapproveDialog, inputValue } = useConfirmDialog()
-const { statusConfig, companyCostTotal } = usePRDetailModal(props)
+const { statusConfig, breakdown, totalLabel, totalAmount } = usePRDetailModal(props)
 
 function onApprove() {
   model.value = false
@@ -160,9 +161,16 @@ async function onUnapprove() {
             :class="mobile ? 'pa-3 border' : 'pa-4 border'"
             :min-width="mobile ? '100%' : '340'"
           >
+            <div
+              v-if="breakdown"
+              :class="mobile ? 'text-caption mb-2' : 'text-body-2 mb-2'"
+            >
+              <PurchaseChargeLines :breakdown="breakdown" />
+            </div>
+            <v-divider v-if="breakdown" class="mt-3 mb-1" />
             <div class="d-flex justify-space-between align-center">
-              <span :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">Total Cost</span>
-              <span :class="mobile ? 'text-body-2 font-weight-bold' : 'text-body-1 font-weight-bold'">{{ formatCurrency(companyCostTotal) }}
+              <span :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">{{ totalLabel }}</span>
+              <span :class="mobile ? 'text-body-2 font-weight-bold' : 'text-body-1 font-weight-bold'">{{ formatCurrency(totalAmount) }}
               </span>
             </div>
           </v-card>
