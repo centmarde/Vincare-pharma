@@ -197,7 +197,7 @@ async function onUnapprove() {
             >
               <PurchaseChargeLines :breakdown="breakdown" />
             </div>
-            <v-divider v-if="breakdown" class="mt-2 mb-1" />
+            <v-divider v-if="breakdown" class="mt-3 mb-1" />
             <div class="d-flex justify-space-between align-center">
               <span
                 :class="

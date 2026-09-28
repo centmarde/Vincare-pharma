@@ -17,7 +17,6 @@ const {
   serverItems,
   loadItems,
   totalQty,
-  totalCost,
   itemSummary,
   statusConfig,
   page,
@@ -296,9 +295,9 @@ async function onPRUpdate(data: { items: any[]; remarks: string }) {
             <span class="text-body-2">{{ totalQty(item.items).toLocaleString() }}</span>
           </template>
 
-          <!-- Total Cost -->
+          <!-- Purchase Total -->
           <template #item.total_amount="{ item }">
-            <span class="text-body-2">{{ formatCurrency(totalCost(item.items)) }}</span>
+            <span class="text-body-2">{{ formatCurrency(item.total_amount ?? 0) }}</span>
           </template>
 
           <!-- Requested By -->

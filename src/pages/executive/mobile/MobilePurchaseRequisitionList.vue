@@ -19,7 +19,7 @@ const emit = defineEmits<{
   (e: 'change-page', newPage: number): void
 }>()
 
-const { totalQty, totalCost, itemSummary, statusConfig } = useTransactionsData()
+const { totalQty, itemSummary, statusConfig } = useTransactionsData()
 </script>
 
 <template>
@@ -68,7 +68,7 @@ const { totalQty, totalCost, itemSummary, statusConfig } = useTransactionsData()
         <div class="d-flex align-center" style="gap: 8px">
           <v-icon size="16" class="text-medium-emphasis flex-shrink-0">mdi-currency-php</v-icon>
           <span class="text-body-2 font-weight-medium">{{
-            formatCurrency(totalCost(item.items))
+            formatCurrency(item.total_amount ?? 0)
           }}</span>
         </div>
 
