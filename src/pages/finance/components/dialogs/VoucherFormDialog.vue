@@ -29,6 +29,7 @@ const {
   canAddItem, particularsLines, particularsTooTall,
   resetForm, loadFrom, addItem, removeItem, buildPayload, restoreDraft,
   setSignatory, applyCachedSignatories, ensureAccountsLoaded,
+  payeeType, supplierId, isSupplierVoucher, supplierOptions, ensureSuppliersLoaded,
 } = useVoucherForm(() => props.accounts)
 
 // The form deliberately mirrors the printed voucher cell-for-cell, so what the
@@ -60,7 +61,9 @@ watch(() => props.modelValue, async (open) => {
   // title lookup misses, so a real description can be judged legacy, blanked,
   // and then written over the top on the next save. The select filling in late
   // was harmless; this is not.
-  await ensureAccountsLoaded()
+  // Suppliers load alongside the chart: the pay-to picker needs them, and
+  // loadFrom resolves a saved supplier_id against this list.
+  await Promise.all([ensureAccountsLoaded(), ensureSuppliersLoaded()])
   // The dialog can be dismissed while the chart loads. Populating it now would
   // fill a form the user has already closed, and leave that state behind for
   // the next open.
@@ -120,13 +123,46 @@ function handleSubmit() {
             </v-col>
           </v-row>
 
+          <!-- Pay-to type: a supplier voucher settles Accounts Payable and
+               moves the supplier's balance; anything else books expenses. -->
+          <v-row no-gutters class="border-b">
+            <v-col cols="12" class="pa-2">
+              <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis mb-1">
+                Paying
+              </div>
+              <v-btn-toggle
+                v-model="payeeType" mandatory density="compact" variant="outlined" divided
+              >
+                <v-btn value="other" size="small" class="text-none">Someone else</v-btn>
+                <v-btn value="supplier" size="small" class="text-none">A supplier</v-btn>
+              </v-btn-toggle>
+              <div v-if="isSupplierVoucher" class="text-caption text-medium-emphasis mt-1">
+                Recording this voucher settles the supplier's balance — every
+                particular is charged to Accounts Payable, not an expense account.
+              </div>
+            </v-col>
+          </v-row>
+
           <!-- Payee block -->
           <v-row no-gutters class="border-b">
             <v-col cols="12" sm="8" class="pa-2" :class="smAndUp ? 'border-e' : 'border-b'">
               <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis">
                 Payee <span class="text-error">*</span>
               </div>
+              <v-autocomplete
+                v-if="isSupplierVoucher"
+                v-model="supplierId"
+                :items="supplierOptions"
+                item-title="title"
+                item-value="value"
+                placeholder="Which supplier"
+                variant="plain"
+                density="compact"
+                auto-select-first
+                hide-details
+              />
               <v-text-field
+                v-else
                 v-model="payee"
                 placeholder="Who is being paid"
                 variant="plain"
@@ -326,7 +362,14 @@ function handleSubmit() {
                        subsection. Adding an account there adds it here.
                        Autocomplete rather than select: 39 accounts is too many
                        to scroll, and the filter matches code or name. -->
+                  <div
+                    v-if="isSupplierVoucher"
+                    class="text-body-2 text-medium-emphasis py-2"
+                  >
+                    Accounts Payable — settles the supplier's balance
+                  </div>
                   <v-autocomplete
+                    v-else
                     v-model="line.category"
                     :items="categoryOptions"
                     :custom-filter="filterExpenseAccount"

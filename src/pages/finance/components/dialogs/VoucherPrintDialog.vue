@@ -19,6 +19,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
+  /** A PDF was actually produced — only now is a copy really spent. */
+  (e: 'printed'): void
 }>()
 
 const toast = useToast()
@@ -134,6 +136,10 @@ async function handlePrint() {
     .from(el)
     .save()
 
+  // Stamp AFTER the file exists. Opening this dialog used to burn a copy
+  // number and lock the draft, so a glance at a voucher changed it.
+  emit('printed')
+
   toast.success(isReprint.value ? `Reprint (copy ${props.copyNo}) generated.` : 'Disbursement voucher generated.')
 }
 </script>
@@ -154,6 +160,16 @@ async function handlePrint() {
         <v-card-text class="pa-6">
           <div ref="printArea" class="dv">
 
+            <!-- Reprint mark. Outside the bordered form and compact, but still
+                 ON THE SHEET so the PDF carries it — a reprint that printed
+                 identically to the original could be signed or processed a
+                 second time with nothing on the page to say otherwise. -->
+            <div v-if="isReprint" class="dv-reprint">
+              REPRINT · COPY {{ copyNo }}<span
+                v-if="voucher.printed_at"
+              > · orig. {{ formatDatePR_ISO(voucher.printed_at) }}</span>
+            </div>
+
             <!-- Letterhead (replaces the source form's Barangay/City/Province) -->
             <div class="text-center mb-3">
               <div class="text-subtitle-1 font-weight-bold" style="letter-spacing: 2px;">{{ company.name }}</div>
@@ -170,14 +186,6 @@ async function handlePrint() {
                   <div class="dv-label">DV No.</div>
                   <div class="dv-value font-weight-bold">{{ voucher.dv_no ?? '—' }}</div>
                 </div>
-              </div>
-
-              <!-- Reprint mark: never on the original -->
-              <div v-if="isReprint" class="dv-reprint">
-                REPRINTED COPY — COPY NO. {{ copyNo }} · NOT THE ORIGINAL
-                <span v-if="voucher.printed_at" class="dv-reprint-sub">
-                  (original printed {{ formatDatePR_ISO(voucher.printed_at) }})
-                </span>
               </div>
 
               <!-- Payee block -->
@@ -209,13 +217,6 @@ async function handlePrint() {
                 <div class="dv-cell dv-nocol">
                   <span class="dv-label">Dept:</span>
                   <span class="dv-value">{{ voucherDepartment }}</span>
-                </div>
-              </div>
-
-              <div class="dv-row">
-                <div class="dv-cell dv-grow">
-                  <span class="dv-label">Ref:</span>
-                  <span class="dv-value">{{ voucher.remarks ?? '' }}</span>
                 </div>
               </div>
 
@@ -464,20 +465,15 @@ async function handlePrint() {
 }
 
 /* Deliberately loud: a reprint must be unmistakable at a glance on paper. */
+/* Small, top-right, above the bordered form. Deliberately not a full-width
+   banner any more — it was louder than the voucher itself. */
 .dv-reprint {
-  border-bottom: 1px solid #000000;
-  padding: 5px 6px;
-  text-align: center;
-  font-size: 11px;
+  text-align: right;
+  font-size: 8px;
   font-weight: 700;
-  letter-spacing: 1px;
-  background: #ffe9c7;
-}
-
-.dv-reprint-sub {
-  font-weight: 400;
-  font-size: 9px;
-  letter-spacing: 0;
+  letter-spacing: 0.5px;
+  color: #000000;
+  margin-bottom: 2px;
 }
 
 .dv-sign {

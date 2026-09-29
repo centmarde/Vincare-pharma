@@ -417,6 +417,12 @@ export const navigationConfig: NavigationGroup[] = [
             route: '/finance/opening-balances',
             permission: 'finance.openingBalances.manage',
           },
+          {
+            title: 'Opening Receivables',
+            icon: 'mdi-account-cash-outline',
+            route: '/finance/opening-receivables',
+            permission: 'finance.openingReceivables.manage',
+          },
         ],
       },
       {

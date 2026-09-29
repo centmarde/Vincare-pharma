@@ -609,7 +609,7 @@ export const useFinanceChangeRequestStore = defineStore('financeChangeRequest', 
 
   // ── Supplier payment ──────────────────────────────────────────────────────
   // Projects as 'disbursement' (DR AP / CR cash). Void reverses that + restores
-  // suppliers.balance (which recordSupplierPayment decremented). Edit is
+  // suppliers.balance (which reissueSupplierPayment decremented). Edit is
   // memo-only; amount changes go through void + re-record.
   async function voidSupplierPayment(
     targetId: number,
@@ -618,12 +618,14 @@ export const useFinanceChangeRequestStore = defineStore('financeChangeRequest', 
   ): Promise<{ success: boolean; error?: string }> {
     const { data: pay } = await supabase
       .from('transactions')
-      .select('supplier_id, total_amount, status')
+      .select('supplier_id, total_amount, status, cash_account_id')
       .eq('id', targetId)
       .eq('transaction_type', 'supplier_payment')
       .maybeSingle()
     if (!pay) return { success: false, error: 'Supplier payment not found.' }
     if (pay.status === 'voided') return { success: false, error: 'This payment has already been voided.' }
+    const voidedCashAccountId = pay.cash_account_id as number | null
+    const voidedAmount = (pay.total_amount ?? 0) as number
     const rev = await reverseProjectedEntry('disbursement', targetId, userId)
     if (!rev.ok)
       return { success: false, error: rev.error || 'Failed to reverse the payment journal entry.' }
@@ -654,6 +656,22 @@ export const useFinanceChangeRequestStore = defineStore('financeChangeRequest', 
         if (e) console.warn('voidSupplierPayment: suppliers.balance restore failed:', e.message)
       }
     }
+
+    // Put the cash back. Voucher-raised payments DEDUCT from a cash account, so
+    // voiding one without restoring it leaves the account permanently short by
+    // the voided amount. The old in-page payment dialog never touched cash at
+    // all, which is why this restore did not exist before. Mirrors voidExpense.
+    if (voidedCashAccountId && voidedAmount > 0) {
+      const { data: account } = await supabase
+        .from('cash_accounts').select('balance').eq('id', voidedCashAccountId).maybeSingle()
+      if (account) {
+        const { error: e } = await supabase
+          .from('cash_accounts')
+          .update({ balance: (account.balance ?? 0) + voidedAmount })
+          .eq('id', voidedCashAccountId)
+        if (e) console.warn('voidSupplierPayment: cash account balance restore failed:', e.message)
+      }
+    }
     return { success: true }
   }
 
@@ -666,7 +684,7 @@ export const useFinanceChangeRequestStore = defineStore('financeChangeRequest', 
     const changes = stripReservedKeys(request.proposed_changes ?? {})
     const { data: cur } = await supabase
       .from('transactions')
-      .select('supplier_id, total_amount, payment_method, paid_at, remarks, status')
+      .select('supplier_id, total_amount, payment_method, paid_at, remarks, status, cash_account_id')
       .eq('id', request.transaction_id)
       .eq('transaction_type', 'supplier_payment')
       .maybeSingle()
@@ -709,11 +727,14 @@ export const useFinanceChangeRequestStore = defineStore('financeChangeRequest', 
       paymentMethod:
         ((toVal(changes, 'payment_method') ?? cur.payment_method) as string | undefined) || undefined,
       valueDate: correctionDate(),
+      // Carried forward or the replacement loses its cash account, and the GL
+      // credits 1020 instead of whatever actually paid.
+      cashAccountId: cur.cash_account_id ?? null,
       remarks: reissueRemarks(request, toVal(changes, 'remarks') ?? cur.remarks),
     }
     const v = await voidSupplierPayment(request.transaction_id, userId, reissueReason(request))
     if (!v.success) return v
-    const res = await financeStore.recordSupplierPayment(merged)
+    const res = await financeStore.reissueSupplierPayment(merged)
     if (!res.success)
       return {
         success: false,
