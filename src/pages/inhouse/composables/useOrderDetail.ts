@@ -16,6 +16,15 @@ import type { CollectionType } from '@/stores/ethicalData'
 
 const { confirmDialog } = useConfirmDialog()
 
+export type NewNegotiationLine = {
+  product_id: number | null
+  product_name: string
+  unit: string
+  qty: number
+  offer_unit: number
+  cost_unit: number
+}
+
 export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: () => void) {
   const store = useInhouseDataStore()
   const drStore = useDeliveryReceiptsDataStore()
@@ -66,6 +75,11 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   // page of a 2.4k-row file — a product swapped in via the search dialog is
   // usually not in it.
   const lineProductNames = ref<Record<number, string>>({})
+  // Lines stay editable until terms are agreed: qty changes, lines the
+  // customer dropped, and lines they asked to add.
+  const lineQtyEdits = ref<Record<number, number>>({})
+  const removedItemIds = ref<number[]>([])
+  const newLines = ref<NewNegotiationLine[]>([])
   const offerNote = ref('')
   // fulfillment panel: qty to deliver now, per line + the consignee's printed name
   const deliverQtys = ref<Record<number, number>>({})
@@ -98,10 +112,26 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     return Math.round(((order()?.amount_paid ?? 0) / total) * 100)
   })
 
+  const keptItems = computed(() => items.value.filter((i) => !removedItemIds.value.includes(i.id)))
+  const qtyFor = (i: { id: number; qty: number }) => Number(lineQtyEdits.value[i.id] ?? i.qty)
+  const validNewLines = computed(() => newLines.value.filter((l) => l.product_id && l.qty > 0))
+
   const proposedTotal = computed(() =>
-    items.value.reduce((s, i) => s + (lineEdits.value[i.id] ?? i.unit_price) * i.qty, 0))
+    keptItems.value.reduce((s, i) => s + (lineEdits.value[i.id] ?? i.unit_price) * qtyFor(i), 0)
+    + validNewLines.value.reduce((s, l) => s + l.offer_unit * l.qty, 0))
   const proposedCost = computed(() =>
-    items.value.reduce((s, i) => s + (lineCostEdits.value[i.id] ?? i.cost_price ?? 0) * i.qty, 0))
+    keptItems.value.reduce((s, i) => s + (lineCostEdits.value[i.id] ?? i.cost_price ?? 0) * qtyFor(i), 0)
+    + validNewLines.value.reduce((s, l) => s + l.cost_unit * l.qty, 0))
+
+  // Agree locks terms against the SAVED lines, so unrecorded edits would be
+  // silently dropped — agree() refuses while this is true.
+  const hasUnsavedLineChanges = computed(() =>
+    removedItemIds.value.length > 0
+    || newLines.value.some((l) => l.product_id)
+    || items.value.some((i) =>
+      qtyFor(i) !== i.qty
+      || (lineEdits.value[i.id] ?? i.unit_price) !== i.unit_price
+      || (lineProductEdits.value[i.id] ?? i.product_id) !== i.product_id))
   // Ratio = Company Cost / Customer Offer — see useRaiseOrder for why a missing
   // side renders '—' instead of 0.00.
   const proposedRatio = computed(() =>
@@ -140,6 +170,9 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     lineProductEdits.value = {}
     lineCostEdits.value = {}
     lineProductNames.value = {}
+    lineQtyEdits.value = {}
+    removedItemIds.value = []
+    newLines.value = []
     deliverQtys.value = {}
     receivedBy.value = ''
     issuedReceipt.value = null
@@ -159,6 +192,7 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
       lineProductEdits.value[it.id] = it.product_id
       lineCostEdits.value[it.id] = it.cost_price ?? 0
       lineProductNames.value[it.id] = it.product?.product_name ?? ''
+      lineQtyEdits.value[it.id] = it.qty
       deliverQtys.value[it.id] = it.qty - (it.delivered_qty ?? 0)
     }
     // Default the next payment to the outstanding balance — staff can lower
@@ -246,18 +280,54 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     if (product.cost_price != null) lineCostEdits.value[itemId] = product.cost_price
   }
 
+  function applyPickedProductToNewLine(index: number, product: ProductPickerResult) {
+    const line = newLines.value[index]
+    if (!line) return
+    line.product_id = product.id
+    line.product_name = product.product_name ?? ''
+    line.unit = product.unit ?? ''
+    if (product.cost_price != null) line.cost_unit = product.cost_price
+    if (!line.offer_unit && product.selling_price != null) line.offer_unit = product.selling_price
+  }
+
+  function addNewLine() {
+    newLines.value.push({ product_id: null, product_name: '', unit: '', qty: 1, offer_unit: 0, cost_unit: 0 })
+  }
+  function removeNewLine(index: number) { newLines.value.splice(index, 1) }
+
+  function removeItem(itemId: number) {
+    if (!removedItemIds.value.includes(itemId)) removedItemIds.value.push(itemId)
+  }
+  function restoreItem(itemId: number) {
+    removedItemIds.value = removedItemIds.value.filter((id) => id !== itemId)
+  }
+  const isRemoved = (itemId: number) => removedItemIds.value.includes(itemId)
+
   async function recordCounter() {
     const o = order(); if (!o) return
+    if (keptItems.value.length + validNewLines.value.length === 0) {
+      toast.warning('An order needs at least one line item.'); return
+    }
+    if (keptItems.value.some((i) => !(qtyFor(i) > 0))) {
+      toast.warning('Quantity must be at least 1 — remove the line instead.'); return
+    }
+    if (newLines.value.some((l) => l.product_id && !(l.qty > 0))) {
+      toast.warning('New lines need a quantity of at least 1.'); return
+    }
     loading.value = true
     const result = await store.recordOffer({
       orderId: o.id,
       total: proposedTotal.value,
       party: 'company',
       note: offerNote.value,
-      lineUpdates: items.value.map((i) => ({
+      removeItemIds: removedItemIds.value,
+      addLines: validNewLines.value.map((l) => ({
+        product_id: l.product_id!, qty: l.qty, unit_price: l.offer_unit, cost_price: l.cost_unit,
+      })),
+      lineUpdates: keptItems.value.map((i) => ({
         item_id:    i.id,
         unit_price: lineEdits.value[i.id] ?? i.unit_price,
-        qty:        i.qty,
+        qty:        qtyFor(i),
         product_id: lineProductEdits.value[i.id] ?? i.product_id ?? undefined,
         cost_price: lineCostEdits.value[i.id] ?? i.cost_price ?? undefined,
       })),
@@ -268,6 +338,10 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
 
   async function agree() {
     const o = order(); if (!o) return
+    if (hasUnsavedLineChanges.value) {
+      toast.warning('Record the counter-offer first — agreeing locks the saved lines, not unsaved edits.')
+      return
+    }
     loading.value = true
     const result = await store.agreeOrder(o.id)
     loading.value = false
@@ -332,6 +406,7 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
 
   return {
     loading, rounds, shortfall, payments, lineEdits, lineProductEdits, lineCostEdits, lineProductNames, offerNote, deliverQtys,
+    lineQtyEdits, newLines, hasUnsavedLineChanges, isRemoved, removeItem, restoreItem, addNewLine, removeNewLine, applyPickedProductToNewLine,
     receivedBy, issuedReceipt,
     payAmount, payReference, payRemarks, payCashAccountId, cashAccountOptions,
     requestedAt, requestNote,

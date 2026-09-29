@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import type { ProductPickerResult } from '@/stores/productsData'
+import type { EthicalOrderType } from '@/stores/ethicalData'
 import ProductPickerDialog from '@/components/products/ProductPicker.vue'
 
 import CustomerTermsCard from '@/components/customers/CustomerTermsCard.vue'
@@ -12,6 +13,8 @@ const { mobile } = useDisplay()
 
 const props = defineProps<{
   modelValue: boolean
+  /** A saved draft to reopen for editing; absent/null = a new order. */
+  draftOrder?: EthicalOrderType | null
 }>()
 
 const emit = defineEmits<{
@@ -67,6 +70,9 @@ const {
   applyPickedProduct,
   onCustomerChange,
   submit,
+  saveAsDraft,
+  discardDraft,
+  isEditingDraft,
   reset,
   init,
 } = useCreateOrder(() => {
@@ -95,7 +101,7 @@ watch(
   () => internalValue.value,
   (value) => {
     if (value) {
-      void init()
+      void init(props.draftOrder ?? null)
     }
   },
 )
@@ -119,9 +125,12 @@ watch(
           "
         />
         <v-toolbar-title class="text-body-1 font-weight-bold">
-          Create Ethical Order
+          {{ isEditingDraft ? 'Edit Draft' : 'Create Ethical Order' }}
         </v-toolbar-title>
 
+        <v-btn variant="text" class="text-none" :loading="loading" @click="saveAsDraft">
+          Save Draft
+        </v-btn>
         <v-btn
           variant="flat"
           color="primary"
@@ -130,14 +139,17 @@ watch(
           :disabled="hasBelowCostLine"
           @click="submit"
         >
-          Create
+          Invoice
         </v-btn>
       </v-toolbar>
 
       <v-card-title v-else class="pa-4 pa-sm-5 d-flex align-center ga-2">
         <v-icon icon="mdi-clipboard-text-plus-outline" color="primary" />
 
-        <span class="text-h6 font-weight-bold"> Create Ethical Order </span>
+        <span class="text-h6 font-weight-bold">
+          {{ isEditingDraft ? 'Edit Draft Order' : 'Create Ethical Order' }}
+        </span>
+        <v-chip v-if="isEditingDraft" size="small" color="grey" variant="tonal">DRAFT</v-chip>
       </v-card-title>
 
       <v-divider />
@@ -540,6 +552,17 @@ watch(
         <v-divider />
 
         <v-card-actions>
+          <v-btn
+            v-if="isEditingDraft"
+            color="error"
+            variant="text"
+            class="text-none"
+            prepend-icon="mdi-delete-outline"
+            :loading="loading"
+            @click="discardDraft"
+          >
+            Discard Draft
+          </v-btn>
           <v-spacer />
 
           <v-btn
@@ -551,8 +574,14 @@ watch(
             Cancel
           </v-btn>
 
-          <v-btn color="primary" :loading="loading" :disabled="hasBelowCostLine" @click="submit">
-            Create Order
+          <!-- Still haggling: saves lines/qty/prices with no stock or invoice. -->
+          <v-btn variant="tonal" class="text-none" :loading="loading" @click="saveAsDraft">
+            Save Draft
+          </v-btn>
+
+          <!-- Locks the terms: mints the EO number and draws the stock. -->
+          <v-btn color="primary" class="text-none" :loading="loading" :disabled="hasBelowCostLine" @click="submit">
+            {{ isEditingDraft ? 'Confirm & Invoice' : 'Create & Invoice' }}
           </v-btn>
         </v-card-actions>
       </template>

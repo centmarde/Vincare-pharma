@@ -1635,6 +1635,8 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         .select(`id, created_at, total_amount, ${refCol}`)
         .eq('transaction_type', source)
         .eq('customer_id', customerId)
+        // An Ethical draft is still being haggled — not a charge yet.
+        .neq('status', 'draft')
         .order('created_at', { ascending: true })
       if (ordersError) throw ordersError
 
