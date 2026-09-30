@@ -128,6 +128,17 @@ watch(
           {{ isEditingDraft ? 'Edit Draft' : 'Create Ethical Order' }}
         </v-toolbar-title>
 
+        <!-- Discard is icon-only here; the desktop toolbar has room for a
+             labelled button, this one does not. Without it a draft reopened on
+             a phone could be saved but never removed. -->
+        <v-btn
+          v-if="isEditingDraft"
+          icon="mdi-delete-outline"
+          color="error"
+          variant="text"
+          :loading="loading"
+          @click="discardDraft"
+        />
         <v-btn variant="text" class="text-none" :loading="loading" @click="saveAsDraft">
           Save Draft
         </v-btn>

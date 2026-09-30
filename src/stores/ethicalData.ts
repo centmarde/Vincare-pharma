@@ -546,15 +546,19 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
   // rather than as a half-built invoice.
   async function createOrder(payload: OrderPayload) {
     const saved = await saveDraft(payload, { silent: true })
-    if (!saved.success) return { success: false }
+    if (!saved.success) return { success: false as const }
     const confirmed = await confirmDraft(saved.orderId, { silent: true })
     if (!confirmed.success) {
-      toast.warning('The order was saved as a draft but not invoiced — open it from the list to retry.')
+      toast.warning('The order was saved as a draft but not invoiced — retry to invoice it.')
       await fetchOrders()
-      return { success: false }
+      // The draft id is RETURNED on failure, not swallowed. Without it the form
+      // stays in create mode, and pressing submit again runs saveDraft from
+      // scratch — a second draft for the same order. The caller adopts this id
+      // so a retry re-saves and re-confirms the draft that already exists.
+      return { success: false as const, draftId: saved.orderId }
     }
     toast.success(`Ethical order ${confirmed.orderNo} created.`)
-    return { success: true, orderId: confirmed.orderId }
+    return { success: true as const, orderId: confirmed.orderId }
   }
 
   // Discard a draft. It has no number, no stock movement and no ledger entry,

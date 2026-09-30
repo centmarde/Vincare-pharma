@@ -377,7 +377,11 @@ export function useCreateOrder(onCreated: () => void) {
       const saved = await ethical.saveDraft({ ...buildPayload(), draftId: editingDraftId.value }, { silent: true })
       ok = saved.success && (await ethical.confirmDraft(editingDraftId.value)).success
     } else {
-      ok = (await ethical.createOrder(buildPayload())).success
+      const created = await ethical.createOrder(buildPayload())
+      ok = created.success
+      // Saved as a draft but not invoiced: adopt that draft so the next submit
+      // re-confirms IT rather than creating a second order for the same lines.
+      if (!created.success && created.draftId != null) editingDraftId.value = created.draftId
     }
     loading.value = false
     if (ok) finish()

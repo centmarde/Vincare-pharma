@@ -277,7 +277,10 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   function applyPickedProduct(itemId: number, product: ProductPickerResult) {
     lineProductEdits.value[itemId] = product.id
     lineProductNames.value[itemId] = product.product_name ?? ''
-    if (product.cost_price != null) lineCostEdits.value[itemId] = product.cost_price
+    // Always overwrite, never conditionally. Switching from a product costing
+    // 100 to one with no recorded cost used to leave 100 behind, so the offer
+    // and the saved cost_price carried the PREVIOUS product's figure.
+    lineCostEdits.value[itemId] = product.cost_price ?? 0
   }
 
   function applyPickedProductToNewLine(index: number, product: ProductPickerResult) {
@@ -286,7 +289,7 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     line.product_id = product.id
     line.product_name = product.product_name ?? ''
     line.unit = product.unit ?? ''
-    if (product.cost_price != null) line.cost_unit = product.cost_price
+    line.cost_unit = product.cost_price ?? 0
     if (!line.offer_unit && product.selling_price != null) line.offer_unit = product.selling_price
   }
 
