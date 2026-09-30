@@ -93,6 +93,7 @@ declare module 'vue-router/auto-routes' {
     '/finance/components/dialogs/SOADialog': RouteRecordInfo<'/finance/components/dialogs/SOADialog', '/finance/components/dialogs/SOADialog', Record<never, never>, Record<never, never>>,
     '/finance/components/dialogs/VoucherFormDialog': RouteRecordInfo<'/finance/components/dialogs/VoucherFormDialog', '/finance/components/dialogs/VoucherFormDialog', Record<never, never>, Record<never, never>>,
     '/finance/components/dialogs/VoucherPrintDialog': RouteRecordInfo<'/finance/components/dialogs/VoucherPrintDialog', '/finance/components/dialogs/VoucherPrintDialog', Record<never, never>, Record<never, never>>,
+    '/finance/components/dialogs/VoucherSheet': RouteRecordInfo<'/finance/components/dialogs/VoucherSheet', '/finance/components/dialogs/VoucherSheet', Record<never, never>, Record<never, never>>,
     '/finance/components/dialogs/VoucherStampDialog': RouteRecordInfo<'/finance/components/dialogs/VoucherStampDialog', '/finance/components/dialogs/VoucherStampDialog', Record<never, never>, Record<never, never>>,
     '/finance/components/DisbursementVouchers': RouteRecordInfo<'/finance/components/DisbursementVouchers', '/finance/components/DisbursementVouchers', Record<never, never>, Record<never, never>>,
     '/finance/components/DiscrepanciesPanel': RouteRecordInfo<'/finance/components/DiscrepanciesPanel', '/finance/components/DiscrepanciesPanel', Record<never, never>, Record<never, never>>,
