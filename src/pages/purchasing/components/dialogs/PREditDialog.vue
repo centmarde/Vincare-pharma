@@ -17,6 +17,7 @@ import ProductPickerDialog from '@/components/products/ProductPicker.vue'
 import PREditItemsMobile from '../../mobile/PREditItemsMobile.vue'
 import type { ProductPickerResult } from '@/stores/productsData'
 import { unitOptions } from '../../composables/usePurchaseRequisition'
+import { usePurchaseBreakdown } from '../../composables/usePurchaseBreakdown'
 
 const { mobile } = useDisplay()
 const toast = useToast()
@@ -208,6 +209,15 @@ function save() {
 
 const companyCostTotal = computed(() => {
   return items.value.reduce((sum, item) => sum + (item.qty || 0) * (item.cost_per_unit || 0), 0)
+})
+
+const { breakdown, hasCharges } = usePurchaseBreakdown(() => props.pr)
+
+const totalLabel = computed(() => (hasCharges.value ? 'Purchase Total' : 'Total Cost'))
+
+const totalAmount = computed(() => {
+  if (hasCharges.value && breakdown.value) return breakdown.value.purchaseTotal
+  return companyCostTotal.value
 })
 </script>
 
@@ -453,8 +463,8 @@ const companyCostTotal = computed(() => {
           <v-col cols="12" md="6" :order="mobile ? 1 : 2">
             <v-card variant="flat" rounded="lg" class="pa-4 border mb-4 mb-md-0">
               <div class="d-flex justify-space-between align-center">
-                <span class="text-body-2">Total Cost</span>
-                <span class="text-h6 font-weight-bold">{{ formatCurrency(companyCostTotal) }}</span>
+                <span class="text-body-2">{{ totalLabel }}</span>
+                <span class="text-h6 font-weight-bold">{{ formatCurrency(totalAmount) }}</span>
               </div>
             </v-card>
           </v-col>

@@ -21,7 +21,7 @@ const emit = defineEmits<{
 
 const showEditDialog = ref<boolean>(false)
 
-const { statusConfig, breakdown, hasCharges, totalLabel, totalAmount } = usePRDetailModal(props)
+const { statusConfig, breakdown, totalLabel, totalAmount } = usePRDetailModal(props)
 
 const { confirmDialog: showUnapproveDialog, inputValue } = useConfirmDialog()
 
@@ -192,11 +192,12 @@ async function onUnapprove() {
             :min-width="mobile ? '100%' : '340'"
           >
             <div
-              v-if="breakdown && hasCharges"
+              v-if="breakdown"
               :class="mobile ? 'text-caption mb-2' : 'text-body-2 mb-2'"
             >
               <PurchaseChargeLines :breakdown="breakdown" />
             </div>
+            <v-divider v-if="breakdown" class="mt-3 mb-1" />
             <div class="d-flex justify-space-between align-center">
               <span
                 :class="

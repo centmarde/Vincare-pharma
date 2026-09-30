@@ -14,7 +14,7 @@ export const headers = [
   { title: 'PR #',         key: 'requisition_no',  sortable: true,  align: 'center' as const },
   { title: 'ITEMS',        key: 'items',          sortable: false, align: 'center' as const },
   { title: 'TOTAL QTY',    key: 'total_qty',      sortable: false, align: 'center' as const },
-  { title: 'TOTAL COST',   key: 'total_amount',   sortable: true,  align: 'center' as const },
+  { title: 'PURCHASE TOTAL',   key: 'total_amount',   sortable: true,  align: 'center' as const },
   { title: 'REQUESTED BY', key: 'requester_name', sortable: true,  align: 'center' as const },
   { title: 'DATE',         key: 'created_at',     sortable: true,  align: 'center' as const },
   { title: 'STATUS',       key: 'status',         sortable: true,  align: 'center' as const },

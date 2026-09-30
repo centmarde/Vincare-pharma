@@ -30,8 +30,20 @@ const emit = defineEmits<{
   'issue-po': [item: PR]
 }>()
 
-const { totalQty, totalCost, itemSummary, itemNames, statusConfig, statusOptions } =
+const { totalQty, itemSummary, itemNames, statusConfig, statusOptions } =
   useTransactionsData()
+
+// I-group ang unique nga supplier names sa mga items para ma-display sa SUPPLIER column.
+// Pananglitan kung 5 ka items RDMI ug 2 ka items TFRE, mo-display siya og "RDMI, TFRE".
+const uniqueSuppliers = (pr: PR): string[] => {
+  const names = new Set<string>()
+  for (const it of pr.items ?? []) {
+    if (it.supplier_name) names.add(it.supplier_name)
+  }
+  // Fallback sa PR-level supplier name kung walay supplier per item.
+  if (names.size === 0 && pr.supplier_name) names.add(pr.supplier_name)
+  return Array.from(names)
+}
 </script>
 
 <template>
@@ -110,6 +122,8 @@ const { totalQty, totalCost, itemSummary, itemNames, statusConfig, statusOptions
       :loading="loading"
       :items-per-page-options="[5, 10, 15, 20, 25, 50, 100]"
       hover
+      show-expand
+      single-expand
       loading-text="Loading purchase orders..."
       no-data-text="No purchase orders found."
       @update:options="(options) => emit('load-items', options)"
@@ -145,11 +159,26 @@ const { totalQty, totalCost, itemSummary, itemNames, statusConfig, statusOptions
       </template>
 
       <template #item.total_amount="{ item }">
-        <span class="text-body-2">{{ formatCurrency(totalCost(item.items)) }}</span>
+        <span class="text-body-2">{{ formatCurrency(item.total_amount ?? 0) }}</span>
       </template>
 
-      <template #item.requester_name="{ item }">
-        <span class="text-body-2">{{ item.requester_name }}</span>
+      <template #item.suppliers="{ item }">
+        <div class="d-flex flex-wrap justify-center" style="gap: 6px">
+          <template v-if="uniqueSuppliers(item).length">
+            <v-chip
+              v-for="supplier in uniqueSuppliers(item)"
+              :key="supplier"
+              size="small"
+              density="comfortable"
+              variant="tonal"
+              color="pink lighten-4"
+              class="supplier-chip"
+            >
+              {{ supplier.toUpperCase() }}
+            </v-chip>
+          </template>
+          <span v-else class="text-body-2 text-medium-emphasis">—</span>
+        </div>
       </template>
 
       <template #item.created_at="{ item }">
@@ -168,8 +197,30 @@ const { totalQty, totalCost, itemSummary, itemNames, statusConfig, statusOptions
         </span>
       </template>
 
-      <template #item.reviewer_name="{ item }">
-        <span class="text-body-2">{{ item.reviewer_name }}</span>
+      <template #expanded-row="{ columns, item }">
+        <tr>
+          <td :colspan="columns.length" class="pa-0" style="background: rgba(0, 0, 0, 0.015)">
+            <div class="d-flex flex-wrap pa-4" style="gap: 24px 48px">
+              <div>
+                <div class="text-caption font-weight-bold text-medium-emphasis text-uppercase">
+                  Requested By
+                </div>
+                <div class="text-body-2 font-weight-medium">
+                  {{ item.requester_name || '—' }}
+                </div>
+              </div>
+
+              <div>
+                <div class="text-caption font-weight-bold text-medium-emphasis text-uppercase">
+                  Reviewed By
+                </div>
+                <div class="text-body-2 font-weight-medium">
+                  {{ item.reviewer_name || '—' }}
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
       </template>
 
       <template #item.actions="{ item }">
@@ -240,6 +291,10 @@ const { totalQty, totalCost, itemSummary, itemNames, statusConfig, statusOptions
 
 .actions-gap {
   gap: 6px;
+}
+
+.supplier-chip {
+  white-space: nowrap;
 }
 
 :deep(.v-table thead tr th) {
