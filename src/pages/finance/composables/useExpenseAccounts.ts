@@ -1,7 +1,9 @@
 import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useGLDataStore } from '@/stores/glData'
-import { categoryTitle, expenseAccountSubsections } from '@/stores/financeData'
+import {
+  categoryTitle, disbursementAccountClasses, disbursementPreferredSubsections,
+} from '@/stores/financeData'
 import type { ExpenseCategory } from '@/stores/financeData'
 import type { GLAccount } from '@/stores/glData'
 
@@ -14,10 +16,9 @@ import type { GLAccount } from '@/stores/glData'
 // `case` in gl_project_events and a CHECK constraint in the database; see the
 // ExpenseCategory docblock in financeData.ts for why that went.
 
-// The offered subsections live in financeData so recordExpense can validate
-// against the very same list, and the two cannot drift into "selectable but
-// unrecordable" — see expenseAccountSubsections there for why that matters.
-const offeredSubsections = expenseAccountSubsections
+// The rule lives in financeData so recordExpense can validate against the very
+// same one, and the two cannot drift into "selectable but unrecordable" — see
+// disbursementAccountClasses there for why that matters.
 
 /**
  * Matches an account by NAME or by CODE, so an accountant who knows the chart
@@ -72,13 +73,31 @@ export function useExpenseAccounts() {
    * being offered without anything here changing.
    */
   const expenseAccounts = computed<GLAccount[]>(() =>
-    accounts.value.filter((a) => (offeredSubsections as readonly string[]).includes(a.subsection)),
+    accounts.value.filter((a) => (disbursementAccountClasses as readonly string[]).includes(a.class)),
   )
+
+  /**
+   * Subsections present in the chart, preferred ones first and the rest ordered
+   * by their lowest account code — so Assets, Liabilities then Equity fall out
+   * of the numbering rather than a second hardcoded list to keep in step.
+   */
+  const orderedSubsections = computed<string[]>(() => {
+    const lowestCode = new Map<string, string>()
+    for (const account of expenseAccounts.value) {
+      const current = lowestCode.get(account.subsection)
+      if (!current || account.code < current) lowestCode.set(account.subsection, account.code)
+    }
+    const preferred = disbursementPreferredSubsections.filter((s) => lowestCode.has(s))
+    const rest = [...lowestCode.keys()]
+      .filter((s) => !(disbursementPreferredSubsections as readonly string[]).includes(s))
+      .sort((a, b) => (lowestCode.get(a) ?? '').localeCompare(lowestCode.get(b) ?? ''))
+    return [...preferred, ...rest]
+  })
 
   /** The same accounts as Vuetify select items, with a heading per subsection. */
   const expenseAccountOptions = computed<ExpenseAccountOption[]>(() => {
     const options: ExpenseAccountOption[] = []
-    for (const subsection of offeredSubsections) {
+    for (const subsection of orderedSubsections.value) {
       const group = expenseAccounts.value
         .filter((a) => a.subsection === subsection)
         .sort((a, b) => a.code.localeCompare(b.code))

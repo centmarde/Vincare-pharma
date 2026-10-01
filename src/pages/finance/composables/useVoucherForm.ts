@@ -1,7 +1,9 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { expenseDepartments } from '@/stores/financeData'
 import { useExpenseAccounts } from './useExpenseAccounts'
+import { useSuppliersDataStore } from '@/stores/suppliersData'
 import type { ExpenseCategory, ExpenseDepartment } from '@/stores/financeData'
 import { emptySignatories } from '@/stores/disbursementVouchersData'
 import type { VoucherType, VoucherInput, VoucherSignatoryField } from '@/stores/disbursementVouchersData'
@@ -76,6 +78,14 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
   const toast = useToast()
   const editingId = ref<number | null>(null)
 
+  /**
+   * Who the voucher pays. 'supplier' routes the whole voucher to Accounts
+   * Payable — recording it produces supplier_payment rows that move the
+   * supplier's outstanding balance, instead of expenses. One supplier per
+   * voucher, because one cheque goes to one payee.
+   */
+  const payeeType = ref<'other' | 'supplier'>('other')
+  const supplierId = ref<number | null>(null)
   const payee = ref('')
   const payeeAddress = ref('')
   const payeeTin = ref('')
@@ -110,9 +120,12 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
     // free-text `particular`. v4: `department` moved to the header. v5:
     // `particular` moved to the header too. Bumping discards older drafts
     // rather than restoring a voucher with part of its shape silently missing.
-    version: 5,
-    refs: { payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, department, particulars, remarks, signatories, items },
+    // v6: payeeType + supplierId joined the shape. Bumping discards older
+    // drafts rather than restoring one with the pay-to half missing.
+    version: 6,
+    refs: { payeeType, supplierId, payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, department, particulars, remarks, signatories, items },
     isEmpty: () => !payee.value && !payeeAddress.value && !payeeTin.value && cashAccountId.value == null
+      && supplierId.value == null
       && !checkNo.value && !orSiNo.value && !particulars.value.trim() && !remarks.value
       && !hasAnySignatory()
       && items.value.every((line) => !line.amount),
@@ -155,6 +168,45 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
   // Charged-to accounts come from the chart of accounts, so adding one there
   // is all it takes for it to appear here.
   const { expenseAccountOptions, expenseAccountLabel, ensureLoaded: ensureAccountsLoaded } = useExpenseAccounts()
+
+  const suppliersStore = useSuppliersDataStore()
+  const { suppliers } = storeToRefs(suppliersStore)
+
+  const supplierOptions = computed(() =>
+    suppliers.value
+      .filter((supplier) => supplier.is_active !== false)
+      .map((supplier) => ({ value: supplier.id, title: supplier.name ?? `Supplier ${supplier.id}` })),
+  )
+
+  /** Load suppliers once, for the pay-to picker. */
+  async function ensureSuppliersLoaded() {
+    if (suppliers.value.length) return
+    await suppliersStore.fetchSuppliers({ activeOnly: true })
+  }
+
+  /**
+   * Picking a supplier fills the printed payee block from their record, so the
+   * voucher prints a real name, address and TIN without retyping. Only fills
+   * blanks on an EDIT — a voucher saved with a hand-corrected address keeps it.
+   */
+  watch(supplierId, (id) => {
+    if (id === null) return
+    const supplier = suppliers.value.find((s) => s.id === id)
+    if (!supplier) return
+    payee.value = supplier.name ?? ''
+    if (!payeeAddress.value) payeeAddress.value = supplier.address ?? ''
+    if (!payeeTin.value) payeeTin.value = supplier.tin_no ?? ''
+  })
+
+  // Switching back to a non-supplier payee clears the link and the name it
+  // filled in, so a leftover supplier_id cannot ride along on an expense
+  // voucher and silently turn it into a payable settlement.
+  watch(payeeType, (type) => {
+    if (type === 'other' && supplierId.value !== null) {
+      supplierId.value = null
+      payee.value = ''
+    }
+  })
   const categoryOptions = expenseAccountOptions
   const departmentOptions = expenseDepartments
 
@@ -190,13 +242,24 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
   // A line only counts once it has BOTH an account and an amount. An amount
   // with no account can't be posted anywhere, so counting it would let the
   // form submit a line the GL has nowhere to put.
+  /** True while the voucher pays a supplier, where every line is Accounts
+   *  Payable and there is no per-line account to pick. */
+  const isSupplierVoucher = computed(() => payeeType.value === 'supplier')
+
+  /** The account a supplier voucher's lines are charged to. */
+  const accountsPayableCode = '2010'
+
   const validItems = computed(() =>
-    items.value.filter((line) => Number(line.amount) > 0 && !!line.category),
+    items.value.filter((line) =>
+      Number(line.amount) > 0 && (isSupplierVoucher.value || !!line.category)),
   )
 
-  /** Lines where an amount was typed but no account picked — the likely slip. */
+  /** Lines where an amount was typed but no account picked — the likely slip.
+   *  Never applies to a supplier voucher: those lines have no account field. */
   const linesMissingAccount = computed(() =>
-    items.value.filter((line) => Number(line.amount) > 0 && !line.category).length,
+    isSupplierVoucher.value
+      ? 0
+      : items.value.filter((line) => Number(line.amount) > 0 && !line.category).length,
   )
 
   // What's still stopping a save. Drives a visible hint next to the submit
@@ -215,6 +278,7 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
 
   const blockers = computed(() => {
     const missing: string[] = []
+    if (isSupplierVoucher.value && supplierId.value === null) missing.push('a supplier')
     if (!payee.value.trim()) missing.push('Payee')
     if (!voucherDate.value) missing.push('Date')
     if (cashAccountId.value === null) missing.push('Payment Mode')
@@ -240,6 +304,8 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
 
   function resetForm() {
     editingId.value = null
+    payeeType.value = 'other'
+    supplierId.value = null
     payee.value = ''
     payeeAddress.value = ''
     payeeTin.value = ''
@@ -259,6 +325,8 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
   // the caller gates on that before ever opening the form in edit mode.
   function loadFrom(voucher: VoucherType) {
     editingId.value = voucher.id
+    payeeType.value = voucher.supplier_id ? 'supplier' : 'other'
+    supplierId.value = voucher.supplier_id
     payee.value = voucher.payee ?? ''
     payeeAddress.value = voucher.payee_address ?? ''
     payeeTin.value = voucher.payee_tin ?? ''
@@ -315,6 +383,9 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
       payee_tin: payeeTin.value.trim(),
       voucher_date: voucherDate.value,
       cash_account_id: cashAccountId.value,
+      // null keeps this an ordinary expense voucher; set makes recording it
+      // produce supplier_payment rows against Accounts Payable instead.
+      supplier_id: payeeType.value === 'supplier' ? supplierId.value : null,
       check_no: checkNo.value.trim(),
       or_si_no: orSiNo.value.trim(),
       remarks: remarks.value.trim(),
@@ -328,7 +399,9 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
         // Fanned out from the single header value; falls back to the category's
         // title when left blank so the column is never empty in the database.
         particular: particulars.value.trim() || expenseAccountLabel(line.category),
-        category: line.category as ExpenseCategory,
+        // A supplier voucher settles Accounts Payable, so its lines record
+        // that rather than an expense account they were never charged to.
+        category: (isSupplierVoucher.value ? accountsPayableCode : line.category) as ExpenseCategory,
         // Fanned out from the single header value.
         department: department.value,
         amount: Number(line.amount),
@@ -342,6 +415,7 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
     categoryOptions, departmentOptions, accountOptions, metaForAccount, selectedAccount,
     voucherTotal, insufficientFunds, canSubmit, blockers,
     canAddItem, particularsLines, tooManyAccounts, particularsTooTall, linesMissingAccount,
+    payeeType, supplierId, isSupplierVoucher, supplierOptions, ensureSuppliersLoaded,
     expenseAccountLabel, ensureAccountsLoaded,
     resetForm, loadFrom, addItem, removeItem, buildPayload, setSignatory, applyCachedSignatories,
     restoreDraft: draft.restore,

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { useSupplierPayments, apHeaders, paymentHistoryHeaders } from '../composables/useSupplierPayments'
-import SupplierPaymentDialog from './dialogs/SupplierPaymentDialog.vue'
+import {
+  useSupplierPayments, apHeaders, agingHeaders, paymentHistoryHeaders, bucketColor,
+} from '../composables/useSupplierPayments'
+import { apAgeBuckets } from '@/stores/financeData'
 import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
 import { useFinanceChangeRequestStore } from '../stores/financeChangeRequest'
@@ -9,9 +11,9 @@ import { expensePaymentMethods, type SupplierPaymentType } from '@/stores/financ
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
-  supplierAP, supplierPayments, loading,
-  showPaymentDialog, targetOutstanding, amount, paymentMethod, referenceNo, valueDate, remarks, canSubmit,
-  init, openPaymentDialog, handleSubmit,
+  supplierAP, apAging, supplierPayments, loading,
+  bucketTotals, totalOutstanding, oldestDays,
+  init, goToVouchers,
 } = useSupplierPayments()
 
 // Edit/undo requests on a recorded supplier payment (executive-approved).
@@ -40,8 +42,89 @@ onMounted(async () => { await init(); await loadPending() })
   <v-container fluid class="pa-2 fill-height align-start">
     <div class="mx-auto w-100">
 
+      <!-- Payments are raised as disbursement vouchers, so the page says where
+           to go rather than leaving the reader hunting for a missing button. -->
       <v-card rounded="lg" elevation="1" class="mb-3">
-        <v-card-title class="pa-4 pa-sm-5 text-h6 font-weight-bold">Accounts Payable</v-card-title>
+        <v-card-title class="pa-4 pa-sm-5 d-flex align-center ga-2 flex-wrap">
+          <span class="text-h6 font-weight-bold">Supplier Aging</span>
+          <v-chip v-if="oldestDays" :color="oldestDays > 90 ? 'error' : 'warning'" size="small" label>
+            Oldest {{ oldestDays }} days
+          </v-chip>
+          <v-spacer />
+          <v-btn color="primary" variant="tonal" size="small" class="text-none" @click="goToVouchers">
+            Pay via Disbursement Voucher
+          </v-btn>
+        </v-card-title>
+        <v-divider />
+
+        <v-card-text>
+          <p class="text-body-2 text-medium-emphasis mb-3">
+            This page monitors what is owed. Payments are recorded as disbursement
+            vouchers — set <strong>Paying: A supplier</strong> on the voucher and
+            recording it settles the balance here.
+          </p>
+
+          <!-- Bucket strip -->
+          <div class="d-flex flex-wrap ga-2 mb-4">
+            <v-sheet
+              v-for="bucket in apAgeBuckets" :key="bucket"
+              rounded="lg" border class="pa-3 flex-grow-1" style="min-width: 130px"
+            >
+              <div class="text-caption text-medium-emphasis">{{ bucket }} days</div>
+              <div class="text-subtitle-1 font-weight-bold" :class="`text-${bucketColor[bucket]}`">
+                {{ formatCurrency(bucketTotals[bucket]) }}
+              </div>
+            </v-sheet>
+            <v-sheet rounded="lg" border class="pa-3 flex-grow-1" style="min-width: 130px">
+              <div class="text-caption text-medium-emphasis">Total owed</div>
+              <div class="text-subtitle-1 font-weight-bold">{{ formatCurrency(totalOutstanding) }}</div>
+            </v-sheet>
+          </div>
+
+          <v-data-table
+            mobile-breakpoint="md"
+            :headers="agingHeaders"
+            :items="apAging"
+            :loading="loading"
+            density="compact"
+            items-per-page="10"
+          >
+            <template #item.invoice_date="{ item }">
+              {{ item.invoice_date ? formatDatePR_ISO(item.invoice_date) : '—' }}
+            </template>
+            <template #item.total_amount="{ item }">{{ formatCurrency(item.total_amount) }}</template>
+            <template #item.paid="{ item }">
+              {{ item.paid ? formatCurrency(item.paid) : '—' }}
+            </template>
+            <template #item.balance="{ item }">
+              <span class="font-weight-bold">{{ formatCurrency(item.balance) }}</span>
+            </template>
+            <template #item.days_outstanding="{ item }">
+              <v-chip :color="bucketColor[item.bucket]" size="small" label>
+                {{ item.days_outstanding }}d · {{ item.bucket }}
+              </v-chip>
+            </template>
+            <template #no-data>
+              <div class="text-center text-caption text-medium-emphasis py-6">
+                Nothing outstanding — every received invoice is fully paid.
+              </div>
+            </template>
+          </v-data-table>
+
+          <!-- The allocation is a convention, not a recorded fact. Saying so on
+               the page is the same disclosure the AR Statement of Accounts makes. -->
+          <p class="text-caption text-medium-emphasis mt-3 mb-0">
+            Payments are recorded against a supplier, not against a specific invoice, so
+            the <strong>Paid</strong> and <strong>Balance</strong> columns apply each
+            supplier's payments to their oldest invoice first. Supplier totals always tie
+            exactly; a single invoice's split can shift if an older invoice is added or
+            back-dated later.
+          </p>
+        </v-card-text>
+      </v-card>
+
+      <v-card rounded="lg" elevation="1" class="mb-3">
+        <v-card-title class="pa-4 pa-sm-5 text-h6 font-weight-bold">Accounts Payable by Supplier</v-card-title>
         <v-divider />
 
         <v-data-table
@@ -76,17 +159,6 @@ onMounted(async () => { await init(); await loadPending() })
             <span v-else class="text-medium-emphasis">—</span>
           </template>
 
-          <template #item.actions="{ item }">
-            <v-btn
-              color="primary"
-              size="small"
-              variant="tonal"
-              :disabled="item.outstanding <= 0.01"
-              @click="openPaymentDialog(item.supplier_id, item.outstanding)"
-            >
-              Pay
-            </v-btn>
-          </template>
         </v-data-table>
       </v-card>
 
@@ -175,24 +247,6 @@ onMounted(async () => { await init(); await loadPending() })
       :void-summary="config.voidSummary"
       :loading="submitting"
       @submit="submit"
-    />
-
-    <SupplierPaymentDialog
-      v-model="showPaymentDialog"
-      :outstanding="targetOutstanding"
-      :amount="amount"
-      :payment-method="paymentMethod"
-      :reference-no="referenceNo"
-      :value-date="valueDate"
-      :remarks="remarks"
-      :can-submit="canSubmit"
-      :loading="loading"
-      @update:amount="amount = $event"
-      @update:payment-method="paymentMethod = $event"
-      @update:reference-no="referenceNo = $event"
-      @update:value-date="valueDate = $event"
-      @update:remarks="remarks = $event"
-      @submit="handleSubmit"
     />
 
   </v-container>

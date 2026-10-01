@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useFinanceDataStore } from '@/stores/financeData'
 import { useDisbursementVouchersStore } from '@/stores/disbursementVouchersData'
@@ -54,7 +54,18 @@ export function useDisbursementVouchers() {
   }
 
   // The gate the accountant asked for. Everything the row renders keys off these.
-  const canEdit = (voucher: VoucherType) => voucher.status === 'draft'
+  /**
+   * Editable right up until it is recorded — a printed voucher with a typo can
+   * be fixed rather than cancelled and re-issued.
+   *
+   * Editing a PRINTED voucher sends it back to draft (see updateVoucher), so
+   * the print-before-record gate still holds: whatever gets recorded is
+   * whatever was last printed and signed, never an edit made after the fact.
+   * Once recorded it is closed — corrections go through a change request,
+   * which reverses and reissues rather than rewriting history.
+   */
+  const canEdit = (voucher: VoucherType) =>
+    voucher.status === 'draft' || voucher.status === 'printed'
   const canPrint = (voucher: VoucherType) => voucher.status !== 'cancelled'
   const canRecord = (voucher: VoucherType) => voucher.status === 'printed'
   const canCancel = (voucher: VoucherType) => voucher.status !== 'recorded' && voucher.status !== 'cancelled'
@@ -66,6 +77,61 @@ export function useDisbursementVouchers() {
     if (voucher.status === 'cancelled') return 'This voucher was cancelled.'
     return ''
   }
+
+  const search = ref('')
+
+  /**
+   * Vouchers matching the search box.
+   *
+   * Filtered HERE rather than handed to v-data-table's own `search` prop, and
+   * that is the whole point: the table only knows about the page it is
+   * rendering, so a total built from it would be the total of one page. The
+   * table and the footer total both read THIS list, so the figure under the
+   * search is by construction the total of everything that matched — it cannot
+   * drift from what is on screen, and paging does not change it.
+   *
+   * Searches every column the table shows, so typing what you can see works:
+   * the voucher number, payee, the particulars, the paying account, and the
+   * status chip.
+   */
+  const filteredVouchers = computed(() => {
+    const query = search.value.trim().toLowerCase()
+    if (!query) return vouchers.value
+    return vouchers.value.filter((voucher) => {
+      const haystack = [
+        voucher.dv_no,
+        voucher.payee,
+        voucher.supplier_name,
+        voucher.cash_account_name,
+        voucher.status,
+        voucher.remarks,
+        ...voucher.items.map((line) => line.particular),
+      ]
+      return haystack.some((field) => (field ?? '').toLowerCase().includes(query))
+    })
+  })
+
+  /**
+   * What the matches add up to — the number their old system showed and the
+   * reason this search exists: "what did all the LIQ. vouchers come to?"
+   *
+   * CANCELLED vouchers are counted but NOT added. A cancelled voucher is a
+   * document that exists and should still be findable, but no money left the
+   * business for it, so folding it into the total would overstate the spend.
+   * The count is reported separately so the exclusion is visible rather than
+   * silently making the arithmetic look wrong.
+   */
+  const searchTotals = computed(() => {
+    const rows = filteredVouchers.value
+    const cancelled = rows.filter((voucher) => voucher.status === 'cancelled')
+    const counted = rows.filter((voucher) => voucher.status !== 'cancelled')
+    return {
+      matches: rows.length,
+      counted: counted.length,
+      cancelled: cancelled.length,
+      total: counted.reduce((sum, voucher) => sum + (voucher.total_amount ?? 0), 0),
+    }
+  })
 
   function particularsSummary(voucher: VoucherType): string {
     if (!voucher.items.length) return '—'
@@ -102,15 +168,37 @@ export function useDisbursementVouchers() {
     return result
   }
 
-  // Stamps the print (locking a draft) BEFORE opening the printable view, so
-  // what opens is always an accurate copy — including whether it is the
-  // original or a reprint.
+  /**
+   * Open the printable view WITHOUT stamping it.
+   *
+   * It used to call markPrinted first, so merely looking at a voucher burned a
+   * copy number and locked a draft — a preview that silently mutates the
+   * document. The copy number shown here is the PROSPECTIVE one (print_count +
+   * 1); stampPrint below commits it when a PDF is actually produced.
+   */
   async function openPrint(voucher: VoucherType) {
-    const result = await voucherStore.markPrinted(voucher.id)
-    if (!result.success) return
-    printCopyNo.value = result.copyNo ?? 1
-    printTarget.value = await voucherStore.fetchVoucherById(voucher.id)
+    const fresh = await voucherStore.fetchVoucherById(voucher.id)
+    if (!fresh) return
+    printTarget.value = fresh
+    printCopyNo.value = (fresh.print_count ?? 0) + 1
     showPrintDialog.value = true
+  }
+
+  /**
+   * Commit the print: increments the copy count and locks a draft to 'printed'.
+   *
+   * Fired by the dialog once a PDF has actually been generated, which is the
+   * only moment a copy really leaves the system. markPrinted returns the
+   * authoritative number; it should equal what the preview showed, but trust
+   * the server's and not the optimistic one.
+   */
+  async function stampPrint() {
+    const target = printTarget.value
+    if (!target) return
+    const result = await voucherStore.markPrinted(target.id)
+    if (!result.success) return
+    printCopyNo.value = result.copyNo ?? printCopyNo.value
+    printTarget.value = await voucherStore.fetchVoucherById(target.id)
   }
 
   // Re-fetched rather than reusing the row, so the stamp reads the expense
@@ -155,10 +243,11 @@ export function useDisbursementVouchers() {
   return {
     vouchers, cashAccounts, loading,
     showFormDialog, editTarget,
-    showPrintDialog, printTarget, printCopyNo,
+    showPrintDialog, printTarget, printCopyNo, stampPrint,
     showStampDialog, stampTarget, openStamp, closeStampDialog,
     showCancelDialog, cancelTarget, cancelReason,
     statusMeta, canEdit, canPrint, canRecord, canCancel, recordBlockedReason, particularsSummary,
+    search, filteredVouchers, searchTotals,
     init, openCreateDialog, openEditDialog, closeFormDialog, handleSubmit,
     openPrint, closePrintDialog, handleRecord,
     openCancelDialog, closeCancelDialog, handleCancel,

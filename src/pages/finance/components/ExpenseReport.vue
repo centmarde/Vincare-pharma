@@ -11,6 +11,7 @@ const {
   usedCategories,
   departmentGroups,
   grandTotals,
+  capitalExcluded,
   categoryTitle,
 } = useExpenseReport()
 </script>
@@ -50,6 +51,20 @@ const {
 
       <v-card rounded="lg" elevation="1">
         <v-card-title class="pa-4 pa-sm-5 text-h6 font-weight-bold">Expense Report</v-card-title>
+
+        <!-- A voucher can be charged to a balance-sheet account now, so say
+             what was left out rather than appear to lose the money. -->
+        <v-alert
+          v-if="capitalExcluded.count"
+          type="info" variant="tonal" density="compact" class="mx-4 mx-sm-5 mb-3"
+        >
+          {{ capitalExcluded.count }} disbursement{{ capitalExcluded.count === 1 ? '' : 's' }}
+          totalling {{ formatCurrency(capitalExcluded.total) }}
+          {{ capitalExcluded.count === 1 ? 'is' : 'are' }} charged to balance sheet accounts
+          (capital purchases, liabilities settled, owner's drawings) and
+          {{ capitalExcluded.count === 1 ? 'is' : 'are' }} not operating spend, so
+          {{ capitalExcluded.count === 1 ? 'it is' : 'they are' }} excluded here.
+        </v-alert>
         <v-divider />
 
         <div v-if="!departmentGroups.length" class="text-center text-medium-emphasis pa-10">

@@ -2,6 +2,7 @@ import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useEthicalDataStore } from '@/stores/ethicalData'
+import type { EthicalOrderType } from '@/stores/ethicalData'
 import type { ProductPickerResult } from '@/stores/productsData'
 import { useAgentsDataStore } from '@/stores/agentsData'
 import { useOutletsDataStore } from '@/stores/outletsData'
@@ -69,6 +70,10 @@ export function useCreateOrder(onCreated: () => void) {
   const sourceLocationId = ref<StockLocationId>(null)
   const remarks = ref('')
   const lines = ref<FormLine[]>([])
+  // Set while the form is editing a saved server-side draft (still haggling —
+  // lines/qty/prices open until it is invoiced). null = a brand-new order.
+  const editingDraftId = ref<number | null>(null)
+  const isEditingDraft = computed(() => editingDraftId.value !== null)
 
   // Persist a draft so a reload / crash mid-entry doesn't wipe the order.
   // sourceLocationId is deliberately excluded from the "touched" check — it
@@ -86,6 +91,9 @@ export function useCreateOrder(onCreated: () => void) {
     refs: { customerId, agentId, outletId, sourceLocationId, remarks, lines },
     isEmpty: () => customerId.value == null && agentId.value == null && !remarks.value
       && !lines.value.some((l) => l.product_id != null || l.unit_price > 0),
+    // A saved draft lives on the server; mirroring it here would clobber the
+    // new-order draft the user may have in progress.
+    enabled: () => editingDraftId.value === null,
   })
 
   // Searches ALL customers, not just department='ethical' — see useCustomerPicker.
@@ -303,22 +311,19 @@ export function useCreateOrder(onCreated: () => void) {
     }
   }
 
-  async function submit() {
-    if (!customerId.value) { toast.warning('Select a customer.'); return }
-    if (!outletId.value) { toast.warning('Select a branch.'); return }
-    if (!validLines.value.length) { toast.warning('Add at least one product with quantity.'); return }
-    // Never let a below-cost sale through — after discount + rebate this order
-    // would realize less than the goods cost us.
-    if (hasBelowCostLine.value) {
-      toast.error(`Cannot create: ${belowCostLines.value.length} line(s) are priced below the allowed minimum.`)
-      return
-    }
+  // Shared checks for every way of leaving the form with a saved order.
+  function validateForm(): boolean {
+    if (!customerId.value) { toast.warning('Select a customer.'); return false }
+    if (!outletId.value) { toast.warning('Select a branch.'); return false }
+    if (!validLines.value.length) { toast.warning('Add at least one product with quantity.'); return false }
+    return true
+  }
 
-    loading.value = true
-    const result = await ethical.createOrder({
-      customerId: customerId.value,
+  function buildPayload() {
+    return {
+      customerId: customerId.value!,
       agentId: agentId.value,
-      outletId: outletId.value,
+      outletId: outletId.value!,
       sourceLocationId: sourceLocationId.value,
       discount: discountAmount.value || undefined,
       rebate: rebateAmount.value || undefined,
@@ -330,15 +335,91 @@ export function useCreateOrder(onCreated: () => void) {
         quantity: l.quantity,
         unit_price: l.unit_price,
         // Snapshotted at order time — the same figure the below-cost guard
-        // above checks against, so the ledger and the guard agree.
+        // checks against, so the ledger and the guard agree.
         cost_price: l.cost,
       })),
-    })
+    }
+  }
+
+  function finish() {
+    // Only a NEW order owns the local form draft; clearing it while editing a
+    // saved draft would throw away an unrelated order the user has in progress.
+    if (!isEditingDraft.value) draft.clear()
+    reset()
+    onCreated()
+  }
+
+  // Still haggling: save without invoicing. No stock moves, no EO number.
+  // A below-cost line is allowed here on purpose — the price is still being
+  // negotiated; the guard bites when the terms are locked (submit).
+  async function saveAsDraft() {
+    if (!validateForm()) return
+    loading.value = true
+    const result = await ethical.saveDraft({ ...buildPayload(), draftId: editingDraftId.value ?? undefined })
     loading.value = false
-    if (result.success) { draft.clear(); reset(); onCreated() }
+    if (result.success) finish()
+  }
+
+  // Lock the terms and invoice: mints the EO number and draws the stock.
+  async function submit() {
+    if (!validateForm()) return
+    // Never let a below-cost sale through — after discount + rebate this order
+    // would realize less than the goods cost us.
+    if (hasBelowCostLine.value) {
+      toast.error(`Cannot invoice: ${belowCostLines.value.length} line(s) are priced below the allowed minimum.`)
+      return
+    }
+
+    loading.value = true
+    let ok: boolean
+    if (editingDraftId.value !== null) {
+      // Save the latest edits first — confirm invoices what is on the server.
+      const saved = await ethical.saveDraft({ ...buildPayload(), draftId: editingDraftId.value }, { silent: true })
+      ok = saved.success && (await ethical.confirmDraft(editingDraftId.value)).success
+    } else {
+      const created = await ethical.createOrder(buildPayload())
+      ok = created.success
+      // Saved as a draft but not invoiced: adopt that draft so the next submit
+      // re-confirms IT rather than creating a second order for the same lines.
+      if (!created.success && created.draftId != null) editingDraftId.value = created.draftId
+    }
+    loading.value = false
+    if (ok) finish()
+  }
+
+  // Reopen a saved draft in this form. Line details come off the order's own
+  // product join, since the products store only holds the first page of rows.
+  function loadDraft(order: EthicalOrderType) {
+    editingDraftId.value = order.id
+    customerId.value = order.customer_id
+    agentId.value = order.agent_id
+    outletId.value = order.outlet_id
+    sourceLocationId.value = order.warehouse_id ?? null
+    remarks.value = order.remarks ?? ''
+    lines.value = (order.items ?? []).map(it => ({
+      product_id:   it.product_id,
+      product_name: it.product?.product_name ?? '',
+      brand:        it.product?.brand ?? null,
+      unit:         it.product?.unit ?? '',
+      selling:      it.product?.selling_price ?? 0,
+      cost:         it.cost_price ?? it.product?.cost_price ?? null,
+      quantity:     it.quantity,
+      unit_price:   it.unit_price,
+    }))
+    if (!lines.value.length) addLine()
+  }
+
+  async function discardDraft() {
+    if (editingDraftId.value === null) return
+    loading.value = true
+    const result = await ethical.deleteDraft(editingDraftId.value)
+    loading.value = false
+    if (result.success) finish()
   }
 
   function reset() {
+    const wasEditingDraft = isEditingDraft.value
+    editingDraftId.value = null
     customerId.value = null
     agentId.value = null
     outletId.value = null
@@ -347,15 +428,22 @@ export function useCreateOrder(onCreated: () => void) {
     lines.value = []
     sourcingPreview.value = []
     addLine()
+    // Leaving a server draft: put the new-order autosave back into the refs.
+    // Otherwise the blanked form gets autosaved as "empty" and wipes it.
+    if (wasEditingDraft) draft.restore()
   }
 
-  async function init() {
+  async function init(draftOrder: EthicalOrderType | null = null) {
+    // Load the saved draft BEFORE the pickers init, so the customer picker
+    // resolves the draft's customer rather than an empty selection.
+    if (draftOrder) loadDraft(draftOrder)
     await initCustomerPicker()
     if (!agents.value.length) await agentsStore.fetchAgents({ activeOnly: true })
     if (!outlets.value.length) await outletsStore.fetchOutlets()
     if (!locations.value.length) await sourcingStore.fetchLocations()
-    // Restore a saved draft first, then fall back to defaults for anything blank.
-    draft.restore()
+    // Restore a locally-autosaved new order, then fall back to defaults for
+    // anything blank. Never over a server draft being edited.
+    if (!draftOrder) draft.restore()
     if (!outletId.value) outletId.value = outletOptions.value[0]?.value ?? null
     if (!lines.value.length) addLine()
     // A restored draft can arrive with lines already on it, so the panel has to
@@ -364,7 +452,7 @@ export function useCreateOrder(onCreated: () => void) {
   }
 
   return {
-    loading, customerId, agentId, outletId, sourceLocationId, remarks, lines,
+    loading, customerId, agentId, outletId, sourceLocationId, remarks, lines, editingDraftId, isEditingDraft,
     customerSearch, customerOptions, selectedCustomer, agentOptions,
     outletOptions, locationOptions, sourceLocationName,
     sourcingPreview, sourcingLoading, shortSourcingRows, hasSourcingShortfall, refreshSourcing,
@@ -372,6 +460,6 @@ export function useCreateOrder(onCreated: () => void) {
     termsDays, total, dueDatePreview, discountProfile, termsNeedReview,
     markupDivisorLabel,
     giveawayRate, netRevenue, belowCostLines, hasBelowCostLine, lineBelowCost, erodesSystemPrice,
-    addLine, removeLine, applyPickedProduct, onCustomerChange, submit, reset, init,
+    addLine, removeLine, applyPickedProduct, onCustomerChange, submit, saveAsDraft, discardDraft, reset, init,
   }
 }
