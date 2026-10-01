@@ -4,7 +4,7 @@ import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
-import { generateNextNumber, insertWithDocRetry, getErrorMessage } from '@/utils/helpers'
+import { generateNextNumber, insertWithDocRetry, getErrorMessage, formatCurrency } from '@/utils/helpers'
 import type { ExpenseCategory, ExpenseDepartment } from '@/stores/financeData'
 
 // Disbursement Vouchers: draft ──print──> printed ──record──> recorded (or cancelled).
@@ -82,6 +82,17 @@ export type VoucherType = {
   cash_account_name: string | null
   cash_account_institution: string | null
   cash_account_classification: string | null
+  /**
+   * Set when this voucher PAYS A SUPPLIER rather than booking expenses.
+   *
+   * It changes what recording the voucher produces: supplier_payment
+   * transactions charged to 2010 Accounts Payable, instead of expense
+   * transactions charged to whatever account each line picked. That is what
+   * moves the supplier's outstanding balance and lets the AP page age it —
+   * an expense row would leave the bill looking unpaid forever.
+   */
+  supplier_id: number | null
+  supplier_name: string | null
   total_amount: number
   printed_at: string | null
   print_count: number
@@ -103,6 +114,8 @@ export type VoucherInput = {
   payee_tin: string
   voucher_date: string
   cash_account_id: number
+  /** null = an ordinary expense voucher; set = this voucher pays that supplier. */
+  supplier_id: number | null
   check_no: string
   // One receipt per voucher — one payee, one payment, so the OR/SI number sits
   // on the header (and prints in section D) rather than per particular.
@@ -118,6 +131,7 @@ export type VoucherInput = {
 const voucherSelect = `
   *,
   cash_account:cash_account_id(name, institution, classification),
+  supplier:supplier_id(name),
   finance_details(*),
   items:disbursement_voucher_items!disbursement_voucher_items_voucher_id_fkey(
     *,
@@ -165,6 +179,8 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
       dv_no: row.dv_no,
       status: (row.status ?? 'draft') as VoucherStatus,
       voucher_date: row.paid_at,
+      supplier_id: row.supplier_id ?? null,
+      supplier_name: row.supplier?.name ?? null,
       payee: details.paid_to ?? null,
       payee_address: details.payee_address ?? null,
       payee_tin: details.payee_tin ?? null,
@@ -261,6 +277,7 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
           subtotal: total,
           total_amount: total,
           cash_account_id: payload.cash_account_id,
+          supplier_id: payload.supplier_id,
           remarks: payload.remarks || null,
           created_by: user.id,
         })
@@ -347,8 +364,11 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
 
     const current = await fetchVoucherById(voucherId)
     if (!current) { toast.error('Voucher not found.'); loading.value = false; return { success: false } }
-    if (current.status !== 'draft') {
-      toast.error(`Voucher ${current.dv_no} has been printed and can no longer be edited. Cancel it and issue a new voucher instead.`)
+    // Draft or printed may be edited; recorded may not — that one has expenses
+    // and ledger entries behind it, so it is corrected by change request
+    // (reverse + reissue), never by rewriting the document in place.
+    if (current.status !== 'draft' && current.status !== 'printed') {
+      toast.error(`Voucher ${current.dv_no} has been ${current.status} and can no longer be edited. File a change request instead.`)
       loading.value = false
       return { success: false }
     }
@@ -361,15 +381,27 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
         subtotal: total,
         total_amount: total,
         cash_account_id: payload.cash_account_id,
+        supplier_id: payload.supplier_id,
         remarks: payload.remarks || null,
+        // Editing a PRINTED voucher sends it back to draft, so it has to be
+        // printed again before it can be recorded. Without this the signed
+        // paper copy and the recorded figures could differ with nothing
+        // showing it — the print-before-record gate would be satisfied by a
+        // print of the OLD numbers. print_count is untouched, so that reprint
+        // is correctly marked COPY 2.
+        status: 'draft',
       })
       .eq('id', voucherId)
-      .eq('status', 'draft')
+      .in('status', ['draft', 'printed'])
     if (updateError) {
       handleError(updateError, 'Failed to update voucher.')
       toast.error(getErrorMessage(updateError) || 'Failed to update voucher.')
       loading.value = false
       return { success: false }
+    }
+
+    if (current.status === 'printed') {
+      toast.info(`Voucher ${current.dv_no} was edited after printing — print it again before recording.`)
     }
 
     // Particulars are replaced wholesale — simpler than diffing, and safe
@@ -397,6 +429,22 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
     if (current.status === 'cancelled') {
       toast.error('This voucher was cancelled and cannot be printed.')
       return { success: false }
+    }
+
+    // WARN at print, BLOCK at record. The preparer sees the problem while the
+    // voucher is still a draft they can fix, but printing is not refused —
+    // the balance can legitimately move between printing and recording, and
+    // refusing here would block a voucher that will be perfectly valid by the
+    // time it is signed. recordVoucherExpenses does the hard check.
+    if (current.supplier_id) {
+      const outstanding = await fetchSupplierOutstanding(current.supplier_id)
+      if (outstanding !== null && current.total_amount > outstanding + 0.005) {
+        toast.warning(
+          `This voucher pays ${formatCurrency(current.total_amount)} but `
+          + `${current.supplier_name ?? 'the supplier'} is only owed ${formatCurrency(outstanding)}. `
+          + 'It will be refused at recording unless the balance changes.',
+        )
+      }
     }
 
     const copyNo = (current.print_count ?? 0) + 1
@@ -442,6 +490,30 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
     return { success: true, copyNo, isReprint: copyNo > 1 }
   }
 
+  /**
+   * What a supplier is still owed: goods received less payments made.
+   *
+   * Deliberately the same arithmetic as financeData's fetchSupplierAP rather
+   * than reading suppliers.balance — that cached column is decremented by
+   * payments but never incremented when new debt is received, so it drifts
+   * below the truth and would let this guard pass a payment it should block.
+   *
+   * Returns null on a query failure so the caller can refuse rather than treat
+   * "couldn't check" as "nothing owed".
+   */
+  async function fetchSupplierOutstanding(supplierId: number): Promise<number | null> {
+    const [receivedRes, paidRes] = await Promise.all([
+      supabase.from('transactions').select('total_amount')
+        .eq('transaction_type', 'stock_in').eq('supplier_id', supplierId).neq('status', 'voided'),
+      supabase.from('transactions').select('total_amount')
+        .eq('transaction_type', 'supplier_payment').eq('supplier_id', supplierId).neq('status', 'voided'),
+    ])
+    if (receivedRes.error || paidRes.error) return null
+    const sum = (rows: { total_amount: number | null }[] | null) =>
+      (rows ?? []).reduce((total, r) => total + (r.total_amount ?? 0), 0)
+    return sum(receivedRes.data) - sum(paidRes.data)
+  }
+
   // THE GATE the accountant asked for: expenses cannot be recorded until the
   // voucher has been printed and signed. Each particular becomes an ordinary
   // `expense` transaction, and cash is deducted ONCE for the voucher total
@@ -484,6 +556,29 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
       return { success: false }
     }
 
+    // Supplier vouchers: block paying more than the supplier is owed. Checked
+    // HERE, at the moment money is actually booked, not at print time —
+    // a voucher can sit printed and signed for days while other payments or
+    // receipts move the balance, so the figure that matters is today's. The
+    // form warns at print so the preparer sees it while it is still editable.
+    if (voucher.supplier_id) {
+      const outstanding = await fetchSupplierOutstanding(voucher.supplier_id)
+      if (outstanding === null) {
+        toast.error('Could not verify the supplier balance. Nothing was recorded.')
+        loading.value = false
+        return { success: false }
+      }
+      if (voucher.total_amount > outstanding + 0.005) {
+        toast.error(
+          `This voucher pays ${formatCurrency(voucher.total_amount)} but `
+          + `${voucher.supplier_name ?? 'the supplier'} is only owed ${formatCurrency(outstanding)}. `
+          + 'Cancel it and issue a new voucher for the correct amount.',
+        )
+        loading.value = false
+        return { success: false }
+      }
+    }
+
     const year = new Date().getFullYear().toString()
     const createdIds: number[] = []
 
@@ -494,14 +589,24 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
       ? 'petty_cash'
       : (voucher.check_no ? 'cheque' : null)
 
+    // A supplier voucher produces supplier_payment rows on the SHARED SP series
+    // instead of expenses. That is what moves the supplier's outstanding
+    // balance (fetchSupplierAP nets stock_in against supplier_payment) and what
+    // makes gl_project_events book DR 2010 / CR cash rather than
+    // DR <expense account> / CR cash.
+    const isSupplierVoucher = voucher.supplier_id !== null
+
     for (const line of voucher.items) {
       const { data: expense, error: insertError } = await insertWithDocRetry<{ id: number }>(
-        () => generateNextNumber('expense_no', `EXP-${year}-`, ['reference_no']),
+        () => isSupplierVoucher
+          ? generateNextNumber('reference_no', `SP-${year}-`)
+          : generateNextNumber('expense_no', `EXP-${year}-`, ['reference_no']),
         async (docNo) => supabase
           .from('transactions')
           .insert({
-            expense_no: docNo,
-            transaction_type: 'expense',
+            ...(isSupplierVoucher
+              ? { reference_no: docNo, transaction_type: 'supplier_payment', supplier_id: voucher.supplier_id }
+              : { expense_no: docNo, transaction_type: 'expense' }),
             status: 'recorded',
             payment_method: paymentMethod,
             subtotal: line.amount,
@@ -512,6 +617,11 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
             // longer carry their own text; `particular` is the category title,
             // which is the fallback when no remark was written.
             remarks: voucher.remarks || line.particular,
+            // Carried on every row, unlike the old standalone
+            // in-page payment dialog (now removed) which never set it — that
+            // left the GL
+            // projector with no cash account to resolve, defaulting every
+            // supplier payment to 1020, and never moved any cash balance.
             cash_account_id: voucher.cash_account_id,
             created_by: user.id,
           })
@@ -530,9 +640,14 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
       // Payee/OR details come from the voucher header — one payee per voucher.
       const { error: detailsError } = await supabase.from('finance_details').insert({
         transaction_id: expense.id,
-        category: line.category,
+        // A supplier payment settles Accounts Payable whatever the line said,
+        // so record that rather than an expense account it was never charged
+        // to. The GL does not read this for supplier_payment rows — its own
+        // projector loop hardcodes 2010 — but the Expenses register and any
+        // report reading finance_details would otherwise mislabel it.
+        category: isSupplierVoucher ? '2010' : line.category,
         department: line.department,
-        paid_to: voucher.payee,
+        paid_to: voucher.supplier_name ?? voucher.payee,
         or_si_no: line.or_si_no ?? voucher.or_si_no,
       })
       if (detailsError) {

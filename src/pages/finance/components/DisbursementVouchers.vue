@@ -9,6 +9,9 @@ import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const {
   vouchers,
+  search,
+  filteredVouchers,
+  searchTotals,
   cashAccounts,
   loading,
   showFormDialog,
@@ -16,6 +19,7 @@ const {
   showPrintDialog,
   printTarget,
   printCopyNo,
+  stampPrint,
   showCancelDialog,
   cancelTarget,
   cancelReason,
@@ -73,13 +77,42 @@ onMounted(async () => {
 
       <v-divider />
 
+      <div class="px-4 px-sm-5 py-3 d-flex align-center ga-3 flex-wrap">
+        <v-text-field
+          v-model="search"
+          placeholder="Search voucher no., payee, particulars, account…"
+          prepend-inner-icon="mdi-magnify"
+          density="compact"
+          variant="outlined"
+          hide-details
+          clearable
+          style="max-width: 420px"
+        />
+        <!-- The figure their old system showed: what the matches add up to,
+             across every match rather than the page on screen. -->
+        <v-sheet v-if="search" rounded="lg" border class="px-4 py-2">
+          <span class="text-caption text-medium-emphasis">
+            {{ searchTotals.counted }}
+            {{ searchTotals.counted === 1 ? 'voucher' : 'vouchers' }} matched —
+          </span>
+          <span class="text-subtitle-1 font-weight-bold ml-1">
+            {{ formatCurrency(searchTotals.total) }}
+          </span>
+          <span v-if="searchTotals.cancelled" class="text-caption text-medium-emphasis ml-2">
+            ({{ searchTotals.cancelled }} cancelled, not counted)
+          </span>
+        </v-sheet>
+      </div>
+
+      <v-divider />
+
       <v-data-table
         mobile-breakpoint="md"
         :headers="headers"
-        :items="vouchers"
+        :items="filteredVouchers"
         :loading="loading"
         loading-text="Loading vouchers..."
-        no-data-text="No disbursement vouchers yet."
+        :no-data-text="search ? 'No vouchers match that search.' : 'No disbursement vouchers yet.'"
         hover
       >
         <template #item.dv_no="{ item }">
@@ -202,7 +235,7 @@ onMounted(async () => {
               color="error"
               class="text-none"
               prepend-icon="mdi-stamper"
-              title="Print the RECORDED mark onto the signed voucher"
+              title="Print the POSTED mark onto the signed voucher"
               @click="openStamp(item)"
             >
               Mark Recorded
@@ -232,7 +265,12 @@ onMounted(async () => {
       @submit="handleSubmit"
     />
 
-    <VoucherPrintDialog v-model="showPrintDialog" :voucher="printTarget" :copy-no="printCopyNo" />
+    <VoucherPrintDialog
+      v-model="showPrintDialog"
+      :voucher="printTarget"
+      :copy-no="printCopyNo"
+      @printed="stampPrint"
+    />
 
     <!-- Cancelling is only reachable before recording; after that the expenses
          are real and must be voided through the change-request flow instead. -->

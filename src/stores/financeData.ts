@@ -98,20 +98,40 @@ export const categoryTitle = (
 // unlike finance_details.category, whose CHECK had to be dropped for exactly
 // that reason.
 /**
- * Chart subsections a disbursement may be charged to, in picker order.
+ * Account CLASSES a disbursement may be charged to.
  *
  * Lives here rather than in useExpenseAccounts because recordExpense has to
- * validate against the same set — a store cannot import a composable, and two
- * copies of this list would drift into "selectable but unrecordable", which is
- * precisely what the finance_details.category CHECK used to cause.
+ * validate against the same rule — a store cannot import a composable, and two
+ * copies would drift into "selectable but unrecordable", which is precisely
+ * what the finance_details.category CHECK used to cause.
  *
- * Administrative & Operating first because it is the bulk of what gets
- * disbursed. Cost of Sales is included because Freight & Handling lives there,
- * which also brings COGS and Purchases along — those are posted by the sales
- * and purchasing flows rather than disbursed, so if they start getting
- * miscoded on vouchers, drop 'Cost of Sales' and they disappear everywhere.
+ * Was an allow-list of four expense subsections, which meant a voucher could
+ * not record a fixed-asset purchase, a loan repayment or a statutory
+ * remittance at all — 37 of 78 accounts were unreachable. A disbursement
+ * credits cash, so its debit can be anything that INCREASES with a debit: an
+ * asset acquired, a liability settled, equity withdrawn, or an expense.
+ *
+ * REVENUE IS THE ONE EXCLUSION. Debiting 4010/4020/4030 while crediting cash
+ * is never a real transaction — a sales return reverses a receivable, it does
+ * not disburse. Offering them would only ever produce a miscode.
+ *
+ * Keyed on class rather than subsection so a NEW subsection added to the chart
+ * (say a second asset grouping) is offered automatically, the same property
+ * that made the category picker read the chart in the first place.
  */
-export const expenseAccountSubsections = [
+export const disbursementAccountClasses = [
+  'asset', 'liability', 'equity', 'cost', 'expense',
+] as const
+
+/**
+ * Subsections pulled to the top of the picker, in this order.
+ *
+ * Everything else follows, ordered by its lowest account code (so Current
+ * Assets precedes Liabilities precedes Equity). These four lead because they
+ * are the bulk of what actually gets disbursed — burying them under the
+ * balance sheet would make the common case the slowest to reach.
+ */
+export const disbursementPreferredSubsections = [
   'Administrative & Operating Expenses',
   'Selling Expenses',
   'Cost of Sales',
@@ -124,6 +144,8 @@ export const expenseDepartments = [
   { value: 'EPT/ADMIN', title: 'EPT/ADMIN' },
   { value: 'EPT/SELLING', title: 'EPT/SELLING' },
   { value: 'ETHICAL', title: 'ETHICAL' },
+  { value: 'Van Selling', title: 'Van Selling' },
+  { value: 'STORE - CDO', title: 'STORE - CDO' },
 ] as const
 
 export type ExpenseDepartment = typeof expenseDepartments[number]['value']
@@ -225,6 +247,41 @@ export type SupplierPaymentType = {
   remarks: string | null
   created_by: string | null
   status: string
+}
+
+/**
+ * Age of an unpaid supplier invoice, in DAYS SINCE THE INVOICE DATE.
+ *
+ * Deliberately not the AR buckets: those measure days OVERDUE against a due
+ * date, and `suppliers` carries no term_days, so there is no due date to be
+ * late against. Calling a 60-day-old bill "overdue" would be an invention.
+ * Add suppliers.term_days later and this can become a true overdue scale.
+ */
+export type APAgeBucket = '0-30' | '31-60' | '61-90' | '91-180' | '180+'
+
+export const apAgeBuckets: APAgeBucket[] = ['0-30', '31-60', '61-90', '91-180', '180+']
+
+export function apBucketFor(daysOutstanding: number): APAgeBucket {
+  if (daysOutstanding <= 30) return '0-30'
+  if (daysOutstanding <= 60) return '31-60'
+  if (daysOutstanding <= 90) return '61-90'
+  if (daysOutstanding <= 180) return '91-180'
+  return '180+'
+}
+
+/** One received-but-not-fully-paid supplier invoice. */
+export type APAgingRow = {
+  transaction_id: number
+  reference_no: string | null
+  supplier_id: number
+  supplier_name: string | null
+  invoice_date: string
+  total_amount: number
+  /** Derived by the oldest-first convention — NOT a recorded allocation. */
+  paid: number
+  balance: number
+  days_outstanding: number
+  bucket: APAgeBucket
 }
 
 export type SupplierAPRow = {
@@ -473,6 +530,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
   const replenishmentRequests: Ref<PettyCashReplenishmentType[]> = ref([])
   const supplierPayments: Ref<SupplierPaymentType[]> = ref([])
   const supplierAP: Ref<SupplierAPRow[]> = ref([])
+  const apAging: Ref<APAgingRow[]> = ref([])
   const pnl: Ref<PnLSummary | null> = ref(null)
   const remittanceDiscrepancies: Ref<RemittanceDiscrepancyRow[]> = ref([])
   const arAging: Ref<ARAgingRow[]> = ref([])
@@ -598,7 +656,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
       // true now.
       const { data: account, error: accountLookupError } = await supabase
         .from('accounts')
-        .select('code, subsection, is_active')
+        .select('code, class, subsection, is_active')
         .eq('code', payload.category)
         .maybeSingle()
       if (accountLookupError) {
@@ -611,8 +669,11 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         loading.value = false
         return { success: false }
       }
-      if (!(expenseAccountSubsections as readonly string[]).includes(account.subsection)) {
-        toast.error(`${payload.category} is not an expense account.`)
+      if (!(disbursementAccountClasses as readonly string[]).includes(account.class)) {
+        // Revenue is the only class that lands here. Naming it beats a generic
+        // rejection: the picker never offers it, so anything reaching this
+        // point came from a replayed change request or a hand-built payload.
+        toast.error(`${payload.category} is a revenue account — a disbursement cannot be charged to it.`)
         loading.value = false
         return { success: false }
       }
@@ -1170,13 +1231,36 @@ export const useFinanceDataStore = defineStore('financeData', () => {
   // Was record_supplier_payment. Best-effort, not atomic: a failure after the
   // header insert can leave a payment recorded with no suppliers.balance
   // decrement (accepted trade-off, JS-over-RPC convention).
-  const recordSupplierPayment = async (payload: {
+  /**
+   * Re-record a supplier payment as part of a CORRECTION.
+   *
+   * NOT the way payments are made. A payment is raised as a disbursement
+   * voucher (Paying: A supplier), which prints, gets signed, deducts the cash
+   * account and then writes the supplier_payment row. This exists only for the
+   * change-request reissue path: an edit to a recorded payment voids the
+   * original and re-records it at the correction date, and that replacement has
+   * to come from somewhere.
+   *
+   * Named for that single purpose deliberately. It used to be `recordSupplierPayment`
+   * and was wired to a "Pay" button on the Supplier Payments page, which meant
+   * two ways to pay a supplier and only one of them moving cash — the page is
+   * now read-only monitoring and this is the sole remaining caller.
+   */
+  const reissueSupplierPayment = async (payload: {
     supplierId: number
     amount: number
     paymentMethod?: string
     referenceNo?: string
     valueDate?: string
     remarks?: string
+    /**
+     * Which cash account paid. Optional only because historical callers had no
+     * concept of one — every live payment now originates from a disbursement
+     * voucher, which always has it. Without it gl_project_events has no account
+     * to resolve and books the credit to 1020 whatever actually paid, so a
+     * reissued correction must carry the original's forward.
+     */
+    cashAccountId?: number | null
   }) => {
     loading.value = true
     clearError()
@@ -1221,6 +1305,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         .insert({
           reference_no: docNo, transaction_type: 'supplier_payment', status: 'recorded',
           supplier_id: payload.supplierId, payment_method: payload.paymentMethod || null,
+          cash_account_id: payload.cashAccountId ?? null,
           subtotal: payload.amount, total_amount: payload.amount,
           paid_at: payload.valueDate || new Date().toISOString().slice(0, 10),
           remarks: remarks || null, created_by: user.id,
@@ -1237,18 +1322,94 @@ export const useFinanceDataStore = defineStore('financeData', () => {
 
     const { error: balanceError } = await supabase
       .from('suppliers').update({ balance: (supplier.balance ?? 0) - payload.amount }).eq('id', payload.supplierId)
-    if (balanceError) console.warn('recordSupplierPayment: supplier balance update failed:', balanceError.message)
+    if (balanceError) console.warn('reissueSupplierPayment: supplier balance update failed:', balanceError.message)
 
     const { error: logError } = await supabase.from('logs').insert({
       created_by: user.id, action: 'supplier_payment',
       description: `${paymentNo} | supplier ${payload.supplierId} | ${payload.amount}`, module: 'finance', transaction_id: created.id,
     })
-    if (logError) console.warn('recordSupplierPayment: activity log insert failed:', logError.message)
+    if (logError) console.warn('reissueSupplierPayment: activity log insert failed:', logError.message)
 
     toast.success('Supplier payment recorded.')
     await Promise.all([fetchSupplierPayments(), fetchSupplierAP()])
     loading.value = false
     return { success: true, paymentId: created.id, paymentNo }
+  }
+
+  /**
+   * Per-invoice AP aging.
+   *
+   * ⚠️ THE INVOICE-TO-PAYMENT ALLOCATION IS DERIVED, NOT RECORDED. Nothing in
+   * the schema says which stock_in a given supplier_payment settled — payments
+   * are lump sums against the supplier. Each supplier's payments are therefore
+   * applied to their OLDEST unpaid invoice first.
+   *
+   * Consequence: supplier-level totals always tie exactly, but a single
+   * invoice's paid/balance can SHIFT if an older invoice is added or
+   * back-dated later. This is the same convention and the same caveat the AR
+   * Statement of Accounts register carries for DR-to-OR; the page states it to
+   * the user, and that disclosure should survive any edit here.
+   *
+   * Making it a recorded fact means a payment-to-invoice child table and a
+   * picker on the voucher, at which point this becomes the legacy fallback.
+   */
+  async function fetchAPAging() {
+    loading.value = true
+    clearError()
+    try {
+      const [invoicesRes, paymentsRes] = await Promise.all([
+        supabase.from('transactions')
+          .select('id, reference_no, si_no, supplier_id, total_amount, created_at, paid_at, supplier:supplier_id(name)')
+          .eq('transaction_type', 'stock_in').neq('status', 'voided')
+          .not('supplier_id', 'is', null),
+        supabase.from('transactions')
+          .select('supplier_id, total_amount, paid_at, created_at')
+          .eq('transaction_type', 'supplier_payment').neq('status', 'voided')
+          .not('supplier_id', 'is', null),
+      ])
+      if (invoicesRes.error) throw invoicesRes.error
+      if (paymentsRes.error) throw paymentsRes.error
+
+      // Total paid per supplier, to be spent oldest-invoice-first below.
+      const paidBySupplier = new Map<number, number>()
+      for (const p of (paymentsRes.data ?? []) as any[]) {
+        paidBySupplier.set(p.supplier_id, (paidBySupplier.get(p.supplier_id) ?? 0) + (p.total_amount ?? 0))
+      }
+
+      const invoices = ((invoicesRes.data ?? []) as any[])
+        .map((r) => ({
+          transaction_id: r.id as number,
+          reference_no: (r.si_no ?? r.reference_no ?? null) as string | null,
+          supplier_id: r.supplier_id as number,
+          supplier_name: (r.supplier?.name ?? null) as string | null,
+          invoice_date: (r.paid_at ?? r.created_at ?? '') as string,
+          total_amount: Number(r.total_amount ?? 0),
+        }))
+        .sort((a, b) => a.invoice_date.localeCompare(b.invoice_date))
+
+      const now = Date.now()
+      const rows: APAgingRow[] = []
+      for (const invoice of invoices) {
+        const available = paidBySupplier.get(invoice.supplier_id) ?? 0
+        const paid = Math.min(invoice.total_amount, available)
+        paidBySupplier.set(invoice.supplier_id, available - paid)
+        const balance = invoice.total_amount - paid
+        // Settled invoices drop out — this is an aging of what is still owed.
+        if (balance <= 0.01) continue
+        const days = invoice.invoice_date
+          ? Math.max(0, Math.floor((now - new Date(invoice.invoice_date).getTime()) / 86400000))
+          : 0
+        rows.push({ ...invoice, paid, balance, days_outstanding: days, bucket: apBucketFor(days) })
+      }
+      apAging.value = rows
+      return rows
+    } catch (err) {
+      handleError(err, 'Failed to compute supplier aging')
+      apAging.value = []
+      return []
+    } finally {
+      loading.value = false
+    }
   }
 
   const fetchSupplierAP = async () => {
@@ -1474,7 +1635,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
           .select('id, ethical_no, total_amount, customer_id, ethical_details(amount_paid, due_date), customer:customer_id(name)')
           .eq('transaction_type', 'ethical_order').in('status', ['invoiced', 'partial']),
         supabase.from('transactions')
-          .select('id, inhouse_no, total_amount, customer_id, inhouse_details(amount_paid), status, customer:customer_id(name)')
+          .select('id, inhouse_no, total_amount, customer_id, inhouse_details(amount_paid, due_date), status, customer:customer_id(name)')
           // Must match gl_project_events' own in-house recognition gate: AR/revenue
           // isn't booked until delivery (the invoice point for a govt contract), so
           // an order still raised/negotiating/agreed/awaiting_stock/ready has no GL
@@ -1508,12 +1669,20 @@ export const useFinanceDataStore = defineStore('financeData', () => {
         const amountPaid = r.inhouse_details?.amount_paid ?? 0
         const balance = (r.total_amount ?? 0) - amountPaid
         if (balance <= 0.01) continue
-        // No due_date convention exists yet for in-house orders.
+        // inhouse_details.due_date exists now, so an in-house order CAN age.
+        // Rows without one keep the old behaviour (no-term) rather than being
+        // aged from the document date, which would invent a deadline nobody
+        // agreed to. customers.term_days cannot fill the gap — it is free text
+        // ('Consignment', '30 - 60 Days') with no number to count from.
+        const dueDate = r.inhouse_details?.due_date ?? null
+        const daysOverdue = dueDate
+          ? Math.floor((now - new Date(dueDate).getTime()) / 86400000)
+          : null
         rows.push({
           id: r.id, source: 'inhouse_order', reference_no: r.inhouse_no,
           customer_id: r.customer_id ?? null, customer_name: r.customer?.name ?? null, total_amount: r.total_amount ?? 0,
-          amount_paid: amountPaid, balance, due_date: null,
-          days_overdue: null, term: 'no-term',
+          amount_paid: amountPaid, balance, due_date: dueDate,
+          days_overdue: daysOverdue, term: termFor(daysOverdue),
         })
       }
 
@@ -1949,6 +2118,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     replenishmentRequests.value = []
     supplierPayments.value = []
     supplierAP.value = []
+    apAging.value = []
     pnl.value = null
     remittanceDiscrepancies.value = []
     arAging.value = []
@@ -1962,14 +2132,14 @@ export const useFinanceDataStore = defineStore('financeData', () => {
   }
 
   return {
-    expenses, cashAccounts, replenishmentRequests, supplierPayments, supplierAP, pnl,
+    expenses, cashAccounts, replenishmentRequests, supplierPayments, supplierAP, apAging, pnl,
     incomeStatement, balanceSheet, trialBalance,
     remittanceDiscrepancies, arAging, commissionLiability, stockReconciliation,
     loading, error, isLoading, hasError,
     fetchExpenses, recordExpense, voidExpense,
     fetchCashAccounts, createCashAccount, fetchReplenishmentRequests, previewPettyCashLiquidation,
     requestReplenishment, approveReplenishment, rejectReplenishment,
-    fetchSupplierPayments, recordSupplierPayment, fetchSupplierAP,
+    fetchSupplierPayments, reissueSupplierPayment, fetchSupplierAP, fetchAPAging,
     fetchPnL,
     fetchRemittanceDiscrepancies, fetchARAging, fetchReceivableDetail, fetchStatementOfAccount, fetchCommissionLiability, fetchStockReconciliation,
     fetchIncomeStatement, fetchBalanceSheet, fetchTrialBalance,

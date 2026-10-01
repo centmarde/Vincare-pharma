@@ -79,12 +79,15 @@ export function useVoucherStamp(voucher: () => VoucherType | null) {
 
   const isRecorded = computed(() => voucher()?.status === 'recorded')
 
-  // The expenses this voucher became. Printed on the stamp so the mark can be
-  // traced back to the ledger instead of being decorative.
-  const expenseNos = computed(() =>
-    (voucher()?.items ?? [])
-      .map((line) => line.expense_no)
-      .filter((no): no is string => !!no))
+  /**
+   * The voucher's own number, printed on the stamp.
+   *
+   * Replaced the generated expense numbers: the stamp goes on the voucher, so
+   * printing EXP-2026-014, EXP-2026-015 on the face of DV-2026-048 restated
+   * what the sheet already says and ran long on multi-line vouchers. The DV
+   * number is what anyone reconciling the paper is holding.
+   */
+  const stampDocNo = computed(() => voucher()?.dv_no ?? '')
 
   const recordedDate = computed(() => {
     const stamps = (voucher()?.items ?? [])
@@ -123,7 +126,7 @@ export function useVoucherStamp(voucher: () => VoucherType | null) {
 
       toast.success(testRun
         ? 'Alignment test generated — print it on blank paper and hold it against a voucher.'
-        : 'RECORDED mark generated. Feed the signed voucher through the manual tray.')
+        : 'POSTED mark generated. Feed the signed voucher through the manual tray.')
     } finally {
       generating.value = false
     }
@@ -136,7 +139,7 @@ export function useVoucherStamp(voucher: () => VoucherType | null) {
 
   return {
     stampArea, generating, offsetX, offsetY, leftMm, topMm,
-    isRecorded, expenseNos, recordedDate,
+    isRecorded, stampDocNo, recordedDate,
     printStamp, resetCalibration,
   }
 }

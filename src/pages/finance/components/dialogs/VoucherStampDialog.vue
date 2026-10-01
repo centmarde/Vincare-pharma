@@ -14,15 +14,13 @@ const emit = defineEmits<{
 
 const {
   stampArea, generating, offsetX, offsetY, leftMm, topMm,
-  isRecorded, expenseNos, recordedDate,
+  isRecorded, stampDocNo, recordedDate,
   printStamp, resetCalibration,
 } = useVoucherStamp(() => props.voucher)
 
-// Only ever two or three numbers, but a long voucher shouldn't overflow the box.
-const expenseLabel = computed(() =>
-  expenseNos.value.length > 3
-    ? `${expenseNos.value.slice(0, 3).join(', ')} +${expenseNos.value.length - 3}`
-    : expenseNos.value.join(', '))
+// The stamp reads POSTED, then the voucher's own number and the date it was
+// posted — one line each, fixed length, so the box can never overflow the way
+// a list of expense numbers could.
 </script>
 
 <template>
@@ -63,9 +61,9 @@ const expenseLabel = computed(() =>
         <div class="preview-sheet mb-4">
           <div class="preview-stamp">
             <div class="dv-stamp">
-              <div class="dv-stamp-word">RECORDED</div>
+              <div class="dv-stamp-word">POSTED</div>
+              <div class="dv-stamp-meta">{{ stampDocNo || '—' }}</div>
               <div class="dv-stamp-meta">{{ recordedDate || '—' }}</div>
-              <div class="dv-stamp-meta">{{ expenseLabel || 'no expenses linked' }}</div>
             </div>
           </div>
         </div>
@@ -134,7 +132,7 @@ const expenseLabel = computed(() =>
           :loading="generating"
           @click="printStamp(false)"
         >
-          Print RECORDED mark
+          Print POSTED mark
         </v-btn>
       </v-card-actions>
     </v-card>
@@ -149,9 +147,9 @@ const expenseLabel = computed(() =>
           class="dv-stamp stamp-placed"
           :style="{ left: `${leftMm}mm`, top: `${topMm}mm` }"
         >
-          <div class="dv-stamp-word">RECORDED</div>
+          <div class="dv-stamp-word">POSTED</div>
+          <div class="dv-stamp-meta">{{ stampDocNo }}</div>
           <div class="dv-stamp-meta">{{ recordedDate }}</div>
-          <div class="dv-stamp-meta">{{ expenseLabel }}</div>
         </div>
       </div>
     </div>

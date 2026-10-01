@@ -311,6 +311,81 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
         }
       })
 
+      // ── Orders with no delivery receipt ────────────────────────────────
+      // This register is DR-grained, so an order that never produced one is
+      // invisible on it — which is every OPENING RECEIVABLE, since those are
+      // pre-cutover invoices whose goods shipped under the old system and have
+      // no DR in this one. Leaving them out would mean a customer's statement
+      // silently omitted the balance they actually owe.
+      //
+      // A synthetic delivery receipt was the alternative and was rejected: a DR
+      // asserts that named goods were received on a date by a signatory, and
+      // inventing one puts a receipt number on a statement that matches nothing
+      // in the customer's file. These rows stand on the ORDER instead —
+      // delivery_receipt_id is negated so it cannot collide with a real DR id,
+      // and dr_no carries the order's own number rather than a fabricated one.
+      const drOrderIds = new Set(drRows.map((dr: any) => dr.order_id).filter(Boolean))
+      const { data: bareOrders } = await supabase
+        .from('transactions')
+        .select(
+          'id, transaction_type, created_at, paid_at, total_amount, customer_id, remarks, '
+          + 'inhouse_no, ethical_no, po_no, po_amount, '
+          + 'customer:customer_id(id, name, area, term_days), '
+          + 'inhouse_details(amount_paid, due_date, govt_po_no), '
+          + 'ethical_details(amount_paid, due_date, discount_amount)',
+        )
+        .in('transaction_type', ['inhouse_order', 'ethical_order'])
+        .in('status', ['delivered', 'paid', 'partial', 'invoiced'])
+
+      const orderRows: SOARegisterRow[] = ((bareOrders ?? []) as any[])
+        .filter((o) => !drOrderIds.has(o.id))
+        .map((o) => {
+          const isInhouse = o.transaction_type === 'inhouse_order'
+          const details = (isInhouse ? o.inhouse_details : o.ethical_details) ?? {}
+          const customer = o.customer ?? null
+          const docDate = o.paid_at ?? o.created_at
+          const gross = Number(o.total_amount ?? 0)
+          const discount = Number(o.ethical_details?.discount_amount ?? 0)
+          const paid = Number(details.amount_paid ?? 0)
+          const ar = gross - discount - paid
+          const dueDate = details.due_date ?? null
+          const daysOverdue = dueDate ? daysBetween(dueDate, now) : null
+          const unpaid = ar > 0.01 ? ar : 0
+          const term = termFor(daysOverdue)
+          return {
+            delivery_receipt_id: -o.id,
+            order_id: o.id,
+            source: o.transaction_type,
+            customer_id: o.customer_id ?? null,
+            customer_name: customer?.name ?? null,
+            area: customer?.area ?? null,
+            dr_date: docDate,
+            dr_no: null,
+            so_no: o.inhouse_no ?? o.ethical_no ?? null,
+            po_no: o.inhouse_details?.govt_po_no ?? o.po_no ?? null,
+            po_amount: o.po_amount ?? null,
+            dr_amount: gross,
+            discount,
+            or_date: null,
+            or_no: null,
+            or_amount: paid,
+            or_count: 0,
+            accounts_receivable: ar,
+            due_date: dueDate,
+            days_outstanding: daysBetween(docDate, now),
+            days_overdue: daysOverdue,
+            amount_unpaid: unpaid,
+            term,
+            bucket_1_30: term === '1-30' ? unpaid : 0,
+            bucket_31_60: term === '31-60' ? unpaid : 0,
+            bucket_61_90: term === '61-90' ? unpaid : 0,
+            bucket_91_180: term === '91-180' ? unpaid : 0,
+            bucket_180_plus: term === '180+' ? unpaid : 0,
+          }
+        })
+
+      rows.push(...orderRows)
+
       const filtered = rows.filter((r) => {
         if (filters.area && r.area !== filters.area) return false
         if (filters.outstandingOnly && r.accounts_receivable <= 0.01) return false
