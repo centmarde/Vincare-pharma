@@ -287,6 +287,10 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     // product_id/cost_price are set when a counter-offer swaps a line's
     // product (customer wants something else for ~the same spend).
     lineUpdates?: { item_id: number; unit_price: number; qty: number; product_id?: number; cost_price?: number }[]
+    // Lines are editable until terms are agreed: the customer may drop an item
+    // or ask for one more, not just haggle on price.
+    addLines?: InhouseLineInput[]
+    removeItemIds?: number[]
   }) => {
     loading.value = true
     clearError()
@@ -308,11 +312,35 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       loading.value = false; return { success: false }
     }
 
-    for (const u of payload.lineUpdates ?? []) {
+    const removeIds = payload.removeItemIds ?? []
+    const addLines = payload.addLines ?? []
+    const keptCount = (payload.lineUpdates ?? []).filter((u) => !removeIds.includes(u.item_id)).length
+    if (keptCount + addLines.length === 0) {
+      toast.warning('An order needs at least one line item.')
+      loading.value = false; return { success: false }
+    }
+
+    // Nothing has been delivered while negotiating (delivery only opens once
+    // the order is ready), so a removed line has no stock or DR hanging off it.
+    if (removeIds.length) {
+      const { error: removeError } = await supabase
+        .from('transaction_items')
+        .delete()
+        .in('id', removeIds)
+        .eq('transaction_id', payload.orderId)
+      if (removeError) {
+        handleError(removeError, 'Failed to remove order line.'); toast.error(removeError.message || 'Failed to remove order line.')
+        loading.value = false; return { success: false }
+      }
+    }
+
+    for (const u of (payload.lineUpdates ?? []).filter((l) => !removeIds.includes(l.item_id))) {
       // All line fields now live on transaction_items, so one update per line.
       // Omitting cost_price keeps the existing value (mirrors the RPC's
       // coalesce-with-existing-row behavior) — never overwrite with null.
-      const lineUpdatePayload: Record<string, unknown> = { unit_price: u.unit_price, line_total: u.unit_price * u.qty }
+      const lineUpdatePayload: Record<string, unknown> = {
+        qty_stock_out: u.qty, unit_price: u.unit_price, line_total: u.unit_price * u.qty,
+      }
       if (u.product_id != null) lineUpdatePayload.product_id = u.product_id
       if (u.cost_price != null) lineUpdatePayload.cost_price = u.cost_price
       const { error: lineError } = await supabase
@@ -325,6 +353,25 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
         loading.value = false; return { success: false }
       }
     }
+
+    if (addLines.length) {
+      const { error: addError } = await supabase
+        .from('transaction_items')
+        .insert(addLines.map((l) => ({
+          transaction_id: payload.orderId, product_id: l.product_id,
+          qty_stock_out: l.qty, unit_price: l.unit_price,
+          line_total: l.qty * l.unit_price, cost_price: l.cost_price,
+        })))
+      if (addError) {
+        handleError(addError, 'Failed to add order line.'); toast.error(addError.message || 'Failed to add order line.')
+        loading.value = false; return { success: false }
+      }
+    }
+
+    const lineChanges = [
+      addLines.length ? `${addLines.length} line(s) added` : '',
+      removeIds.length ? `${removeIds.length} line(s) removed` : '',
+    ].filter(Boolean).join(', ')
 
     const { error: statusError } = await supabase
       .from('transactions')
@@ -346,7 +393,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     const { error: logError } = await supabase.from('logs').insert({
       created_by: user.id,
       action: payload.party === 'company' ? 'counter' : 'offer',
-      description: `${payload.note ?? ''} | proposed: ${payload.total}`,
+      description: `${payload.note ?? ''}${lineChanges ? ` [${lineChanges}]` : ''} | proposed: ${payload.total}`,
       module: 'inhouse', transaction_id: payload.orderId,
     })
     if (logError) console.warn('recordOffer: activity log insert failed:', logError.message)

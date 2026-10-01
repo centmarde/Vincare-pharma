@@ -23,6 +23,7 @@ const emit = defineEmits<{
 
 const {
   loading, rounds, shortfall, payments, lineEdits, lineCostEdits, lineProductNames, offerNote, deliverQtys,
+  lineQtyEdits, newLines, hasUnsavedLineChanges, isRemoved, removeItem, restoreItem, addNewLine, removeNewLine, applyPickedProductToNewLine,
   receivedBy, issuedReceipt,
   payAmount, payReference, payRemarks,
   requestedAt, requestNote,
@@ -35,18 +36,26 @@ const {
 
 // Counter-offer product swap goes through the shared search dialog — the
 // products store only holds the first page of a 2.4k-row file.
+// The picker serves both a saved line (swap) and a line added this round.
 const showProductPicker = ref(false)
-const pickerTargetItemId = ref<number | null>(null)
+const pickerTarget = ref<{ kind: 'item'; itemId: number } | { kind: 'new'; index: number } | null>(null)
 
 function openProductPicker(itemId: number) {
-  pickerTargetItemId.value = itemId
+  pickerTarget.value = { kind: 'item', itemId }
+  showProductPicker.value = true
+}
+
+function openNewLinePicker(index: number) {
+  pickerTarget.value = { kind: 'new', index }
   showProductPicker.value = true
 }
 
 function onProductSelected(product: ProductPickerResult) {
-  if (pickerTargetItemId.value === null) return
-  applyPickedProduct(pickerTargetItemId.value, product)
-  pickerTargetItemId.value = null
+  const target = pickerTarget.value
+  if (!target) return
+  if (target.kind === 'item') applyPickedProduct(target.itemId, product)
+  else applyPickedProductToNewLine(target.index, product)
+  pickerTarget.value = null
 }
 
 // Pop the printable DR as soon as one is issued by a delivery.
@@ -118,13 +127,15 @@ const productName = (id: number | null) =>
             <div v-else class="text-caption text-medium-emphasis mb-2">No rounds yet — the customer's initial offer is the order total.</div>
 
             <template v-if="isNegotiating">
-              <div class="text-caption font-weight-bold mb-1">Counter-offer (swap products, edit per-unit prices)</div>
+              <div class="text-caption font-weight-bold mb-1">Counter-offer (add or remove products, edit quantities and per-unit prices)</div>
               <v-table density="compact">
-                <thead><tr><th class="text-left">Product</th><th class="text-right" style="width:90px">Qty</th><th class="text-right" style="width:140px">PR Price</th><th class="text-right" style="width:110px">Cost/Unit</th></tr></thead>
+                <thead><tr><th class="text-left">Product</th><th class="text-right" style="width:100px">Qty</th><th class="text-right" style="width:140px">PR Price</th><th class="text-right" style="width:110px">Cost/Unit</th><th style="width:48px" /></tr></thead>
                 <tbody>
-                  <tr v-for="it in items" :key="it.id">
+                  <tr v-for="it in items" :key="it.id" :class="{ 'text-disabled': isRemoved(it.id) }">
                     <td>
+                      <span v-if="isRemoved(it.id)" class="text-decoration-line-through">{{ lineProductNames[it.id] }}</span>
                       <v-text-field
+                        v-else
                         :model-value="lineProductNames[it.id]"
                         placeholder="Search product"
                         readonly
@@ -136,14 +147,45 @@ const productName = (id: number | null) =>
                         @click:append-inner="openProductPicker(it.id)"
                       />
                     </td>
-                    <td class="text-right">{{ it.qty }}</td>
-                    <td><v-text-field v-model.number="lineEdits[it.id]" type="number" min="0" prefix="₱" variant="outlined" density="compact" hide-details /></td>
+                    <td>
+                      <v-text-field v-model.number="lineQtyEdits[it.id]" type="number" min="1" variant="outlined" density="compact" hide-details :disabled="isRemoved(it.id)" />
+                    </td>
+                    <td><v-text-field v-model.number="lineEdits[it.id]" type="number" min="0" prefix="₱" variant="outlined" density="compact" hide-details :disabled="isRemoved(it.id)" /></td>
                     <td class="text-right text-medium-emphasis">{{ formatCurrency(lineCostEdits[it.id] ?? it.cost_price ?? 0) }}</td>
+                    <td class="text-center">
+                      <v-btn v-if="isRemoved(it.id)" icon="mdi-undo" variant="text" size="x-small" title="Keep this line" @click="restoreItem(it.id)" />
+                      <v-btn v-else icon="mdi-delete-outline" variant="text" size="x-small" color="error" title="Remove this line" @click="removeItem(it.id)" />
+                    </td>
+                  </tr>
+                  <tr v-for="(nl, idx) in newLines" :key="`new-${idx}`">
+                    <td>
+                      <v-text-field
+                        :model-value="nl.product_name"
+                        placeholder="Search product"
+                        readonly
+                        variant="outlined"
+                        density="compact"
+                        hide-details
+                        append-inner-icon="mdi-database-search-outline"
+                        @click="openNewLinePicker(idx)"
+                        @click:append-inner="openNewLinePicker(idx)"
+                      >
+                        <template #prepend-inner><v-chip size="x-small" color="primary" variant="tonal">NEW</v-chip></template>
+                      </v-text-field>
+                    </td>
+                    <td><v-text-field v-model.number="nl.qty" type="number" min="1" variant="outlined" density="compact" hide-details /></td>
+                    <td><v-text-field v-model.number="nl.offer_unit" type="number" min="0" prefix="₱" variant="outlined" density="compact" hide-details /></td>
+                    <td class="text-right text-medium-emphasis">{{ formatCurrency(nl.cost_unit) }}</td>
+                    <td class="text-center">
+                      <v-btn icon="mdi-close" variant="text" size="x-small" title="Discard this new line" @click="removeNewLine(idx)" />
+                    </td>
                   </tr>
                 </tbody>
               </v-table>
+              <v-btn variant="text" size="small" class="text-none mt-1" prepend-icon="mdi-plus" @click="addNewLine">Add product</v-btn>
               <div class="text-caption text-medium-emphasis mt-1">
                 Swapping a product re-snapshots its cost so the ratio below stays accurate — the PR price is left for you to adjust.
+                Line changes are saved when you record the counter-offer.
               </div>
 
               <v-row class="mt-2" justify="end">
@@ -166,8 +208,9 @@ const productName = (id: number | null) =>
 
               <v-textarea v-model="offerNote" placeholder="Note (optional)" variant="outlined" density="compact" rows="2" hide-details class="mt-2" />
               <div class="d-flex justify-end mt-2" style="gap:8px">
+                <span v-if="hasUnsavedLineChanges" class="text-caption text-warning align-self-center">Unsaved line changes — record them before agreeing</span>
                 <v-btn variant="outlined" size="small" class="text-none" :loading="loading" @click="recordCounter">Record Counter-Offer</v-btn>
-                <v-btn color="success" size="small" class="text-none font-weight-bold" elevation="0" :loading="loading" @click="agree">Agree (Lock Terms)</v-btn>
+                <v-btn color="success" size="small" class="text-none font-weight-bold" elevation="0" :loading="loading" :disabled="hasUnsavedLineChanges" @click="agree">Agree (Lock Terms)</v-btn>
               </div>
             </template>
             <div v-else class="text-body-2">

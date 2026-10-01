@@ -4,16 +4,29 @@ import { useEthicalOrders } from '../composables/useEthicalOrders'
 import CreateOrderDialog from './dialogs/CreateOrderDialog.vue'
 import OrderDetailDialog from './dialogs/OrderDetailDialog.vue'
 import { formatCurrency } from '@/utils/helpers'
+import type { EthicalOrderType } from '@/stores/ethicalData'
 import { useDisplay } from 'vuetify'
 
 const { mobile } = useDisplay()
-const { orders, loading, searchText, statusFilter, statusOptions, statusMeta, isOverdue, headers, init } = useEthicalOrders()
+const { orders, loading, searchText, statusFilter, statusOptions, statusMeta, isOverdue, balanceAmount, isDraft, orderLabel, headers, init } = useEthicalOrders()
 
 const showCreateDialog = ref(false)
 const showDetailDialog = ref(false)
 const selectedOrderId = ref<number | null>(null)
+// A draft reopens in the create form, where its lines are still editable.
+const draftToEdit = ref<EthicalOrderType | null>(null)
+
+function openNewOrder() {
+  draftToEdit.value = null
+  showCreateDialog.value = true
+}
 
 function openOrderDialog(item: any) {
+  if (isDraft(item)) {
+    draftToEdit.value = item
+    showCreateDialog.value = true
+    return
+  }
   selectedOrderId.value = item.id
   showDetailDialog.value = true
 }
@@ -24,6 +37,7 @@ function handleRowClick(_: any, { item }: any) {
 
 async function fetchOrders() {
   showCreateDialog.value = false
+  draftToEdit.value = null
   await init()
 }
 
@@ -33,7 +47,6 @@ onMounted(() => {
 
 const notSet = (field: string) => `No ${field} set`
 
-const balanceAmount = (item: any) => Math.max(0, (item.total_amount ?? 0) - (item.amount_paid ?? 0))
 </script>
 
 <template>
@@ -53,7 +66,7 @@ const balanceAmount = (item: any) => Math.max(0, (item.total_amount ?? 0) - (ite
           <v-btn
             size="small" variant="flat" color="primary" class="text-none"
             :block="mobile"
-            prepend-icon="mdi-plus" @click="showCreateDialog = true"
+            prepend-icon="mdi-plus" @click="openNewOrder"
           >
             New Order
           </v-btn>
@@ -111,7 +124,7 @@ const balanceAmount = (item: any) => Math.max(0, (item.total_amount ?? 0) - (ite
                 <div class="flex-grow-1" style="min-width: 0">
                   <div class="d-flex align-center justify-space-between ga-2">
                     <span class="font-weight-medium text-body-2 text-truncate">
-                      {{ item.order_no }}
+                      {{ orderLabel(item) }}
                     </span>
                     <v-btn
                       size="x-small" variant="text" color="primary"
@@ -186,6 +199,9 @@ const balanceAmount = (item: any) => Math.max(0, (item.total_amount ?? 0) - (ite
           @click:row="handleRowClick"
           class="cursor-pointer orders-table"
         >
+          <template #item.order_no="{ item }">
+            <span :class="{ 'text-medium-emphasis font-italic': isDraft(item) }">{{ orderLabel(item) }}</span>
+          </template>
           <template #item.customer.tin_number="{ item }">
             <span class="text-body-2">{{ item.customer?.tin_number || '—' }}</span>
           </template>
@@ -219,7 +235,7 @@ const balanceAmount = (item: any) => Math.max(0, (item.total_amount ?? 0) - (ite
         </v-data-table>
       </v-card>
 
-      <CreateOrderDialog v-model="showCreateDialog" @created="fetchOrders" />
+      <CreateOrderDialog v-model="showCreateDialog" :draft-order="draftToEdit" @created="fetchOrders" />
       <OrderDetailDialog v-model="showDetailDialog" :order-id="selectedOrderId" />
     </div>
   </v-container>

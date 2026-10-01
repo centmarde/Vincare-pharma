@@ -1632,9 +1632,11 @@ export const useFinanceDataStore = defineStore('financeData', () => {
 
       const { data: orders, error: ordersError } = await supabase
         .from('transactions')
-        .select(`id, created_at, total_amount, ${refCol}`)
+        .select(`id, created_at, approved_at, total_amount, ${refCol}`)
         .eq('transaction_type', source)
         .eq('customer_id', customerId)
+        // An Ethical draft is still being haggled — not a charge yet.
+        .neq('status', 'draft')
         .order('created_at', { ascending: true })
       if (ordersError) throw ordersError
 
@@ -1653,7 +1655,11 @@ export const useFinanceDataStore = defineStore('financeData', () => {
 
       const unsorted = [
         ...orderRows.map((o) => ({
-          date: o.created_at as string,
+          // Dated when it was INVOICED, not when the draft was started.
+          // gl_project_events books the sale on coalesce(approved_at,
+          // created_at); using created_at here would date a draft-then-confirmed
+          // order earlier on the customer's statement than in the ledger.
+          date: (o.approved_at ?? o.created_at) as string,
           type: 'charge' as const,
           reference_no: (o[refCol] as string | null) ?? null,
           description: `Order ${o[refCol] ?? `#${o.id}`}`,

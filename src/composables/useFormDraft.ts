@@ -32,6 +32,12 @@ export type FormDraftOptions = {
   refs: Refs
   /** Return true when the form is untouched — an empty form is never persisted. */
   isEmpty: () => boolean
+  /**
+   * Return false to stop persisting for now — e.g. while the same form is
+   * editing a saved server-side record, which must not overwrite the
+   * new-entry draft. Defaults to always on.
+   */
+  enabled?: () => boolean
   /** Debounce for writes; default 400ms. */
   debounceMs?: number
   /** Transform the snapshot before it's JSON-stringified (rarely needed). */
@@ -61,6 +67,7 @@ export function useFormDraft(opts: FormDraftOptions) {
   }
 
   function write() {
+    if (opts.enabled && !opts.enabled()) return
     // Never persist an untouched form; clear any stale draft if it's been emptied.
     if (isEmpty()) {
       try { localStorage.removeItem(fullKey) } catch { /* ignore */ }
