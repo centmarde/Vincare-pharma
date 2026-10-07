@@ -77,7 +77,21 @@ begin
         t.po_no           ilike '%%' || $1 || '%%' or
         t.reference_no    ilike '%%' || $1 || '%%' or
         t.remarks         ilike '%%' || $1 || '%%' or
-        t.status          ilike '%%' || $1 || '%%'
+        t.status          ilike '%%' || $1 || '%%' or
+        exists (
+          select 1
+          from suppliers s0
+          where s0.id = t.supplier_id
+            and s0.name ilike '%%' || $1 || '%%'
+        ) or
+        exists (
+          select 1
+          from transaction_items ti0
+          join products p0   on p0.id = ti0.product_id
+          join suppliers s1  on s1.id = p0.supplier_id
+          where ti0.transaction_id = t.id
+            and s1.name ilike '%%' || $1 || '%%'
+        )
       ))
       and ($2 is null or t.status = any($2))
     order by %I %s
