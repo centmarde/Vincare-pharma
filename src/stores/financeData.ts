@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useGLDataStore } from '@/stores/glData'
-import { nextDocNumber, generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
+import { nextDocNumber, generateNextNumber, insertWithDocRetry, getErrorMessage, formatCurrency } from '@/utils/helpers'
 // Value import, but cashAccountTypes only imports TYPES back from here, and
 // type imports are erased at build -- so this is not a runtime cycle.
 import { isCashGLAccount } from '@/utils/cashAccountTypes'
@@ -764,6 +764,187 @@ export const useFinanceDataStore = defineStore('financeData', () => {
   // cash_account_open). Best-effort, not atomic: a failure after the account
   // insert can leave an account with no opening journal entry (accepted
   // trade-off, JS-over-RPC convention). See 20260702000006_cash_account_opening_gl.sql.
+  /**
+   * Everything that would be orphaned by removing a cash account.
+   *
+   * Checked across BOTH FK roles on transactions — an account can be the one
+   * paid from (cash_account_id) or the one replenishing it
+   * (funding_account_id) — plus the three other tables that point at it.
+   */
+  async function cashAccountReferences(cashAccountId: number) {
+    const head = { count: 'exact' as const, head: true }
+    const [tx, fund, coll, det, rebate] = await Promise.all([
+      supabase.from('transactions').select('id', head).eq('cash_account_id', cashAccountId),
+      supabase.from('transactions').select('id', head).eq('funding_account_id', cashAccountId),
+      supabase.from('collections').select('id', head).eq('cash_account_id', cashAccountId),
+      supabase.from('finance_details').select('id', head).eq('cash_account_id', cashAccountId),
+      supabase.from('ethical_details').select('id', head).eq('rebate_cash_account_id', cashAccountId),
+    ])
+    const failed = [tx, fund, coll, det, rebate].some((r) => r.error)
+    return {
+      failed,
+      total: (tx.count ?? 0) + (fund.count ?? 0) + (coll.count ?? 0) + (det.count ?? 0) + (rebate.count ?? 0),
+    }
+  }
+
+  /**
+   * The journal entry createCashAccount posted for an opening balance, or null
+   * if the account had none.
+   *
+   * reference_type/reference_id ALONE IS NOT ENOUGH. gl_project_events books
+   * petty-cash replenishments as 'manual' too, with reference_id set to a
+   * TRANSACTION id — and transaction 4 and cash account 4 both exist. Matching
+   * on that pair alone could therefore reverse a completely unrelated entry,
+   * so the description createCashAccount writes is required as well.
+   *
+   * Returns 'ambiguous' rather than guessing when more than one still matches.
+   */
+  async function findCashOpeningEntry(cashAccountId: number, name: string) {
+    const { data, error: lookupError } = await supabase
+      .from('journal_entries')
+      .select('id, entry_no, description')
+      .eq('reference_type', 'manual')
+      .eq('reference_id', cashAccountId)
+      .eq('status', 'posted')
+    if (lookupError) return 'ambiguous' as const
+    const matches = (data ?? []).filter((e) => e.description === `Opening balance: ${name}`)
+    if (matches.length > 1) return 'ambiguous' as const
+    return matches.length === 1 ? matches[0] : null
+  }
+
+  /** Retire an account without deleting it — keeps every document that used it
+   *  readable while removing it from pickers and from the active totals. */
+  async function deactivateCashAccount(cashAccountId: number) {
+    loading.value = true
+    clearError()
+    const { user } = await authStore.getCurrentUser()
+    const { error: updateError } = await supabase
+      .from('cash_accounts').update({ is_active: false }).eq('id', cashAccountId)
+    if (updateError) {
+      handleError(updateError, 'Failed to deactivate the cash account.')
+      toast.error(getErrorMessage(updateError) || 'Failed to deactivate the cash account.')
+      loading.value = false
+      return { success: false as const }
+    }
+    // Logged like create and delete: retiring an account a document points at
+    // is a change someone may need to explain later.
+    if (user) {
+      await supabase.from('logs').insert({
+        created_by: user.id, action: 'cash_account_deactivate',
+        description: `cash account ${cashAccountId}`, module: 'finance', transaction_id: null,
+      })
+    }
+
+    toast.success('Cash account deactivated.')
+    await fetchCashAccounts()
+    loading.value = false
+    return { success: true as const }
+  }
+
+  /**
+   * Delete a cash account created by mistake, reversing its opening entry first.
+   *
+   * ORDER IS THE WHOLE POINT. journal_entries.reference_id is a plain bigint,
+   * not a foreign key, so deleting the row does NOT cascade or error — the
+   * opening entry just stays in the ledger with nothing behind it, overstating
+   * cash permanently. That has already happened once, for 9.27M.
+   *
+   * Refuses outright when anything references the account: those documents are
+   * real history, and deactivation is the right answer for them.
+   */
+  async function removeCashAccount(cashAccountId: number) {
+    loading.value = true
+    clearError()
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) {
+      toast.error('User not authenticated.'); loading.value = false; return { success: false as const }
+    }
+
+    const { data: account } = await supabase
+      .from('cash_accounts').select('id, name, opening_balance').eq('id', cashAccountId).maybeSingle()
+    if (!account) {
+      toast.error('Cash account not found.'); loading.value = false; return { success: false as const }
+    }
+
+    const refs = await cashAccountReferences(cashAccountId)
+    if (refs.failed) {
+      toast.error('Could not verify what uses this account. Nothing was changed.')
+      loading.value = false
+      return { success: false as const }
+    }
+    if (refs.total > 0) {
+      toast.error(
+        `${account.name} is used by ${refs.total} record${refs.total === 1 ? '' : 's'} and cannot be deleted. `
+        + 'Deactivate it instead — that hides it without breaking its history.',
+      )
+      loading.value = false
+      return { success: false as const }
+    }
+
+    const opening = await findCashOpeningEntry(cashAccountId, account.name)
+    if (opening === 'ambiguous') {
+      toast.error(
+        'Could not identify the opening entry for this account with certainty. '
+        + 'Reverse it by hand in General Journal, then delete the account.',
+      )
+      loading.value = false
+      return { success: false as const }
+    }
+
+    // An account opened WITH money must have an opening entry. Finding none
+    // means the description did not match, so there is an entry out there this
+    // code cannot see — deleting now would strand it, which is the exact
+    // failure this action exists to prevent. Refuse instead of guessing.
+    if (!opening && Number(account.opening_balance ?? 0) !== 0) {
+      toast.error(
+        `${account.name} has an opening balance of ${formatCurrency(Number(account.opening_balance))} `
+        + 'but no matching ledger entry could be found. Reverse it by hand in General Journal, '
+        + 'then delete the account.',
+      )
+      loading.value = false
+      return { success: false as const }
+    }
+
+    // Reverse BEFORE deleting: once the row is gone the entry is unreachable
+    // from this page and easy to forget about entirely.
+    if (opening) {
+      const reversed = await glStore.reverseJournalEntry(opening.id, user.id)
+      if (!reversed.success) {
+        toast.error(`${reversed.error ?? 'Could not reverse the opening entry.'} The account was not deleted.`)
+        loading.value = false
+        return { success: false as const }
+      }
+    }
+
+    const { error: deleteError } = await supabase
+      .from('cash_accounts').delete().eq('id', cashAccountId)
+    if (deleteError) {
+      handleError(deleteError, 'Failed to delete the cash account.')
+      toast.error(
+        `${getErrorMessage(deleteError)} The opening entry was already reversed — `
+        + 'delete the account, or re-post the entry, so the two agree.',
+      )
+      loading.value = false
+      return { success: false as const }
+    }
+
+    await supabase.from('logs').insert({
+      created_by: user.id,
+      action: 'cash_account_delete',
+      description: `${account.name} | opening ${account.opening_balance ?? 0}`
+        + (opening ? ` | reversed ${opening.entry_no}` : ' | no opening entry'),
+      module: 'finance',
+      transaction_id: null,
+    })
+
+    toast.success(
+      opening ? `${account.name} deleted and ${opening.entry_no} reversed.` : `${account.name} deleted.`,
+    )
+    await fetchCashAccounts()
+    loading.value = false
+    return { success: true as const }
+  }
+
   const createCashAccount = async (payload: {
     name: string
     classification: CashClassification
@@ -2137,7 +2318,8 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     remittanceDiscrepancies, arAging, commissionLiability, stockReconciliation,
     loading, error, isLoading, hasError,
     fetchExpenses, recordExpense, voidExpense,
-    fetchCashAccounts, createCashAccount, fetchReplenishmentRequests, previewPettyCashLiquidation,
+    fetchCashAccounts, createCashAccount, deactivateCashAccount, removeCashAccount,
+    fetchReplenishmentRequests, previewPettyCashLiquidation,
     requestReplenishment, approveReplenishment, rejectReplenishment,
     fetchSupplierPayments, reissueSupplierPayment, fetchSupplierAP, fetchAPAging,
     fetchPnL,

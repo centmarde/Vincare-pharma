@@ -989,6 +989,36 @@ export const useGLDataStore = defineStore('glData', () => {
     return { success: true, reversalId: reversal.id }
   }
 
+  /**
+   * Whether reversing this entry leaves its source document out of step.
+   *
+   * Reversing in the General Journal touches the LEDGER ONLY. If the entry was
+   * projected from a real document, that document keeps its status and any
+   * cash it moved stays moved — so the ledger says it never happened while the
+   * register and the cash balance say it did. That is exactly how a voided
+   * supplier payment left 610 missing from a cash account.
+   *
+   * Returns null when there is nothing to warn about: manual and closing
+   * entries have no source document, and a document already voided is in step
+   * with the reversal rather than out of it.
+   */
+  async function describeReversalImpact(entry: JournalEntry) {
+    if (!entry.reference_id) return null
+    if (entry.reference_type === 'manual' || entry.reference_type === 'closing') return null
+
+    const { data, error: lookupError } = await supabase
+      .from('transactions')
+      .select('id, status, transaction_type, reference_no, expense_no, sale_no, remittance_no')
+      .eq('id', entry.reference_id)
+      .maybeSingle()
+    if (lookupError || !data) return null
+    if (data.status === 'voided' || data.status === 'cancelled') return null
+
+    const docNo = data.reference_no ?? data.expense_no ?? data.sale_no ?? data.remittance_no
+      ?? `#${data.id}`
+    return { docNo, status: data.status as string, transactionType: data.transaction_type as string }
+  }
+
   const reverseEntry = async (entryId: number) => {
     loading.value = true
     clearError()
@@ -1287,6 +1317,7 @@ export const useGLDataStore = defineStore('glData', () => {
     monthlyCashBasisStatement, fetchMonthlyCashBasisStatement,
     fetchAccounts,
     fetchAllAccounts, createAccount, fetchJournal, fetchAccountLedger, postJournalEntry, postManualEntry, approveManualEntry, reverseEntry, reverseJournalEntry,
+    describeReversalImpact,
     postOpeningBalances,
     projectEvents, fetchTrialBalance, fetchIncomeStatement, fetchBalanceSheet,
     clearError, resetStore,

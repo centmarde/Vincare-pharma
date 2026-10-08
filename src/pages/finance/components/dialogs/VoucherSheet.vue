@@ -325,6 +325,13 @@ const fillerRows = computed(() =>
 .dv-label {
   font-size: 10px;
   font-weight: 700;
+  /* Label and value are adjacent spans with no whitespace between them in the
+     markup, so without this the sheet prints "Payee:SAN LUIS". Set in CSS
+     rather than as &nbsp; in each of the six rows: one place to change, and a
+     later edit to a row cannot silently drop it. Horizontal only, so the
+     sheet height - which the POSTED stamp is calibrated against - is
+     unaffected. */
+  margin-right: 4px;
 }
 
 .dv-value {
