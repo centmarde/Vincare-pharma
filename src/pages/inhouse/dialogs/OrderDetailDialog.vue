@@ -22,7 +22,8 @@ const emit = defineEmits<{
 }>()
 
 const {
-  loading, rounds, shortfall, payments, lineEdits, lineCostEdits, lineProductNames, offerNote, deliverQtys,
+  loading, rounds, shortfall, payments, lineEdits, lineCostEdits, lineProductNames,
+  lineBatchNos, lineExpiryDates, offerNote, deliverQtys,
   lineQtyEdits, newLines, hasUnsavedLineChanges, isRemoved, removeItem, restoreItem, addNewLine, removeNewLine, applyPickedProductToNewLine,
   receivedBy, issuedReceipt,
   payAmount, payReference, payRemarks,
@@ -146,6 +147,15 @@ const productName = (id: number | null) =>
                         @click="openProductPicker(it.id)"
                         @click:append-inner="openProductPicker(it.id)"
                       />
+                      <!-- Same wording as the picker, so the batch chosen there
+                           and the batch shown here read identically. -->
+                      <div
+                        v-if="lineBatchNos[it.id] || lineExpiryDates[it.id]"
+                        class="text-caption text-medium-emphasis mt-1"
+                      >
+                        Batch {{ lineBatchNos[it.id] || '—' }} ·
+                        Exp {{ formatExpiryLabel(lineExpiryDates[it.id]) }}
+                      </div>
                     </td>
                     <td>
                       <v-text-field v-model.number="lineQtyEdits[it.id]" type="number" min="1" variant="outlined" density="compact" hide-details :disabled="isRemoved(it.id)" />
@@ -172,6 +182,12 @@ const productName = (id: number | null) =>
                       >
                         <template #prepend-inner><v-chip size="x-small" color="primary" variant="tonal">NEW</v-chip></template>
                       </v-text-field>
+                      <div
+                        v-if="nl.batch_no || nl.expiry_date"
+                        class="text-caption text-medium-emphasis mt-1"
+                      >
+                        Batch {{ nl.batch_no || '—' }} · Exp {{ formatExpiryLabel(nl.expiry_date) }}
+                      </div>
                     </td>
                     <td><v-text-field v-model.number="nl.qty" type="number" min="1" variant="outlined" density="compact" hide-details /></td>
                     <td><v-text-field v-model.number="nl.offer_unit" type="number" min="0" prefix="₱" variant="outlined" density="compact" hide-details /></td>
