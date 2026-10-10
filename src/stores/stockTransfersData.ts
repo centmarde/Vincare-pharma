@@ -5,8 +5,9 @@ import { supabase } from '@/lib/supabase'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
-import { generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
+import { generateNextNumber, insertWithDocRetry, describeProduct } from '@/utils/helpers'
 import type { ProductType } from '@/stores/productsData'
+import { useProductsDataStore } from '@/stores/productsData'
 import type { WarehouseType } from '@/stores/warehouseData'
 
 const toast = useToast()
@@ -133,8 +134,17 @@ function mapRowToTransfer(row: any): StockTransferType {
   }
 }
 
+/**
+ * Lines a store action can accept. Checked here, not only in the form, so a
+ * caller that skips the form's validation cannot save a zero or negative line.
+ */
+function invalidLines(items: { product_id: number | null; requested_qty: number }[]): boolean {
+  return items.some((i) => i.product_id == null || !Number.isFinite(i.requested_qty) || i.requested_qty <= 0)
+}
+
 export const useStockTransfersDataStore = defineStore('stockTransfersData', () => {
   const authStore = useAuthUserStore()
+  const productsStore = useProductsDataStore()
 
   const transfers: Ref<StockTransferType[]> = ref([])
   const currentTransfer: Ref<StockTransferType | undefined> = ref(undefined)
@@ -301,10 +311,263 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
     return { success: true }
   }
 
-  // Warehouse approves: deduct products.current_stock per line (was transfer_approve).
-  // Checks every line's stock first, then deducts — avoids applying a partial
-  // deduction when a later line fails the static insufficient-stock check, though
-  // it's still not atomic against concurrent stock changes (accepted trade-off).
+  // ─── Drafts ──────────────────────────────────────────────────────────────
+  // A transfer still being prepared: saved, editable, not yet a request.
+  //
+  // No ST number until it is submitted — the same rule Ethical drafts follow,
+  // so an abandoned draft never leaves a gap in the series. A draft is
+  // invisible to everything downstream: approveTransfer acts only on
+  // 'pending_approval', and stock reconciliation counts only 'approved' and
+  // 'completed'. Every write below is guarded on status = 'draft', so a draft
+  // submitted or deleted in another tab cannot be overwritten from this one.
+
+  /** Create a draft, or replace an existing draft's warehouse, remarks and lines. */
+  async function saveTransferDraft(
+    payload: { draftId?: number | null; warehouseId: number | null; items: StockTransferLineInput[]; remarks?: string },
+    options: { silent?: boolean } = {},
+  ): Promise<{ success: boolean; draftId?: number }> {
+    clearError()
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) { toast.error('User not authenticated.'); return { success: false } }
+    if (!payload.items.length) {
+      toast.warning('Add at least one product before saving the draft.')
+      return { success: false }
+    }
+    if (invalidLines(payload.items)) {
+      toast.warning('Every line needs a product and a quantity greater than 0.')
+      return { success: false }
+    }
+
+    loading.value = true
+    let draftId = payload.draftId ?? null
+    let oldLineIds: number[] = []
+
+    if (draftId) {
+      const { data: updated, error: updateError } = await supabase
+        .from('transactions')
+        .update({ warehouse_id: payload.warehouseId, remarks: payload.remarks || null, updated_at: new Date().toISOString() })
+        .eq('id', draftId)
+        .eq('transaction_type', 'stock_transfer')
+        .eq('status', 'draft')
+        .select('id')
+      if (updateError || !updated?.length) {
+        loading.value = false
+        handleError(updateError, 'Draft not found.')
+        toast.error(updateError?.message || 'This draft was already submitted or deleted.')
+        return { success: false }
+      }
+      // Must succeed: without the old line ids they cannot be removed after the
+      // new ones go in, and the draft would silently carry both sets — doubling
+      // what it asks for on submit.
+      const { data: oldLines, error: oldLinesError } = await supabase
+        .from('transaction_items').select('id').eq('transaction_id', draftId)
+      if (oldLinesError) {
+        loading.value = false
+        handleError(oldLinesError, 'Failed to save the draft.')
+        toast.error('Could not read the draft\'s current lines. Nothing was changed — try again.')
+        return { success: false }
+      }
+      oldLineIds = (oldLines ?? []).map((l) => l.id as number)
+    } else {
+      const { data: created, error: insertError } = await supabase
+        .from('transactions')
+        .insert({
+          transaction_type: 'stock_transfer',
+          status: 'draft',
+          warehouse_id: payload.warehouseId,
+          remarks: payload.remarks || null,
+          created_by: user.id,
+        })
+        .select('id')
+        .single()
+      if (insertError || !created) {
+        loading.value = false
+        handleError(insertError, 'Failed to save the draft.')
+        toast.error(insertError?.message || 'Failed to save the draft.')
+        return { success: false }
+      }
+      draftId = created.id as number
+    }
+
+    // New lines first, old ones removed after: if the insert fails, an edited
+    // draft keeps the lines it had instead of being left with none.
+    const { data: newLines, error: itemsError } = await supabase
+      .from('transaction_items')
+      .insert(payload.items.map(item => ({
+        transaction_id: draftId,
+        product_id: item.product_id,
+        qty_stock_out: item.requested_qty,
+      })))
+      .select('id')
+    if (itemsError) {
+      // A brand-new draft with no lines is useless — remove it.
+      if (!payload.draftId) await supabase.from('transactions').delete().eq('id', draftId).eq('status', 'draft')
+      loading.value = false
+      handleError(itemsError, 'Failed to save the draft lines.')
+      toast.error(itemsError.message || 'Failed to save the draft lines.')
+      return { success: false }
+    }
+    if (oldLineIds.length) {
+      const { error: cleanupError } = await supabase.from('transaction_items').delete().in('id', oldLineIds)
+      if (cleanupError) {
+        // Old and new lines would both be on the draft. Take the new ones back
+        // out so it stays exactly as it was, and say the save did not happen.
+        const newIds = (newLines ?? []).map((l) => l.id as number)
+        if (newIds.length) await supabase.from('transaction_items').delete().in('id', newIds)
+        loading.value = false
+        handleError(cleanupError, 'Failed to save the draft.')
+        toast.error('The draft could not be updated. It was left as it was — try again.')
+        return { success: false }
+      }
+    }
+
+    if (!options.silent) toast.success('Draft saved.')
+    await fetchTransfers()
+    loading.value = false
+    return { success: true, draftId }
+  }
+
+  /** Turn a draft into a request: price check, then mint its ST number. */
+  async function submitTransferDraft(draftId: number): Promise<{ success: boolean }> {
+    clearError()
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) { toast.error('User not authenticated.'); return { success: false } }
+
+    loading.value = true
+    const { data: draft, error: fetchError } = await supabase
+      .from('transactions')
+      .select('id, status, warehouse_id, transaction_items!transaction_items_transaction_id_fkey(product_id, qty_stock_out)')
+      .eq('id', draftId)
+      .eq('transaction_type', 'stock_transfer')
+      .maybeSingle()
+    if (fetchError || !draft || draft.status !== 'draft') {
+      loading.value = false
+      handleError(fetchError, 'Draft not found.')
+      toast.error(fetchError?.message || 'This draft was already submitted or deleted.')
+      return { success: false }
+    }
+    if (!draft.warehouse_id) {
+      loading.value = false
+      toast.warning('Pick a destination warehouse before submitting.')
+      return { success: false }
+    }
+    // The same check a direct request makes: the warehouse may have been
+    // removed since the draft was saved.
+    const { data: warehouse } = await supabase
+      .from('warehouses').select('id').eq('id', draft.warehouse_id).maybeSingle()
+    if (!warehouse) {
+      loading.value = false
+      toast.error('The destination warehouse on this draft no longer exists. Pick another one.')
+      return { success: false }
+    }
+    const lines = (draft.transaction_items ?? []) as unknown as { product_id: number; qty_stock_out: number | null }[]
+    if (!lines.length) {
+      loading.value = false
+      toast.warning('Add at least one product before submitting.')
+      return { success: false }
+    }
+    if (invalidLines(lines.map((l) => ({ product_id: l.product_id, requested_qty: Number(l.qty_stock_out) })))) {
+      loading.value = false
+      toast.warning('Every line needs a product and a quantity greater than 0.')
+      return { success: false }
+    }
+
+    const priceCheck = await findUnpricedProducts(lines.map(l => l.product_id))
+    if (priceCheck.failed) {
+      loading.value = false
+      toast.error('Could not verify selling prices. Try again before requesting this transfer.')
+      return { success: false }
+    }
+    if (priceCheck.names.length) {
+      loading.value = false
+      toast.error(unpricedMessage(priceCheck.names))
+      return { success: false }
+    }
+
+    const year = new Date().getFullYear().toString()
+    const { data: submitted, docNo: transferNo, error: submitError } = await insertWithDocRetry<{ id: number }>(
+      () => generateNextNumber('transfer_no', `ST-${year}-`, ['reference_no']),
+      async (docNo) => supabase
+        .from('transactions')
+        .update({ transfer_no: docNo, status: 'pending_approval', updated_at: new Date().toISOString() })
+        .eq('id', draftId)
+        .eq('status', 'draft')
+        .select('id')
+        .maybeSingle(),
+    )
+    if (submitError || !submitted) {
+      loading.value = false
+      handleError(submitError, 'Failed to submit the draft.')
+      toast.error(submitError?.message || 'This draft was already submitted or deleted.')
+      return { success: false }
+    }
+
+    const { error: logError } = await supabase.from('logs').insert({
+      action: 'requested', description: `Stock transfer ${transferNo} requested`,
+      module: 'warehouse', created_by: user.id, transaction_id: draftId,
+    })
+    if (logError) console.warn('submitTransferDraft: activity log insert failed:', logError.message)
+
+    toast.success(`Stock transfer ${transferNo} requested successfully.`)
+    await fetchTransfers()
+    loading.value = false
+    return { success: true }
+  }
+
+  /** Delete a draft outright — it was never a document, so there is nothing to void. */
+  async function deleteTransferDraft(draftId: number): Promise<{ success: boolean }> {
+    clearError()
+    loading.value = true
+    // Claimed in ONE guarded write before anything is removed. Checking the
+    // status and then deleting left a gap: a submit landing in between would
+    // have its lines deleted out from under a live request. Once flipped, a
+    // submit can no longer match it ('draft' only), and if a step below fails
+    // the row stays visible as Cancelled rather than half-deleted.
+    const { data: claimed, error: claimError } = await supabase
+      .from('transactions')
+      .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+      .eq('id', draftId)
+      .eq('transaction_type', 'stock_transfer')
+      .eq('status', 'draft')
+      .select('id')
+    if (claimError || !claimed?.length) {
+      loading.value = false
+      handleError(claimError, 'Draft not found.')
+      toast.error(claimError?.message || 'Only a draft can be deleted — this transfer was already submitted.')
+      return { success: false }
+    }
+    const { error: itemsError } = await supabase.from('transaction_items').delete().eq('transaction_id', draftId)
+    if (itemsError) {
+      loading.value = false
+      handleError(itemsError, 'Failed to delete the draft.')
+      toast.error(itemsError.message || 'Failed to delete the draft.')
+      return { success: false }
+    }
+    const { error: deleteError } = await supabase
+      .from('transactions').delete().eq('id', draftId).eq('status', 'cancelled')
+    if (deleteError) {
+      loading.value = false
+      handleError(deleteError, 'Failed to delete the draft.')
+      toast.error(deleteError.message || 'Failed to delete the draft.')
+      return { success: false }
+    }
+    toast.success('Draft deleted.')
+    await fetchTransfers()
+    loading.value = false
+    return { success: true }
+  }
+
+  // Warehouse approves: deduct products.current_stock per product (was transfer_approve).
+  //
+  // 1. Read-only checks: prices, then stock per product — every shortage listed.
+  // 2. CLAIM the transfer: flip pending_approval -> approved in one guarded
+  //    write. A double-click or a second approver finds nothing to flip and
+  //    stops there; before, both passed the status check and both deducted.
+  // 3. Deduct each product through adjustMainStock, which cannot overwrite a
+  //    movement that lands at the same time.
+  // 4. Any failure after the claim puts back what was deducted and returns the
+  //    transfer to Pending Approval, so a retry starts clean instead of
+  //    deducting a second time.
   const approveTransfer = async (transferId: number) => {
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); return false }
@@ -344,43 +607,93 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
       return false
     }
 
-    const stockChecks: { product_id: number; qty: number; current_stock: number }[] = []
-    for (const line of lines) {
-      const { data: product, error: productError } = await supabase
-        .from('products')
-        .select('current_stock')
-        .eq('id', line.product_id)
-        .maybeSingle()
-      if (productError || !product || (product.current_stock ?? 0) < line.qty) {
-        loading.value = false
-        toast.error(`Insufficient warehouse stock for product ${line.product_id}.`)
-        return false
-      }
-      stockChecks.push({ product_id: line.product_id, qty: line.qty, current_stock: product.current_stock ?? 0 })
-    }
+    // Totalled per product: two lines of the same product were checked one at a
+    // time (each could pass while the pair exceeded stock), and the second
+    // deduction then overwrote the first from the same stale starting figure.
+    const needed = new Map<number, number>()
+    for (const line of lines) needed.set(line.product_id, (needed.get(line.product_id) ?? 0) + line.qty)
 
-    for (const check of stockChecks) {
-      const { error: updateStockError } = await supabase
-        .from('products')
-        .update({ current_stock: check.current_stock - check.qty })
-        .eq('id', check.product_id)
-      if (updateStockError) {
-        loading.value = false
-        handleError(updateStockError, 'Failed to deduct warehouse stock.')
-        toast.error(updateStockError.message || 'Failed to deduct warehouse stock (partway through — verify stock manually).')
-        return false
+    const { data: products, error: productsError } = await supabase
+      .from('products')
+      .select('id, product_name, sku, batch_no, expiry_date, current_stock')
+      .in('id', [...needed.keys()])
+    if (productsError) {
+      loading.value = false
+      handleError(productsError, 'Could not check warehouse stock.')
+      toast.error('Could not check warehouse stock. Nothing was approved — try again.')
+      return false
+    }
+    const productById = new Map((products ?? []).map((p) => [p.id as number, p]))
+
+    // Every short line is reported at once, by name and batch — not the first
+    // one only, by id ("product 11"), which sent staff to look them up one by
+    // one between attempts.
+    const stockChecks: { product_id: number; qty: number; current_stock: number }[] = []
+    const shortages: string[] = []
+    for (const [productId, qty] of needed) {
+      const product = productById.get(productId)
+      const onHand = product?.current_stock ?? 0
+      if (!product || onHand < qty) {
+        shortages.push(`${describeProduct(product, productId)} — needs ${qty}, ${product ? `${onHand} on hand` : 'not found'}`)
+        continue
       }
+      stockChecks.push({ product_id: productId, qty, current_stock: onHand })
+    }
+    if (shortages.length) {
+      loading.value = false
+      toast.error(
+        `Not enough warehouse stock to approve this transfer. ${shortages.join('; ')}.`,
+        { timeout: 15000 },
+      )
+      return false
     }
 
     const nowIso = new Date().toISOString()
-    const { error: statusError } = await supabase
+    const { data: claimed, error: claimError } = await supabase
       .from('transactions')
       .update({ status: 'approved', approved_by: user.id, approved_at: nowIso, updated_at: nowIso })
       .eq('id', transferId)
-    if (statusError) {
+      .eq('transaction_type', 'stock_transfer')
+      .eq('status', 'pending_approval')
+      .select('id')
+    if (claimError || !claimed?.length) {
       loading.value = false
-      handleError(statusError, 'Failed to approve stock transfer.')
-      toast.error(statusError.message || 'Failed to approve stock transfer.')
+      handleError(claimError, 'Failed to approve stock transfer.')
+      toast.error(claimError?.message || 'This transfer was already approved or rejected.')
+      await fetchTransfers()
+      return false
+    }
+
+    const deducted: { productId: number; qty: number }[] = []
+    for (const check of stockChecks) {
+      const result = await productsStore.adjustMainStock(check.product_id, -check.qty)
+      if (result.ok) {
+        deducted.push({ productId: check.product_id, qty: check.qty })
+        continue
+      }
+      // Put back what was taken and reopen the transfer for approval.
+      const unrestored: string[] = []
+      for (const d of deducted) {
+        const back = await productsStore.adjustMainStock(d.productId, d.qty)
+        if (!back.ok) unrestored.push(describeProduct(productById.get(d.productId), d.productId))
+      }
+      await supabase
+        .from('transactions')
+        .update({ status: 'pending_approval', approved_by: null, approved_at: null, updated_at: new Date().toISOString() })
+        .eq('id', transferId)
+        .eq('status', 'approved')
+      const label = describeProduct(productById.get(check.product_id), check.product_id)
+      const why = result.reason === 'insufficient'
+        ? `${label} now has only ${result.onHand ?? 0} on hand (it changed while approving)`
+        : `stock for ${label} could not be updated (${result.message ?? result.reason})`
+      loading.value = false
+      toast.error(
+        unrestored.length
+          ? `Not approved: ${why}. Stock could NOT be put back for: ${unrestored.join('; ')} — correct it by hand.`
+          : `Not approved: ${why}. Nothing was deducted; the transfer is back to Pending Approval.`,
+        { timeout: 15000 },
+      )
+      await fetchTransfers()
       return false
     }
 
@@ -585,6 +898,9 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
     pendingTransfers,
     fetchTransfers,
     createTransferRequest,
+    saveTransferDraft,
+    submitTransferDraft,
+    deleteTransferDraft,
     approveTransfer,
     rejectTransfer,
     receiveTransfer,

@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
-import { generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
+import { generateNextNumber, insertWithDocRetry, describeProduct } from '@/utils/helpers'
 import type { ProductType } from '@/stores/productsData'
 import { useProductsDataStore } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
@@ -275,6 +275,7 @@ export const useSalesDataStore = defineStore('salesData', () => {
     }
 
     const stockChecks: { product_id: number; rowId: number; onHand: number }[] = []
+    const shortLines: { product_id: number; needed: number; onHand: number | null }[] = []
     for (const line of lines) {
       const { data: stockRow, error: stockError } = await supabase
         .from('warehouse_products')
@@ -283,11 +284,22 @@ export const useSalesDataStore = defineStore('salesData', () => {
         .eq('product_id', line.product_id)
         .maybeSingle()
       if (stockError || !stockRow || (stockRow.total_qty ?? 0) < line.quantity) {
-        toast.error(`Insufficient stock for product ${line.product_id}.`)
-        loading.value = false
-        return { success: false }
+        shortLines.push({ product_id: line.product_id, needed: line.quantity, onHand: stockRow?.total_qty ?? null })
+        continue
       }
       stockChecks.push({ product_id: line.product_id, rowId: stockRow.id, onHand: stockRow.total_qty ?? 0 })
+    }
+    // Every short line at once, by name and batch — it used to stop at the
+    // first one and say "product 11".
+    if (shortLines.length) {
+      const products = await productsStore.fetchProductsByIds(shortLines.map(l => l.product_id))
+      const detail = shortLines.map((l) => {
+        const product = products.find(p => p.id === l.product_id)
+        return `${describeProduct(product, l.product_id)} — needs ${l.needed}, ${l.onHand ?? 0} on hand`
+      })
+      toast.error(`Not enough stock for this sale. ${detail.join('; ')}.`, { timeout: 15000 })
+      loading.value = false
+      return { success: false }
     }
 
     const name = customer?.name?.trim() || null
@@ -447,7 +459,13 @@ export const useSalesDataStore = defineStore('salesData', () => {
   // (status flip) is not rolled back if a restore fails, since silently
   // un-voiding a sale the cashier already told the customer was voided would be
   // more confusing than a stock count that needs a manual correction.
-  const voidSale = async (saleId: number, reason: string) => {
+  /**
+   * `viaChangeRequest`: the call is an approved void request. Filing that
+   * request moves the sale to 'change_request' (which also keeps it out of a
+   * remittance while it waits), so the approval must accept that status — the
+   * 'completed'-only check refused every approved void.
+   */
+  const voidSale = async (saleId: number, reason: string, options: { viaChangeRequest?: boolean } = {}) => {
     loading.value = true
     clearError()
 
@@ -471,7 +489,8 @@ export const useSalesDataStore = defineStore('salesData', () => {
       loading.value = false
       return { success: false }
     }
-    if (sale.status !== 'completed') {
+    const voidable = options.viaChangeRequest ? ['completed', 'change_request'] : ['completed']
+    if (!voidable.includes(sale.status ?? '')) {
       toast.error('Only completed sales can be voided.')
       loading.value = false
       return { success: false }
@@ -482,14 +501,25 @@ export const useSalesDataStore = defineStore('salesData', () => {
       return { success: false }
     }
 
+    // Guarded on the status just checked: two approvals of the same void (or a
+    // double click) both passed the check above and both restored the stock.
+    // Only the one that actually flips the status goes on to restore it.
     const nowIso = new Date().toISOString()
-    const { error: statusError } = await supabase
+    const { data: claimed, error: statusError } = await supabase
       .from('transactions')
       .update({ status: 'voided', updated_at: nowIso })
       .eq('id', saleId)
+      .eq('transaction_type', 'sale')
+      .in('status', voidable)
+      .select('id')
     if (statusError) {
       handleError(statusError, 'Failed to void sale.')
       toast.error(statusError.message || 'Failed to void sale.')
+      loading.value = false
+      return { success: false }
+    }
+    if (!claimed?.length) {
+      toast.error('This sale was already voided.')
       loading.value = false
       return { success: false }
     }
@@ -502,6 +532,7 @@ export const useSalesDataStore = defineStore('salesData', () => {
 
     const lines = ((sale.transaction_items ?? []) as unknown as { product_id: number; qty_stock_out: number | null }[])
       .map(li => ({ product_id: li.product_id, qty: li.qty_stock_out ?? 0 }))
+    const failedRestores: number[] = []
     for (const line of lines) {
       // A missing warehouse or missing row is a FAILED restoration, not a
       // silent no-op: updating `id = -1` matches nothing and returns no error,
@@ -516,7 +547,7 @@ export const useSalesDataStore = defineStore('salesData', () => {
         : { data: null, error: null }
 
       if (lookupError || !stockRow) {
-        toast.warning(`Sale voided, but stock for product ${line.product_id} needs manual correction.`)
+        failedRestores.push(line.product_id)
         continue
       }
 
@@ -524,9 +555,13 @@ export const useSalesDataStore = defineStore('salesData', () => {
         .from('warehouse_products')
         .update({ total_qty: (stockRow.total_qty ?? 0) + line.qty })
         .eq('id', stockRow.id)
-      if (stockError) {
-        toast.warning(`Sale voided, but stock for product ${line.product_id} needs manual correction.`)
-      }
+      if (stockError) failedRestores.push(line.product_id)
+    }
+    // One warning naming every product to fix, by name and batch.
+    if (failedRestores.length) {
+      const products = await productsStore.fetchProductsByIds(failedRestores)
+      const names = failedRestores.map(id => describeProduct(products.find(p => p.id === id), id))
+      toast.warning(`Sale voided, but stock needs manual correction for: ${names.join('; ')}.`, { timeout: 15000 })
     }
 
     const { error: logError } = await supabase.from('logs').insert({

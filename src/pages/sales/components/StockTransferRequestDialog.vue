@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useStockTransferRequest } from '../composables/useStockTransferRequest'
 import type { ProductPickerResult } from '@/stores/productsData'
+import type { StockTransferType } from '@/stores/stockTransfersData'
 import ProductPickerDialog from '@/components/products/ProductPicker.vue'
 
 const props = defineProps<{
   modelValue: boolean
+  /** A saved draft to reopen for editing; absent/null = a new request. */
+  draftTransfer?: StockTransferType | null
 }>()
 
 const emit = defineEmits<{
@@ -14,9 +17,9 @@ const emit = defineEmits<{
 }>()
 
 const {
-  loading, warehouseId, remarks, items,
+  loading, warehouseId, remarks, items, isEditingDraft,
   warehouseOptions,
-  addItem, removeItem, applyPickedProduct, handleSubmit, init,
+  addItem, removeItem, applyPickedProduct, handleSubmit, saveAsDraft, discardDraft, init,
 } = useStockTransferRequest(() => emit('created'))
 
 // Shared search dialog instead of a dropdown — it searches all 2,401 products
@@ -35,7 +38,15 @@ function onProductSelected(product: ProductPickerResult) {
   pickerTargetIndex.value = null
 }
 
-onMounted(init)
+// Initialised on every open (not once on mount) so the same dialog can show a
+// new request one time and a saved draft the next.
+watch(
+  () => props.modelValue,
+  (open) => {
+    if (open) void init(props.draftTransfer ?? null)
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -47,7 +58,7 @@ onMounted(init)
   >
     <v-card rounded="lg">
       <v-card-title class="pa-4 pa-sm-5 pb-3 text-h6 font-weight-bold">
-        New Stock Transfer Request
+        {{ isEditingDraft ? 'Edit Draft Transfer' : 'New Stock Transfer Request' }}
       </v-card-title>
 
       <v-divider />
@@ -135,9 +146,24 @@ onMounted(init)
 
       <v-divider />
 
-      <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end ga-2">
+      <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end ga-2 flex-wrap">
+        <v-btn
+          v-if="isEditingDraft"
+          variant="text"
+          color="error"
+          class="text-none mr-auto"
+          prepend-icon="mdi-delete-outline"
+          :loading="loading"
+          @click="discardDraft"
+        >
+          Delete Draft
+        </v-btn>
         <v-btn variant="outlined" class="text-none" @click="emit('update:modelValue', false)">
           Cancel
+        </v-btn>
+        <!-- Saves without sending for approval; no ST number until submitted. -->
+        <v-btn variant="tonal" class="text-none" :loading="loading" @click="saveAsDraft">
+          Save as Draft
         </v-btn>
         <v-btn
           color="primary"

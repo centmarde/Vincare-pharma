@@ -466,6 +466,34 @@ export function formatExpiryMonthYear(value: string | Date | null | undefined): 
 }
 
 /**
+ * A product named the way a stock problem needs it: its name plus the details
+ * that tell one batch from another — "GLICLAZIDE 80MG (SKU 1203 · Batch cf12502
+ * · Exp 11/2028)". Each products row is ONE batch, so several rows share a
+ * name; messages that said "product 11" told staff nothing at all.
+ *
+ * `fallbackId` names a product that could not be looked up, so the message
+ * still points somewhere rather than reading "unknown".
+ */
+export function describeProduct(
+  product: {
+    product_name?: string | null
+    sku?: string | null
+    batch_no?: string | null
+    expiry_date?: string | null
+  } | null | undefined,
+  fallbackId?: number | null,
+): string {
+  const name = product?.product_name?.trim()
+    || (fallbackId != null ? `Product #${fallbackId}` : 'Unknown product')
+  const details = [
+    product?.sku ? `SKU ${product.sku}` : null,
+    product?.batch_no ? `Batch ${product.batch_no}` : null,
+    product?.expiry_date ? `Exp ${formatExpiryMonthYear(product.expiry_date)}` : null,
+  ].filter(Boolean)
+  return details.length ? `${name} (${details.join(' · ')})` : name
+}
+
+/**
  * Display text for a field that may not have been filled in yet.
  *
  * Returns the value when it has content, otherwise "not set yet".

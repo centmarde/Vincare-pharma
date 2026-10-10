@@ -9,10 +9,12 @@ import { useCanvassDataStore } from '@/stores/canvassData'
 import { generateIHNumber, generateDocNumber, getLatestReferenceNo, insertWithDocRetry } from '@/utils/generativeHelpers'
 import { useDeliveryReceiptsDataStore } from '@/stores/deliveryReceiptsData'
 import type { ProductType } from '@/stores/productsData'
+import { useProductsDataStore } from '@/stores/productsData'
 import { useCustomersDataStore } from '@/stores/customersData'
 import type { CustomerType } from '@/stores/customersData'
 import type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult } from '@/utils/canvassTypes'
 import { govtShelfLife, QUALIFICATION_MONTHS } from '@/utils/qualification'
+import { describeProduct } from '@/utils/helpers'
 import { useShortDatedApprovalStore } from '@/pages/inhouse/stores/shortDatedApproval'
 import type { CollectionType } from '@/stores/ethicalData'
 
@@ -118,6 +120,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
   const authStore = useAuthUserStore()
   const canvassStore = useCanvassDataStore()
   const drStore = useDeliveryReceiptsDataStore()
+  const productsStore = useProductsDataStore()
   const customersStore = useCustomersDataStore()
   const shortDatedStore = useShortDatedApprovalStore()
 
@@ -561,9 +564,24 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
   // Recording a delivery also issues a numbered Delivery Receipt (DR-YYYY-###,
   // generated client-side); returns it so the caller can print immediately.
-  // Was inhouse_deliver. Best-effort, not atomic: a failure partway through a
-  // multi-line delivery can leave some lines delivered / stock deducted and
-  // others not (accepted trade-off, JS-over-RPC convention). Note: `remarks`
+  // Was inhouse_deliver.
+  //
+  // CHECK EVERYTHING, THEN MOVE. Every line is validated first — quantity left
+  // to deliver, shelf life, and stock totalled per product — with nothing
+  // written; any problems are reported together. Only then is stock deducted
+  // and the delivered counts stamped. It used to check and deduct one line at a
+  // time, so a short line 3 left lines 1-2 deducted with no DR behind them.
+  //
+  // Still not atomic (JS-over-RPC convention), so a failure DURING the moves —
+  // including the DR itself failing to save — puts back what was already
+  // moved, rather than leaving stock gone with no receipt for it.
+  //
+  // CONCURRENT DELIVERIES: each line's delivered count is written only if it
+  // is still the figure the checks were made against, so two clerks
+  // delivering the same order at once cannot both pass and both deduct — the
+  // second finds the count changed and backs out. Stock moves through
+  // adjustMainStock, which cannot overwrite a movement landing at the same
+  // time. Note: `remarks`
   // on the DR header stores receivedBy (matches the RPC it replaces — that
   // function accepted a p_remarks argument but never actually wrote it
   // anywhere, a pre-existing quirk preserved here rather than silently fixed).
@@ -599,85 +617,189 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     // an approval can land while the order waits.
     const shortDatedApproved = await shortDatedStore.hasApproval(orderId)
 
-    // Move stock + bump delivered_qty per line, collecting the DR line data as we
-    // go. The DR document itself is written by the DR store afterwards.
-    const drLines: { product_id: number | null; qty: number; unit_price: number | null }[] = []
-    for (const line of lines) {
-      if (line.qty <= 0) continue
+    // ── 1. Validate every line. Nothing is written in this phase. ──────────
+    const requested = lines.filter((l) => l.qty > 0)
+    if (!requested.length) {
+      toast.warning('Enter a quantity to deliver on at least one line.')
+      loading.value = false; return { success: false }
+    }
+    if (requested.some((l) => !Number.isFinite(l.qty))) {
+      toast.error('A delivery quantity is not a valid number.')
+      loading.value = false; return { success: false }
+    }
+    // One entry per order line: the same line twice would be checked and
+    // stamped twice against the same starting count.
+    if (new Set(requested.map((l) => l.item_id)).size !== requested.length) {
+      toast.error('The same order line is listed twice. Nothing was delivered.')
+      loading.value = false; return { success: false }
+    }
 
-      const { data: item, error: itemFetchError } = await supabase
-        .from('transaction_items')
-        .select('product_id, qty_stock_out, actual_count_stock_out, unit_price')
-        .eq('id', line.item_id)
-        .eq('transaction_id', orderId)
-        .maybeSingle()
-      if (itemFetchError) {
-        handleError(itemFetchError, 'Failed to record delivery.'); toast.error(itemFetchError.message || 'Failed to record delivery.')
-        loading.value = false; return { success: false }
-      }
-      if (!item?.product_id) continue
+    const { data: itemRows, error: itemsError } = await supabase
+      .from('transaction_items')
+      .select('id, product_id, qty_stock_out, actual_count_stock_out, unit_price')
+      .eq('transaction_id', orderId)
+      .in('id', requested.map((l) => l.item_id))
+    if (itemsError) {
+      handleError(itemsError, 'Failed to record delivery.'); toast.error(itemsError.message || 'Failed to record delivery.')
+      loading.value = false; return { success: false }
+    }
+    const itemById = new Map((itemRows ?? []).map((it) => [it.id as number, it]))
 
-      const delivered = item.actual_count_stock_out ?? 0
-      if (delivered + line.qty > (item.qty_stock_out ?? 0)) {
-        toast.error(`Delivery exceeds ordered qty for item ${line.item_id}.`)
-        loading.value = false; return { success: false }
-      }
-
-      const { data: product } = await supabase
+    const productIds = [...new Set((itemRows ?? []).map((it) => it.product_id).filter((id): id is number => id != null))]
+    const { data: productRows, error: productsError } = productIds.length
+      ? await supabase
         .from('products')
-        .select('current_stock, expiry_date, product_name')
-        .eq('id', item.product_id)
-        .maybeSingle()
+        .select('id, current_stock, expiry_date, product_name, sku, batch_no')
+        .in('id', productIds)
+      : { data: [], error: null }
+    if (productsError) {
+      handleError(productsError, 'Could not check warehouse stock.')
+      toast.error('Could not check warehouse stock. Nothing was delivered — try again.')
+      loading.value = false; return { success: false }
+    }
+    const productById = new Map((productRows ?? []).map((p) => [p.id as number, p]))
+
+    // `countAsRead` is the delivered count exactly as read (NULL included): the
+    // claim below is guarded on it.
+    type PlannedLine = {
+      item_id: number; product_id: number; qty: number; delivered: number
+      countAsRead: number | null; unit_price: number | null
+    }
+    const planned: PlannedLine[] = []
+    const problems: string[] = []
+    const neededByProduct = new Map<number, number>()
+
+    for (const line of requested) {
+      const item = itemById.get(line.item_id)
+      if (!item?.product_id) continue
+      const product = productById.get(item.product_id)
+      const label = describeProduct(product, item.product_id)
+      const delivered = item.actual_count_stock_out ?? 0
+      const ordered = item.qty_stock_out ?? 0
+
+      if (delivered + line.qty > ordered) {
+        problems.push(`${label} — delivering ${line.qty} would exceed the order (ordered ${ordered}, already delivered ${delivered})`)
+        continue
+      }
 
       // The authoritative shelf-life gate. agreeOrder only previewed this
       // against the stock of the day; weeks of negotiation can pass before
       // anything ships, and a batch that qualified then may not now.
-      const shelf = govtShelfLife(product?.expiry_date as string | null)
       // EXPIRED is absolute — no approval can make expired goods deliverable.
       // SHORT-DATED is a contract term the business may waive, so an executive
       // approval on this order lets it through; without one it still blocks,
-      // now pointing at how to get it.
-      const blocked = !shelf.ok && (shelf.reason === 'expired' || !shortDatedApproved)
-      if (blocked) {
-        const name = product?.product_name ?? `product ${item.product_id}`
-        toast.error(
-          shelf.reason === 'expired'
-            ? `${name} has expired and cannot be delivered.`
-            : `${name} has under ${QUALIFICATION_MONTHS} months of shelf life left. A government client will not accept it without executive approval — request it from the order.`,
-        )
-        loading.value = false; return { success: false }
+      // pointing at how to get it.
+      const shelf = govtShelfLife(product?.expiry_date as string | null)
+      if (!shelf.ok && shelf.reason === 'expired') {
+        problems.push(`${label} has expired and cannot be delivered`)
+        continue
+      }
+      if (!shelf.ok && !shortDatedApproved) {
+        problems.push(`${label} has under ${QUALIFICATION_MONTHS} months of shelf life left — a government client will not accept it without executive approval (request it from the order)`)
+        continue
       }
 
-      if ((product?.current_stock ?? 0) < line.qty) {
-        toast.error(`Insufficient warehouse stock for product ${item.product_id}.`)
-        loading.value = false; return { success: false }
-      }
+      neededByProduct.set(item.product_id, (neededByProduct.get(item.product_id) ?? 0) + line.qty)
+      planned.push({
+        item_id: line.item_id, product_id: item.product_id, qty: line.qty, delivered,
+        countAsRead: item.actual_count_stock_out ?? null, unit_price: item.unit_price ?? null,
+      })
+    }
 
-      const { error: stockError } = await supabase
-        .from('products')
-        .update({ current_stock: (product?.current_stock ?? 0) - line.qty })
-        .eq('id', item.product_id)
-      if (stockError) {
-        handleError(stockError, 'Failed to deduct warehouse stock.'); toast.error(stockError.message || 'Failed to deduct warehouse stock.')
-        loading.value = false; return { success: false }
+    // Stock is checked per PRODUCT, summed across lines: two lines of the same
+    // product each passed on their own while the pair exceeded what was there.
+    for (const [productId, needed] of neededByProduct) {
+      const product = productById.get(productId)
+      const onHand = product?.current_stock ?? 0
+      if (onHand < needed) {
+        problems.push(`Not enough warehouse stock for ${describeProduct(product, productId)} — needs ${needed}, ${onHand} on hand`)
       }
+    }
 
-      const { error: deliveredError } = await supabase
+    if (problems.length) {
+      toast.error(`Nothing was delivered. ${problems.join('; ')}.`, { timeout: 15000 })
+      loading.value = false; return { success: false }
+    }
+    if (!planned.length) {
+      toast.warning('None of those lines can be delivered.')
+      loading.value = false; return { success: false }
+    }
+
+    // ── 2. Claim the lines, then move the stock. ───────────────────────────
+    // What has been applied so far, so a later failure can put it back.
+    const stamped: { itemId: number; previous: number | null }[] = []
+    const deducted: { productId: number; qty: number }[] = []
+
+    // Best-effort undo of phase 2. Stock goes back through adjustMainStock, so a
+    // sale made in the meantime is not wiped out. Anything that cannot be put
+    // back is named so it can be corrected by hand.
+    async function undo(reason: string) {
+      const unrestored: string[] = []
+      for (const d of deducted) {
+        const back = await productsStore.adjustMainStock(d.productId, d.qty)
+        if (!back.ok) unrestored.push(describeProduct(productById.get(d.productId), d.productId))
+      }
+      for (const st of stamped) {
+        const { error: countError } = await supabase
+          .from('transaction_items').update({ actual_count_stock_out: st.previous }).eq('id', st.itemId)
+        if (countError) console.warn(`deliver: could not restore the delivered count on line ${st.itemId}:`, countError.message)
+      }
+      if (unrestored.length) {
+        toast.error(`${reason} Stock could NOT be put back for: ${unrestored.join('; ')} — correct it by hand.`, { timeout: 20000 })
+      } else {
+        toast.error(`${reason} Nothing was delivered; stock was put back.`, { timeout: 12000 })
+      }
+    }
+
+    // 2a. Claim each line by stamping its delivered count — guarded on the count
+    // the checks above used. If another delivery got there first the guard
+    // matches nothing and this one backs out before any stock moves. A failed
+    // count is not just logged: the count is what marks a line delivered, so
+    // without it the same goods could be delivered — and deducted — again.
+    for (const line of planned) {
+      const base = supabase
         .from('transaction_items')
-        .update({ actual_count_stock_out: delivered + line.qty })
+        .update({ actual_count_stock_out: line.delivered + line.qty })
         .eq('id', line.item_id)
-      if (deliveredError) console.warn('deliver: delivered count update failed:', deliveredError.message)
+      const guarded = line.countAsRead == null
+        ? base.is('actual_count_stock_out', null)
+        : base.eq('actual_count_stock_out', line.countAsRead)
+      const { data: claimedLine, error: deliveredError } = await guarded.select('id')
+      if (deliveredError) {
+        handleError(deliveredError, 'Failed to record the delivered quantities.')
+        await undo(`Failed to record the delivered quantities (${deliveredError.message}).`)
+        loading.value = false; return { success: false }
+      }
+      if (!claimedLine?.length) {
+        await undo('Someone else recorded a delivery on this order at the same time. Reload the order and check what is left to deliver.')
+        loading.value = false; return { success: false }
+      }
+      stamped.push({ itemId: line.item_id, previous: line.countAsRead })
+    }
 
-      drLines.push({ product_id: item.product_id, qty: line.qty, unit_price: item.unit_price ?? null })
+    // 2b. Deduct stock per product.
+    for (const [productId, needed] of neededByProduct) {
+      const result = await productsStore.adjustMainStock(productId, -needed)
+      if (!result.ok) {
+        const label = describeProduct(productById.get(productId), productId)
+        await undo(result.reason === 'insufficient'
+          ? `Not enough warehouse stock for ${label} — needs ${needed}, ${result.onHand ?? 0} on hand now (it changed while recording).`
+          : `Stock for ${label} could not be updated (${result.message ?? result.reason}).`)
+        loading.value = false; return { success: false }
+      }
+      deducted.push({ productId, qty: needed })
     }
 
     // Issue the DR document (dedicated delivery_receipts tables, owned by drStore).
+    const drLines = planned.map((l) => ({ product_id: l.product_id, qty: l.qty, unit_price: l.unit_price }))
     const drResponse = await drStore.createDeliveryReceipt({
       orderId, orderNo: order.inhouse_no, source: 'inhouse_order', customerId: order.customer_id,
       poNo: order.po_no || null, receivedBy: opts.receivedBy || null, lines: drLines,
     }, user.id)
     if (!drResponse.success) {
-      toast.error('Failed to record delivery.')
+      // Stock has left the shelf by now; without a receipt nothing would
+      // account for it, so it goes back.
+      await undo('The delivery receipt could not be saved.')
       loading.value = false; return { success: false }
     }
     const drNo = drResponse.drNo!

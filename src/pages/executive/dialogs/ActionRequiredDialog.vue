@@ -11,7 +11,9 @@ import type { PRItem } from '@/stores/purchaseRequisitionData'
 import { usePurchaseBreakdown } from '@/pages/purchasing/composables/usePurchaseBreakdown'
 import PurchaseChargeLines from '@/pages/purchasing/components/PurchaseChargeLines.vue'
 import { formatCurrency, formatDatePR_ISO, formatExpiryMonthYear } from '@/utils/helpers'
+import { QUALIFICATION_MONTHS } from '@/utils/qualification'
 import { computed, ref, watch } from 'vue'
+import { useToast } from 'vue-toastification'
 import { useDisplay } from 'vuetify'
 import ActionRequiredDialogMobile from '../mobile/ActionRequiredDialogMobile.vue'
 
@@ -34,6 +36,7 @@ function changeRequestOwner(source: string | undefined) {
   return prChangeRequests
 }
 
+const toast = useToast()
 const selected = defineModel<boolean>('modelValue', { default: false })
 const props = defineProps<{ request?: any }>()
 
@@ -132,14 +135,20 @@ async function runApprove() {
   if (kind.value === 'undo') return changeRequestOwner(raw.value.source).approve(raw.value.id)
   if (kind.value === 'disposal') return approveDisposal(raw.value.id)
   if (kind.value === 'short_dated') return approveShortDated(raw.value.id)
-  return approvePR(raw.value.id)
+  if (kind.value === 'pr_approval') return approvePR(raw.value.id)
+  // Never fall through to approvePR: it takes the id it is given at face
+  // value, so an unrecognised request would approve whichever PR shares its id.
+  toast.error('This request type is not recognised — nothing was approved.')
+  return { success: false }
 }
 
 async function runReject(reason: string) {
   if (kind.value === 'undo') return changeRequestOwner(raw.value.source).reject(raw.value.id, reason)
   if (kind.value === 'disposal') return rejectDisposal(raw.value.id, reason)
   if (kind.value === 'short_dated') return rejectShortDated(raw.value.id, reason)
-  return rejectPR(raw.value.id, reason)
+  if (kind.value === 'pr_approval') return rejectPR(raw.value.id, reason)
+  toast.error('This request type is not recognised — nothing was rejected.')
+  return { success: false }
 }
 
 async function onApprove() {
@@ -382,6 +391,79 @@ async function confirmReject() {
             <strong>{{ raw.product?.current_stock ?? 0 }}</strong> to
             <strong>{{ disposalStockAfter }}</strong
             >. This cannot be undone.
+          </v-alert>
+        </template>
+
+        <!-- ═══ SHORT-DATED DELIVERY BRANCH ═══
+             Its own section: through the generic branch the approver saw only
+             "#<id>" and a count, not WHICH products or how close to expiry. -->
+        <template v-else-if="kind === 'short_dated'">
+          <v-sheet rounded="lg" variant="tonal" color="surface-variant" class="pa-3 mb-4">
+            <div class="d-flex align-center ga-3">
+              <v-avatar size="36" rounded="lg" color="warning" variant="tonal" class="flex-shrink-0">
+                <v-icon color="warning" icon="mdi-calendar-alert" size="18" />
+              </v-avatar>
+              <div class="flex-grow-1" style="min-width: 0">
+                <div class="d-flex align-center ga-2 flex-wrap">
+                  <span class="text-body-2 font-weight-bold">
+                    {{ raw.order_no ?? `Order #${raw.transaction_id}` }}
+                  </span>
+                  <v-chip size="x-small" color="warning" variant="tonal" label>Short-dated delivery</v-chip>
+                  <v-chip size="x-small" variant="tonal" color="green" label>In-House</v-chip>
+                </div>
+                <div class="text-caption text-medium-emphasis mt-1">
+                  {{ raw.customer_name ?? 'Customer not recorded' }}
+                </div>
+              </div>
+            </div>
+
+            <v-divider class="my-3" />
+
+            <div class="d-flex ga-6 flex-wrap">
+              <div>
+                <div class="text-caption text-medium-emphasis">Requested on</div>
+                <div class="text-body-2 text-high-emphasis">{{ formatDatePR_ISO(raw.created_at) }}</div>
+              </div>
+              <div>
+                <div class="text-caption text-medium-emphasis">Reason</div>
+                <div class="text-body-2 text-high-emphasis">{{ raw.reason || 'No reason given.' }}</div>
+              </div>
+            </div>
+          </v-sheet>
+
+          <div class="mb-4">
+            <div class="text-caption font-weight-bold text-medium-emphasis mb-2">SHORT-DATED STOCK</div>
+            <v-table v-if="raw.batches?.length" density="compact" class="rounded-lg border">
+              <thead>
+                <tr>
+                  <th class="text-caption">Product</th>
+                  <th class="text-caption">Batch</th>
+                  <th class="text-caption text-right">Expiry</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(batch, i) in raw.batches" :key="`${batch.product_id}-${i}`">
+                  <td class="text-caption">{{ batch.product_name }}</td>
+                  <td class="text-caption">{{ batch.batch_no ?? '—' }}</td>
+                  <td class="text-caption text-right">{{ formatExpiryMonthYear(batch.expiry_date) }}</td>
+                </tr>
+              </tbody>
+            </v-table>
+            <div v-else class="text-caption text-medium-emphasis pa-2">
+              {{ raw.summary ?? 'No batch details were recorded with this request.' }}
+            </div>
+          </div>
+
+          <v-alert
+            type="warning"
+            variant="tonal"
+            density="compact"
+            icon="mdi-information-outline"
+            class="mb-4 text-caption"
+          >
+            Approving lets this order ship stock with under
+            <strong>{{ QUALIFICATION_MONTHS }} months</strong> of shelf life, which government
+            contracts normally refuse.
           </v-alert>
         </template>
 
