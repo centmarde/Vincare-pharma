@@ -4,8 +4,9 @@ import { useToast } from 'vue-toastification'
 import { useGLDataStore } from '@/stores/glData'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useFinanceDataStore, glAccountCodeFor } from '@/stores/financeData'
+import { useCashAccountLedgerStore, cashLineMemo } from '@/stores/cashAccountLedgerData'
 import { bookTemplateById, bookTemplateGroups } from '@/utils/bookTemplates'
-import { toLocalISODate } from '@/utils/helpers'
+import { formatCurrency, toLocalISODate } from '@/utils/helpers'
 import type { BookField, BookLine, BookTemplate } from '@/utils/bookTemplates'
 
 // Books entry — record the transactions that have no operational screen.
@@ -29,6 +30,7 @@ const todayISO = () => toLocalISODate(new Date())
 export function useBookEntry() {
   const glStore = useGLDataStore()
   const financeStore = useFinanceDataStore()
+  const cashLedger = useCashAccountLedgerStore()
   const authStore = useAuthUserStore()
   const toast = useToast()
   const { accounts } = storeToRefs(glStore)
@@ -39,25 +41,39 @@ export function useBookEntry() {
   const description = ref('')
   const amounts = ref<Record<string, number | null>>({})
   const codes = ref<Record<string, string | null>>({})
+  /**
+   * The cash ACCOUNT picked for each cashAccount field, by id — kept apart from
+   * `codes` because several accounts share one GL code (every bank account is
+   * 1020). Keyed by GL code, picking BDO VP 2290 selected all five banks at
+   * once, and nothing could say which one the money went into.
+   */
+  const cashIds = ref<Record<string, number | null>>({})
   const posting = ref(false)
 
   const groups = bookTemplateGroups()
   const template = computed<BookTemplate | null>(() =>
     templateId.value ? bookTemplateById(templateId.value) : null)
 
-  /** Cash accounts, resolved to the GL account each one actually posts to. */
+  /** Cash accounts to pick from, one choice per account. */
   const cashOptions = computed(() =>
     cashAccounts.value
       .filter((a) => a.is_active)
       .map((a) => ({
+        value: a.id,
+        title: a.name,
         // glAccountCodeFor is the ONLY resolver for this — never re-inline the
         // classification map, it has drifted twice before.
-        value: glAccountCodeFor(a),
-        title: a.name,
-        subtitle: accounts.value.find((g) => g.code === glAccountCodeFor(a))?.name ?? '',
-        id: a.id,
+        subtitle: `${accounts.value.find((g) => g.code === glAccountCodeFor(a))?.name ?? glAccountCodeFor(a)}`
+          + ` · ${formatCurrency(a.balance ?? 0)}`,
       })),
   )
+
+  /**
+   * Stands in for a cash field's GL code while the template builds its lines,
+   * so each line can be traced back to the account it moves even when two
+   * accounts share a GL code. Swapped for the real code before display/post.
+   */
+  const cashToken = (fieldKey: string) => `cash-account:${fieldKey}`
 
   /** Chart accounts a given `account` field may offer, per its code range. */
   const accountOptionsFor = (field: BookField) =>
@@ -72,6 +88,7 @@ export function useBookEntry() {
   watch(template, (next) => {
     amounts.value = {}
     codes.value = {}
+    cashIds.value = {}
     description.value = next?.description ?? ''
     for (const field of next?.fields ?? []) {
       if (field.kind === 'account' && field.defaultCode) codes.value[field.key] = field.defaultCode
@@ -88,7 +105,7 @@ export function useBookEntry() {
    * path uses, so the preview can never show something different from what
    * posts.
    */
-  const lines = computed<BookLine[]>(() => {
+  const builtLines = computed<BookLine[]>(() => {
     const t = template.value
     if (!t) return []
     const filledAmounts: Record<string, number> = {}
@@ -101,6 +118,11 @@ export function useBookEntry() {
     const filledCodes: Record<string, string> = {}
     for (const field of t.fields) {
       if (field.kind === 'amount') continue
+      if (field.kind === 'cashAccount') {
+        if (cashIds.value[field.key] == null) return []
+        filledCodes[field.key] = cashToken(field.key)
+        continue
+      }
       const code = codes.value[field.key]
       if (!code) return []
       filledCodes[field.key] = code
@@ -111,6 +133,48 @@ export function useBookEntry() {
       return []
     }
   })
+
+  /** Each picked cash account by field key. */
+  const pickedCash = computed(() => {
+    const picked: Record<string, (typeof cashAccounts.value)[number]> = {}
+    for (const [key, id] of Object.entries(cashIds.value)) {
+      const account = cashAccounts.value.find((a) => a.id === id)
+      if (account) picked[key] = account
+    }
+    return picked
+  })
+
+  /**
+   * The lines with each cash token resolved to that account's real GL code.
+   * A cash line also carries a memo naming the account — book entries have no
+   * document of their own, so it is the only record of which account the
+   * money went through, and what the account's history reads back.
+   */
+  const lines = computed<(BookLine & { memo?: string })[]>(() =>
+    builtLines.value.map((line) => {
+      const key = line.account_code.startsWith('cash-account:')
+        ? line.account_code.slice('cash-account:'.length)
+        : null
+      const account = key ? pickedCash.value[key] : undefined
+      return account
+        ? { ...line, account_code: glAccountCodeFor(account), memo: cashLineMemo(account.id, account.name) }
+        : line
+    }),
+  )
+
+  /**
+   * What the entry does to each picked cash account's balance — shown before
+   * posting, and applied to the account after it posts.
+   */
+  const cashMovements = computed(() =>
+    Object.entries(pickedCash.value).map(([key, account]) => {
+      const delta = builtLines.value
+        .filter((line) => line.account_code === cashToken(key))
+        .reduce((sum, line) => sum + line.debit - line.credit, 0)
+      const before = account.balance ?? 0
+      return { fieldKey: key, id: account.id, name: account.name, before, delta, after: before + delta }
+    }),
+  )
 
   const totalDebit = computed(() => lines.value.reduce((s, l) => s + l.debit, 0))
   const totalCredit = computed(() => lines.value.reduce((s, l) => s + l.credit, 0))
@@ -137,6 +201,9 @@ export function useBookEntry() {
     } else if (lines.value.length < 2) {
       missing.push('at least two accounts')
     }
+    for (const move of cashMovements.value) {
+      if (move.after < -0.005) missing.push(`an amount within ${move.name}'s balance`)
+    }
     return missing
   })
 
@@ -152,6 +219,7 @@ export function useBookEntry() {
     description.value = ''
     amounts.value = {}
     codes.value = {}
+    cashIds.value = {}
   }
 
   async function submit() {
@@ -169,7 +237,7 @@ export function useBookEntry() {
         t.referenceType,
         null,
         description.value.trim() || t.description,
-        lines.value.map((l) => ({ account_code: l.account_code, debit: l.debit, credit: l.credit })),
+        lines.value.map((l) => ({ account_code: l.account_code, debit: l.debit, credit: l.credit, memo: l.memo })),
         user.id,
       )
       if (!result.success) {
@@ -177,6 +245,18 @@ export function useBookEntry() {
         return { success: false }
       }
       toast.success(`${t.title} recorded.`)
+      // Then move the account's own balance, so its card and the voucher funds
+      // check see the money. Best-effort after the ledger post (JS-over-RPC
+      // convention): a failure here is reported, not rolled back, and shows up
+      // as a variance on the Cash Accounts page.
+      const moves = cashMovements.value.filter((move) => Math.abs(move.delta) > 0.005)
+      for (const move of moves) {
+        const adjusted = await cashLedger.adjustCashAccountBalance(move.id, move.delta)
+        if (!adjusted.success) {
+          toast.warning(`Recorded in the ledger, but ${move.name}'s balance could not be updated: ${adjusted.error}`)
+        }
+      }
+      if (moves.length) await financeStore.fetchCashAccounts()
       // Keep the template and date — an accountant working through a book
       // records several of the same kind in a row.
       amounts.value = {}
@@ -191,8 +271,8 @@ export function useBookEntry() {
 
   return {
     groups, templateId, template,
-    entryDate, description, amounts, codes, posting,
-    cashOptions, accountOptionsFor, accountName,
+    entryDate, description, amounts, codes, cashIds, posting,
+    cashOptions, cashMovements, accountOptionsFor, accountName,
     lines, totalDebit, totalCredit, isBalanced,
     blockers, canSubmit,
     load, reset, submit,

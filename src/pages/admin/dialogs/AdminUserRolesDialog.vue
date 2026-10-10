@@ -136,6 +136,29 @@ const toggleSubgroup = (child: SelectableSubGroup, value: boolean) => {
   subgroupLeaves(child).forEach((item) => togglePermission(item.permission || item.route, value))
 }
 
+/** "8 pages" when all or none are granted, "3 of 8 pages" when only some are. */
+const subgroupSummary = (child: SelectableSubGroup) => {
+  const leaves = subgroupLeaves(child)
+  const granted = leaves.filter((item) => item.selected).length
+  return granted > 0 && granted < leaves.length
+    ? `${granted} of ${leaves.length} pages`
+    : `Includes ${leaves.length} pages`
+}
+
+// A bundle can also be opened to grant its pages one by one — some of them
+// (Opening Balances, Cash Accounts, Supplier Payments) hold information not
+// everyone with the rest of the section should see. Nothing else needed to
+// change for that: the route guard, the sidebar link and the in-page tabs all
+// already check each page's own route. Bundles start collapsed, so the editor
+// looks the same as before until someone asks for the detail. Keyed by group
+// AND bundle title so two groups can't share a bundle's open state.
+const subgroupExpansion = ref<Record<string, boolean>>({})
+const subgroupKey = (groupTitle: string, child: SelectableSubGroup) => `${groupTitle}/${child.title}`
+const isSubgroupExpanded = (key: string) => subgroupExpansion.value[key] ?? false
+const toggleSubgroupExpanded = (key: string) => {
+  subgroupExpansion.value[key] = !isSubgroupExpanded(key)
+}
+
 const closeDialog = () => {
   emit('close-dialog')
 }
@@ -264,27 +287,65 @@ const handleDelete = () => {
                         </v-list-item-subtitle>
                       </v-list-item>
 
-                      <!-- Sub-group: bundled into a single checkbox — checking it grants
-                           every page nested inside, no per-page breakdown shown -->
-                      <v-list-item v-else class="mb-1 rounded-lg ml-4 pa-1" density="compact">
-                        <template #prepend>
-                          <v-checkbox
-                            :model-value="isSubgroupFullySelected(child)"
-                            :indeterminate="isSubgroupPartiallySelected(child)"
-                            @update:model-value="(value) => toggleSubgroup(child, !!value)"
-                            hide-details
-                            density="compact"
-                            class="mr-2"
-                          />
-                          <v-icon :icon="child.icon" size="20" class="mr-2" />
-                        </template>
-                        <v-list-item-title class="text-body-2 font-weight-medium">
-                          {{ child.title }}
-                        </v-list-item-title>
-                        <v-list-item-subtitle class="text-caption">
-                          Includes {{ subgroupLeaves(child).length }} pages
-                        </v-list-item-subtitle>
-                      </v-list-item>
+                      <!-- Sub-group: one checkbox grants every page inside; the arrow
+                           opens it to grant pages one by one instead. -->
+                      <template v-else>
+                        <v-list-item class="mb-1 rounded-lg ml-4 pa-1" density="compact">
+                          <template #prepend>
+                            <v-checkbox
+                              :model-value="isSubgroupFullySelected(child)"
+                              :indeterminate="isSubgroupPartiallySelected(child)"
+                              @update:model-value="(value) => toggleSubgroup(child, !!value)"
+                              hide-details
+                              density="compact"
+                              class="mr-2"
+                            />
+                            <v-icon :icon="child.icon" size="20" class="mr-2" />
+                          </template>
+                          <v-list-item-title class="text-body-2 font-weight-medium">
+                            {{ child.title }}
+                          </v-list-item-title>
+                          <v-list-item-subtitle class="text-caption">
+                            {{ subgroupSummary(child) }}
+                          </v-list-item-subtitle>
+                          <template #append>
+                            <v-btn
+                              :icon="isSubgroupExpanded(subgroupKey(group.title, child)) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                              variant="text"
+                              size="small"
+                              :title="isSubgroupExpanded(subgroupKey(group.title, child)) ? 'Hide pages' : 'Choose pages one by one'"
+                              :aria-label="`Choose ${child.title} pages`"
+                              @click="toggleSubgroupExpanded(subgroupKey(group.title, child))"
+                            />
+                          </template>
+                        </v-list-item>
+
+                        <v-expand-transition>
+                          <div v-show="isSubgroupExpanded(subgroupKey(group.title, child))">
+                            <v-list-item
+                              v-for="page in subgroupLeaves(child)"
+                              :key="page.route"
+                              class="mb-1 rounded-lg ml-12 pa-1"
+                              density="compact"
+                            >
+                              <template #prepend>
+                                <v-checkbox
+                                  :model-value="page.selected"
+                                  @update:model-value="
+                                    (value) => togglePermission(page.permission || page.route, !!value)
+                                  "
+                                  hide-details
+                                  density="compact"
+                                  class="mr-2"
+                                />
+                                <v-icon :icon="page.icon" size="18" class="mr-2" />
+                              </template>
+                              <v-list-item-title class="text-body-2">{{ page.title }}</v-list-item-title>
+                              <v-list-item-subtitle class="text-caption">{{ page.route }}</v-list-item-subtitle>
+                            </v-list-item>
+                          </div>
+                        </v-expand-transition>
+                      </template>
                     </template>
                   </div>
                 </v-expand-transition>

@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useGLDataStore, openingBalanceEquityCode } from '@/stores/glData'
+import { useCustomersDataStore } from '@/stores/customersData'
 import { generateNextNumber, insertWithDocRetry, getErrorMessage, formatCurrency } from '@/utils/helpers'
 
 // Opening receivables — invoices raised BEFORE the cutover to this system that
@@ -60,6 +61,7 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
   const toast = useToast()
   const authStore = useAuthUserStore()
   const glStore = useGLDataStore()
+  const customersStore = useCustomersDataStore()
 
   const loading = ref(false)
   const error: Ref<string> = ref('')
@@ -206,6 +208,10 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
       loading.value = false
       return { success: false as const }
     }
+
+    // Same as a real order: a customer with no department yet is tagged with
+    // the one they first traded through. Never relabels one already set.
+    await customersStore.stampDepartmentIfBlank(payload.customerId, payload.department)
 
     await supabase.from('logs').insert({
       created_by: user.id,

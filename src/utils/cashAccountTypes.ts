@@ -14,6 +14,8 @@ export type ClassifiedCashAccount = {
   opening_balance: number
   balance: number
   is_active: boolean
+  /** When the account was opened — dates its opening balance in its history. */
+  created_at?: string | null
 }
 
 export type CashClassificationMeta = {

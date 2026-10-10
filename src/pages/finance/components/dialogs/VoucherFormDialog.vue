@@ -473,8 +473,8 @@ function handleSubmit() {
         </div>
 
         <div class="text-caption text-medium-emphasis mt-2">
-          Section D (Received Payment — check no., bank, OR no., date) prints as blank
-          lines for the payee to complete on receipt.
+          Section D (Received Payment) prints the Check No. and OR/SI No. entered above;
+          the payee signs and dates it on receipt.
         </div>
 
         <!-- Fund balance preview, carried over from the old expense dialog -->

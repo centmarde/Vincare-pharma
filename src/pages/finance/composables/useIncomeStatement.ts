@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue'
-import { useGLDataStore } from '@/stores/glData'
+import { useGLDataStore, type IncomeStatement } from '@/stores/glData'
 
 function startOfYear(): string {
   return `${new Date().getFullYear()}-01-01`
@@ -67,23 +67,15 @@ type StatementBlock = {
   result?: { key: SummaryKey; label: string }
   /** Marks the block whose result closes the statement. */
   final?: boolean
-  /**
-   * Suppress the section subtotal because the result line already IS it.
-   * Net Sales is revenue less returns — i.e. the Revenue subtotal — so printing
-   * "Total Revenue" and then "NET SALES" states the same figure twice, which is
-   * the redundancy this restructure exists to remove. Cost of Sales is NOT such
-   * a case: its subtotal is the deduction and Gross Profit is the result, two
-   * different numbers that both belong.
-   */
-  subtotalIsResult?: boolean
 }
 
 export type SummaryKey =
   | 'netSales' | 'cogs' | 'grossProfit' | 'sellingExpenses' | 'adminExpenses'
   | 'operatingIncome' | 'otherIncome' | 'financeCosts' | 'netIncome'
 
+// Revenue is not a block here: it is laid out as GROSS SALES / Less: … / NET
+// SALES by revenueRows below, from the chart of accounts.
 const statementBlocks: StatementBlock[] = [
-  { subsection: 'Revenue', subtotalIsResult: true, result: { key: 'netSales', label: 'NET SALES' } },
   { subsection: 'Cost of Sales', negate: true, result: { key: 'grossProfit', label: 'GROSS PROFIT' } },
   { subsection: 'Selling Expenses', negate: true },
   { subsection: 'Administrative & Operating Expenses', negate: true, result: { key: 'operatingIncome', label: 'OPERATING INCOME' } },
@@ -127,6 +119,74 @@ export function useIncomeStatement() {
   const isMonthly = computed(() => layout.value === 'monthly')
 
   /**
+   * Revenue accounts from the chart, split the way the statement reads them:
+   * the contra accounts (Sales Returns & Allowances, Sales Discounts) are the
+   * deductions between GROSS SALES and NET SALES; the rest are gross sales.
+   * Taken from the chart rather than a list here, so a deduction account added
+   * in Chart of Accounts shows up without a code change.
+   */
+  const revenueAccounts = computed(() => {
+    const revenue = gl.accounts
+      .filter((a) => a.subsection === 'Revenue')
+      .sort((a, b) => a.code.localeCompare(b.code))
+    return {
+      gross: revenue.filter((a) => !a.is_contra),
+      deductions: revenue.filter((a) => a.is_contra),
+    }
+  })
+
+  /** An account's signed amount in one statement's Revenue section (0 if no activity). */
+  function revenueAmount(st: IncomeStatement | null | undefined, code: string): number {
+    const section = st?.sections?.find((x) => x.subsection === 'Revenue')
+    return section?.accounts?.find((a) => a.code === code)?.amount ?? 0
+  }
+
+  /**
+   * GROSS SALES, each deduction as "Less: …", then NET SALES — one entry per
+   * statement passed (one per month in the monthly view, the period alone
+   * otherwise). Every line shows even at zero so the structure is always there.
+   *
+   * The GL returns contra accounts already flipped negative and nets them into
+   * netSales, so a deduction is shown as its absolute value in parentheses and
+   * GROSS SALES is derived as netSales + deductions: the three figures always
+   * tie, whatever the gross accounts are.
+   */
+  function revenueRows(statements: (IncomeStatement | null | undefined)[], total: IncomeStatement | null | undefined): StatementRow[] {
+    const { gross, deductions } = revenueAccounts.value
+    // `0 - x`, not `-x`: negating a zero gives -0, which prints as "(-₱0.00)".
+    const deductionOf = (st: IncomeStatement | null | undefined, code: string) => 0 - revenueAmount(st, code)
+    const totalDeductions = (st: IncomeStatement | null | undefined) =>
+      deductions.reduce((sum, a) => sum + deductionOf(st, a.code), 0)
+    const grossOf = (st: IncomeStatement | null | undefined) => (st?.netSales ?? 0) + totalDeductions(st)
+
+    const rows: StatementRow[] = [
+      { kind: 'section', label: 'Revenue', amounts: statements.map(() => 0), total: 0, negate: false },
+    ]
+    // A single gross account IS the gross sales line; listing it as well would
+    // state the same figure twice. Several are listed, then totalled.
+    if (gross.length > 1) {
+      for (const a of gross) {
+        rows.push({
+          kind: 'account', label: a.name, negate: false,
+          amounts: statements.map((st) => revenueAmount(st, a.code)), total: revenueAmount(total, a.code),
+        })
+      }
+    }
+    rows.push({ kind: 'result', label: 'GROSS SALES', negate: false, amounts: statements.map(grossOf), total: grossOf(total) })
+    for (const a of deductions) {
+      rows.push({
+        kind: 'account', label: `Less: ${a.name}`, negate: true,
+        amounts: statements.map((st) => deductionOf(st, a.code)), total: deductionOf(total, a.code),
+      })
+    }
+    rows.push({
+      kind: 'result', label: 'NET SALES', negate: false,
+      amounts: statements.map((st) => st?.netSales ?? 0), total: total?.netSales ?? 0,
+    })
+    return rows
+  }
+
+  /**
    * The period view as one flowing statement.
    *
    * Sections the period has no activity in are skipped, but their result lines
@@ -136,7 +196,7 @@ export function useIncomeStatement() {
   const periodRows = computed<StatementRow[]>(() => {
     const st = statement.value
     if (!st) return []
-    const rows: StatementRow[] = []
+    const rows: StatementRow[] = revenueRows([], st)
     for (const block of statementBlocks) {
       const section = block.subsection
         ? st.sections?.find((x) => x.subsection === block.subsection)
@@ -146,9 +206,7 @@ export function useIncomeStatement() {
         for (const a of section.accounts) {
           rows.push({ kind: 'account', label: a.name, amounts: [], total: a.amount, negate: !!block.negate })
         }
-        if (!block.subtotalIsResult) {
-          rows.push({ kind: 'subtotal', label: `Total ${section.subsection}`, amounts: [], total: section.subtotal, negate: !!block.negate })
-        }
+        rows.push({ kind: 'subtotal', label: `Total ${section.subsection}`, amounts: [], total: section.subtotal, negate: !!block.negate })
       }
       if (block.result) {
         rows.push({ kind: 'result', label: block.result.label, amounts: [], total: st[block.result.key] ?? 0, negate: false, final: block.final })
@@ -169,7 +227,7 @@ export function useIncomeStatement() {
     const m = monthly.value
     if (!m) return []
     const n = m.months.length
-    const rows: StatementRow[] = []
+    const rows: StatementRow[] = revenueRows(m.perMonth, m.total)
 
     for (const block of statementBlocks) {
       if (block.subsection) {
@@ -200,14 +258,12 @@ export function useIncomeStatement() {
           }
           rows.push(...[...byCode.values()])
 
-          if (!block.subtotalIsResult) {
-            rows.push({
-              kind: 'subtotal', label: `Total ${block.subsection}`,
-              amounts: perMonthSections.map((x) => x?.subtotal ?? 0),
-              total: totalSection?.subtotal ?? 0,
-              negate: !!block.negate,
-            })
-          }
+          rows.push({
+            kind: 'subtotal', label: `Total ${block.subsection}`,
+            amounts: perMonthSections.map((x) => x?.subtotal ?? 0),
+            total: totalSection?.subtotal ?? 0,
+            negate: !!block.negate,
+          })
         }
       }
 
@@ -225,6 +281,8 @@ export function useIncomeStatement() {
   })
 
   async function load() {
+    // The revenue block is laid out from the chart, so it needs the accounts.
+    if (!gl.accounts.length) await gl.fetchAccounts()
     if (isMonthly.value) {
       if (isCash.value) await gl.fetchMonthlyCashBasisStatement(dateFrom.value, dateTo.value)
       else await gl.fetchMonthlyIncomeStatement(dateFrom.value, dateTo.value)

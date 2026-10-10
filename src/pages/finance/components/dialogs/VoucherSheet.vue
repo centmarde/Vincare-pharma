@@ -206,18 +206,20 @@ const fillerRows = computed(() =>
               <div class="dv-signline"></div>
               <div class="dv-fine text-center"><em>Signature Over Printed Name</em></div>
             </div>
+            <!-- Beside the signature, on the same line, so it reads as WHEN
+                 that signature was given — the payee dates their own receipt. -->
+            <div class="dv-received-date">
+              <div class="dv-signline"></div>
+              <div class="dv-fine text-center"><em>Date Received</em></div>
+            </div>
+            <!-- Bank Name was dropped: the paying account already prints as
+                 Payment Mode in the header block. -->
             <div class="dv-received-fields">
               <div class="dv-fine">
                 Check No.: <span class="dv-fill">{{ voucher.check_no ?? '' }}</span>
               </div>
               <div class="dv-fine">
-                Bank Name: <span class="dv-fill">{{ voucher.cash_account_institution ?? '' }}</span>
-              </div>
-              <div class="dv-fine">
                 OR No.: <span class="dv-fill">{{ voucher.or_si_no ?? '' }}</span>
-              </div>
-              <div class="dv-fine">
-                Date: <span class="dv-fill"></span>
               </div>
             </div>
           </div>
@@ -384,9 +386,15 @@ const fillerRows = computed(() =>
 }
 
 .dv-received-sign {
-  flex: 0 0 45%;
+  flex: 0 0 38%;
   margin-top: 26px;
   padding-right: 12px;
+}
+
+.dv-received-date {
+  flex: 0 0 18%;
+  margin-top: 26px;
+  padding-right: 16px;
 }
 
 .dv-received-fields {

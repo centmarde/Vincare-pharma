@@ -156,12 +156,11 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
       const { data: drData, error: drError } = await drQuery
       if (drError) throw drError
 
+      // No early return when this is empty: orders with no delivery receipt
+      // (every opening receivable) are added below, and returning here hid
+      // them all whenever no DR matched — which on a system with no DRs yet
+      // meant the whole statement came back blank.
       const drRows = (drData ?? []) as any[]
-      if (!drRows.length) {
-        register.value = []
-        totals.value = { ...EMPTY_TOTALS }
-        return []
-      }
 
       const orderIds = [...new Set(drRows.map((d) => d.order_id).filter(Boolean))] as number[]
 
@@ -324,8 +323,11 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
       // in the customer's file. These rows stand on the ORDER instead —
       // delivery_receipt_id is negated so it cannot collide with a real DR id,
       // and dr_no carries the order's own number rather than a fabricated one.
-      const drOrderIds = new Set(drRows.map((dr: any) => dr.order_id).filter(Boolean))
-      const { data: bareOrders } = await supabase
+      //
+      // The same customer / source / date filters as the DR query apply here.
+      // They used to be skipped, so a one-customer statement listed every
+      // customer's opening receivables.
+      let bareQuery = supabase
         .from('transactions')
         .select(
           'id, transaction_type, created_at, paid_at, total_amount, customer_id, remarks, '
@@ -336,9 +338,26 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
         )
         .in('transaction_type', ['inhouse_order', 'ethical_order'])
         .in('status', ['delivered', 'paid', 'partial', 'invoiced'])
+      if (filters.customerId) bareQuery = bareQuery.eq('customer_id', filters.customerId)
+      if (filters.source) bareQuery = bareQuery.eq('transaction_type', filters.source)
+      if (filters.dateFrom) bareQuery = bareQuery.gte('created_at', filters.dateFrom)
+      if (filters.dateTo) bareQuery = bareQuery.lte('created_at', `${filters.dateTo}T23:59:59.999`)
+      const { data: bareOrders, error: bareError } = await bareQuery
+      if (bareError) throw bareError
+
+      // "Has no DR" means none AT ALL, not none in this date range: checked
+      // against every receipt for these orders, not just the filtered drRows,
+      // or an order whose DRs fall outside the range would show up here as if
+      // it never had one.
+      const candidateIds = ((bareOrders ?? []) as any[]).map((o) => o.id)
+      const { data: receiptOrders, error: receiptError } = candidateIds.length
+        ? await supabase.from('delivery_receipts').select('order_id').in('order_id', candidateIds)
+        : { data: [] as any[], error: null }
+      if (receiptError) throw receiptError
+      const ordersWithDr = new Set(((receiptOrders ?? []) as any[]).map((r) => r.order_id))
 
       const orderRows: SOARegisterRow[] = ((bareOrders ?? []) as any[])
-        .filter((o) => !drOrderIds.has(o.id))
+        .filter((o) => !ordersWithDr.has(o.id))
         .map((o) => {
           const isInhouse = o.transaction_type === 'inhouse_order'
           const details = (isInhouse ? o.inhouse_details : o.ethical_details) ?? {}

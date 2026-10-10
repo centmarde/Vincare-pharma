@@ -4,7 +4,7 @@ import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
-import { nextDocNumber, insertWithDocRetry } from '@/utils/helpers'
+import { nextDocNumber, insertWithDocRetry, toLocalISODate } from '@/utils/helpers'
 
 const toast = useToast()
 
@@ -411,7 +411,11 @@ export const useGLDataStore = defineStore('glData', () => {
       return { success: false }
     }
     toast.success(`Account ${docNo} — ${payload.name} created.`)
-    await fetchAccounts()
+    // Refresh BOTH copies of the chart. `allAccounts` is what a code is turned
+    // back into a name with (vouchers, expenses, reports); refreshing only the
+    // active list left the new account pickable but labelled by its bare code
+    // until a page reload.
+    await Promise.all([fetchAccounts(), fetchAllAccounts()])
     return { success: true, code: docNo }
   }
 
@@ -964,7 +968,9 @@ export const useGLDataStore = defineStore('glData', () => {
       async (docNo) => supabase
         .from('journal_entries')
         .insert({
-          entry_no: docNo, entry_date: new Date().toISOString().slice(0, 10),
+          // Local date, not toISOString(): that is the UTC date, so a reversal
+          // made before 08:00 in Manila was dated the previous day.
+          entry_no: docNo, entry_date: toLocalISODate(new Date()),
           reference_type: overrideReferenceType ?? original.reference_type,
           reference_id: overrideReferenceId ?? original.reference_id,
           description: `Reversal of ${original.entry_no}${original.description ? ' — ' + original.description : ''}`,
@@ -1001,10 +1007,35 @@ export const useGLDataStore = defineStore('glData', () => {
    * Returns null when there is nothing to warn about: manual and closing
    * entries have no source document, and a document already voided is in step
    * with the reversal rather than out of it.
+   *
+   * Two sources do not live where the generic lookup below looks, and both
+   * used to slip through: a collection's reference_id is a COLLECTIONS id (so
+   * looking it up in transactions found an unrelated document), and a
+   * petty-cash replenishment is projected as 'manual' — matched by the
+   * description gl_project_events gives it, the same way cash-account opening
+   * entries (also 'manual', also carrying an id) are told apart.
    */
   async function describeReversalImpact(entry: JournalEntry) {
     if (!entry.reference_id) return null
-    if (entry.reference_type === 'manual' || entry.reference_type === 'closing') return null
+    if (entry.reference_type === 'closing') return null
+
+    if (entry.reference_type === 'collection') {
+      const { data: collection } = await supabase
+        .from('collections')
+        .select('id, reference_no, voided_at')
+        .eq('id', entry.reference_id)
+        .maybeSingle()
+      if (!collection || collection.voided_at) return null
+      return {
+        docNo: collection.reference_no ?? `collection #${collection.id}`,
+        status: 'recorded',
+        transactionType: 'collection',
+      }
+    }
+
+    const isReplenishment = entry.reference_type === 'manual'
+      && entry.description === 'Petty cash replenishment'
+    if (entry.reference_type === 'manual' && !isReplenishment) return null
 
     const { data, error: lookupError } = await supabase
       .from('transactions')

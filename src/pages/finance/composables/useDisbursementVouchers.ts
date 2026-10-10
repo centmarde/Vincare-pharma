@@ -12,7 +12,9 @@ export const headers = [
   { title: 'DV NO.',      key: 'dv_no',             sortable: true,  align: 'center' as const },
   { title: 'DATE',        key: 'voucher_date',      sortable: true,  align: 'center' as const },
   { title: 'PAYEE',       key: 'payee',             sortable: true,  align: 'center' as const },
-  { title: 'PAYMENT MODE', key: 'cash_account_name', sortable: false, align: 'center' as const },
+  // The check number first, the account it's drawn on beneath it — staff look
+  // for which check paid which voucher without opening each one.
+  { title: 'CHECK DETAILS', key: 'cash_account_name', sortable: false, align: 'center' as const },
   { title: 'PARTICULARS', key: 'particulars',       sortable: false, align: 'center' as const },
   { title: 'AMOUNT',      key: 'total_amount',      sortable: true,  align: 'center' as const },
   { title: 'STATUS',      key: 'status',            sortable: true,  align: 'center' as const },
@@ -103,6 +105,7 @@ export function useDisbursementVouchers() {
         voucher.payee,
         voucher.supplier_name,
         voucher.cash_account_name,
+        voucher.check_no,
         voucher.status,
         voucher.remarks,
         ...voucher.items.map((line) => line.particular),

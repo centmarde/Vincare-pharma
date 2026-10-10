@@ -642,7 +642,18 @@ export const useFinanceChangeRequestStore = defineStore('financeChangeRequest', 
       .neq('status', 'voided')
     if (voidErr) return { success: false, error: voidErr.message }
 
-    if (pay.supplier_id) {
+    // Only give back what the payment took. reissueSupplierPayment lowers the
+    // cached suppliers.balance; a payment raised from a disbursement voucher
+    // never touches it. Restoring for a voucher payment wrote the amount into a
+    // balance that was never lowered — turning a blank cache into a bogus
+    // figure and a false drift warning on the Supplier Payments page.
+    const { count: voucherLines } = await supabase
+      .from('disbursement_voucher_items')
+      .select('id', { count: 'exact', head: true })
+      .eq('expense_transaction_id', targetId)
+    const fromVoucher = (voucherLines ?? 0) > 0
+
+    if (pay.supplier_id && !fromVoucher) {
       const { data: s } = await supabase
         .from('suppliers')
         .select('balance')
