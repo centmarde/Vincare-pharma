@@ -26,7 +26,7 @@ const {
   payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, department, particulars, remarks, items,
   categoryOptions, departmentOptions, accountOptions, metaForAccount, selectedAccount,
   voucherTotal, insufficientFunds, canSubmit, blockers, signatories,
-  canAddItem, particularsLines, particularsTooTall,
+  particularsLines, particularsTooTall,
   resetForm, loadFrom, addItem, removeItem, buildPayload, restoreDraft,
   setSignatory, applyCachedSignatories, ensureAccountsLoaded,
   payeeType, supplierId, isSupplierVoucher, supplierOptions, ensureSuppliersLoaded,
@@ -409,23 +409,18 @@ function handleSubmit() {
 
           <v-row no-gutters class="border-b">
             <v-col cols="12" sm="8" class="pa-2" :class="smAndUp ? 'border-e' : 'border-b'">
-              <!-- Five accounts maximum: the printed voucher has a fixed five
-                   rows so the RECORDED stamp lands in the same place every
-                   time. A sixth goes on a second voucher. -->
+              <!-- No limit. Past five accounts the printed voucher runs longer
+                   than the standard form (see standardVoucherRows). -->
               <v-btn
                 size="small"
                 variant="text"
                 color="primary"
                 class="text-none"
                 prepend-icon="mdi-plus"
-                :disabled="!canAddItem"
                 @click="addItem"
               >
                 Add Account
               </v-btn>
-              <span v-if="!canAddItem" class="text-caption text-medium-emphasis ms-2">
-                Five per voucher &mdash; record the rest on another voucher.
-              </span>
             </v-col>
             <v-col cols="12" sm="4" class="pa-2" />
           </v-row>
