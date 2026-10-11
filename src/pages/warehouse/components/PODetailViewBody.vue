@@ -10,6 +10,7 @@ import {
   parseMonthYear,
 } from '@/utils/helpers'
 import type { PR, PRItem } from '@/stores/purchaseRequisitionData'
+import { generateSku } from '@/utils/generativeHelpers'
 import { useProductsDataStore } from '@/stores/productsData'
 import { ref, watch } from 'vue'
 import { useToast } from 'vue-toastification'
@@ -30,6 +31,15 @@ const skuInputItemIds = ref<Record<number, boolean>>({})
 
 function needsSkuInput(item: PRItem): boolean {
   return skuInputItemIds.value[item.id] === true
+}
+
+/**
+ * Puno ang walay-SKU nga field og bag-ong generated SKU (max 8 digits, integers
+ * lang) pinaagi sa generateSku() sa generativeHelpers. Gigamit sa click sa
+ * append-inner icon sa right side sa SKU input.
+ */
+function generateSkuFor(item: PRItem) {
+  item.sku = generateSku()
 }
 
 /**
@@ -271,6 +281,9 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
               placeholder="Enter SKU"
               autocomplete="off"
               style="width: 120px"
+              :append-inner-icon="item.sku ? '' : 'mdi-dice-multiple'"
+              :title="item.sku ? '' : 'Generate SKU'"
+              @click:append-inner="generateSkuFor(item)"
             />
             <v-chip
               v-else-if="skuEditMode"
@@ -433,6 +446,9 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
                   placeholder="Enter SKU"
                   autocomplete="off"
                   style="width: 100%"
+                  :append-inner-icon="item.sku ? '' : 'mdi-dice-multiple'"
+                  :title="item.sku ? '' : 'Generate SKU'"
+                  @click:append-inner="generateSkuFor(item)"
                 />
                 <div v-else class="d-flex align-center justify-center" style="min-height: 40px;">
                   <v-chip
