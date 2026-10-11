@@ -176,3 +176,15 @@ export async function generateDSNumber(): Promise<string> {
   return generateNextNumber('reference_no', `DS-${new Date().getFullYear()}-`)
 }
 
+// ─── SKU generator ─────────────────────────────────────────────────────────
+/**
+ * Generate a random SKU: a positive integer with at most 8 digits (integers
+ * only). Returns it as a string so it can be dropped straight into the SKU
+ * fields without coercion. Ihatag ra as random — ang uniqueness kay i-manage sa
+ * user (makapalit og balik og bag-o kung mag-collide).
+ */
+export function generateSku(): string {
+  const max = 10 ** 8 - 1 // 99999999 → up to 8 digits
+  return String(Math.floor(Math.random() * max) + 1)
+}
+
