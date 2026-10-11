@@ -95,7 +95,9 @@ export async function fetchReceivableDetail(
   try {
     const extension = source === 'ethical_order'
       ? 'ethical_details(amount_paid, due_date, terms_days)'
-      : 'inhouse_details(amount_paid, govt_po_no)'
+      // due_date too: aging (fetchARAging) ages In-House orders by it, so the
+      // detail must show the date the order is reported overdue against.
+      : 'inhouse_details(amount_paid, govt_po_no, due_date)'
 
     const [txnRes, paymentsRes] = await Promise.all([
       supabase.from('transactions')
@@ -147,7 +149,7 @@ export async function fetchReceivableDetail(
       po_no: source === 'inhouse_order' ? (t.po_no ?? null) : null,
       govt_po_no: source === 'inhouse_order' ? (ext.govt_po_no ?? null) : null,
       terms_days: source === 'ethical_order' ? (ext.terms_days ?? null) : null,
-      due_date: source === 'ethical_order' ? (ext.due_date ?? null) : null,
+      due_date: ext.due_date ?? null,
       total_amount: total,
       amount_paid: amountPaid,
       balance: total - amountPaid,

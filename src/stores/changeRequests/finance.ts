@@ -2,7 +2,7 @@
 // place, or reverse + reissue for a ledger edit.
 
 import { supabase } from '@/lib/supabase'
-import { useFinanceDataStore } from '@/stores/financeData'
+import { useFinanceDataStore, legacyExpenseCategories, disbursementAccountClasses } from '@/stores/financeData'
 import type { ExpenseCategory, ExpenseDepartment } from '@/stores/financeData'
 import type { ApplyResult, ChangeRequestType, Diff } from './types'
 import {
@@ -38,6 +38,43 @@ export async function voidExpense(
         success: false,
         error: 'Failed to void the expense (GL already reversed — please retry).',
       }
+}
+
+/**
+ * Why recordExpense would refuse the corrected expense, or null if it would go
+ * through. Mirrors its checks — amount, expense account, cash account, balance —
+ * so they run BEFORE the original is voided: a refusal after the void left the
+ * expense voided with no replacement, and a retry failed on "already voided".
+ * The balance allows for the void, which gives the original amount back to the
+ * account it came from.
+ */
+async function expenseReissueBlocker(
+  payload: { amount: number; category: string; cashAccountId: number },
+  original: { amount: number; cashAccountId: number | null },
+): Promise<string | null> {
+  if (!(payload.amount > 0)) return 'The corrected amount must be greater than zero.'
+  if (!payload.category) return 'The corrected expense needs an expense account.'
+  if (!legacyExpenseCategories.some((c) => c.value === payload.category)) {
+    const { data: account, error: lookupError } = await supabase
+      .from('accounts').select('class, is_active').eq('code', payload.category).maybeSingle()
+    if (lookupError) return 'Could not verify the expense account. Nothing was changed — try again.'
+    if (!account || !account.is_active) return `${payload.category} is not an active account.`
+    if (!(disbursementAccountClasses as readonly string[]).includes(account.class)) {
+      return `${payload.category} is a revenue account — a disbursement cannot be charged to it.`
+    }
+  }
+  if (!payload.cashAccountId) {
+    return 'This expense has no cash account on record, so it cannot be corrected in place. Void it and record the corrected expense instead.'
+  }
+  const { data: cash } = await supabase
+    .from('cash_accounts').select('balance').eq('id', payload.cashAccountId).maybeSingle()
+  if (!cash) return 'The cash account for this expense no longer exists. Void it and record the corrected expense instead.'
+  const returnedByVoid = original.cashAccountId === payload.cashAccountId ? original.amount : 0
+  const available = Number(cash.balance ?? 0) + returnedByVoid
+  if (payload.amount > available + 0.005) {
+    return `Not enough in the cash account for the corrected amount (available after the correction: ${available}).`
+  }
+  return null
 }
 
 export async function applyExpenseChange(
@@ -125,6 +162,12 @@ export async function applyExpenseChange(
     orSiNo: ((toVal(changes, 'or_si_no') ?? fd.or_si_no) as string | undefined) || undefined,
     cashAccountId: Number(toVal(changes, 'cash_account_id') ?? cur.cash_account_id),
   }
+  // Checked before the void — see expenseReissueBlocker.
+  const blocker = await expenseReissueBlocker(merged, {
+    amount: Number(cur.total_amount ?? 0),
+    cashAccountId: cur.cash_account_id == null ? null : Number(cur.cash_account_id),
+  })
+  if (blocker) return { success: false, error: blocker }
   const v = await voidExpense(request.transaction_id, userId, reissueReason(request))
   if (!v.success) return v
   const res = await financeStore.recordExpense(merged)

@@ -69,6 +69,10 @@ export function resetStore() {
   arAging.value = []
   commissionLiability.value = []
   stockReconciliation.value = []
+  // Cleared with the report: the cache check reads only this timestamp, so a
+  // fetch within the cache window after a reset served the EMPTY report as
+  // current — "no drift" until the window ran out.
+  stockReconciliationComputedAt.value = null
   incomeStatement.value = null
   balanceSheet.value = null
   trialBalance.value = []

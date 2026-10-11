@@ -149,10 +149,42 @@ export async function requestReplenishment(payload: {
   return { success: true, requestId: created.id }
 }
 
-// Was approve_petty_cash_replenishment. Best-effort, not atomic: a failure
-// partway through the two balance updates can leave funds moved from the
-// funding account but not yet into petty cash (accepted trade-off,
-// JS-over-RPC convention).
+/**
+ * Move a cash account's balance by `delta`, writing only if the balance is
+ * still the figure just read and re-reading on a clash — so two movements on
+ * the same account cannot overwrite each other ("read, add, write" lost one
+ * whenever they overlapped). Refuses to take an account below zero.
+ */
+async function moveCashBalance(accountId: number, delta: number): Promise<
+  { ok: true } | { ok: false; reason: 'insufficient' | 'not_found' | 'conflict' | 'error'; available?: number; message?: string }
+> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data, error: readError } = await supabase
+      .from('cash_accounts').select('balance').eq('id', accountId).maybeSingle()
+    if (readError) return { ok: false, reason: 'error', message: readError.message }
+    if (!data) return { ok: false, reason: 'not_found' }
+    const asRead = data.balance as number | null
+    const next = Number(asRead ?? 0) + delta
+    if (next < -0.005) return { ok: false, reason: 'insufficient', available: Number(asRead ?? 0) }
+    const base = supabase.from('cash_accounts').update({ balance: next }).eq('id', accountId)
+    const guarded = asRead == null ? base.is('balance', null) : base.eq('balance', asRead)
+    const { data: updated, error: updateError } = await guarded.select('id')
+    if (updateError) return { ok: false, reason: 'error', message: updateError.message }
+    if (updated?.length) return { ok: true }
+  }
+  return { ok: false, reason: 'conflict' }
+}
+
+// Was approve_petty_cash_replenishment.
+//
+// CLAIM FIRST: the request is flipped pending_approval -> approved in one
+// guarded write before any money moves. A double submit, a retry or a second
+// approver finds nothing left to flip and stops — before, all of them passed
+// the "pending" read and each debited the funding account again. If either
+// balance then fails to move, what was moved is put back and the request is
+// returned to pending, so a retry starts clean. (A failed credit to the petty
+// fund used to be a console warning, leaving the bank debited for money that
+// landed nowhere.)
 export async function approveReplenishment(id: number) {
   loading.value = true
   clearError()
@@ -172,35 +204,52 @@ export async function approveReplenishment(id: number) {
     loading.value = false; return { success: false }
   }
 
-  const { data: fundingAccount } = await supabase
-    .from('cash_accounts').select('balance').eq('id', request.funding_account_id).maybeSingle()
   const amount = request.total_amount ?? 0
-  if (!fundingAccount || amount > fundingAccount.balance + 0.005) {
-    toast.error(`Insufficient balance in funding account (available: ${fundingAccount?.balance ?? 0}).`)
+
+  const nowIso = new Date().toISOString()
+  const { data: claimed, error: claimError } = await supabase
+    .from('transactions')
+    .update({ status: 'approved', approved_by: user.id, approved_at: nowIso, updated_at: nowIso })
+    .eq('id', id).eq('transaction_type', 'petty_cash_replenishment').eq('status', 'pending_approval')
+    .select('id')
+  if (claimError || !claimed?.length) {
+    handleError(claimError, 'Failed to approve replenishment.')
+    toast.error(claimError?.message || 'This request is no longer pending — it was already approved or rejected.')
+    await fetchReplenishmentRequests()
     loading.value = false; return { success: false }
   }
 
-  const { error: fundingError } = await supabase
-    .from('cash_accounts').update({ balance: fundingAccount.balance - amount }).eq('id', request.funding_account_id)
-  if (fundingError) {
-    handleError(fundingError, 'Failed to approve replenishment.')
-    toast.error(fundingError.message || 'Failed to approve replenishment.')
-    loading.value = false
-    return { success: false }
+  /** Back to pending, so the request can be approved again once fixed. */
+  async function reopen() {
+    const { error: reopenError } = await supabase
+      .from('transactions')
+      .update({ status: 'pending_approval', approved_by: null, approved_at: null, updated_at: new Date().toISOString() })
+      .eq('id', id).eq('status', 'approved')
+    if (reopenError) console.warn('approveReplenishment: could not reopen the request:', reopenError.message)
   }
 
-  const { data: pettyAccount } = await supabase
-    .from('cash_accounts').select('balance').eq('id', request.cash_account_id).maybeSingle()
-  const { error: pettyError } = await supabase
-    .from('cash_accounts').update({ balance: (pettyAccount?.balance ?? 0) + amount }).eq('id', request.cash_account_id)
-  if (pettyError) console.warn('approveReplenishment: petty account balance update failed:', pettyError.message)
+  const debit = await moveCashBalance(request.funding_account_id, -amount)
+  if (!debit.ok) {
+    await reopen()
+    handleError(debit.message ?? debit.reason, 'Failed to approve replenishment.')
+    toast.error(debit.reason === 'insufficient'
+      ? `Insufficient balance in funding account (available: ${debit.available ?? 0}).`
+      : `Failed to approve replenishment (${debit.message ?? debit.reason}). Nothing was moved.`)
+    loading.value = false; return { success: false }
+  }
 
-  const nowIso = new Date().toISOString()
-  const { error: statusError } = await supabase
-    .from('transactions')
-    .update({ status: 'approved', approved_by: user.id, approved_at: nowIso, updated_at: nowIso })
-    .eq('id', id)
-  if (statusError) console.warn('approveReplenishment: status flip failed:', statusError.message)
+  const credit = await moveCashBalance(request.cash_account_id, amount)
+  if (!credit.ok) {
+    const back = await moveCashBalance(request.funding_account_id, amount)
+    await reopen()
+    handleError(credit.message ?? credit.reason, 'Failed to approve replenishment.')
+    toast.error(back.ok
+      ? 'Could not credit the petty cash fund. Nothing was moved; the request is back to pending.'
+      : `Could not credit the petty cash fund, and the funding account could not be put back — add ${amount} to it by hand.`,
+    { timeout: 15000 })
+    await fetchCashAccounts()
+    loading.value = false; return { success: false }
+  }
 
   const { error: logError } = await supabase.from('logs').insert({
     created_by: user.id, action: 'petty_cash_replenish_approve',

@@ -32,9 +32,12 @@ export async function fetchRevenueByChannel(from?: string, to?: string): Promise
     .select('credit, journal_entry:journal_entry_id!inner(reference_id, reference_type, entry_date, status)')
     .eq('account_code', '4010')
     .eq('journal_entry.reference_type', 'sales_invoice')
-    // Both statuses count: a reversal leaves the original in the ledger as
-    // 'reversed' AND posts an offsetting entry, so the pair nets to zero.
-    .in('journal_entry.status', ['posted', 'reversed'])
+    // POSTED only. This sums CREDITS on sales_invoice entries, so a reversal
+    // never offsets anything here: a void's reversal is posted as
+    // 'sales_return' (filtered out above) and its 4010 line is a debit. Counting
+    // the 'reversed' original therefore added every voided sale back in as
+    // revenue. Dropping reversed originals is what nets a void to zero here.
+    .eq('journal_entry.status', 'posted')
   if (from) linesQ = linesQ.gte('journal_entry.entry_date', from)
   if (to) linesQ = linesQ.lte('journal_entry.entry_date', to)
 

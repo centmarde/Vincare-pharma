@@ -86,6 +86,42 @@ export async function voidCollection(
   return { success: true }
 }
 
+/**
+ * Why a corrected payment would be refused by recordPayment / recordCollection,
+ * or null if it would go through. Mirrors their checks — amount, account,
+ * outstanding balance — so they can be run before the original is voided.
+ * The balance allows for the void: it gives the original amount back first.
+ */
+async function reissueBlocker(
+  kind: 'inhouse' | 'ethical',
+  payload: { orderId: number; amount: number; cashAccountId: number },
+  originalAmount: number,
+): Promise<string | null> {
+  if (!payload.cashAccountId) {
+    return 'This payment has no cash account on record, so it cannot be corrected in place. Void it and record the corrected payment instead.'
+  }
+  if (!(payload.amount > 0)) return 'The corrected amount must be greater than zero.'
+
+  const { data: account } = await supabase
+    .from('cash_accounts').select('id').eq('id', payload.cashAccountId).maybeSingle()
+  if (!account) {
+    return 'The cash account this payment went into no longer exists. Void it and record the corrected payment instead.'
+  }
+
+  const { data: order } = kind === 'inhouse'
+    ? await supabase.from('transactions').select('total_amount, inhouse_details(amount_paid)').eq('id', payload.orderId).maybeSingle()
+    : await supabase.from('transactions').select('total_amount, ethical_details(amount_paid)').eq('id', payload.orderId).maybeSingle()
+  if (!order) return 'The order this payment belongs to could not be found.'
+  const details = (kind === 'inhouse'
+    ? (order as any).inhouse_details
+    : (order as any).ethical_details) as { amount_paid: number | null } | null
+  const outstandingAfterVoid = Number(order.total_amount ?? 0) - (Number(details?.amount_paid ?? 0) - originalAmount)
+  if (payload.amount > outstandingAfterVoid + 0.005) {
+    return `The corrected amount (${payload.amount}) is more than the order's outstanding balance (${outstandingAfterVoid}).`
+  }
+  return null
+}
+
 export async function applyCollectionChange(
   request: ChangeRequestType,
   userId: string,
@@ -163,6 +199,12 @@ export async function applyCollectionChange(
     // missing account rather than silently crediting a default.
     cashAccountId: Number(cur.cash_account_id),
   }
+  // Everything the re-record would refuse is checked BEFORE the original is
+  // voided. A refusal after the void left the payment voided with no
+  // replacement — and a retry then failed on "already voided", so the request
+  // could only be rejected and the payment re-entered by hand.
+  const blocker = await reissueBlocker(kind, payload, Number(cur.amount ?? 0))
+  if (blocker) return { success: false, error: blocker }
   const v = await voidCollection(collectionId, userId, kind, reissueReason(request))
   if (!v.success) return v
   const res =
