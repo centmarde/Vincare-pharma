@@ -8,6 +8,7 @@ components.d.ts
 .env.local
 .env.*.local
 .env
+.clinerules
 
 # Log files
 npm-debug.log*
