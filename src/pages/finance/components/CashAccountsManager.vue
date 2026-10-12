@@ -2,6 +2,7 @@
 import { cashClassifications, classificationMeta } from '@/utils/cashAccountTypes'
 import type { ClassifiedCashAccount, CreateCashAccountPayload } from '@/utils/cashAccountTypes'
 import { formatCurrency } from '@/utils/helpers'
+import { onMounted } from 'vue'
 import { useCashAccountsManager } from '../composables/useCashAccountsManager'
 
 const props = defineProps<{
@@ -17,6 +18,15 @@ const {
   groupedAccounts,
   totalActiveBalance,
   selectedClassificationMeta,
+  glVariances,
+  loadReconciliation,
+  showConfirm,
+  busy,
+  confirmMode,
+  confirmTarget,
+  askRemove,
+  askDeactivate,
+  confirmAccountAction,
   showAddDialog,
   name,
   classification,
@@ -29,6 +39,10 @@ const {
   cancelAdd,
   buildPayload,
 } = useCashAccountsManager(() => props.accounts)
+
+// The trial balance is one RPC; without it every variance reads as the full
+// GL balance, which would show a false alarm on first paint.
+onMounted(loadReconciliation)
 
 const submitNewAccount = () => {
   const payload = buildPayload()
@@ -61,6 +75,29 @@ const submitNewAccount = () => {
         Add Cash Account
       </v-btn>
     </div>
+
+    <!-- GL reconciliation. Silent when everything ties, which is the point:
+         a clean page shows nothing and a gap is impossible to walk past. -->
+    <v-alert
+      v-for="row in glVariances"
+      :key="row.code"
+      type="warning"
+      variant="tonal"
+      density="compact"
+      class="mb-3"
+    >
+      <div class="font-weight-bold">
+        {{ row.code }} {{ row.name }} doesn't tie to these accounts
+      </div>
+      <div class="text-caption">
+        Ledger holds {{ formatCurrency(row.glBalance) }}; the cash accounts posting here
+        total {{ formatCurrency(row.cashBalance) }} —
+        <strong>{{ formatCurrency(Math.abs(row.variance)) }}</strong>
+        {{ row.variance > 0 ? 'more in the ledger than on hand' : 'more on hand than the ledger shows' }}.
+        Usually an account removed without reversing its opening entry, or a journal entry
+        reversed by hand without the cash being put back.
+      </div>
+    </v-alert>
 
     <!-- Accounts grouped by classification -->
     <div v-for="group in groupedAccounts" :key="group.meta.value" class="mb-5">
@@ -110,6 +147,29 @@ const submitNewAccount = () => {
                   <span class="text-h6 font-weight-bold">{{
                     formatCurrency(account.balance)
                   }}</span>
+                  <!-- Retiring an account had no UI at all until now, so the
+                       only way to undo a mistyped one was hand-written SQL. -->
+                  <v-menu location="bottom end">
+                    <template #activator="{ props: menu }">
+                      <v-btn v-bind="menu" icon="mdi-dots-vertical" variant="text" size="small" />
+                    </template>
+                    <v-list density="compact">
+                      <v-list-item
+                        v-if="account.is_active"
+                        prepend-icon="mdi-archive-outline"
+                        title="Deactivate"
+                        subtitle="Hide it, keep its history"
+                        @click="askDeactivate(account)"
+                      />
+                      <v-list-item
+                        prepend-icon="mdi-delete-outline"
+                        base-color="error"
+                        title="Remove"
+                        subtitle="Only if never used"
+                        @click="askRemove(account)"
+                      />
+                    </v-list>
+                  </v-menu>
                 </div>
               </template>
             </v-list-item>
@@ -117,6 +177,49 @@ const submitNewAccount = () => {
         </v-list>
       </v-card>
     </div>
+
+    <!-- Confirm removing / deactivating. States the ledger consequence BEFORE
+         committing: the opening entry is the part people forget, and forgetting
+         it is what strands money in the GL. -->
+    <v-dialog v-model="showConfirm" max-width="460">
+      <v-card rounded="lg">
+        <v-card-title class="text-subtitle-1 font-weight-bold">
+          {{ confirmMode === 'remove' ? 'Remove' : 'Deactivate' }} {{ confirmTarget?.name }}?
+        </v-card-title>
+        <v-card-text class="text-body-2">
+          <template v-if="confirmMode === 'remove'">
+            <p class="mb-2">
+              The account is deleted and its opening entry of
+              <strong>{{ formatCurrency(confirmTarget?.opening_balance ?? 0) }}</strong>
+              is reversed in the ledger, so cash stays reconciled.
+            </p>
+            <p class="mb-0 text-medium-emphasis">
+              If anything has ever been paid from or into it, this is refused —
+              deactivate it instead.
+            </p>
+          </template>
+          <template v-else>
+            <p class="mb-0">
+              It stops appearing in pickers and in the active totals. Every document
+              that used it keeps working, and it can be reactivated later.
+            </p>
+          </template>
+        </v-card-text>
+        <v-card-actions class="px-4 pb-4">
+          <v-spacer />
+          <v-btn variant="text" class="text-none" @click="showConfirm = false">Cancel</v-btn>
+          <v-btn
+            :color="confirmMode === 'remove' ? 'error' : 'primary'"
+            variant="flat"
+            class="text-none"
+            :loading="busy"
+            @click="confirmAccountAction"
+          >
+            {{ confirmMode === 'remove' ? 'Remove' : 'Deactivate' }}
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <!-- Add cash account dialog -->
     <v-dialog v-model="showAddDialog" max-width="440" persistent>

@@ -67,7 +67,7 @@ const uniqueSuppliers = (pr: PR): string[] => {
           </v-btn>
           <v-text-field
             v-model="searchInput"
-            placeholder="Search... (press Enter)"
+            placeholder="Search PR#, supplier... (press Enter)"
             prepend-inner-icon="mdi-magnify"
             variant="outlined"
             density="compact"

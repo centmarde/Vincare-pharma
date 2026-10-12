@@ -23,6 +23,11 @@ export type NewNegotiationLine = {
   qty: number
   offer_unit: number
   cost_unit: number
+  /** One products row is one BATCH, so these identify which batch the line is
+   *  for. Shown on the row because the picker shows them when choosing, and a
+   *  table that forgets straight afterwards is where swaps go unnoticed. */
+  batch_no: string | null
+  expiry_date: string | null
 }
 
 export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: () => void) {
@@ -75,6 +80,10 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   // page of a 2.4k-row file — a product swapped in via the search dialog is
   // usually not in it.
   const lineProductNames = ref<Record<number, string>>({})
+  // Batch identity of the product currently chosen on each existing line, so a
+  // swap updates what the row shows rather than leaving the old batch on screen.
+  const lineBatchNos = ref<Record<number, string | null>>({})
+  const lineExpiryDates = ref<Record<number, string | null>>({})
   // Lines stay editable until terms are agreed: qty changes, lines the
   // customer dropped, and lines they asked to add.
   const lineQtyEdits = ref<Record<number, number>>({})
@@ -170,6 +179,8 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     lineProductEdits.value = {}
     lineCostEdits.value = {}
     lineProductNames.value = {}
+    lineBatchNos.value = {}
+    lineExpiryDates.value = {}
     lineQtyEdits.value = {}
     removedItemIds.value = []
     newLines.value = []
@@ -192,6 +203,8 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
       lineProductEdits.value[it.id] = it.product_id
       lineCostEdits.value[it.id] = it.cost_price ?? 0
       lineProductNames.value[it.id] = it.product?.product_name ?? ''
+      lineBatchNos.value[it.id] = it.product?.batch_no ?? null
+      lineExpiryDates.value[it.id] = it.product?.expiry_date ?? null
       lineQtyEdits.value[it.id] = it.qty
       deliverQtys.value[it.id] = it.qty - (it.delivered_qty ?? 0)
     }
@@ -277,6 +290,8 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   function applyPickedProduct(itemId: number, product: ProductPickerResult) {
     lineProductEdits.value[itemId] = product.id
     lineProductNames.value[itemId] = product.product_name ?? ''
+    lineBatchNos.value[itemId] = product.batch_no ?? null
+    lineExpiryDates.value[itemId] = product.expiry_date ?? null
     // Always overwrite, never conditionally. Switching from a product costing
     // 100 to one with no recorded cost used to leave 100 behind, so the offer
     // and the saved cost_price carried the PREVIOUS product's figure.
@@ -289,12 +304,17 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     line.product_id = product.id
     line.product_name = product.product_name ?? ''
     line.unit = product.unit ?? ''
+    line.batch_no = product.batch_no ?? null
+    line.expiry_date = product.expiry_date ?? null
     line.cost_unit = product.cost_price ?? 0
     if (!line.offer_unit && product.selling_price != null) line.offer_unit = product.selling_price
   }
 
   function addNewLine() {
-    newLines.value.push({ product_id: null, product_name: '', unit: '', qty: 1, offer_unit: 0, cost_unit: 0 })
+    newLines.value.push({
+      product_id: null, product_name: '', unit: '', qty: 1, offer_unit: 0, cost_unit: 0,
+      batch_no: null, expiry_date: null,
+    })
   }
   function removeNewLine(index: number) { newLines.value.splice(index, 1) }
 
@@ -408,7 +428,8 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   }
 
   return {
-    loading, rounds, shortfall, payments, lineEdits, lineProductEdits, lineCostEdits, lineProductNames, offerNote, deliverQtys,
+    loading, rounds, shortfall, payments, lineEdits, lineProductEdits, lineCostEdits, lineProductNames,
+    lineBatchNos, lineExpiryDates, offerNote, deliverQtys,
     lineQtyEdits, newLines, hasUnsavedLineChanges, isRemoved, removeItem, restoreItem, addNewLine, removeNewLine, applyPickedProductToNewLine,
     receivedBy, issuedReceipt,
     payAmount, payReference, payRemarks, payCashAccountId, cashAccountOptions,

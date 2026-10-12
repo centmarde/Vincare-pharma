@@ -104,7 +104,23 @@ export function useGeneralJournal() {
   }
 
   async function reverseEntry(entryId: number) {
-    if (!(await confirmDialog('Reverse this entry? A mirror entry will be posted; the original cannot be edited.', { title: 'Confirm Reversal', confirmText: 'Reverse Entry' }))) return
+    let message = 'Reverse this entry? A mirror entry will be posted; the original cannot be edited.'
+
+    // Reversing here corrects the LEDGER only. When the entry came from a real
+    // document, say so plainly — otherwise the document stays recorded and any
+    // cash it moved stays moved, and the three records quietly disagree.
+    const entry = entries.value.find((e) => e.id === entryId)
+    if (entry) {
+      const impact = await gl.describeReversalImpact(entry)
+      if (impact) {
+        message += `\n\nThis entry came from ${impact.docNo}, which is still `
+          + `${impact.status}. Reversing here changes the ledger only — that document `
+          + 'keeps its status and any cash it moved will not come back. To undo it '
+          + 'properly, void the document from its own page instead.'
+      }
+    }
+
+    if (!(await confirmDialog(message, { title: 'Confirm Reversal', confirmText: 'Reverse Entry' }))) return
     const result = await gl.reverseEntry(entryId)
     if (result.success) await fetchJournal()
   }
