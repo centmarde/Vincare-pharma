@@ -78,16 +78,38 @@ const fillerRows = computed(() =>
  * Check No. now prints in the header, in the 170px column. Staff type the bank
  * and date into it ("BDO 1130222 10/10/26"), which at full size wraps to a
  * second line — and a taller header row moves the signature row the RECORDED
- * stamp is aligned to. Long values step down in size to stay on one line.
+ * stamp is aligned to. Long values shrink to fit on one line, measured
+ * against the actual space rather than guessed from the character count
+ * (which still let a long value wrap at the smallest step). The value is also
+ * set not to wrap, so the row height cannot change whatever is typed.
  * Never truncated: cutting a check number short on a financial document is
  * worse than printing it small.
  */
+// The 170px column, less the cell's padding (6px each side) and its border.
+const checkNoSpace = 170 - 12 - 1
+const checkNoLabel = 'Check No.:'
+const checkNoLabelGap = 4 // .dv-label margin-right
+let measureCanvas: HTMLCanvasElement | null = null
+
+function textWidth(text: string, font: string): number {
+  if (!measureCanvas) measureCanvas = document.createElement('canvas')
+  const ctx = measureCanvas.getContext('2d')
+  if (!ctx) return 0
+  ctx.font = font
+  return ctx.measureText(text).width
+}
+
 const checkNoFontSize = computed(() => {
-  const length = (props.voucher.check_no ?? '').length
-  if (length <= 14) return '11px'
-  if (length <= 20) return '10px'
-  if (length <= 26) return '9px'
-  return '8px'
+  const value = props.voucher.check_no ?? ''
+  // The sheet's own font, so the measurement matches what prints. Unknown
+  // until the sheet is mounted; nothing has printed before then.
+  const family = root.value ? getComputedStyle(root.value).fontFamily : ''
+  if (!value || !family) return '11px'
+  const available = checkNoSpace - textWidth(checkNoLabel, `bold 10px ${family}`) - checkNoLabelGap
+  const atFullSize = textWidth(value, `11px ${family}`)
+  if (atFullSize <= 0 || atFullSize <= available) return '11px'
+  // Rounded DOWN to a quarter pixel, so it never lands a hair too wide.
+  return `${Math.floor((available / atFullSize) * 11 * 4) / 4}px`
 })
 </script>
 
@@ -138,7 +160,7 @@ const checkNoFontSize = computed(() => {
              moved down to section D. -->
         <div class="dv-cell dv-nocol">
           <span class="dv-label">Check No.:</span>
-          <span class="dv-value" :style="{ fontSize: checkNoFontSize }">{{ voucher.check_no ?? '' }}</span>
+          <span class="dv-value dv-checkno" :style="{ fontSize: checkNoFontSize }">{{ voucher.check_no ?? '' }}</span>
         </div>
       </div>
       <div class="dv-row">
@@ -364,6 +386,13 @@ const checkNoFontSize = computed(() => {
 
 .dv-value {
   font-size: 11px;
+}
+
+/* One line always: a wrapped check number would make its header row taller
+   and move the signature row the RECORDED stamp is aligned to. Sized to fit
+   by checkNoFontSize. */
+.dv-checkno {
+  white-space: nowrap;
 }
 
 .dv-fine {

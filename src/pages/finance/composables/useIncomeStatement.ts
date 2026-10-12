@@ -282,7 +282,11 @@ export function useIncomeStatement() {
 
   async function load() {
     // The revenue block is laid out from the chart, so it needs the accounts.
+    // Without them every sales deduction drops out and GROSS SALES prints the
+    // net figure — so a chart that will not load stops the report instead
+    // (fetchAccounts has already reported the error).
     if (!gl.accounts.length) await gl.fetchAccounts()
+    if (!gl.accounts.length) return
     if (isMonthly.value) {
       if (isCash.value) await gl.fetchMonthlyCashBasisStatement(dateFrom.value, dateTo.value)
       else await gl.fetchMonthlyIncomeStatement(dateFrom.value, dateTo.value)

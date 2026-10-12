@@ -7,7 +7,8 @@ const maxDecimals = 2
 /**
  * Keeps only digits and one decimal point, with at most two decimals.
  * Commas are dropped too, so a pasted "1,250.75" and a typed "1250.75" end up
- * the same. Signs are dropped: these fields hold non-negative amounts.
+ * the same. Check `looksNegative` first: a sign would be dropped here, turning
+ * "-500" into 500.
  */
 export function sanitizeMoneyInput(raw: string): string {
   let out = ''
@@ -26,6 +27,16 @@ export function sanitizeMoneyInput(raw: string): string {
     }
   }
   return out
+}
+
+/**
+ * True for an amount written as negative: a minus (hyphen or the typographic
+ * U+2212 a spreadsheet copy can carry) or accounting brackets, "(500.00)".
+ * These fields hold non-negative amounts, so such input is refused, never
+ * quietly flipped positive.
+ */
+export function looksNegative(raw: string): boolean {
+  return raw.includes('-') || raw.includes('−') || raw.includes('(')
 }
 
 /**

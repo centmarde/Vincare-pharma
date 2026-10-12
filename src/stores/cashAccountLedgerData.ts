@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import { getErrorMessage } from '@/utils/helpers'
+import { fetchAllRows, fetchAllRowsForIds } from '@/stores/shared/paging'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // One cash account's money in / money out.
@@ -127,43 +128,64 @@ export const useCashAccountLedgerStore = defineStore('cashAccountLedger', () => 
     ]
     for (const [referenceType, prefix, ids] of checks) {
       if (!ids.length) continue
-      const { data } = await supabase.from('journal_entries')
-        .select('reference_id').eq('reference_type', referenceType).eq('status', 'reversed').in('reference_id', ids)
-      const reversed = new Set((data ?? []).map((e) => e.reference_id as number))
+      // The marker is a hint on top of the history, so a failed read skips it
+      // rather than taking the whole history down with it.
+      let data: { reference_id: number }[]
+      try {
+        data = await fetchAllRowsForIds(ids, (batch) => supabase.from('journal_entries')
+          .select('id, reference_id').eq('reference_type', referenceType).eq('status', 'reversed')
+          .in('reference_id', batch).order('id', { ascending: true }))
+      } catch (err) {
+        console.warn('flagLedgerReversals: could not read reversed entries:', getErrorMessage(err))
+        continue
+      }
+      const reversed = new Set(data.map((e) => e.reference_id as number))
       for (const m of movements) {
         if (m.key.startsWith(prefix) && reversed.has(Number(m.key.slice(prefix.length)))) m.ledgerReversed = true
       }
     }
   }
 
+  // Newest request wins. Open account A, close it, open B before A's reads
+  // finish: without this, A's late answer lands under B's header and the
+  // variance check compares B's card with A's movements.
+  let historyRequest = 0
+
   async function fetchCashAccountHistory(account: AccountLike) {
+    const request = ++historyRequest
     loading.value = true
     error.value = null
     history.value = null
     try {
       const id = account.id
+      // Paged: a busy account (Cash on Hand takes every collection and
+      // remittance) passes PostgREST's row cap, which cuts a response off
+      // without an error — and a short history shows a false variance.
       const [direct, funding, collections, rebates, bookLines] = await Promise.all([
-        supabase.from('transactions')
+        fetchAllRows(() => supabase.from('transactions')
           .select('id, transaction_type, status, total_amount, created_at, paid_at, approved_at, reference_no, expense_no, remittance_no, remarks, finance_details(paid_to, category), remittance_details(actual_amount)')
           .eq('cash_account_id', id)
-          .in('transaction_type', ['expense', 'supplier_payment', 'remittance', 'bank_deposit', 'petty_cash_replenishment']),
-        supabase.from('transactions')
+          .in('transaction_type', ['expense', 'supplier_payment', 'remittance', 'bank_deposit', 'petty_cash_replenishment'])
+          .order('id', { ascending: true })),
+        fetchAllRows(() => supabase.from('transactions')
           .select('id, transaction_type, status, total_amount, created_at, paid_at, approved_at, reference_no, remarks')
           .eq('funding_account_id', id)
-          .in('transaction_type', ['bank_deposit', 'petty_cash_replenishment']),
-        supabase.from('collections')
+          .in('transaction_type', ['bank_deposit', 'petty_cash_replenishment'])
+          .order('id', { ascending: true })),
+        fetchAllRows(() => supabase.from('collections')
           .select('id, created_at, amount, reference_no, payment_method, voided_at')
-          .eq('cash_account_id', id),
-        supabase.from('ethical_details')
+          .eq('cash_account_id', id)
+          .order('id', { ascending: true })),
+        fetchAllRows(() => supabase.from('ethical_details')
           .select('id, rebate_amount, rebate_paid_at, rebate_reference, rebate_paid_to')
           .eq('rebate_cash_account_id', id)
-          .eq('rebate_status', 'paid'),
-        supabase.from('journal_entry_lines')
+          .eq('rebate_status', 'paid')
+          .order('id', { ascending: true })),
+        fetchAllRows(() => supabase.from('journal_entry_lines')
           .select('id, debit, credit, entry:journal_entry_id(entry_no, entry_date, status, description, created_at)')
-          .like('line_memo', `Cash account #${id} —%`),
+          .like('line_memo', `Cash account #${id} —%`)
+          .order('id', { ascending: true })),
       ])
-      const failed = [direct, funding, collections, rebates, bookLines].find((r) => r.error)
-      if (failed?.error) throw failed.error
 
       const movements: Omit<CashMovement, 'runningBalance'>[] = []
       const push = (m: Omit<CashMovement, 'runningBalance'>) => movements.push(m)
@@ -177,7 +199,7 @@ export const useCashAccountLedgerStore = defineStore('cashAccountLedger', () => 
         })
       }
 
-      for (const t of direct.data ?? []) {
+      for (const t of direct) {
         const details = (Array.isArray(t.finance_details) ? t.finance_details[0] : t.finance_details) as { paid_to?: string | null } | null
         const remit = (Array.isArray(t.remittance_details) ? t.remittance_details[0] : t.remittance_details) as { actual_amount?: number | null } | null
         const voided = t.status === 'voided'
@@ -218,7 +240,7 @@ export const useCashAccountLedgerStore = defineStore('cashAccountLedger', () => 
         }
       }
 
-      for (const t of funding.data ?? []) {
+      for (const t of funding) {
         if (t.transaction_type === 'petty_cash_replenishment' && t.status !== 'approved') continue
         const isDeposit = t.transaction_type === 'bank_deposit'
         push({
@@ -232,7 +254,7 @@ export const useCashAccountLedgerStore = defineStore('cashAccountLedger', () => 
         })
       }
 
-      for (const c of collections.data ?? []) {
+      for (const c of collections) {
         push({
           key: `col-${c.id}`, date: dateOf(c.created_at), recordedAt: c.created_at,
           source: 'Collection', reference: c.reference_no,
@@ -241,7 +263,7 @@ export const useCashAccountLedgerStore = defineStore('cashAccountLedger', () => 
         })
       }
 
-      for (const r of rebates.data ?? []) {
+      for (const r of rebates) {
         push({
           key: `reb-${r.id}`, date: dateOf(r.rebate_paid_at), recordedAt: r.rebate_paid_at ?? '',
           source: 'Rebate payout', reference: r.rebate_reference,
@@ -250,7 +272,7 @@ export const useCashAccountLedgerStore = defineStore('cashAccountLedger', () => 
         })
       }
 
-      for (const line of bookLines.data ?? []) {
+      for (const line of bookLines) {
         const entry = (Array.isArray(line.entry) ? line.entry[0] : line.entry) as
           { entry_no: string | null; entry_date: string; status: string; description: string | null; created_at: string } | null
         if (!entry || entry.status === 'draft') continue
@@ -262,6 +284,7 @@ export const useCashAccountLedgerStore = defineStore('cashAccountLedger', () => 
       }
 
       await flagLedgerReversals(movements)
+      if (request !== historyRequest) return null
 
       // Oldest first to accumulate, so each row carries the balance AS AT it.
       movements.sort((a, b) => a.date.localeCompare(b.date) || a.recordedAt.localeCompare(b.recordedAt))
@@ -280,11 +303,12 @@ export const useCashAccountLedgerStore = defineStore('cashAccountLedger', () => 
       history.value = { movements: withBalance, totalIn, totalOut, computedBalance: running }
       return history.value
     } catch (err) {
+      if (request !== historyRequest) return null
       error.value = getErrorMessage(err)
       console.error('fetchCashAccountHistory failed:', err)
       return null
     } finally {
-      loading.value = false
+      if (request === historyRequest) loading.value = false
     }
   }
 

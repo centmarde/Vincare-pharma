@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
+import { useToast } from 'vue-toastification'
 import {
   caretAfterMoneyChars,
   countMoneyChars,
   formatMoneyInput,
   groupThousands,
+  looksNegative,
   parseMoneyInput,
   sanitizeMoneyInput,
 } from '@/utils/moneyInput'
@@ -20,6 +22,10 @@ const model = defineModel<number>({ default: 0 })
 
 const text = ref(formatMoneyInput(model.value))
 const focused = ref(false)
+// Set when a negative amount was refused; the field shows red until the next
+// accepted keystroke.
+const refusedNegative = ref(false)
+const toast = useToast()
 
 // Follow changes made from outside: a reset, a restored draft, or this column
 // being zeroed because the other one was filled. The field's own typing already
@@ -34,6 +40,16 @@ watch(model, (value) => {
 function onInput(event: Event) {
   const input = event.target as HTMLInputElement
   const raw = input.value
+
+  // Refused, not stripped: "-500" read as 500 would post the amount on the
+  // wrong side. The field keeps what it had.
+  if (looksNegative(raw)) {
+    input.value = text.value
+    refusedNegative.value = true
+    toast.warning('Negative amounts are not accepted. To reverse a side, enter the amount in the other column.')
+    return
+  }
+  refusedNegative.value = false
   const charsBeforeCaret = countMoneyChars(raw, input.selectionStart ?? raw.length)
   const formatted = groupThousands(sanitizeMoneyInput(raw))
 
@@ -50,6 +66,12 @@ function onInput(event: Event) {
   void nextTick(() => input.setSelectionRange(caret, caret))
 }
 
+// Present only to make the v-text-field CONTROLLED. Vuetify keeps its own copy
+// of the raw keystrokes unless the parent listens for updates, and puts that
+// copy back on its next re-render — so a refused "-500" reappeared the moment
+// the field turned red. Typing is handled in onInput; this has nothing to do.
+function keepControlled() {}
+
 function onFocusChange(isFocused: boolean) {
   focused.value = isFocused
   if (!isFocused) text.value = formatMoneyInput(model.value)
@@ -60,6 +82,8 @@ function onFocusChange(isFocused: boolean) {
   <v-text-field
     v-bind="$attrs"
     :model-value="text"
+    :error="refusedNegative"
+    @update:model-value="keepControlled"
     class="money-field"
     inputmode="decimal"
     autocomplete="off"
