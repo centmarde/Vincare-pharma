@@ -76,14 +76,21 @@ export function useDraftOrderPrint(
   const loadingProducts = ref(false)
   const products = ref<Record<number, ProductType>>({})
 
+  // Newest lookup wins: close one draft and open another before the first
+  // lookup returns, and its late answer must not replace this draft's
+  // batch/expiry details or end this draft's loading state.
+  let lookupRequest = 0
+
   /** Look up batch, expiry and SKU for the lines each time the dialog opens. */
   async function loadProducts() {
+    const request = ++lookupRequest
     const ids = [...new Set((getDocument()?.lines ?? [])
       .map((l) => l.product_id)
       .filter((id): id is number => id != null))]
-    if (!ids.length) { products.value = {}; return }
+    if (!ids.length) { products.value = {}; loadingProducts.value = false; return }
     loadingProducts.value = true
     const rows = await productsStore.fetchProductsByIds(ids)
+    if (request !== lookupRequest) return
     products.value = Object.fromEntries(rows.map((p) => [p.id, p]))
     loadingProducts.value = false
   }
@@ -108,6 +115,9 @@ export function useDraftOrderPrint(
           sku: product?.sku ?? null,
           batch_no: product?.batch_no ?? null,
           expiry_date: product?.expiry_date ?? null,
+          // The cost the line total is worked from, so Cost/Unit and Line cost
+          // never disagree when only the product master has one.
+          cost_price: cost,
           amount: l.qty * l.unit_price,
           line_cost: cost == null ? null : l.qty * cost,
         }
@@ -121,11 +131,16 @@ export function useDraftOrderPrint(
   const subtotal = computed(() => rows.value.reduce((s, r) => s + r.amount, 0))
   const discount = computed(() => getDocument()?.discount ?? 0)
   const total = computed(() => subtotal.value - discount.value)
-  /** Lines with no recorded cost are left out of the margin, and flagged. */
+  /**
+   * Margin is only stated when every line has a cost. A line with no cost
+   * still adds its full revenue to the total, so counting its cost as zero
+   * overstated the margin — no figure is safer than a flattering one.
+   */
   const missingCost = computed(() => rows.value.some((r) => r.line_cost == null))
   const totalCost = computed(() => rows.value.reduce((s, r) => s + (r.line_cost ?? 0), 0))
-  const margin = computed(() => total.value - totalCost.value)
-  const marginPct = computed(() => (total.value > 0 ? (margin.value / total.value) * 100 : 0))
+  const margin = computed<number | null>(() => (missingCost.value ? null : total.value - totalCost.value))
+  const marginPct = computed<number | null>(() =>
+    margin.value == null || total.value <= 0 ? null : (margin.value / total.value) * 100)
 
   const meta = computed(() => (getDocument()?.meta ?? []).filter((m) => m.value != null && String(m.value).trim() !== ''))
 

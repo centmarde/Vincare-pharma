@@ -699,21 +699,29 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
         const back = await productsStore.adjustMainStock(d.productId, d.qty)
         if (!back.ok) unrestored.push(describeProduct(productById.get(d.productId), d.productId))
       }
-      await supabase
+      // Checked: if the reopen fails, the transfer still reads Approved with no
+      // stock moved, and the branch could receive goods that never left.
+      const { data: reopened, error: reopenError } = await supabase
         .from('transactions')
         .update({ status: 'pending_approval', approved_by: null, approved_at: null, updated_at: new Date().toISOString() })
         .eq('id', transferId)
         .eq('status', 'approved')
+        .select('id')
+      const stillApproved = !!reopenError || !reopened?.length
       const label = describeProduct(productById.get(check.product_id), check.product_id)
       const why = result.reason === 'insufficient'
         ? `${label} now has only ${result.onHand ?? 0} on hand (it changed while approving)`
         : `stock for ${label} could not be updated (${result.message ?? result.reason})`
+      const needsHand = [
+        unrestored.length ? `stock could NOT be put back for: ${unrestored.join('; ')}` : null,
+        stillApproved ? 'the transfer still shows as Approved — set it back to Pending Approval before anyone receives it' : null,
+      ].filter(Boolean)
       loading.value = false
       toast.error(
-        unrestored.length
-          ? `Not approved: ${why}. Stock could NOT be put back for: ${unrestored.join('; ')} — correct it by hand.`
+        needsHand.length
+          ? `Not approved: ${why}. Correct by hand: ${needsHand.join('; ')}.`
           : `Not approved: ${why}. Nothing was deducted; the transfer is back to Pending Approval.`,
-        { timeout: 15000 },
+        { timeout: needsHand.length ? 20000 : 15000 },
       )
       await fetchTransfers()
       return false

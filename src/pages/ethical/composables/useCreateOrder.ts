@@ -131,7 +131,10 @@ export function useCreateOrder(onCreated: () => void) {
   })
 
   const validLines = computed(() => lines.value.filter(l => l.product_id != null && l.quantity > 0))
-  const subtotal = computed(() => lines.value.reduce((s, l) => s + l.quantity * l.unit_price, 0))
+  // Over the lines that are actually saved (and printed), not every row on the
+  // form: a priced row with no product used to swell the subtotal — and with
+  // it the discount, rebate and ads saved on the order.
+  const subtotal = computed(() => validLines.value.reduce((s, l) => s + l.quantity * l.unit_price, 0))
 
   // Discount & rebate rates come from the customer's trade profile — locked, not
   // hand-entered per order (single source of truth on the customer). Discount is

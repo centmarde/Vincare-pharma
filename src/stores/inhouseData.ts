@@ -739,13 +739,24 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
         const back = await productsStore.adjustMainStock(d.productId, d.qty)
         if (!back.ok) unrestored.push(describeProduct(productById.get(d.productId), d.productId))
       }
+      // A count left stamped marks the line delivered when nothing was — so a
+      // failed reset is named, never reported as "nothing was delivered".
+      const countsLeft: string[] = []
       for (const st of stamped) {
         const { error: countError } = await supabase
           .from('transaction_items').update({ actual_count_stock_out: st.previous }).eq('id', st.itemId)
-        if (countError) console.warn(`deliver: could not restore the delivered count on line ${st.itemId}:`, countError.message)
+        if (countError) {
+          console.warn(`deliver: could not restore the delivered count on line ${st.itemId}:`, countError.message)
+          const productId = planned.find((p) => p.item_id === st.itemId)?.product_id ?? null
+          countsLeft.push(describeProduct(productId != null ? productById.get(productId) : null, productId))
+        }
       }
-      if (unrestored.length) {
-        toast.error(`${reason} Stock could NOT be put back for: ${unrestored.join('; ')} — correct it by hand.`, { timeout: 20000 })
+      const needsHand = [
+        unrestored.length ? `stock could NOT be put back for: ${unrestored.join('; ')}` : null,
+        countsLeft.length ? `the delivered count is still set on: ${countsLeft.join('; ')}` : null,
+      ].filter(Boolean)
+      if (needsHand.length) {
+        toast.error(`${reason} Correct by hand: ${needsHand.join('; ')}.`, { timeout: 20000 })
       } else {
         toast.error(`${reason} Nothing was delivered; stock was put back.`, { timeout: 12000 })
       }

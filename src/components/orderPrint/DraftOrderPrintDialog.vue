@@ -138,9 +138,11 @@ const heading = computed(() => (includeCost.value ? 'DRAFT ORDER — INTERNAL CO
               <template v-if="includeCost">
                 <div class="d-flex justify-space-between text-body-2 mt-2"><span>Total cost:</span><span>{{ formatCurrency(totalCost) }}</span></div>
                 <div class="d-flex justify-space-between text-body-2 font-weight-bold">
-                  <span>Margin:</span><span>{{ formatCurrency(margin) }} ({{ marginPct.toFixed(1) }}%)</span>
+                  <span>Margin:</span>
+                  <span v-if="margin == null">—</span>
+                  <span v-else>{{ formatCurrency(margin) }}{{ marginPct == null ? '' : ` (${marginPct.toFixed(1)}%)` }}</span>
                 </div>
-                <div v-if="missingCost" class="text-caption">Lines with no recorded cost are left out of the margin.</div>
+                <div v-if="missingCost" class="text-caption">Some lines have no recorded cost, so total cost is partial and no margin is shown.</div>
               </template>
             </div>
           </div>
