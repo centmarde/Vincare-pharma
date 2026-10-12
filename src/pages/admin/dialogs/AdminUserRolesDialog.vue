@@ -107,10 +107,9 @@ const togglePermission = (permission: string, selected: boolean) => {
       selectedPermissions.value.push(permission)
     }
   } else {
-    const index = selectedPermissions.value.indexOf(permission)
-    if (index > -1) {
-      selectedPermissions.value.splice(index, 1)
-    }
+    // Every copy, not just the first: a role loaded with duplicate rows would
+    // otherwise keep the page granted after it was unticked.
+    selectedPermissions.value = selectedPermissions.value.filter((p) => p !== permission)
   }
 }
 
