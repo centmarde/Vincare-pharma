@@ -557,6 +557,24 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
     return { success: true }
   }
 
+  /**
+   * Warehouse on-hand per product, read fresh. Lets an approver see which
+   * lines are short before pressing Approve. Null when the read fails — the
+   * caller shows nothing rather than a guess, and approveTransfer still checks.
+   */
+  async function fetchMainStock(productIds: number[]): Promise<Map<number, number> | null> {
+    if (!productIds.length) return new Map()
+    const { data, error: stockError } = await supabase
+      .from('products')
+      .select('id, current_stock')
+      .in('id', productIds)
+    if (stockError) {
+      console.warn('fetchMainStock: could not read warehouse stock:', stockError.message)
+      return null
+    }
+    return new Map((data ?? []).map((p) => [p.id as number, (p.current_stock as number | null) ?? 0]))
+  }
+
   // Warehouse approves: deduct products.current_stock per product (was transfer_approve).
   //
   // 1. Read-only checks: prices, then stock per product — every shortage listed.
@@ -639,11 +657,15 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
       }
       stockChecks.push({ product_id: productId, qty, current_stock: onHand })
     }
+    // One short line is named in full. Several are only counted: the transfer
+    // itself lists them, short lines first — a toast naming every one ran off
+    // the screen on a long transfer.
     if (shortages.length) {
       loading.value = false
       toast.error(
-        `Not enough warehouse stock to approve this transfer. ${shortages.join('; ')}.`,
-        { timeout: 15000 },
+        shortages.length === 1
+          ? `Not enough warehouse stock to approve this transfer: ${shortages[0]}.`
+          : `Not enough warehouse stock to approve this transfer — ${shortages.length} products are short. They are listed first on the transfer.`,
       )
       return false
     }
@@ -902,6 +924,7 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
     submitTransferDraft,
     deleteTransferDraft,
     approveTransfer,
+    fetchMainStock,
     rejectTransfer,
     receiveTransfer,
     clearError,
