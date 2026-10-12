@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
+import { storeToRefs } from 'pinia'
 import { parseMonthYear, formatMonthYear, maskMonthYearInput } from '@/utils/helpers'
 import { computeSellingPrice } from '@/utils/computationHelpers'
+import { generateSku } from '@/utils/generativeHelpers'
+import { useSuppliersDataStore } from '@/stores/suppliersData'
 import type { CreateProductData, UpdateProductData } from '@/stores/productsData'
 
 const props = defineProps<{
@@ -36,6 +39,29 @@ const greaterThanZero = (v: number | null | undefined) => {
   if (v === 0) return 'Must be greater than 0'
   return true
 }
+
+// Fill the SKU field with a freshly generated value via the shared generator
+// (same helper POItemsTable uses). Skipped while the field is locked so a
+// restricted editor can't overwrite a stored SKU.
+function generateSkuValue() {
+  if (isFieldDisabled.value) return
+  props.productForm.sku = generateSku()
+}
+
+// Supplier picker — active suppliers only, matching the PR/PO form selectors.
+// Fetched lazily when the dialog opens so a product can be linked to a real
+// supplier by name instead of typing a raw numeric id.
+const suppliersStore = useSuppliersDataStore()
+const { activeSuppliers: supplierOptions } = storeToRefs(suppliersStore)
+
+watch(
+  () => props.modelValue,
+  (open) => {
+    if (open && suppliersStore.suppliers.length === 0) {
+      suppliersStore.fetchSuppliers({ activeOnly: true })
+    }
+  },
+)
 
 // Stepper state
 const step = ref(1)
@@ -206,7 +232,7 @@ watch(() => props.modelValue, (val) => {
                       <v-text-field v-model="productForm.barcode" label="Barcode" prepend-inner-icon="mdi-barcode" variant="outlined" density="comfortable" :disabled="isFieldDisabled"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model="productForm.sku" label="SKU" prepend-inner-icon="mdi-tag" variant="outlined" density="comfortable" :rules="[rules.required]" required :disabled="isFieldDisabled"></v-text-field>
+                      <v-text-field v-model="productForm.sku" label="SKU" prepend-inner-icon="mdi-tag" variant="outlined" density="comfortable" :rules="[rules.required]" required :disabled="isFieldDisabled" :append-inner-icon="productForm.sku ? '' : 'mdi-dice-multiple'" :title="productForm.sku ? '' : 'Generate SKU'" @click:append-inner="generateSkuValue"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
                       <v-text-field v-model="productForm.category" label="Category" prepend-inner-icon="mdi-shape" variant="outlined" density="comfortable" :disabled="isFieldDisabled"></v-text-field>
@@ -247,7 +273,18 @@ watch(() => props.modelValue, (val) => {
                 <div class="pa-4">
                   <v-row>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model.number="productForm.supplier_id" label="Supplier ID" type="number" prepend-inner-icon="mdi-truck-delivery" variant="outlined" density="comfortable" min="0" :disabled="isFieldDisabled"></v-text-field>
+                      <v-select
+                        v-model="productForm.supplier_id"
+                        :items="supplierOptions"
+                        item-title="name"
+                        item-value="id"
+                        label="Supplier"
+                        prepend-inner-icon="mdi-truck-delivery"
+                        variant="outlined"
+                        density="comfortable"
+                        clearable
+                        :disabled="isFieldDisabled"
+                      ></v-select>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
                       <v-text-field v-model="productForm.batch_no" label="Batch No." type="text" prepend-inner-icon="mdi-identifier" variant="outlined" density="comfortable" :disabled="isFieldDisabled"></v-text-field>
