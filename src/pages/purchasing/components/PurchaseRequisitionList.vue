@@ -10,7 +10,11 @@ import ReorderRequestsDialog from './dialogs/ReorderRequestsDialog.vue'
 import PRDraftsDialog from './dialogs/PRDraftsDialog.vue'
 import PRDetailModal from './dialogs/PRDetailModal.vue'
 import IssuePOModal from './dialogs/IssuePOModal.vue'
-import { ref, onMounted, watch } from 'vue'
+import ProductFormDialog from '@/components/products/dialogs/ProductFormDialog.vue'
+import { useProductCreateForm } from '@/components/products/composables/useProductCreateForm'
+import { useAuthUserStore } from '@/stores/authUser'
+import { isProductEditRestricted } from '@/utils/roleHelpers'
+import { ref, onMounted, watch, computed } from 'vue'
 import { useDisplay } from 'vuetify'
 
 const prStore = usePurchaseRequisitionStore()
@@ -55,6 +59,24 @@ const {
   // proposeEditPR,
 } = usePurchaseRequisitionList()
 const { mobile } = useDisplay()
+
+// Inline "Add product" flow (mirrors ProductsWidget) so a user building a PR can
+// create a missing product without leaving this page. Gated with the same
+// restriction as the Products page: hidden for Warehouse (3) & Purchaser (4).
+const authUser = useAuthUserStore()
+const canAddProduct = computed(() => !isProductEditRestricted(authUser.userRole))
+const {
+  showDialog: showProductDialog,
+  form: productFormRef,
+  dialogMode: productDialogMode,
+  productForm,
+  loading: productLoading,
+  rules: productRules,
+  openCreateDialog: openCreateProductDialog,
+  closeDialog: closeProductDialog,
+  handleSubmit: handleProductSubmit,
+} = useProductCreateForm()
+
 onMounted(() => {
   init()
   if (mobile.value) {
@@ -222,7 +244,9 @@ async function onPOIssued() {
       :items="serverItems"
       :loading="loading"
       :total-items="totalItems"
+      :can-add-product="canAddProduct"
       @new-pr="openNewPR"
+      @add-product="openCreateProductDialog"
       @commit-search="commitSearch"
       @clear-search="clearSearch"
       @refresh="refresh"
@@ -240,10 +264,12 @@ async function onPOIssued() {
       :page="page"
       :total-items="totalItems"
       :items-per-page="itemsPerPage"
+      :can-add-product="canAddProduct"
       @commit-search="commitSearch"
       @clear-search="clearSearch"
       @refresh="refresh"
       @new-pr="openNewPR"
+      @add-product="openCreateProductDialog"
       @view-detail="openDetail"
       @issue-po="openPurchaseOrder"
       @change-page="goToPage"
@@ -281,6 +307,20 @@ async function onPOIssued() {
       :selectedReorderIds="selectedReorderIds"
       @update:selectedReorderIds="selectedReorderIds = $event"
       @create-pr="createPRFromReorder"
+    />
+
+    <!-- Inline Add Product dialog (create-only) -->
+    <ProductFormDialog
+      v-model="showProductDialog"
+      v-model:form="productFormRef"
+      :dialog-mode="productDialogMode"
+      :product-form="productForm"
+      :loading="productLoading"
+      :mobile="mobile"
+      :rules="productRules"
+      :is-edit-restricted="false"
+      @submit="handleProductSubmit"
+      @close="closeProductDialog"
     />
   </v-container>
 </template>
