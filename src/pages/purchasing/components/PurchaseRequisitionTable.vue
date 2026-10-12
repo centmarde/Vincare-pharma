@@ -14,6 +14,7 @@ defineProps<{
   items: PR[]
   loading: boolean
   totalItems: number
+  canAddProduct?: boolean
 }>()
 
 const searchInput = defineModel<string>('searchInput', { required: true })
@@ -22,6 +23,7 @@ const itemsPerPage = defineModel<number>('itemsPerPage', { required: true })
 
 const emit = defineEmits<{
   'new-pr': []
+  'add-product': []
   'commit-search': []
   'clear-search': []
   refresh: []
@@ -56,6 +58,16 @@ const uniqueSuppliers = (pr: PR): string[] => {
         </div>
 
         <div class="d-flex align-center" style="gap: 12px">
+          <v-btn
+            v-if="canAddProduct"
+            color="primary"
+            variant="outlined"
+            class="text-none font-weight-bold"
+            @click="emit('add-product')"
+          >
+          <v-icon icon="mdi-package-variant-plus" class="mr-1"></v-icon>
+            Add Product
+          </v-btn>
           <v-btn
             color="primary"
             class="text-none font-weight-bold"
