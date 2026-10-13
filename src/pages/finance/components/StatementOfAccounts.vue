@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useStatementOfAccounts } from '../composables/useStatementOfAccounts'
+import { financePageSizes } from '../composables/financeTable'
 
 const {
   register,
@@ -220,6 +221,7 @@ const TOTAL_KEYS: Record<string, keyof typeof totals.value> = {
         </div>
 
         <v-data-table
+          :items-per-page-options="financePageSizes"
           mobile-breakpoint="md"
           v-else
           :headers="SOA_HEADERS"

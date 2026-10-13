@@ -6,6 +6,7 @@ import VoucherFormDialog from './dialogs/VoucherFormDialog.vue'
 import VoucherPrintDialog from './dialogs/VoucherPrintDialog.vue'
 import VoucherStampDialog from './dialogs/VoucherStampDialog.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import { financePageSizes } from '../composables/financeTable'
 
 const {
   vouchers,
@@ -107,6 +108,7 @@ onMounted(async () => {
       <v-divider />
 
       <v-data-table
+        :items-per-page-options="financePageSizes"
         mobile-breakpoint="md"
         :headers="headers"
         :items="filteredVouchers"
