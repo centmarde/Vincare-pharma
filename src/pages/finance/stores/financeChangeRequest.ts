@@ -626,6 +626,24 @@ export const useFinanceChangeRequestStore = defineStore('financeChangeRequest', 
     if (pay.status === 'voided') return { success: false, error: 'This payment has already been voided.' }
     const voidedCashAccountId = pay.cash_account_id as number | null
     const voidedAmount = (pay.total_amount ?? 0) as number
+
+    // Only give back what the payment took. reissueSupplierPayment lowers the
+    // cached suppliers.balance; a payment raised from a disbursement voucher
+    // never touches it. Restoring for a voucher payment wrote the amount into a
+    // balance that was never lowered — turning a blank cache into a bogus
+    // figure and a false drift warning on the Supplier Payments page.
+    // Looked up BEFORE anything changes, and a failed lookup stops the void:
+    // read as "not from a voucher", it would restore a balance that was never
+    // lowered, on a payment already voided that no retry could reach.
+    const { count: voucherLines, error: voucherLookupError } = await supabase
+      .from('disbursement_voucher_items')
+      .select('id', { count: 'exact', head: true })
+      .eq('expense_transaction_id', targetId)
+    if (voucherLookupError) {
+      return { success: false, error: `Could not check whether this payment came from a voucher (${voucherLookupError.message}). Nothing was voided.` }
+    }
+    const fromVoucher = (voucherLines ?? 0) > 0
+
     const rev = await reverseProjectedEntry('disbursement', targetId, userId)
     if (!rev.ok)
       return { success: false, error: rev.error || 'Failed to reverse the payment journal entry.' }
@@ -642,7 +660,7 @@ export const useFinanceChangeRequestStore = defineStore('financeChangeRequest', 
       .neq('status', 'voided')
     if (voidErr) return { success: false, error: voidErr.message }
 
-    if (pay.supplier_id) {
+    if (pay.supplier_id && !fromVoucher) {
       const { data: s } = await supabase
         .from('suppliers')
         .select('balance')

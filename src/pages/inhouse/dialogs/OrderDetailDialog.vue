@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import { useOrderDetail } from '../composables/useOrderDetail'
 import DeliveryReceiptDialog from '@/components/deliveryReceipts/DeliveryReceiptDialog.vue'
+import DraftOrderPrintDialog from '@/components/orderPrint/DraftOrderPrintDialog.vue'
 import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
 import { useChangeRequestsDataStore } from '@/stores/changeRequestsData'
@@ -28,6 +29,7 @@ const {
   receivedBy, issuedReceipt,
   payAmount, payReference, payRemarks,
   requestedAt, requestNote,
+  draftPrintDocument,
   items, isNegotiating, isAwaitingStock, isReady, isDelivered, isPartiallyPaid, isPaid, canRecordPayment,
   shortDatedBatches, shortDatedRequest, shortDatedNote, requestShortDatedApproval,
   proposedTotal, proposedCost, ratioLabel, ratioClass, profitLabel, marginLabel, deliveredPct, remaining, balance, paidPct,
@@ -61,6 +63,7 @@ function onProductSelected(product: ProductPickerResult) {
 
 // Pop the printable DR as soon as one is issued by a delivery.
 const showReceipt = ref(false)
+const showDraftPrint = ref(false)
 watch(issuedReceipt, (dr) => { if (dr) showReceipt.value = true })
 
 // Undoing a recorded payment now needs executive approval (void-only).
@@ -103,7 +106,21 @@ const productName = (id: number | null) =>
             {{ order.customer?.name ?? '—' }} · PO: {{ order.po_no ?? '— (assigned once stock is confirmed)' }} · Govt PO: {{ order.govt_po_no ?? '—' }}
           </div>
         </div>
-        <v-btn icon="mdi-close" variant="text" size="small" @click="emit('update:modelValue', false)" />
+        <div class="d-flex align-center ga-1">
+          <!-- While still being negotiated: a draft of the order to review or
+               hand to the customer, with batch and expiry per line. -->
+          <v-btn
+            v-if="isNegotiating"
+            variant="tonal"
+            size="small"
+            class="text-none"
+            prepend-icon="mdi-printer"
+            @click="showDraftPrint = true"
+          >
+            Print Draft
+          </v-btn>
+          <v-btn icon="mdi-close" variant="text" size="small" @click="emit('update:modelValue', false)" />
+        </div>
       </v-card-title>
       <v-divider />
 
@@ -499,5 +516,7 @@ const productName = (id: number | null) =>
 
     <!-- Printable Delivery Receipt, auto-opened after a delivery is recorded -->
     <DeliveryReceiptDialog v-model="showReceipt" :receipt="issuedReceipt" />
+    <!-- allow-cost: this screen already shows Cost/Unit to the same people. -->
+    <DraftOrderPrintDialog v-model="showDraftPrint" :document="draftPrintDocument" allow-cost />
   </v-dialog>
 </template>

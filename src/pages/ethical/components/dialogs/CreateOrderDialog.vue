@@ -6,6 +6,7 @@ import type { EthicalOrderType } from '@/stores/ethicalData'
 import ProductPickerDialog from '@/components/products/ProductPicker.vue'
 
 import CustomerTermsCard from '@/components/customers/CustomerTermsCard.vue'
+import DraftOrderPrintDialog from '@/components/orderPrint/DraftOrderPrintDialog.vue'
 import { useCreateOrder } from '../../composables/useCreateOrder'
 import { formatCurrency } from '@/utils/helpers'
 
@@ -72,6 +73,7 @@ const {
   submit,
   saveAsDraft,
   discardDraft,
+  draftPrintDocument,
   isEditingDraft,
   reset,
   init,
@@ -84,6 +86,7 @@ const {
 // it searches all 2,401 products server-side (and matches brand names), where
 // the products store only ever held the first 1,000 rows.
 const showProductPicker = ref(false)
+const showDraftPrint = ref(false)
 const pickerTargetIndex = ref<number | null>(null)
 
 function openProductPicker(index: number) {
@@ -139,6 +142,7 @@ watch(
           :loading="loading"
           @click="discardDraft"
         />
+        <v-btn icon="mdi-printer" variant="text" aria-label="Print draft" @click="showDraftPrint = true" />
         <v-btn variant="text" class="text-none" :loading="loading" @click="saveAsDraft">
           Save Draft
         </v-btn>
@@ -585,6 +589,12 @@ watch(
             Cancel
           </v-btn>
 
+          <!-- A printable draft with batch and expiry per line — to review or
+               hand to the customer before anything is invoiced. -->
+          <v-btn variant="text" class="text-none" prepend-icon="mdi-printer" @click="showDraftPrint = true">
+            Print Draft
+          </v-btn>
+
           <!-- Still haggling: saves lines/qty/prices with no stock or invoice. -->
           <v-btn variant="tonal" class="text-none" :loading="loading" @click="saveAsDraft">
             Save Draft
@@ -599,5 +609,6 @@ watch(
     </v-card>
 
     <ProductPickerDialog v-model="showProductPicker" mode="batch" :location-id="sourceLocationId" @select="onProductSelected" />
+    <DraftOrderPrintDialog v-model="showDraftPrint" :document="draftPrintDocument" />
   </v-dialog>
 </template>

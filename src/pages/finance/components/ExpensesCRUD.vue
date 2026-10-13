@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useExpenses, headers } from '../composables/useExpenses'
 import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import { financePageSizes } from '../composables/financeTable'
 
 const {
   expenses,
@@ -55,6 +56,7 @@ onMounted(init)
       <v-divider />
 
       <v-data-table
+        :items-per-page-options="financePageSizes"
         mobile-breakpoint="md"
         :headers="headers"
         :items="expenses"

@@ -11,6 +11,7 @@ import type { LocationStock, StockLocationId } from '@/stores/stockSourcingData'
 import { parseTermDays } from '@/utils/helpers'
 import { useCustomerPicker } from '@/composables/useCustomerPicker'
 import { useFormDraft } from '@/composables/useFormDraft'
+import type { DraftPrintDocument } from '@/components/orderPrint/useDraftOrderPrint'
 
 const toast = useToast()
 
@@ -130,7 +131,10 @@ export function useCreateOrder(onCreated: () => void) {
   })
 
   const validLines = computed(() => lines.value.filter(l => l.product_id != null && l.quantity > 0))
-  const subtotal = computed(() => lines.value.reduce((s, l) => s + l.quantity * l.unit_price, 0))
+  // Over the lines that are actually saved (and printed), not every row on the
+  // form: a priced row with no product used to swell the subtotal — and with
+  // it the discount, rebate and ads saved on the order.
+  const subtotal = computed(() => validLines.value.reduce((s, l) => s + l.quantity * l.unit_price, 0))
 
   // Discount & rebate rates come from the customer's trade profile — locked, not
   // hand-entered per order (single source of truth on the customer). Discount is
@@ -451,7 +455,37 @@ export function useCreateOrder(onCreated: () => void) {
     await refreshSourcing()
   }
 
+  /**
+   * What is on screen right now, for Print Draft — saved or not. A draft has no
+   * EO number yet (that is minted on confirm), so none is shown. Totals use the
+   * same subtotal and discount as the form; the rebate is a separate payout,
+   * not an invoice deduction, so like the invoice it is not printed.
+   */
+  const draftPrintDocument = computed<DraftPrintDocument>(() => ({
+    docNo: null,
+    date: null,
+    customer: selectedCustomer.value ?? null,
+    meta: [
+      { label: 'Medical Sales Representative', value: agentOptions.value.find((a) => a.value === agentId.value)?.title },
+      { label: 'Terms', value: termsDays.value ? `Net ${termsDays.value} days` : null },
+    ],
+    lines: lines.value.map((l) => ({
+      product_id: l.product_id,
+      product_name: l.product_name,
+      unit: l.unit || null,
+      qty: l.quantity,
+      unit_price: l.unit_price,
+      // Never passed: selling staff are not shown company cost (see the
+      // below-cost warning), so it must not be printable from here either.
+      cost_price: null,
+    })),
+    discount: discountAmount.value,
+    remarks: remarks.value || null,
+    notice: isEditingDraft.value ? null : 'This draft is not saved yet. Save it to keep it.',
+  }))
+
   return {
+    draftPrintDocument,
     loading, customerId, agentId, outletId, sourceLocationId, remarks, lines, editingDraftId, isEditingDraft,
     customerSearch, customerOptions, selectedCustomer, agentOptions,
     outletOptions, locationOptions, sourceLocationName,

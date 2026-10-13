@@ -4,12 +4,17 @@ import { formatCurrency } from '@/utils/helpers'
 
 const {
   groups, templateId, template,
-  entryDate, description, amounts, codes, posting,
-  cashOptions, accountOptionsFor, accountName,
+  entryDate, description, amounts, codes, cashIds, posting,
+  cashOptions, cashMovements, accountOptionsFor, accountName,
   lines, totalDebit, totalCredit,
   blockers, canSubmit,
   reset, submit,
 } = useBookEntry()
+
+/** The balance change a cash field's entry will make, for the line under it. */
+function movementsFor(fieldKey: string) {
+  return cashMovements.value.filter((move) => move.fieldKey === fieldKey && move.delta !== 0)
+}
 </script>
 
 <template>
@@ -81,13 +86,23 @@ const {
                     :persistent-hint="!!field.hint"
                     placeholder="0.00" density="compact" variant="outlined" reverse
                   />
-                  <v-select
-                    v-else-if="field.kind === 'cashAccount'"
-                    v-model="codes[field.key]"
-                    :items="cashOptions" item-title="title" item-value="value"
-                    :label="field.label" :hint="field.hint" :persistent-hint="!!field.hint"
-                    density="compact" variant="outlined"
-                  />
+                  <template v-else-if="field.kind === 'cashAccount'">
+                    <v-select
+                      v-model="cashIds[field.key]"
+                      :items="cashOptions" item-title="title" item-value="value" :item-props="true"
+                      :label="field.label" :hint="field.hint" :persistent-hint="!!field.hint"
+                      density="compact" variant="outlined"
+                    />
+                    <!-- What this does to the picked account, before it posts. -->
+                    <div
+                      v-for="move in movementsFor(field.key)" :key="move.id"
+                      class="text-caption mt-1"
+                      :class="move.after < 0 ? 'text-error' : 'text-medium-emphasis'"
+                    >
+                      {{ move.name }}: {{ formatCurrency(move.before) }} →
+                      <strong>{{ formatCurrency(move.after) }}</strong>
+                    </div>
+                  </template>
                   <v-autocomplete
                     v-else
                     v-model="codes[field.key]"

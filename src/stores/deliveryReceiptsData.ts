@@ -137,6 +137,13 @@ export const useDeliveryReceiptsDataStore = defineStore('deliveryReceiptsData', 
       : { count: 0 }
     const drNo = base ? `${base}-${(count ?? 0) + 1}` : null
 
+    // A receipt with nothing on it is not a receipt: refuse before writing.
+    const deliverable = payload.lines.filter(l => l.qty > 0)
+    if (!deliverable.length) {
+      handleError(null, 'Nothing to put on the delivery receipt.')
+      return { success: false }
+    }
+
     const { data: dr, error: drError } = await supabase
       .from('delivery_receipts')
       .insert({
@@ -155,8 +162,7 @@ export const useDeliveryReceiptsDataStore = defineStore('deliveryReceiptsData', 
       return { success: false }
     }
 
-    const rows = payload.lines
-      .filter(l => l.qty > 0)
+    const rows = deliverable
       .map(l => ({
         delivery_receipt_id: dr.id,
         product_id: l.product_id,
@@ -164,9 +170,14 @@ export const useDeliveryReceiptsDataStore = defineStore('deliveryReceiptsData', 
         unit_price: l.unit_price,
         line_total: (l.unit_price ?? 0) * l.qty,
       }))
-    if (rows.length) {
-      const { error: linesError } = await supabase.from('delivery_receipt_items').insert(rows)
-      if (linesError) console.warn('createDeliveryReceipt: DR lines insert failed:', linesError.message)
+    // Lines failing used to be a console warning while the receipt reported
+    // success — leaving a numbered DR with nothing on it. Remove the header and
+    // fail, so the caller can undo the delivery it was recording.
+    const { error: linesError } = await supabase.from('delivery_receipt_items').insert(rows)
+    if (linesError) {
+      await supabase.from('delivery_receipts').delete().eq('id', dr.id)
+      handleError(linesError, 'Failed to save the delivery receipt lines.')
+      return { success: false }
     }
 
     return { success: true, drId: dr.id, drNo: drNo ?? undefined }

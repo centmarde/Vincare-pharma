@@ -60,7 +60,10 @@ export function useRoleEditFetchDialog() {
       })
     })
 
-    return routes.map((route) => routeToPermissionMap[route]).filter(Boolean) as string[]
+    // Each permission ONCE. role_pages holds duplicate rows for some roles (the
+    // same page saved 5x, 17x), and loading every copy made a page impossible
+    // to untick: unticking removed one copy and the rest kept it granted.
+    return [...new Set(routes.map((route) => routeToPermissionMap[route]).filter(Boolean) as string[])]
   }
 
   /**
@@ -107,8 +110,9 @@ export function useRoleEditFetchDialog() {
       const deleted = await pagesStore.deleteRolePagesByRoleId(roleId)
       if (!deleted) throw new Error('Failed to clear existing permissions.')
 
-      // Convert permissions to routes
-      const routes = permissionsToRoutes(selectedPermissions)
+      // Convert permissions to routes — each route once, so a save never
+      // writes duplicate rows (and clears any the role already had).
+      const routes = [...new Set(permissionsToRoutes(selectedPermissions))]
 
       // Create new role pages for each route
       const createPromises = routes.map((route) =>

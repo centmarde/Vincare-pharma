@@ -441,6 +441,7 @@ export const useSalesChangeRequestStore = defineStore('salesChangeRequest', () =
     const result = await salesStore.voidSale(
       request.transaction_id,
       request.reason ?? 'Voided via change request',
+      { viaChangeRequest: true },
     )
     return result.success
       ? { success: true, resultRef: request.from_transaction_no ?? undefined }

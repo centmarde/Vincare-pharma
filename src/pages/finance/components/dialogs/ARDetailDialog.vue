@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { formatCurrency, formatDate } from '@/utils/helpers'
 import type { ARReceivableDetail } from '@/stores/financeData'
+import { financePageSizes, financeDefaultPageSize } from '../../composables/financeTable'
 
 defineProps<{
   modelValue: boolean
@@ -89,10 +90,11 @@ const paymentHeaders = [
           <!-- Line items -->
           <div class="section-label mb-1">Line Items</div>
           <v-data-table
+            :items-per-page-options="financePageSizes"
             mobile-breakpoint="md"
             :headers="lineHeaders"
             :items="detail.lines"
-            hide-default-footer
+            :hide-default-footer="detail.lines.length <= financeDefaultPageSize"
             density="compact"
             class="mb-4 bordered-table"
           >
@@ -107,10 +109,11 @@ const paymentHeaders = [
           <!-- Payment history -->
           <div class="section-label mb-1">Payment History</div>
           <v-data-table
+            :items-per-page-options="financePageSizes"
             mobile-breakpoint="md"
             :headers="paymentHeaders"
             :items="detail.payments"
-            hide-default-footer
+            :hide-default-footer="detail.payments.length <= financeDefaultPageSize"
             density="compact"
             class="mb-4 bordered-table"
           >

@@ -6,7 +6,7 @@ const {
   loading,
   department, customerId, originalNo, invoiceDate, termDays, termLabel,
   originalAmount, alreadyPaid, cutoverDate, remarks,
-  customerOptions, outstanding, termSummary, isOverdue,
+  customerSearch, customerOptions, outstanding, termSummary, isOverdue,
   blockers, canSubmit,
   setDaysElapsed, applyTermPreset, clearTerm, submit,
 } = useOpeningReceivables()
@@ -42,15 +42,22 @@ function onDaysElapsed(value: string) {
               v-model="department"
               :items="[{ title: 'In-House', value: 'inhouse' }, { title: 'Ethical', value: 'ethical' }]"
               label="Department" density="compact" variant="outlined" hide-details
-              @update:model-value="customerId = null"
             />
           </v-col>
           <v-col cols="12" sm="6" md="5">
+            <!-- Server-side search across every customer, the same picker the
+                 order dialogs use. autocomplete="off" stops Chrome laying its
+                 own saved-form suggestions over the results. -->
             <v-autocomplete
               v-model="customerId"
-              :items="customerOptions" item-title="title" item-value="value"
-              label="Customer" placeholder="Who owes this"
-              density="compact" variant="outlined" auto-select-first hide-details
+              v-model:search="customerSearch"
+              :items="customerOptions"
+              item-props
+              no-filter
+              autocomplete="off"
+              label="Customer" placeholder="Search by name or contact"
+              no-data-text="No customer matches that search"
+              density="compact" variant="outlined" hide-details
             />
           </v-col>
           <v-col cols="12" sm="6" md="4">

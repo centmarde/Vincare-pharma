@@ -7,6 +7,7 @@ import { useAuthUserStore } from '@/stores/authUser'
 import { useLogsDataStore } from '@/stores/logsData'
 import { getErrorMessage } from '@/utils/helpers'
 import { QUALIFICATION_MONTHS } from '@/utils/qualification'
+import { parseProposedChanges } from '@/utils/changeRequests'
 
 // Executive approval to deliver SHORT-DATED stock on a government order.
 //
@@ -57,7 +58,10 @@ export type ShortDatedRequest = {
 }
 
 function mapRow(row: any): ShortDatedRequest {
-  const proposed = (row.proposed_changes ?? {}) as { batches?: ShortDatedBatch[] }
+  // proposed_changes is a TEXT column: it comes back as a JSON string, so it
+  // must be parsed — read as an object, `batches` was always undefined and the
+  // approver saw no products at all. See utils/changeRequests.
+  const proposed = parseProposedChanges(row.proposed_changes) as unknown as { batches?: unknown }
   return {
     id: row.id,
     created_at: row.created_at,
@@ -65,7 +69,7 @@ function mapRow(row: any): ShortDatedRequest {
     summary: row.summary ?? null,
     reason: row.reason ?? null,
     status: row.status,
-    batches: proposed.batches ?? [],
+    batches: Array.isArray(proposed.batches) ? (proposed.batches as ShortDatedBatch[]) : [],
     created_by: row.created_by ?? null,
     resolved_by: row.resolved_by ?? null,
     resolved_at: row.resolved_at ?? null,
@@ -218,7 +222,9 @@ export const useShortDatedApprovalStore = defineStore('shortDatedApproval', () =
         reason,
         // The batches are recorded so the executive sees WHAT they are
         // approving — which products, which expiry — rather than a bare count.
-        proposed_changes: { batches },
+        // Written as JSON text: the column is text, and relying on PostgREST's
+        // object-to-text coercion is what the shared serializer exists to avoid.
+        proposed_changes: JSON.stringify({ batches }),
         created_by: user.id,
       })
       if (insertError) throw insertError

@@ -1,14 +1,17 @@
 import { ref, computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useOpeningReceivablesStore } from '@/stores/openingReceivablesData'
-import { useCustomersDataStore } from '@/stores/customersData'
 import { useFinanceDataStore } from '@/stores/financeData'
+import { useCustomerPicker } from '@/composables/useCustomerPicker'
+import { toLocalISODate } from '@/utils/helpers'
 
 // Form state for the opening-receivables migration screen. See the store for
 // why these are recorded as documents and why the ledger entry is written
 // there rather than left to the projector.
 
-const todayISO = () => new Date().toISOString().slice(0, 10)
+// Local date, not toISOString(): that is the UTC date, a day behind before
+// 08:00 in Manila — and the cutover date is what the journal entry is dated.
+const todayISO = () => toLocalISODate(new Date())
 
 const addDays = (iso: string, days: number) =>
   new Date(new Date(iso).getTime() + days * 86400000).toISOString().slice(0, 10)
@@ -37,10 +40,8 @@ export const termPresets = [
 
 export function useOpeningReceivables() {
   const store = useOpeningReceivablesStore()
-  const customersStore = useCustomersDataStore()
   const financeStore = useFinanceDataStore()
   const { loading } = storeToRefs(store)
-  const { customers } = storeToRefs(customersStore)
 
   const department = ref<'inhouse' | 'ethical'>('inhouse')
   const customerId = ref<number | null>(null)
@@ -53,12 +54,17 @@ export function useOpeningReceivables() {
   const cutoverDate = ref(todayISO())
   const remarks = ref('')
 
-  /** Customers of the chosen department — the same list their orders use. */
-  const customerOptions = computed(() =>
-    customers.value
-      .filter((c) => c.department === department.value && c.is_active !== false)
-      .map((c) => ({ value: c.id, title: c.name ?? `Customer ${c.id}` })),
-  )
+  /**
+   * The same customer search the In-House and Ethical order dialogs use.
+   *
+   * This used to load the customer table and keep only rows whose department
+   * matched — but 5,276 of 5,287 customers have no department (it is a label,
+   * not a gate; see useCustomerPicker), so In-House offered 11 customers and
+   * Ethical none. The load was also capped at the first 1,000 rows by name.
+   * The picker searches all of them server-side as you type.
+   */
+  const { search: customerSearch, customerOptions, init: initCustomerPicker, reset: resetCustomerPicker } =
+    useCustomerPicker(customerId)
 
   const outstanding = computed(() =>
     Math.max(0, (Number(originalAmount.value) || 0) - (Number(alreadyPaid.value) || 0)),
@@ -135,7 +141,7 @@ export function useOpeningReceivables() {
   const canSubmit = computed(() => blockers.value.length === 0 && !loading.value)
 
   function resetForm() {
-    customerId.value = null
+    resetCustomerPicker()
     originalNo.value = ''
     invoiceDate.value = todayISO()
     applyTermPreset(30)
@@ -168,7 +174,7 @@ export function useOpeningReceivables() {
   }
 
   async function load() {
-    await Promise.all([customersStore.fetchCustomers(), financeStore.fetchARAging()])
+    await Promise.all([initCustomerPicker(), financeStore.fetchARAging()])
   }
 
   onMounted(load)
@@ -177,7 +183,7 @@ export function useOpeningReceivables() {
     loading,
     department, customerId, originalNo, invoiceDate, termDays, termLabel,
     originalAmount, alreadyPaid, cutoverDate, remarks,
-    customerOptions, outstanding, dueDate, daysElapsed, daysRemaining, isOverdue, termSummary,
+    customerSearch, customerOptions, outstanding, dueDate, daysElapsed, daysRemaining, isOverdue, termSummary,
     blockers, canSubmit,
     setDaysElapsed, applyTermPreset, clearTerm, resetForm, submit, load,
   }

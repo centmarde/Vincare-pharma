@@ -6,6 +6,7 @@ import VoucherFormDialog from './dialogs/VoucherFormDialog.vue'
 import VoucherPrintDialog from './dialogs/VoucherPrintDialog.vue'
 import VoucherStampDialog from './dialogs/VoucherStampDialog.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import { financePageSizes } from '../composables/financeTable'
 
 const {
   vouchers,
@@ -107,6 +108,7 @@ onMounted(async () => {
       <v-divider />
 
       <v-data-table
+        :items-per-page-options="financePageSizes"
         mobile-breakpoint="md"
         :headers="headers"
         :items="filteredVouchers"
@@ -116,26 +118,17 @@ onMounted(async () => {
         hover
       >
         <template #item.dv_no="{ item }">
+          <!-- The column header already says DV NO., so the "DV-" prefix is
+               dropped here only — the stored number, the printed voucher and
+               search ("DV-2026-131" still matches) keep it. -->
           <span
-            class="font-weight-medium"
+            class="font-weight-medium text-no-wrap"
             :class="{
               'text-decoration-line-through text-medium-emphasis': item.status === 'cancelled',
             }"
           >
-            {{ item.dv_no ?? '—' }}
+            {{ item.dv_no?.replace(/^DV-/, '') ?? '—' }}
           </span>
-          <!-- Reprints are visible in the register too, not only on paper -->
-          <v-chip
-            v-if="item.print_count > 1"
-            size="x-small"
-            color="warning"
-            variant="tonal"
-            label
-            class="ml-2"
-            :title="`Printed ${item.print_count} times — copies after the first are marked REPRINTED`"
-          >
-            {{ item.print_count }} COPIES
-          </v-chip>
         </template>
 
         <template #item.voucher_date="{ item }">
@@ -153,7 +146,15 @@ onMounted(async () => {
         </template>
 
         <template #item.cash_account_name="{ item }">
-          {{ item.cash_account_name ?? '—' }}
+          <!-- Shown as typed: staff put the bank and date in the check no.
+               itself ("BDO 1130222 10/10/26"), so a "Check No." prefix only
+               doubled up and made the column wrap. -->
+          <div class="py-1 text-no-wrap">
+            <div :class="item.check_no ? 'font-weight-medium' : 'text-medium-emphasis'">
+              {{ item.check_no || 'No check' }}
+            </div>
+            <div class="text-caption text-medium-emphasis">{{ item.cash_account_name ?? '—' }}</div>
+          </div>
         </template>
 
         <template #item.particulars="{ item }">
@@ -176,41 +177,43 @@ onMounted(async () => {
           >
             {{ statusMeta(item.status).label }}
           </v-chip>
+          <!-- Reprints are visible in the register too, not only on paper.
+               Sits under the status because how many copies exist is part of
+               the document's state, not its number. -->
+          <div v-if="item.print_count > 1" class="mt-1">
+            <v-chip
+              size="x-small"
+              color="warning"
+              variant="tonal"
+              label
+              :title="`Printed ${item.print_count} times — copies after the first are marked REPRINTED`"
+            >
+              {{ item.print_count }} COPIES
+            </v-chip>
+          </div>
         </template>
 
+        <!-- One labelled button for the voucher's NEXT step, and the occasional
+             actions as icons. Five full-size buttons in a row ran out of room
+             and cut "Record Expense" off. Record Expense is no longer shown
+             (disabled) on a draft: the gate is still enforced, and Print being
+             the only labelled button already says what comes first. -->
         <template #item.actions="{ item }">
-          <div class="d-flex justify-center ga-2">
+          <div class="d-flex justify-center align-center ga-1 text-no-wrap">
             <v-btn
-              v-if="canEdit(item)"
-              size="small"
-              variant="tonal"
-              class="text-none"
-              prepend-icon="mdi-pencil"
-              @click="openEditDialog(item)"
-            >
-              Edit
-            </v-btn>
-
-            <v-btn
-              v-if="canPrint(item)"
+              v-if="item.status === 'draft'"
               size="small"
               variant="tonal"
               color="info"
               class="text-none"
               prepend-icon="mdi-printer"
-              :title="
-                item.print_count > 0
-                  ? 'Reprint — the copy will be marked REPRINTED'
-                  : 'Print and lock this voucher'
-              "
+              title="Print and lock this voucher"
               @click="openPrint(item)"
             >
-              {{ item.print_count > 0 ? 'Reprint' : 'Print' }}
+              Print
             </v-btn>
-
-            <!-- The gate: disabled until the voucher has been printed -->
             <v-btn
-              v-if="item.status !== 'cancelled'"
+              v-else-if="item.status === 'printed'"
               size="small"
               variant="tonal"
               color="primary"
@@ -225,11 +228,10 @@ onMounted(async () => {
             >
               Record Expense
             </v-btn>
-
             <!-- Only after recording: the mark states that the expenses exist
                  in the ledger, so it must never be printable before they do. -->
             <v-btn
-              v-if="item.status === 'recorded'"
+              v-else-if="item.status === 'recorded'"
               size="small"
               variant="tonal"
               color="error"
@@ -240,18 +242,37 @@ onMounted(async () => {
             >
               Mark Recorded
             </v-btn>
+            <span v-else class="text-medium-emphasis">—</span>
 
             <v-btn
+              v-if="canPrint(item) && item.status !== 'draft'"
+              icon="mdi-printer"
+              size="small"
+              variant="text"
+              color="info"
+              title="Reprint — the copy will be marked REPRINTED"
+              aria-label="Reprint"
+              @click="openPrint(item)"
+            />
+            <v-btn
+              v-if="canEdit(item)"
+              icon="mdi-pencil"
+              size="small"
+              variant="text"
+              title="Edit"
+              aria-label="Edit"
+              @click="openEditDialog(item)"
+            />
+            <v-btn
               v-if="canCancel(item)"
+              icon="mdi-close-circle-outline"
               size="small"
               variant="text"
               color="error"
-              class="text-none"
-              prepend-icon="mdi-close-circle-outline"
+              title="Cancel this voucher"
+              aria-label="Cancel voucher"
               @click="openCancelDialog(item)"
-            >
-              Cancel
-            </v-btn>
+            />
           </div>
         </template>
       </v-data-table>

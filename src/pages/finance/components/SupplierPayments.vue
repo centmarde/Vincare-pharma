@@ -9,6 +9,7 @@ import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
 import { useFinanceChangeRequestStore } from '../stores/financeChangeRequest'
 import { expensePaymentMethods, type SupplierPaymentType } from '@/stores/financeData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import { financePageSizes } from '../composables/financeTable'
 
 const {
   supplierAP, apAging, supplierPayments, loading,
@@ -82,6 +83,7 @@ onMounted(async () => { await init(); await loadPending() })
           </div>
 
           <v-data-table
+            :items-per-page-options="financePageSizes"
             mobile-breakpoint="md"
             :headers="agingHeaders"
             :items="apAging"
@@ -128,6 +130,7 @@ onMounted(async () => { await init(); await loadPending() })
         <v-divider />
 
         <v-data-table
+          :items-per-page-options="financePageSizes"
           mobile-breakpoint="md"
           :headers="apHeaders"
           :items="supplierAP"
@@ -167,6 +170,7 @@ onMounted(async () => { await init(); await loadPending() })
         <v-divider />
 
         <v-data-table
+          :items-per-page-options="financePageSizes"
           mobile-breakpoint="md"
           :headers="paymentHistoryHeaders"
           :items="supplierPayments"

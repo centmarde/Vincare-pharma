@@ -16,6 +16,7 @@ const {
   entries,
   loading,
   accountOptions,
+  filterAccount,
   showManualEntryDialog,
   manualEntryDate,
   manualDescription,
@@ -183,6 +184,7 @@ function statusColor(status: string): string {
       v-model:entry-date="manualEntryDate"
       v-model:description="manualDescription"
       :account-options="accountOptions"
+      :account-filter="filterAccount"
       :lines="manualLines"
       :total-debit="manualTotalDebit"
       :total-credit="manualTotalCredit"

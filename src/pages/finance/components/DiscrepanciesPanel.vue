@@ -8,6 +8,7 @@ import {
   employeeReceivableHeaders,
 } from '../composables/useDiscrepancies'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import { financePageSizes } from '../composables/financeTable'
 
 const {
   tab,
@@ -52,6 +53,7 @@ const {
             />
           </div>
           <v-data-table
+            :items-per-page-options="financePageSizes"
             mobile-breakpoint="md"
             :headers="remittanceHeaders"
             :items="remittanceDiscrepancies"
@@ -108,6 +110,7 @@ const {
 
         <v-window-item value="employeeReceivables">
           <v-data-table
+            :items-per-page-options="financePageSizes"
             mobile-breakpoint="md"
             :headers="employeeReceivableHeaders"
             :items="receivables"
@@ -155,6 +158,7 @@ const {
 
         <v-window-item value="ar">
           <v-data-table
+            :items-per-page-options="financePageSizes"
             mobile-breakpoint="md"
             :headers="arAgingHeaders"
             :items="arAging"
@@ -193,6 +197,7 @@ const {
 
         <v-window-item value="commission">
           <v-data-table
+            :items-per-page-options="financePageSizes"
             mobile-breakpoint="md"
             :headers="commissionHeaders"
             :items="commissionLiability"
@@ -225,6 +230,7 @@ const {
             quantities — it never auto-corrects.
           </v-alert>
           <v-data-table
+            :items-per-page-options="financePageSizes"
             mobile-breakpoint="md"
             :headers="stockReconHeaders"
             :items="stockReconciliation"

@@ -14,6 +14,9 @@ export const headers = [
 ] as const
 
 const statusLabels: Record<string, string> = {
+  draft:            'Draft',
+  // Only seen if deleting a draft fails partway (it is claimed as cancelled first).
+  cancelled:        'Cancelled',
   pending_approval: 'Pending Approval',
   approved:         'Approved',
   completed:        'Completed',
@@ -21,13 +24,20 @@ const statusLabels: Record<string, string> = {
 }
 
 const statusColors: Record<string, string> = {
+  draft:            'grey',
+  cancelled:        'grey',
   pending_approval: 'warning',
   approved:         'info',
   completed:        'success',
   rejected:         'error',
 }
 
-export function useStockTransfers() {
+/**
+ * `hideDrafts`: the warehouse (approver) view. A draft is the requester's
+ * work in progress — not something to review — so it is shown only on the
+ * requesting side.
+ */
+export function useStockTransfers(options: { hideDrafts?: () => boolean } = {}) {
   const transfersStore = useStockTransfersDataStore()
   const warehouseStore = useWarehousesDataStore()
   const { transfers, loading } = storeToRefs(transfersStore)
@@ -40,9 +50,12 @@ export function useStockTransfers() {
   const showRequestDialog = ref(false)
   const showDetailDialog  = ref(false)
   const selectedTransfer  = ref<StockTransferType | null>(null)
+  // A draft opens back in the request form, where it can still be edited.
+  const draftToEdit       = ref<StockTransferType | null>(null)
 
   const filteredTransfers = computed(() => {
     return transfers.value.filter(t => {
+      if (t.status === 'draft' && options.hideDrafts?.()) return false
       if (filterStatus.value && t.status !== filterStatus.value) return false
       if (filterWarehouseId.value && t.warehouse_id !== filterWarehouseId.value) return false
       if (search.value.trim()) {
@@ -53,13 +66,15 @@ export function useStockTransfers() {
     })
   })
 
-  const statusOptions = [
+  // No "Draft" option where drafts are hidden — it could never match.
+  const statusOptions = computed(() => [
     { title: 'All', value: null },
+    ...(options.hideDrafts?.() ? [] : [{ title: 'Draft', value: 'draft' }]),
     { title: 'Pending Approval', value: 'pending_approval' },
     { title: 'Approved', value: 'approved' },
     { title: 'Completed', value: 'completed' },
     { title: 'Rejected', value: 'rejected' },
-  ]
+  ])
 
   const warehouseOptions = computed(() => [
     { title: 'All Warehouses', value: null },
@@ -75,16 +90,23 @@ export function useStockTransfers() {
   }
 
   function openRequestDialog() {
+    draftToEdit.value = null
     showRequestDialog.value = true
   }
 
   function openDetailDialog(transfer: StockTransferType) {
+    if (transfer.status === 'draft') {
+      draftToEdit.value = transfer
+      showRequestDialog.value = true
+      return
+    }
     selectedTransfer.value = transfer
     showDetailDialog.value = true
   }
 
   async function handleRequestCreated() {
     showRequestDialog.value = false
+    draftToEdit.value = null
     await transfersStore.fetchTransfers()
   }
 
@@ -99,7 +121,7 @@ export function useStockTransfers() {
   return {
     loading, search, filterStatus, filterWarehouseId,
     statusOptions, warehouseOptions,
-    showRequestDialog, showDetailDialog, selectedTransfer,
+    showRequestDialog, showDetailDialog, selectedTransfer, draftToEdit,
     filteredTransfers,
     statusLabel, statusColor,
     init, openRequestDialog, openDetailDialog,

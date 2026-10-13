@@ -67,8 +67,23 @@ export function useAdminUserRoles() {
     userRolesStore.clearError()
   }
 
+  // A second Update while one is still saving used to run the whole delete +
+  // re-create twice at once — both deletes finished, then both inserts did, so
+  // every page landed twice. That is how roles ended up with each page saved
+  // 5x or 17x. One save at a time.
+  let saving = false
+
   const handleSubmit = async (selectedPermissions: string[] = []) => {
-    if (!isFormValid.value) return
+    if (!isFormValid.value || saving) return
+    saving = true
+    try {
+      await submitRole(selectedPermissions)
+    } finally {
+      saving = false
+    }
+  }
+
+  const submitRole = async (selectedPermissions: string[]) => {
 
     let success = false
     let targetRoleId: number | null = null
@@ -108,7 +123,9 @@ export function useAdminUserRoles() {
           })
         })
 
-        const routes = selectedPermissions
+        // Each route once: duplicates here were written straight back as
+        // duplicate rows. Saving a role also clears any it already had.
+        const routes = [...new Set(selectedPermissions
           .map((permission) => {
             // If it's already a route, return it directly
             if (routeSet.has(permission)) {
@@ -117,7 +134,7 @@ export function useAdminUserRoles() {
             // Otherwise, map permission to route
             return permissionToRouteMap[permission]
           })
-          .filter(Boolean) as string[]
+          .filter(Boolean) as string[])]
 
         // For editing, first delete existing role pages (silent mode)
         if (isEditing.value) {
