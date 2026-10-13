@@ -13,6 +13,7 @@ import { useAuthUserStore } from '@/stores/authUser'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { formatCurrency } from '@/utils/helpers'
 import type { CollectionType } from '@/stores/ethicalData'
+import type { DraftPrintDocument } from '@/components/orderPrint/useDraftOrderPrint'
 
 const { confirmDialog } = useConfirmDialog()
 
@@ -427,7 +428,39 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     }
   }
 
+  /**
+   * The order as last RECORDED, for Print Draft. Unsaved counter-offer edits
+   * are left out on purpose — the printout states the terms on file, the same
+   * ones agree() would lock — and the dialog says so when there are some.
+   */
+  const draftPrintDocument = computed<DraftPrintDocument | null>(() => {
+    const o = order()
+    if (!o) return null
+    return {
+      docNo: o.order_no,
+      date: o.created_at,
+      customer: o.customer ?? null,
+      meta: [
+        { label: 'Govt PO', value: o.govt_po_no },
+        { label: 'Company PO', value: o.po_no },
+      ],
+      lines: items.value.map((i) => ({
+        product_id: i.product_id,
+        product_name: i.product?.product_name ?? '',
+        unit: i.product?.unit ?? null,
+        qty: i.qty,
+        unit_price: i.unit_price,
+        cost_price: i.cost_price,
+      })),
+      remarks: o.remarks,
+      notice: hasUnsavedLineChanges.value
+        ? 'Some counter-offer changes are not recorded yet. This prints the order as last recorded — record the counter-offer first to include them.'
+        : null,
+    }
+  })
+
   return {
+    draftPrintDocument,
     loading, rounds, shortfall, payments, lineEdits, lineProductEdits, lineCostEdits, lineProductNames,
     lineBatchNos, lineExpiryDates, offerNote, deliverQtys,
     lineQtyEdits, newLines, hasUnsavedLineChanges, isRemoved, removeItem, restoreItem, addNewLine, removeNewLine, applyPickedProductToNewLine,

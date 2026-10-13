@@ -8,17 +8,17 @@ import { useDisplay } from 'vuetify'
 
 const { mobile } = useDisplay()
 
-withDefaults(defineProps<{ mode?: 'warehouse' | 'outlet' }>(), { mode: 'outlet' })
+const props = withDefaults(defineProps<{ mode?: 'warehouse' | 'outlet' }>(), { mode: 'outlet' })
 
 const {
   loading, search, filterStatus, filterWarehouseId,
   statusOptions, warehouseOptions,
-  showRequestDialog, showDetailDialog, selectedTransfer,
+  showRequestDialog, showDetailDialog, selectedTransfer, draftToEdit,
   filteredTransfers,
   statusLabel, statusColor,
   init, openRequestDialog, openDetailDialog,
   handleRequestCreated, handleDialogChanged,
-} = useStockTransfers()
+} = useStockTransfers({ hideDrafts: () => props.mode === 'warehouse' })
 
 onMounted(init)
 </script>
@@ -77,11 +77,12 @@ onMounted(init)
         <v-list-item v-for="t in filteredTransfers" :key="t.id" @click="openDetailDialog(t)">
           <template #prepend>
             <v-avatar color="primary" variant="tonal" size="40" class="text-caption font-weight-bold">
-              {{ t.transfer_no?.slice(-4) }}
+              <v-icon v-if="!t.transfer_no" icon="mdi-pencil-outline" size="18" />
+              <template v-else>{{ t.transfer_no.slice(-4) }}</template>
             </v-avatar>
           </template>
           <v-list-item-title class="text-body-2 font-weight-medium">
-            {{ t.transfer_no }}
+            {{ t.transfer_no ?? 'Draft' }}
           </v-list-item-title>
           <v-list-item-subtitle class="text-caption">
             {{ t.warehouse?.name ?? '—' }} · {{ formatDatePR_ISO(t.created_at) }}
@@ -108,7 +109,9 @@ onMounted(init)
         hover
       >
         <template #item.transfer_no="{ item }">
-          <span class="font-weight-medium">{{ item.transfer_no }}</span>
+          <!-- A draft has no number until it is submitted. -->
+          <span v-if="item.transfer_no" class="font-weight-medium">{{ item.transfer_no }}</span>
+          <span v-else class="text-medium-emphasis font-italic">Draft</span>
         </template>
 
         <template #item.warehouse="{ item }">
@@ -133,7 +136,7 @@ onMounted(init)
             class="text-none"
             @click="openDetailDialog(item)"
           >
-            View
+            {{ item.status === 'draft' ? 'Edit' : 'View' }}
           </v-btn>
         </template>
       </v-data-table>
@@ -142,6 +145,7 @@ onMounted(init)
 
     <StockTransferRequestDialog
       v-model="showRequestDialog"
+      :draft-transfer="draftToEdit"
       @created="handleRequestCreated"
     />
 

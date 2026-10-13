@@ -70,6 +70,7 @@ import {
   findSkuConflicts,
 } from './products/receiving'
 import { startRealtime, stopRealtime } from './products/realtime'
+import { adjustMainStock } from './products/stockMovement'
 
 // Re-export the types so existing imports keep resolving from the barrel.
 export type {
@@ -83,6 +84,7 @@ export type {
   StockStatusCounts,
   StockStatusRef,
 } from './products/types'
+export type { StockAdjustResult } from './products/stockMovement'
 
 export const useProductsDataStore = defineStore('productsData', () => {
   return {
@@ -122,6 +124,7 @@ export const useProductsDataStore = defineStore('productsData', () => {
     syncPRSellingPrices,
     deleteProduct,
     updateProductSkuAndCount,
+    adjustMainStock,
     clearError,
     resetStore,
 
