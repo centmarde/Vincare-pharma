@@ -15,10 +15,14 @@ import type { CustomerType } from '@/stores/customersData'
 import type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult } from '@/utils/canvassTypes'
 import { govtShelfLife, QUALIFICATION_MONTHS } from '@/utils/qualification'
 import { describeProduct } from '@/utils/helpers'
+import { issueRow, useIssueList } from '@/composables/useIssueList'
+import type { IssueRow } from '@/composables/useIssueList'
 import { useShortDatedApprovalStore } from '@/pages/inhouse/stores/shortDatedApproval'
 import type { CollectionType } from '@/stores/ethicalData'
 
 const toast = useToast()
+// Lists of products go to the issue dialog; the toast is for one-line messages.
+const issues = useIssueList()
 
 
 // In-house government/LGU orders live in the transactions hub as
@@ -666,19 +670,19 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       countAsRead: number | null; unit_price: number | null
     }
     const planned: PlannedLine[] = []
-    const problems: string[] = []
+    const problems: IssueRow[] = []
     const neededByProduct = new Map<number, number>()
 
     for (const line of requested) {
       const item = itemById.get(line.item_id)
       if (!item?.product_id) continue
       const product = productById.get(item.product_id)
-      const label = describeProduct(product, item.product_id)
       const delivered = item.actual_count_stock_out ?? 0
       const ordered = item.qty_stock_out ?? 0
 
       if (delivered + line.qty > ordered) {
-        problems.push(`${label} — delivering ${line.qty} would exceed the order (ordered ${ordered}, already delivered ${delivered})`)
+        problems.push(issueRow(product, item.product_id,
+          `Delivering ${line.qty} would exceed the order (ordered ${ordered}, already delivered ${delivered})`))
         continue
       }
 
@@ -691,11 +695,12 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       // pointing at how to get it.
       const shelf = govtShelfLife(product?.expiry_date as string | null)
       if (!shelf.ok && shelf.reason === 'expired') {
-        problems.push(`${label} has expired and cannot be delivered`)
+        problems.push(issueRow(product, item.product_id, 'Expired — cannot be delivered'))
         continue
       }
       if (!shelf.ok && !shortDatedApproved) {
-        problems.push(`${label} has under ${QUALIFICATION_MONTHS} months of shelf life left — a government client will not accept it without executive approval (request it from the order)`)
+        problems.push(issueRow(product, item.product_id,
+          `Under ${QUALIFICATION_MONTHS} months of shelf life — needs executive approval (request it from the order)`))
         continue
       }
 
@@ -712,12 +717,16 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       const product = productById.get(productId)
       const onHand = product?.current_stock ?? 0
       if (onHand < needed) {
-        problems.push(`Not enough warehouse stock for ${describeProduct(product, productId)} — needs ${needed}, ${onHand} on hand`)
+        problems.push(issueRow(product, productId, `Not enough warehouse stock — needs ${needed} · ${onHand} on hand`))
       }
     }
 
     if (problems.length) {
-      toast.error(`Nothing was delivered. ${problems.join('; ')}.`, { timeout: 15000 })
+      issues.showIssues({
+        title: 'Nothing was delivered',
+        message: 'Fix these lines and try again. No stock was moved.',
+        rows: problems,
+      })
       loading.value = false; return { success: false }
     }
     if (!planned.length) {
@@ -734,29 +743,30 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     // sale made in the meantime is not wiped out. Anything that cannot be put
     // back is named so it can be corrected by hand.
     async function undo(reason: string) {
-      const unrestored: string[] = []
+      const needsHand: IssueRow[] = []
       for (const d of deducted) {
         const back = await productsStore.adjustMainStock(d.productId, d.qty)
-        if (!back.ok) unrestored.push(describeProduct(productById.get(d.productId), d.productId))
+        if (!back.ok) needsHand.push(issueRow(productById.get(d.productId), d.productId, `${d.qty} not put back into stock`))
       }
       // A count left stamped marks the line delivered when nothing was — so a
-      // failed reset is named, never reported as "nothing was delivered".
-      const countsLeft: string[] = []
+      // failed reset is listed, never reported as "nothing was delivered".
       for (const st of stamped) {
         const { error: countError } = await supabase
           .from('transaction_items').update({ actual_count_stock_out: st.previous }).eq('id', st.itemId)
         if (countError) {
           console.warn(`deliver: could not restore the delivered count on line ${st.itemId}:`, countError.message)
-          const productId = planned.find((p) => p.item_id === st.itemId)?.product_id ?? null
-          countsLeft.push(describeProduct(productId != null ? productById.get(productId) : null, productId))
+          const line = planned.find((p) => p.item_id === st.itemId)
+          const productId = line?.product_id ?? null
+          needsHand.push(issueRow(productId != null ? productById.get(productId) : null, productId,
+            `Delivered count left at ${line ? line.delivered + line.qty : '?'} — set it back to ${st.previous ?? 0}`))
         }
       }
-      const needsHand = [
-        unrestored.length ? `stock could NOT be put back for: ${unrestored.join('; ')}` : null,
-        countsLeft.length ? `the delivered count is still set on: ${countsLeft.join('; ')}` : null,
-      ].filter(Boolean)
       if (needsHand.length) {
-        toast.error(`${reason} Correct by hand: ${needsHand.join('; ')}.`, { timeout: 20000 })
+        issues.showIssues({
+          title: 'Delivery failed — correct by hand',
+          message: `${reason} These could not be undone automatically:`,
+          rows: needsHand,
+        })
       } else {
         toast.error(`${reason} Nothing was delivered; stock was put back.`, { timeout: 12000 })
       }

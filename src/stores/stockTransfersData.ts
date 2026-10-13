@@ -6,11 +6,16 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { generateNextNumber, insertWithDocRetry, describeProduct } from '@/utils/helpers'
+import { issueRow, useIssueList } from '@/composables/useIssueList'
+import type { IssueRow } from '@/composables/useIssueList'
 import type { ProductType } from '@/stores/productsData'
 import { useProductsDataStore } from '@/stores/productsData'
 import type { WarehouseType } from '@/stores/warehouseData'
 
 const toast = useToast()
+// Lists of products (short, unpriced, to fix by hand) go to the issue dialog;
+// the toast is kept for one-line errors and notices.
+const issues = useIssueList()
 
 // Stock transfers live in `transactions` as transaction_type = 'stock_transfer',
 // lines in `transaction_items` (qty = requested_qty, received_qty = received).
@@ -79,34 +84,34 @@ const SELECT_TRANSFER = '*, transaction_items!transaction_items_transaction_id_f
  */
 async function findUnpricedProducts(productIds: number[]) {
   const ids = [...new Set(productIds)]
-  if (!ids.length) return { names: [], failed: false }
+  if (!ids.length) return { rows: [] as IssueRow[], failed: false }
   const { data, error } = await supabase
     .from('products')
-    .select('id, product_name, sku, selling_price')
+    .select('id, product_name, sku, batch_no, expiry_date, selling_price')
     .in('id', ids)
   // A failed lookup is NOT "everything is priced". Swallowing the error here
   // would turn the guard into a no-op exactly when it cannot be trusted, so the
   // caller is told the check could not run and refuses rather than proceeding.
-  if (error || !data) return { names: [], failed: true }
+  if (error || !data) return { rows: [] as IssueRow[], failed: true }
   return {
-    // Identified by SKU and id, not name alone. The catalogue carries duplicate
-    // names -- two rows can share a name AND a SKU with only one of them
-    // priced -- so naming the product is exactly the ambiguous part: the
-    // message would read as the row the user just priced when it is the other.
-    names: data
+    // Each row carries SKU, batch AND the product id. The catalogue has
+    // duplicate names -- two rows can share a name AND a SKU with only one of
+    // them priced -- so the name alone would read as the row the user just
+    // priced when it is the other.
+    rows: data
       .filter((p) => p.selling_price == null || Number(p.selling_price) <= 0)
-      .map((p) => {
-        const name = p.product_name ?? 'Unnamed product'
-        return `${name} (SKU ${p.sku ?? '—'}, #${p.id})`
-      }),
+      .map((p) => issueRow(p, p.id as number, 'No selling price set')),
     failed: false,
   }
 }
 
-function unpricedMessage(names: string[]) {
-  const shown = names.slice(0, 3).join('; ')
-  const more = names.length > 3 ? ` and ${names.length - 3} more` : ''
-  return `Cannot transfer ${shown}${more} — no selling price set. Set a selling price on the product first, otherwise the branch can only sell it for ₱0.00.`
+/** The unpriced products, listed in the issue dialog rather than a toast. */
+function reportUnpriced(rows: IssueRow[]) {
+  issues.showIssues({
+    title: 'Products with no selling price',
+    message: 'These cannot be transferred yet. Set a selling price on each product first, otherwise the branch can only sell it for ₱0.00.',
+    rows,
+  })
 }
 
 function mapRowToTransfer(row: any): StockTransferType {
@@ -253,8 +258,8 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
       loading.value = false
       return { success: false }
     }
-    if (priceCheck.names.length) {
-      toast.error(unpricedMessage(priceCheck.names))
+    if (priceCheck.rows.length) {
+      reportUnpriced(priceCheck.rows)
       loading.value = false
       return { success: false }
     }
@@ -478,9 +483,9 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
       toast.error('Could not verify selling prices. Try again before requesting this transfer.')
       return { success: false }
     }
-    if (priceCheck.names.length) {
+    if (priceCheck.rows.length) {
       loading.value = false
-      toast.error(unpricedMessage(priceCheck.names))
+      reportUnpriced(priceCheck.rows)
       return { success: false }
     }
 
@@ -619,9 +624,9 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
       toast.error('Could not verify selling prices. Try again before approving this transfer.')
       return false
     }
-    if (priceCheck.names.length) {
+    if (priceCheck.rows.length) {
       loading.value = false
-      toast.error(unpricedMessage(priceCheck.names))
+      reportUnpriced(priceCheck.rows)
       return false
     }
 
@@ -647,26 +652,26 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
     // one only, by id ("product 11"), which sent staff to look them up one by
     // one between attempts.
     const stockChecks: { product_id: number; qty: number; current_stock: number }[] = []
-    const shortages: string[] = []
+    const shortages: IssueRow[] = []
     for (const [productId, qty] of needed) {
       const product = productById.get(productId)
       const onHand = product?.current_stock ?? 0
       if (!product || onHand < qty) {
-        shortages.push(`${describeProduct(product, productId)} — needs ${qty}, ${product ? `${onHand} on hand` : 'not found'}`)
+        shortages.push(issueRow(product, productId, product ? `Needs ${qty} · ${onHand} on hand` : 'Product not found'))
         continue
       }
       stockChecks.push({ product_id: productId, qty, current_stock: onHand })
     }
-    // One short line is named in full. Several are only counted: the transfer
-    // itself lists them, short lines first — a toast naming every one ran off
-    // the screen on a long transfer.
+    // Listed in the issue dialog, not a toast: a toast naming every short line
+    // ran off the screen on a long transfer.
     if (shortages.length) {
       loading.value = false
-      toast.error(
-        shortages.length === 1
-          ? `Not enough warehouse stock to approve this transfer: ${shortages[0]}.`
-          : `Not enough warehouse stock to approve this transfer — ${shortages.length} products are short. They are listed first on the transfer.`,
-      )
+      issues.showIssues({
+        title: 'Not enough warehouse stock',
+        message: 'This transfer was not approved. The main warehouse is short of these products:',
+        rows: shortages,
+        footnote: 'The transfer also lists its short lines first, marked in red.',
+      })
       return false
     }
 
@@ -694,10 +699,10 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
         continue
       }
       // Put back what was taken and reopen the transfer for approval.
-      const unrestored: string[] = []
+      const unrestored: IssueRow[] = []
       for (const d of deducted) {
         const back = await productsStore.adjustMainStock(d.productId, d.qty)
-        if (!back.ok) unrestored.push(describeProduct(productById.get(d.productId), d.productId))
+        if (!back.ok) unrestored.push(issueRow(productById.get(d.productId), d.productId, `${d.qty} not put back — correct by hand`))
       }
       // Checked: if the reopen fails, the transfer still reads Approved with no
       // stock moved, and the branch could receive goods that never left.
@@ -712,17 +717,24 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
       const why = result.reason === 'insufficient'
         ? `${label} now has only ${result.onHand ?? 0} on hand (it changed while approving)`
         : `stock for ${label} could not be updated (${result.message ?? result.reason})`
-      const needsHand = [
-        unrestored.length ? `stock could NOT be put back for: ${unrestored.join('; ')}` : null,
-        stillApproved ? 'the transfer still shows as Approved — set it back to Pending Approval before anyone receives it' : null,
-      ].filter(Boolean)
+      const stillApprovedNote = 'The transfer still shows as Approved — set it back to Pending Approval before anyone receives it.'
       loading.value = false
-      toast.error(
-        needsHand.length
-          ? `Not approved: ${why}. Correct by hand: ${needsHand.join('; ')}.`
-          : `Not approved: ${why}. Nothing was deducted; the transfer is back to Pending Approval.`,
-        { timeout: needsHand.length ? 20000 : 15000 },
-      )
+      if (unrestored.length) {
+        // Products to fix by hand: a list, so the issue dialog.
+        issues.showIssues({
+          title: 'Transfer not approved — stock needs correcting',
+          message: `Not approved: ${why}. Stock was taken for these products and could not be put back:`,
+          rows: unrestored,
+          footnote: stillApproved ? stillApprovedNote : 'The transfer is back to Pending Approval.',
+        })
+      } else {
+        toast.error(
+          stillApproved
+            ? `Not approved: ${why}. Nothing was deducted. ${stillApprovedNote}`
+            : `Not approved: ${why}. Nothing was deducted; the transfer is back to Pending Approval.`,
+          { timeout: stillApproved ? 20000 : 15000 },
+        )
+      }
       await fetchTransfers()
       return false
     }

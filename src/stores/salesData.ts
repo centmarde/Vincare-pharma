@@ -5,13 +5,18 @@ import { supabase } from '@/lib/supabase'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
-import { generateNextNumber, insertWithDocRetry, describeProduct } from '@/utils/helpers'
+import { generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
+import { issueRow, useIssueList } from '@/composables/useIssueList'
 import type { ProductType } from '@/stores/productsData'
 import { useProductsDataStore } from '@/stores/productsData'
 import type { CustomerType } from '@/stores/customersData'
 import type { WarehouseType } from '@/stores/warehouseData'
 
 const toast = useToast()
+
+// Lists of products go to the issue dialog; the toast is for one-line messages.
+
+const issues = useIssueList()
 
 // Sales now live in the `transactions` hub as transaction_type = 'sale',
 // with their lines in `transaction_items`. These types are the view-model the
@@ -265,11 +270,12 @@ export const useSalesDataStore = defineStore('salesData', () => {
     }
     const expiredLines = productsStore.expiredAmong(lines.map(l => l.product_id))
     if (expiredLines.length) {
-      const names = await productsStore.fetchProductsByIds(expiredLines)
-      const label = names.length
-        ? names.map(p => p.product_name).join(', ')
-        : expiredLines.join(', ')
-      toast.error(`Expired and cannot be sold: ${label}`)
+      const products = await productsStore.fetchProductsByIds(expiredLines)
+      issues.showIssues({
+        title: 'Expired products in the cart',
+        message: 'The sale was not recorded. Remove these from the cart:',
+        rows: expiredLines.map((id) => issueRow(products.find((p) => p.id === id), id, 'Expired — cannot be sold')),
+      })
       loading.value = false
       return { success: false }
     }
@@ -293,11 +299,13 @@ export const useSalesDataStore = defineStore('salesData', () => {
     // first one and say "product 11".
     if (shortLines.length) {
       const products = await productsStore.fetchProductsByIds(shortLines.map(l => l.product_id))
-      const detail = shortLines.map((l) => {
-        const product = products.find(p => p.id === l.product_id)
-        return `${describeProduct(product, l.product_id)} — needs ${l.needed}, ${l.onHand ?? 0} on hand`
+      issues.showIssues({
+        title: 'Not enough stock for this sale',
+        message: 'The sale was not recorded. This branch is short of:',
+        rows: shortLines.map((l) => issueRow(
+          products.find(p => p.id === l.product_id), l.product_id, `Needs ${l.needed} · ${l.onHand ?? 0} on hand`,
+        )),
       })
-      toast.error(`Not enough stock for this sale. ${detail.join('; ')}.`, { timeout: 15000 })
       loading.value = false
       return { success: false }
     }
@@ -557,11 +565,15 @@ export const useSalesDataStore = defineStore('salesData', () => {
         .eq('id', stockRow.id)
       if (stockError) failedRestores.push(line.product_id)
     }
-    // One warning naming every product to fix, by name and batch.
+    // Every product to fix by hand, listed with its batch.
     if (failedRestores.length) {
       const products = await productsStore.fetchProductsByIds(failedRestores)
-      const names = failedRestores.map(id => describeProduct(products.find(p => p.id === id), id))
-      toast.warning(`Sale voided, but stock needs manual correction for: ${names.join('; ')}.`, { timeout: 15000 })
+      issues.showIssues({
+        title: 'Sale voided — stock needs correcting',
+        message: 'The sale was voided, but stock could not be put back for these products. Correct it by hand:',
+        rows: failedRestores.map((id) => issueRow(products.find((p) => p.id === id), id, 'Stock not put back')),
+        tone: 'warning',
+      })
     }
 
     const { error: logError } = await supabase.from('logs').insert({
