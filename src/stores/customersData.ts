@@ -203,7 +203,10 @@ export const useCustomersDataStore = defineStore('customersData', () => {
     try {
       const { search, activeOnly, department, includeUnassigned } = options
       let q = supabase.from('customers').select('*')
-      if (activeOnly) q = q.eq('is_active', true)
+      // NOT eq(true): the imported customer file left is_active blank on 5,276
+      // of 5,287 rows, so "= true" matched only 10 customers. Blank means
+      // never deactivated — only an explicit false is excluded.
+      if (activeOnly) q = q.not('is_active', 'is', false)
       if (department) {
         q = includeUnassigned
           ? q.or(`department.eq.${department},department.is.null`)
@@ -253,7 +256,9 @@ export const useCustomersDataStore = defineStore('customersData', () => {
   async function searchCustomers(term: string, limit = 50, department?: string) {
     clearError()
     try {
-      let q = supabase.from('customers').select('*').eq('is_active', true)
+      // Blank is_active counts as active — see fetchCustomers. "= true" made
+      // this search, and every picker built on it, find only 10 customers.
+      let q = supabase.from('customers').select('*').not('is_active', 'is', false)
       if (department) q = q.eq('department', department)
       const s = term.trim().replace(/[,()]/g, '')
       if (s) {

@@ -3,6 +3,7 @@ import type { Ref } from 'vue'
 import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import { getErrorMessage, parseTermDays } from '@/utils/helpers'
+import { fetchAllRows, fetchAllRowsForIds } from '@/stores/shared/paging'
 import type { ARAgingTerm } from '@/stores/financeData'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -136,45 +137,45 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
     loading.value = true
     error.value = ''
     try {
+      // Every query below is paged: a response past PostgREST's row cap is cut
+      // off without an error, and a statement missing rows reads as complete.
+
       // 1. Delivery receipts + their lines, the parent order, and the customer.
-      let drQuery = supabase
-        .from('delivery_receipts')
-        .select(
-          'id, created_at, dr_no, order_id, source, customer_id, po_no, ' +
-          'delivery_receipt_items(line_total), ' +
-          'customer:customer_id(id, name, area, term_days), ' +
-          'order:order_id(id, transaction_type, inhouse_no, ethical_no, po_no, po_amount, ' +
-          'inhouse_details(govt_po_no), ethical_details(discount_amount, due_date))',
-        )
-        .order('created_at', { ascending: true })
+      const drData = await fetchAllRows<any>(() => {
+        let drQuery = supabase
+          .from('delivery_receipts')
+          .select(
+            'id, created_at, dr_no, order_id, source, customer_id, po_no, ' +
+            'delivery_receipt_items(line_total), ' +
+            'customer:customer_id(id, name, area, term_days), ' +
+            'order:order_id(id, transaction_type, inhouse_no, ethical_no, po_no, po_amount, ' +
+            'inhouse_details(govt_po_no), ethical_details(discount_amount, due_date))',
+          )
+        if (filters.customerId) drQuery = drQuery.eq('customer_id', filters.customerId)
+        if (filters.source) drQuery = drQuery.eq('source', filters.source)
+        if (filters.dateFrom) drQuery = drQuery.gte('created_at', filters.dateFrom)
+        if (filters.dateTo) drQuery = drQuery.lte('created_at', `${filters.dateTo}T23:59:59.999`)
+        return drQuery.order('created_at', { ascending: true }).order('id', { ascending: true })
+      })
 
-      if (filters.customerId) drQuery = drQuery.eq('customer_id', filters.customerId)
-      if (filters.source) drQuery = drQuery.eq('source', filters.source)
-      if (filters.dateFrom) drQuery = drQuery.gte('created_at', filters.dateFrom)
-      if (filters.dateTo) drQuery = drQuery.lte('created_at', `${filters.dateTo}T23:59:59.999`)
-
-      const { data: drData, error: drError } = await drQuery
-      if (drError) throw drError
-
-      const drRows = (drData ?? []) as any[]
-      if (!drRows.length) {
-        register.value = []
-        totals.value = { ...EMPTY_TOTALS }
-        return []
-      }
+      // No early return when this is empty: orders with no delivery receipt
+      // (every opening receivable) are added below, and returning here hid
+      // them all whenever no DR matched — which on a system with no DRs yet
+      // meant the whole statement came back blank.
+      const drRows = drData
 
       const orderIds = [...new Set(drRows.map((d) => d.order_id).filter(Boolean))] as number[]
 
-      // 2. The payments against those orders.
-      const { data: collectionData, error: collectionError } = orderIds.length
-        ? await supabase
-            .from('collections')
-            .select('id, transaction_id, created_at, amount, reference_no')
-            .in('transaction_id', orderIds)
-            .is('voided_at', null) // a voided payment never settled anything
-            .order('created_at', { ascending: true })
-        : { data: [] as any[], error: null }
-      if (collectionError) throw collectionError
+      // 2. The payments against those orders. Fetched in id batches, so put
+      // back into date order: payments are applied oldest first.
+      const collectionData = (await fetchAllRowsForIds<any>(orderIds, (batch) => supabase
+        .from('collections')
+        .select('id, transaction_id, created_at, amount, reference_no')
+        .in('transaction_id', batch)
+        .is('voided_at', null) // a voided payment never settled anything
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true }),
+      )).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)) || a.id - b.id)
 
       // 3. Group the DRs by order — allocation is per-order, oldest DR first.
       const drsByOrder = new Map<number, any[]>()
@@ -227,7 +228,7 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
       }
 
       // 3b. Payments — oldest DR first, oldest OR first.
-      for (const c of (collectionData ?? []) as any[]) {
+      for (const c of collectionData) {
         const list = drsByOrder.get(c.transaction_id) ?? []
         let remaining = c.amount ?? 0
         for (const dr of list) {
@@ -324,26 +325,50 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
       // in the customer's file. These rows stand on the ORDER instead —
       // delivery_receipt_id is negated so it cannot collide with a real DR id,
       // and dr_no carries the order's own number rather than a fabricated one.
-      const drOrderIds = new Set(drRows.map((dr: any) => dr.order_id).filter(Boolean))
-      const { data: bareOrders } = await supabase
-        .from('transactions')
-        .select(
-          'id, transaction_type, created_at, paid_at, total_amount, customer_id, remarks, '
-          + 'inhouse_no, ethical_no, po_no, po_amount, '
-          + 'customer:customer_id(id, name, area, term_days), '
-          + 'inhouse_details(amount_paid, due_date, govt_po_no), '
-          + 'ethical_details(amount_paid, due_date, discount_amount)',
-        )
-        .in('transaction_type', ['inhouse_order', 'ethical_order'])
-        .in('status', ['delivered', 'paid', 'partial', 'invoiced'])
+      //
+      // The same customer / source / date filters as the DR query apply here.
+      // They used to be skipped, so a one-customer statement listed every
+      // customer's opening receivables.
+      const bareOrders = await fetchAllRows<any>(() => {
+        let bareQuery = supabase
+          .from('transactions')
+          .select(
+            'id, transaction_type, created_at, total_amount, customer_id, remarks, '
+            + 'inhouse_no, ethical_no, po_no, po_amount, '
+            + 'customer:customer_id(id, name, area, term_days), '
+            + 'inhouse_details(amount_paid, due_date, govt_po_no), '
+            + 'ethical_details(amount_paid, due_date, discount_amount)',
+          )
+          .in('transaction_type', ['inhouse_order', 'ethical_order'])
+          .in('status', ['delivered', 'paid', 'partial', 'invoiced'])
+        if (filters.customerId) bareQuery = bareQuery.eq('customer_id', filters.customerId)
+        if (filters.source) bareQuery = bareQuery.eq('transaction_type', filters.source)
+        if (filters.dateFrom) bareQuery = bareQuery.gte('created_at', filters.dateFrom)
+        if (filters.dateTo) bareQuery = bareQuery.lte('created_at', `${filters.dateTo}T23:59:59.999`)
+        return bareQuery.order('id', { ascending: true })
+      })
 
-      const orderRows: SOARegisterRow[] = ((bareOrders ?? []) as any[])
-        .filter((o) => !drOrderIds.has(o.id))
+      // "Has no DR" means none AT ALL, not none in this date range: checked
+      // against every receipt for these orders, not just the filtered drRows,
+      // or an order whose DRs fall outside the range would show up here as if
+      // it never had one.
+      // Every receipt for every candidate, not the first page of them: a missed
+      // receipt would list its order a second time as if it had none.
+      const candidateIds = bareOrders.map((o) => o.id as number)
+      const receiptOrders = await fetchAllRowsForIds<any>(candidateIds, (batch) => supabase
+        .from('delivery_receipts').select('id, order_id').in('order_id', batch).order('id', { ascending: true }))
+      const ordersWithDr = new Set(receiptOrders.map((r) => r.order_id))
+
+      const orderRows: SOARegisterRow[] = bareOrders
+        .filter((o) => !ordersWithDr.has(o.id))
         .map((o) => {
           const isInhouse = o.transaction_type === 'inhouse_order'
           const details = (isInhouse ? o.inhouse_details : o.ethical_details) ?? {}
           const customer = o.customer ?? null
-          const docDate = o.paid_at ?? o.created_at
+          // The order date — the same column the date filters above use, so a
+          // row never shows a date outside the period it was selected for.
+          // (An opening receivable stores its invoice date in both columns.)
+          const docDate = o.created_at
           const gross = Number(o.total_amount ?? 0)
           const discount = Number(o.ethical_details?.discount_amount ?? 0)
           const paid = Number(details.amount_paid ?? 0)

@@ -5,7 +5,7 @@ import type { VoucherType } from '@/stores/disbursementVouchersData'
 import VoucherSheet from './VoucherSheet.vue'
 import { useExpenseAccounts } from '../../composables/useExpenseAccounts'
 import { useVoucherPdf } from '../../composables/useVoucherPdf'
-import { maxVoucherAccounts } from '../../composables/useVoucherForm'
+import { standardVoucherRows } from '../../composables/useVoucherForm'
 import { companyOptions, defaultCompanyFor } from '@/utils/companyProfiles'
 import type { CompanyKey } from '@/utils/companyProfiles'
 
@@ -43,12 +43,12 @@ const companyKey = ref<CompanyKey>(defaultCompanyFor('disbursement_voucher'))
 
 const isReprint = computed(() => props.copyNo > 1)
 
-// A voucher saved under an older shape can still carry more accounts than the
-// form now allows. Printing it would push the signature row down and land the
-// stamp in the wrong place, so refuse rather than print a miscalibrated sheet.
-// Never truncate: dropping an account line would hide money off the document.
-const tooManyAccounts = computed(
-  () => (props.voucher?.items.length ?? 0) > maxVoucherAccounts,
+// More accounts than the standard form prints longer: every row past the fifth
+// pushes the signature row down, so the RECORDED stamp needs adjusting for this
+// voucher. Not a refusal any more — staff asked to print these and to handle
+// the stamp themselves — just said up front. Never truncated.
+const isLongVoucher = computed(
+  () => (props.voucher?.items.length ?? 0) > standardVoucherRows,
 )
 
 const sheet = ref<InstanceType<typeof VoucherSheet> | null>(null)
@@ -72,13 +72,6 @@ async function handlePrint() {
   await nextTick()
   const element = sheet.value?.root
   if (!element || !props.voucher) return
-
-  if (tooManyAccounts.value) {
-    toast.error(
-      `This voucher has ${props.voucher.items.length} accounts; the printed form holds ${maxVoucherAccounts}. Split the extra accounts onto a second voucher before printing.`,
-    )
-    return
-  }
 
   const filename = `${props.voucher.dv_no ?? 'disbursement-voucher'}`
     + `${isReprint.value ? `-reprint-${props.copyNo}` : ''}.pdf`
@@ -106,6 +99,17 @@ async function handlePrint() {
 
       <template v-else>
         <v-card-text class="pa-6">
+          <v-alert
+            v-if="isLongVoucher"
+            type="info"
+            variant="tonal"
+            density="compact"
+            class="mb-4 text-body-2"
+          >
+            This voucher has {{ voucher.items.length }} accounts, more than the standard
+            {{ standardVoucherRows }}, so it prints longer than the usual form. Adjust the
+            RECORDED stamp position when marking it.
+          </v-alert>
           <VoucherSheet ref="sheet" :voucher="voucher" :copy-no="copyNo" :company-key="companyKey" />
         </v-card-text>
 

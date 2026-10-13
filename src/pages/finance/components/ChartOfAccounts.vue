@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useChartOfAccounts, headers } from '../composables/useChartOfAccounts'
 import NewAccountDialog from './dialogs/NewAccountDialog.vue'
 import AccountLedgerDialog from './dialogs/AccountLedgerDialog.vue'
+import { financePageSizes } from '../composables/financeTable'
 
 const {
   loading,
@@ -156,6 +157,7 @@ onMounted(init)
 
         <template v-else>
           <v-data-table
+            :items-per-page-options="financePageSizes"
             mobile-breakpoint="md"
             :headers="headers"
             :items="filteredAccounts"

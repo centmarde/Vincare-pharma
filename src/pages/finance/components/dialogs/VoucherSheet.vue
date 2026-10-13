@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { voucherSignatories } from '@/stores/disbursementVouchersData'
 import type { VoucherItemType, VoucherType } from '@/stores/disbursementVouchersData'
 import { useExpenseAccounts } from '../../composables/useExpenseAccounts'
-import { maxVoucherAccounts } from '../../composables/useVoucherForm'
+import { standardVoucherRows } from '../../composables/useVoucherForm'
 import { companyFor } from '@/utils/companyProfiles'
 import type { CompanyKey } from '@/utils/companyProfiles'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
@@ -62,31 +62,59 @@ const voucherParticulars = computed(() => {
   return line?.particular ?? ''
 })
 
-// A FIXED number of account rows, padded with blanks when the voucher has
-// fewer. This is deliberate and load-bearing: a constant row count means a
-// constant sheet height, which keeps the signature row a constant distance from
-// the top -- and the POSTED stamp is overprinted against that row. Do not make
-// this adaptive without re-solving the stamp.
+// At least standardVoucherRows account rows, padded with blanks when the
+// voucher has fewer: an ordinary voucher keeps the standard height, so the
+// signature row stays where the POSTED stamp is calibrated. A voucher with MORE
+// accounts is no longer refused — it prints longer and its stamp is adjusted by
+// hand (the print dialog warns).
 //
-// The count comes from the form's own cap rather than a second literal here, so
-// the two can never drift apart.
+// The count comes from the form's own constant rather than a second literal
+// here, so the two can never drift apart.
 const fillerRows = computed(() =>
-  Math.max(0, maxVoucherAccounts - props.voucher.items.length),
+  Math.max(0, standardVoucherRows - props.voucher.items.length),
 )
+
+/**
+ * Check No. now prints in the header, in the 170px column. Staff type the bank
+ * and date into it ("BDO 1130222 10/10/26"), which at full size wraps to a
+ * second line — and a taller header row moves the signature row the RECORDED
+ * stamp is aligned to. Long values shrink to fit on one line, measured
+ * against the actual space rather than guessed from the character count
+ * (which still let a long value wrap at the smallest step). The value is also
+ * set not to wrap, so the row height cannot change whatever is typed.
+ * Never truncated: cutting a check number short on a financial document is
+ * worse than printing it small.
+ */
+// The 170px column, less the cell's padding (6px each side) and its border.
+const checkNoSpace = 170 - 12 - 1
+const checkNoLabel = 'Check No.:'
+const checkNoLabelGap = 4 // .dv-label margin-right
+let measureCanvas: HTMLCanvasElement | null = null
+
+function textWidth(text: string, font: string): number {
+  if (!measureCanvas) measureCanvas = document.createElement('canvas')
+  const ctx = measureCanvas.getContext('2d')
+  if (!ctx) return 0
+  ctx.font = font
+  return ctx.measureText(text).width
+}
+
+const checkNoFontSize = computed(() => {
+  const value = props.voucher.check_no ?? ''
+  // The sheet's own font, so the measurement matches what prints. Unknown
+  // until the sheet is mounted; nothing has printed before then.
+  const family = root.value ? getComputedStyle(root.value).fontFamily : ''
+  if (!value || !family) return '11px'
+  const available = checkNoSpace - textWidth(checkNoLabel, `bold 10px ${family}`) - checkNoLabelGap
+  const atFullSize = textWidth(value, `11px ${family}`)
+  if (atFullSize <= 0 || atFullSize <= available) return '11px'
+  // Rounded DOWN to a quarter pixel, so it never lands a hair too wide.
+  return `${Math.floor((available / atFullSize) * 11 * 4) / 4}px`
+})
 </script>
 
 <template>
   <div ref="root" class="dv">
-
-    <!-- Reprint mark. Outside the bordered form and compact, but still
-         ON THE SHEET so the PDF carries it — a reprint that printed
-         identically to the original could be signed or processed a
-         second time with nothing on the page to say otherwise. -->
-    <div v-if="isReprint" class="dv-reprint">
-      REPRINT · COPY {{ copyNo }}<span
-        v-if="voucher.printed_at"
-      > · orig. {{ formatDatePR_ISO(voucher.printed_at) }}</span>
-    </div>
 
     <!-- Letterhead (replaces the source form's Barangay/City/Province) -->
     <div class="text-center mb-3">
@@ -101,8 +129,13 @@ const fillerRows = computed(() =>
       <div class="dv-row">
         <div class="dv-cell dv-title">DISBURSEMENT VOUCHER</div>
         <div class="dv-cell dv-nocol">
-          <div class="dv-label">DV No.</div>
-          <div class="dv-value font-weight-bold">{{ voucher.dv_no ?? '—' }}</div>
+          <!-- The words "DV No." are no longer shown — the number says it all —
+               but their line stays, invisible: this row must keep its exact
+               height, because the RECORDED stamp is aligned to the signature
+               row further down. The number is nudged up into the middle
+               without moving anything else. -->
+          <div class="dv-label dv-hidden" aria-hidden="true">DV No.</div>
+          <div class="dv-value font-weight-bold dv-dvno">{{ voucher.dv_no ?? '—' }}</div>
         </div>
       </div>
 
@@ -122,9 +155,12 @@ const fillerRows = computed(() =>
           <span class="dv-label">Address:</span>
           <span class="dv-value">{{ voucher.payee_address ?? '' }}</span>
         </div>
+        <!-- Check No. and Payment Mode swapped places: the check is what staff
+             look for on the voucher, so it sits up here; the paying account
+             moved down to section D. -->
         <div class="dv-cell dv-nocol">
-          <span class="dv-label">Payment Mode:</span>
-          <span class="dv-value">{{ voucher.cash_account_name ?? '' }}</span>
+          <span class="dv-label">Check No.:</span>
+          <span class="dv-value dv-checkno" :style="{ fontSize: checkNoFontSize }">{{ voucher.check_no ?? '' }}</span>
         </div>
       </div>
       <div class="dv-row">
@@ -200,24 +236,38 @@ const fillerRows = computed(() =>
       <!-- D. Received Payment -->
       <div class="dv-row">
         <div class="dv-cell dv-grow">
-          <div class="dv-fine mb-4">D. Received Payment</div>
+          <!-- The reprint mark shares this heading's line, on the right under
+               the Validation box. It used to sit above the letterhead, which
+               pushed a reprint's whole sheet down a line — so the RECORDED
+               stamp landed off on a signed reprint. Down here it is below the
+               signature row and moves nothing. Still ON THE SHEET, so a reprint
+               can never pass for the original. -->
+          <div class="d-flex justify-space-between align-baseline mb-4">
+            <div class="dv-fine">D. Received Payment</div>
+            <div v-if="isReprint" class="dv-reprint">
+              REPRINT · COPY {{ copyNo }}<span
+                v-if="voucher.printed_at"
+              > · orig. {{ formatDatePR_ISO(voucher.printed_at) }}</span>
+            </div>
+          </div>
           <div class="d-flex">
             <div class="dv-received-sign">
               <div class="dv-signline"></div>
               <div class="dv-fine text-center"><em>Signature Over Printed Name</em></div>
             </div>
+            <!-- Beside the signature, on the same line, so it reads as WHEN
+                 that signature was given — the payee dates their own receipt. -->
+            <div class="dv-received-date">
+              <div class="dv-signline"></div>
+              <div class="dv-fine text-center"><em>Date Received</em></div>
+            </div>
+            <!-- Payment Mode here, Check No. in the header (swapped). -->
             <div class="dv-received-fields">
               <div class="dv-fine">
-                Check No.: <span class="dv-fill">{{ voucher.check_no ?? '' }}</span>
-              </div>
-              <div class="dv-fine">
-                Bank Name: <span class="dv-fill">{{ voucher.cash_account_institution ?? '' }}</span>
+                Payment Mode: <span class="dv-fill">{{ voucher.cash_account_name ?? '' }}</span>
               </div>
               <div class="dv-fine">
                 OR No.: <span class="dv-fill">{{ voucher.or_si_no ?? '' }}</span>
-              </div>
-              <div class="dv-fine">
-                Date: <span class="dv-fill"></span>
               </div>
             </div>
           </div>
@@ -338,6 +388,13 @@ const fillerRows = computed(() =>
   font-size: 11px;
 }
 
+/* One line always: a wrapped check number would make its header row taller
+   and move the signature row the RECORDED stamp is aligned to. Sized to fit
+   by checkNoFontSize. */
+.dv-checkno {
+  white-space: nowrap;
+}
+
 .dv-fine {
   font-size: 9px;
   line-height: 1.35;
@@ -364,7 +421,18 @@ const fillerRows = computed(() =>
   font-weight: 700;
   letter-spacing: 0.5px;
   color: #000000;
-  margin-bottom: 2px;
+}
+
+/* Keeps its line's height without showing anything — see the DV No. cell. */
+.dv-hidden {
+  visibility: hidden;
+}
+
+/* Up by half the hidden line above it, so the number sits in the middle of the
+   cell. Relative positioning moves only the drawing, not the layout. */
+.dv-dvno {
+  position: relative;
+  top: -7px;
 }
 
 .dv-sign {
@@ -384,9 +452,15 @@ const fillerRows = computed(() =>
 }
 
 .dv-received-sign {
-  flex: 0 0 45%;
+  flex: 0 0 38%;
   margin-top: 26px;
   padding-right: 12px;
+}
+
+.dv-received-date {
+  flex: 0 0 18%;
+  margin-top: 26px;
+  padding-right: 16px;
 }
 
 .dv-received-fields {

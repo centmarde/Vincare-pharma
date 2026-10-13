@@ -4,6 +4,7 @@ import type { ARAgingRow } from '@/stores/financeData'
 import { formatCurrency } from '@/utils/helpers'
 import ARDetailDialog from './dialogs/ARDetailDialog.vue'
 import SOADialog from './dialogs/SOADialog.vue'
+import { financePageSizes, financeDefaultPageSize } from '../composables/financeTable'
 
 const {
   loading,
@@ -129,10 +130,11 @@ const termLabels: Record<string, string> = {
             </v-expansion-panel-title>
             <v-expansion-panel-text class="pa-0">
               <v-data-table
+                :items-per-page-options="financePageSizes"
                 mobile-breakpoint="md"
                 :headers="arHeaders"
                 :items="jacket.rows"
-                hide-default-footer
+                :hide-default-footer="jacket.rows.length <= financeDefaultPageSize"
                 hover
                 @click:row="onRowClick"
               >

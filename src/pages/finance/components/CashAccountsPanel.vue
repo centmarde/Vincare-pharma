@@ -4,6 +4,7 @@ import { useCashAccounts, requestHeaders } from '../composables/useCashAccounts'
 import { useBankDeposits, depositHeaders } from '../composables/useBankDeposits'
 import CashAccountsManager from './CashAccountsManager.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import { financePageSizes } from '../composables/financeTable'
 
 const {
   cashAccounts,
@@ -87,6 +88,7 @@ onMounted(initDeposits)
         <v-divider />
 
         <v-data-table
+          :items-per-page-options="financePageSizes"
           mobile-breakpoint="md"
           :headers="requestHeaders"
           :items="replenishmentRequests"
@@ -219,6 +221,7 @@ onMounted(initDeposits)
         </v-alert>
 
         <v-data-table
+          :items-per-page-options="financePageSizes"
           mobile-breakpoint="md"
           :headers="depositHeaders"
           :items="deposits"

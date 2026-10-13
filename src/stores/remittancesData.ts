@@ -307,6 +307,10 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
           transaction_type: 'remittance',
           status: 'submitted',
           warehouse_id: payload.warehouseId,
+          // Which account the counted cash went into. The balance was credited
+          // but nothing recorded where, so the account's history could not
+          // show the remittance.
+          cash_account_id: payload.cashAccountId,
           total_amount: expected,
           remarks: payload.notes || null,
           created_by: user.id,

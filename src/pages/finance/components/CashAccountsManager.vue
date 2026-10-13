@@ -4,6 +4,7 @@ import type { ClassifiedCashAccount, CreateCashAccountPayload } from '@/utils/ca
 import { formatCurrency } from '@/utils/helpers'
 import { onMounted } from 'vue'
 import { useCashAccountsManager } from '../composables/useCashAccountsManager'
+import CashAccountHistoryDialog from './dialogs/CashAccountHistoryDialog.vue'
 
 const props = defineProps<{
   accounts: ClassifiedCashAccount[]
@@ -15,6 +16,13 @@ const emit = defineEmits<{
 }>()
 
 const {
+  showHistory,
+  historyAccount,
+  history,
+  historyLoading,
+  historyError,
+  historyVariance,
+  openHistory,
   groupedAccounts,
   totalActiveBalance,
   selectedClassificationMeta,
@@ -129,10 +137,12 @@ const submitNewAccount = () => {
         <v-list lines="two" density="comfortable" class="py-0">
           <template v-for="(account, i) in group.accounts" :key="account.id">
             <v-divider v-if="i > 0" />
+            <!-- Click for the account's money in / money out. -->
             <v-list-item
               :class="{ 'account-inactive': !account.is_active }"
               :title="account.name"
               :subtitle="`Opening balance: ${formatCurrency(account.opening_balance)}`"
+              @click="openHistory(account)"
             >
               <template #prepend>
                 <v-avatar size="32" :color="`${group.meta.color}-lighten-5`" rounded="lg">
@@ -151,7 +161,8 @@ const submitNewAccount = () => {
                        only way to undo a mistyped one was hand-written SQL. -->
                   <v-menu location="bottom end">
                     <template #activator="{ props: menu }">
-                      <v-btn v-bind="menu" icon="mdi-dots-vertical" variant="text" size="small" />
+                      <!-- .stop: the row itself opens the history. -->
+                      <v-btn v-bind="menu" icon="mdi-dots-vertical" variant="text" size="small" @click.stop />
                     </template>
                     <v-list density="compact">
                       <v-list-item
@@ -337,6 +348,15 @@ const submitNewAccount = () => {
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <CashAccountHistoryDialog
+      v-model="showHistory"
+      :account="historyAccount"
+      :history="history"
+      :loading="historyLoading"
+      :error="historyError"
+      :variance="historyVariance"
+    />
   </div>
 </template>
 
