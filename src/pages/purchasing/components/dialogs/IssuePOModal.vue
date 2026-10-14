@@ -3,7 +3,7 @@ import { useIssuePOModal } from '../../composables/useIssuePOModal'
 import PurchaseChargeRows from '../PurchaseChargeRows.vue'
 import PurchaseChargeLines from '../PurchaseChargeLines.vue'
 import type { PR } from '@/stores/purchaseRequisitionData'
-import { formatCurrency, formatExpiryMonthYear } from '@/utils/helpers'
+import { formatCurrency, formatExpiryMonthYear, formatDateOnly } from '@/utils/helpers'
 import { useDisplay } from 'vuetify'
 
 const { mobile } = useDisplay()
@@ -91,7 +91,7 @@ const {
           </v-col>
           <v-col :cols="mobile ? 12 : undefined" :class="mobile ? 'text-left' : 'text-right'">
             <div :class="mobile ? 'text-subtitle-1 font-weight-bold mb-1' : 'text-h6 font-weight-bold mb-2'">PURCHASE ORDER</div>
-            <div :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">DATE: {{ today }}</div>
+            <div :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">DATE: {{ formatDateOnly(pr?.purchase_requisition_date) }}</div>
             <div :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">PR #: {{ pr?.requisition_no }}</div>
             <div :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">
               PO #: <span class="font-weight-medium">Auto-generated</span>

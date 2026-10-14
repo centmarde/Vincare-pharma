@@ -134,13 +134,25 @@ export function usePurchaseRequisition() {
   // restore or the datepicker's .getFullYear()/.getMonth() calls would crash.
   const draft = useFormDraft({
     key: 'purchasing-requisition',
-    // v4: currentPR gained purchase_requisition_date. Bumping discards older
-    // drafts rather than restoring a currentPR without the new field.
+    // v4 adds purchase_requisition_date while keeping the v3 draft fields.
     version: 4,
     refs: { currentPR, items, currentDraftId, supplierCharges, lastSavedDraftSnapshot },
     isEmpty: () => !currentPR.value.remarks
+      && !currentPR.value.purchase_requisition_date
       && !items.value.some((i) => i.product_name.trim() || i.supplier_id != null
         || i.qty > 0 || i.cost_per_unit > 0 || i.expiry_date != null),
+    migrate: (data, fromVersion) => {
+      if (fromVersion !== 3) return null
+      const previousCurrentPR = data.currentPR
+      if (!previousCurrentPR || typeof previousCurrentPR !== 'object') return null
+      return {
+        ...data,
+        currentPR: {
+          ...(previousCurrentPR as Record<string, unknown>),
+          purchase_requisition_date: null,
+        },
+      }
+    },
     deserialize: (data) => ({
       ...data,
       items: Array.isArray(data.items)

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { company } from '@/pages/purchasing/composables/usePODetailModal'
 import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
-import { formatDatePO_Written } from '@/utils/helpers'
+import { formatDateOnlyLongMonth } from '@/utils/helpers'
 import type { PR } from '@/stores/purchaseRequisitionData'
 
 // Header block: company logo + PO meta (DATE / PR # / PO # / Delivered badge).
@@ -45,7 +45,7 @@ defineProps<{
         PURCHASE ORDER
       </div>
       <div :class="mobile ? 'text-caption' : 'text-body-2'">
-        DATE: {{ formatDatePO_Written(po?.created_at ?? '—') }}
+        DATE: {{ formatDateOnlyLongMonth(pr?.purchase_requisition_date ?? '—') }}
       </div>
       <div :class="mobile ? 'text-caption' : 'text-body-2'">
         PR #: {{ pr?.requisition_no ?? '—' }}

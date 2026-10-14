@@ -42,6 +42,12 @@ export type FormDraftOptions = {
   debounceMs?: number
   /** Transform the snapshot before it's JSON-stringified (rarely needed). */
   serialize?: (snapshot: Record<string, unknown>) => Record<string, unknown>
+  /** Convert a supported older version before restoring it. */
+  migrate?: (
+    data: Record<string, unknown>,
+    fromVersion: number | undefined,
+    toVersion: number,
+  ) => Record<string, unknown> | null
   /** Revive parsed data before it's applied — e.g. turn ISO strings back into Date. */
   deserialize?: (data: Record<string, unknown>) => Record<string, unknown>
 }
@@ -89,14 +95,22 @@ export function useFormDraft(opts: FormDraftOptions) {
 
     let parsed: { v?: number; data?: Record<string, unknown> }
     try { parsed = JSON.parse(raw) } catch { clear(); return false }
-    // A draft from an older shape can't be trusted — discard rather than misapply.
-    if (parsed.v !== version || !parsed.data || typeof parsed.data !== 'object') { clear(); return false }
+    if (!parsed.data || typeof parsed.data !== 'object') { clear(); return false }
 
-    const data = opts.deserialize ? opts.deserialize(parsed.data) : parsed.data
+    const wasMigrated = parsed.v !== version
+    let data = parsed.data
+    if (wasMigrated) {
+      if (!opts.migrate) { clear(); return false }
+      const migratedData = opts.migrate(data, parsed.v, version)
+      if (!migratedData) { clear(); return false }
+      data = migratedData
+    }
+    data = opts.deserialize ? opts.deserialize(data) : data
     let applied = false
     for (const k of Object.keys(refs)) {
       if (k in data) { refs[k].value = data[k]; applied = true }
     }
+    if (applied && wasMigrated) write()
     return applied
   }
 
