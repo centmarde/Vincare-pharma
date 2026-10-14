@@ -40,6 +40,13 @@ defineProps<{
 function amountText(row: { negate: boolean }, amount: number) {
   return row.negate ? `(${formatCurrency(amount)})` : formatCurrency(amount)
 }
+/** "62.3%"; a loss gets a minus, as its amount does; a dash when there are no sales. */
+function ratioText(ratio: number | null | undefined) {
+  if (ratio == null) return '—'
+  // Rounded first, so a figure that rounds to zero never prints as "-0.0%".
+  const rounded = Math.round(ratio * 10) / 10
+  return `${rounded < 0 ? '-' : ''}${Math.abs(rounded).toFixed(1)}%`
+}
 function rowClass(row: StatementRow) {
   return `is-row is-${row.kind}${row.final ? ' is-final' : ''}`
 }
@@ -69,12 +76,22 @@ function rowClass(row: StatementRow) {
       </div>
 
       <!-- ── Period, accrual ─────────────────────────────────── -->
-      <table v-if="!isMonthly && !isCash && periodRows.length" class="stmt" style="max-width: 720px; margin: 0 auto">
+      <table v-if="!isMonthly && !isCash && periodRows.length" class="stmt" style="max-width: 820px; margin: 0 auto">
+        <thead>
+          <tr>
+            <th class="stmt-label"></th>
+            <th class="stmt-amount stmt-col-head">AMOUNT</th>
+            <th class="stmt-amount stmt-col-head stmt-pct">% OF SALES</th>
+          </tr>
+        </thead>
         <tbody>
           <tr v-for="(row, i) in periodRows" :key="i" :class="rowClass(row)">
             <th scope="row" class="stmt-label">{{ row.label }}</th>
             <td class="stmt-amount">
               <template v-if="row.kind !== 'section'">{{ amountText(row, row.total) }}</template>
+            </td>
+            <td class="stmt-amount stmt-pct">
+              <template v-if="row.kind !== 'section'">{{ ratioText(row.totalRatio) }}</template>
             </td>
           </tr>
         </tbody>
@@ -86,24 +103,34 @@ function rowClass(row: StatementRow) {
           <thead>
             <tr>
               <th class="stmt-label"></th>
-              <th v-for="m in monthly.months" :key="m" class="stmt-amount stmt-col-head">
-                {{ monthLabel(m) }}
-              </th>
+              <!-- Each month carries its own % of sales beside it, so a month
+                   can be compared with the next: COGS 62% in Aug, 58% in Sep. -->
+              <template v-for="m in monthly.months" :key="m">
+                <th class="stmt-amount stmt-col-head">{{ monthLabel(m) }}</th>
+                <th class="stmt-amount stmt-col-head stmt-pct">%</th>
+              </template>
               <th class="stmt-amount stmt-col-head is-total-col">TOTAL</th>
+              <th class="stmt-amount stmt-col-head stmt-pct is-total-pct">%</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="(row, i) in monthlyRows" :key="i" :class="rowClass(row)">
               <th scope="row" class="stmt-label">{{ row.label }}</th>
               <template v-if="row.kind === 'section'">
-                <td v-for="(m, j) in monthly.months" :key="j" />
+                <template v-for="(m, j) in monthly.months" :key="j">
+                  <td />
+                  <td />
+                </template>
                 <td class="is-total-col" />
+                <td />
               </template>
               <template v-else>
-                <td v-for="(amt, j) in row.amounts" :key="j" class="stmt-amount">
-                  {{ amountText(row, amt) }}
-                </td>
+                <template v-for="(amt, j) in row.amounts" :key="j">
+                  <td class="stmt-amount">{{ amountText(row, amt) }}</td>
+                  <td class="stmt-amount stmt-pct">{{ ratioText(row.ratios?.[j]) }}</td>
+                </template>
                 <td class="stmt-amount is-total-col">{{ amountText(row, row.total) }}</td>
+                <td class="stmt-amount stmt-pct is-total-pct">{{ ratioText(row.totalRatio) }}</td>
               </template>
             </tr>
           </tbody>
@@ -321,6 +348,17 @@ function rowClass(row: StatementRow) {
   font-weight: 600;
 }
 
+/* % of sales: a narrower, quieter column beside the amount it describes. */
+.stmt-pct {
+  min-width: 68px;
+  padding-left: 0.75rem;
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+.is-total-pct {
+  font-weight: 600;
+}
+
 .excluded-head {
   font-size: 0.72rem;
   font-weight: 700;
@@ -371,6 +409,9 @@ function rowClass(row: StatementRow) {
 }
 .is-print .is-total-col {
   padding-left: 0.5rem;
+}
+.is-print .stmt-pct {
+  padding-left: 0.3rem;
 }
 .is-print .statement-title {
   font-size: 1rem;

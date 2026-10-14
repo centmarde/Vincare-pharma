@@ -80,6 +80,18 @@ export const cashGLExcluded = ['1030', '1035', '1040']
 /** Outside the range but genuinely cash-like: where time deposits are filed. */
 export const cashGLExtra = ['1100']
 
+/**
+ * The Cash Advances accounts (1060 Rebates, 1070 Rebates Ads, 1080 Employee,
+ * 1090 Employer) — money advanced out, owed back to the company.
+ */
+export const cashAdvanceGLRange = { floor: 1060, ceiling: 1090 }
+
+/** Is this chart account one of the Cash Advances? */
+export function isCashAdvanceAccount(code: string | null | undefined): boolean {
+  const n = parseInt(code ?? '', 10)
+  return !isNaN(n) && n >= cashAdvanceGLRange.floor && n <= cashAdvanceGLRange.ceiling
+}
+
 /** Is this chart account somewhere a cash account's money can sit? */
 export function isCashGLAccount(code: string): boolean {
   if (cashGLExcluded.includes(code)) return false

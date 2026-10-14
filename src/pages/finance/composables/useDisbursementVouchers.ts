@@ -3,6 +3,9 @@ import { storeToRefs } from 'pinia'
 import { useFinanceDataStore } from '@/stores/financeData'
 import { useDisbursementVouchersStore } from '@/stores/disbursementVouchersData'
 import type { VoucherType, VoucherInput } from '@/stores/disbursementVouchersData'
+import { isCashAdvanceAccount } from '@/utils/cashAccountTypes'
+import { toLocalISODate } from '@/utils/helpers'
+import { useExpenseAccounts } from './useExpenseAccounts'
 
 // List + lifecycle actions for the Disbursement Vouchers page. Form state lives
 // in useVoucherForm (called inside the dialog) — see the note there on why the
@@ -21,6 +24,37 @@ export const headers = [
   { title: 'ACTIONS',     key: 'actions',           sortable: false, align: 'center' as const },
 ] as const
 
+/** The account filter's value for every Cash Advances account (1060–1090) at once. */
+export const cashAdvancesFilter = '@cash-advances'
+
+/**
+ * An amount typed into the search box: "3776", "3,776", "₱3,776.50". Null
+ * when the text is not a plain amount, so it is searched as text only.
+ *
+ * Without decimals it means the whole peso — "3776" finds ₱3,776.00 to
+ * ₱3,776.99, the way people quote an amount from memory. With decimals it is
+ * exact to the centavo.
+ */
+export function parseAmountQuery(text: string): { amount: number; wholePeso: boolean } | null {
+  const cleaned = text.trim().replace(/^php/i, '').replace(/[₱,\s]/g, '')
+  if (!/^\d+(\.\d{0,2})?$/.test(cleaned)) return null
+  return { amount: Number(cleaned), wholePeso: !/\.\d/.test(cleaned) }
+}
+
+export function amountMatches(value: number | null | undefined, query: { amount: number; wholePeso: boolean }): boolean {
+  if (value == null) return false
+  // Compared in centavos: 0.1 + 0.2 style float error must not make ₱3,776.00 miss.
+  const cents = Math.round(value * 100)
+  const wanted = Math.round(query.amount * 100)
+  return query.wholePeso ? cents >= wanted && cents < wanted + 100 : cents === wanted
+}
+
+/** "2026-08" for a voucher, from its own date (falling back to when it was made). */
+function voucherMonth(voucher: VoucherType): string {
+  const raw = voucher.voucher_date ?? voucher.created_at
+  return raw ? toLocalISODate(new Date(raw)).slice(0, 7) : ''
+}
+
 const voucherStatusMeta: Record<string, { color: string; label: string; hint: string }> = {
   draft:     { color: 'grey',    label: 'DRAFT',     hint: 'Not yet printed. Editable; nothing has been recorded and no cash has moved.' },
   printed:   { color: 'info',    label: 'PRINTED',   hint: 'Printed and locked, out for signature. Ready to record.' },
@@ -33,6 +67,7 @@ export function useDisbursementVouchers() {
   const financeStore = useFinanceDataStore()
   const { vouchers, loading } = storeToRefs(voucherStore)
   const { cashAccounts } = storeToRefs(financeStore)
+  const { expenseAccountLabel, ensureLoaded: ensureAccountsLoaded } = useExpenseAccounts()
 
   const showFormDialog = ref(false)
   const editTarget = ref<VoucherType | null>(null)
@@ -81,6 +116,70 @@ export function useDisbursementVouchers() {
   }
 
   const search = ref('')
+  // A month RANGE, "2026-08" to "2026-10", either end open (null): From alone
+  // is that month onward, To alone is up to that month, both null is every
+  // month, and the same month in both is that one month.
+  const monthFrom = ref<string | null>(null)
+  const monthTo = ref<string | null>(null)
+  /** An account code, cashAdvancesFilter for all Cash Advances, or null for every account. */
+  const accountFilter = ref<string | null>(null)
+
+  const isFiltering = computed(() =>
+    !!search.value?.trim() || !!monthFrom.value || !!monthTo.value || !!accountFilter.value)
+
+  /** Months that have vouchers, newest first. */
+  const voucherMonths = computed(() =>
+    [...new Set(vouchers.value.map(voucherMonth).filter(Boolean))].sort().reverse())
+
+  const monthOption = (month: string) => {
+    const [year, mm] = month.split('-').map(Number)
+    return { title: new Date(year, mm - 1, 1).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' }), value: month as string | null }
+  }
+
+  // Each end only offers months that fit the other, so From can never be
+  // picked after To.
+  const monthFromOptions = computed(() => [
+    { title: 'Earliest', value: null as string | null },
+    ...voucherMonths.value.filter((m) => !monthTo.value || m <= monthTo.value).map(monthOption),
+  ])
+  const monthToOptions = computed(() => [
+    { title: 'Latest', value: null as string | null },
+    ...voucherMonths.value.filter((m) => !monthFrom.value || m >= monthFrom.value).map(monthOption),
+  ])
+
+  /** Accounts the vouchers actually charge, after "All accounts" and the Cash Advances group. */
+  const accountOptions = computed(() => {
+    const codes = [...new Set(vouchers.value.flatMap((v) => v.items.map((line) => line.category)).filter(Boolean))]
+      .sort((a, b) => String(a).localeCompare(String(b)))
+    return [
+      { title: 'All accounts', value: null as string | null },
+      { title: 'All Cash Advances', value: cashAdvancesFilter as string | null },
+      ...codes.map((code) => ({ title: expenseAccountLabel(code), value: code as string | null })),
+    ]
+  })
+
+  function lineMatchesAccount(category: string | null | undefined): boolean {
+    if (!accountFilter.value) return true
+    if (accountFilter.value === cashAdvancesFilter) return isCashAdvanceAccount(category)
+    return category === accountFilter.value
+  }
+
+  /**
+   * What a voucher contributes under the account filter: its whole total with
+   * no filter, otherwise only its lines in that account. A voucher of ₱3,000
+   * cash advance and ₱776 fuel is ₱3,000 of Cash Advances, not ₱3,776.
+   */
+  function matchedAmount(voucher: VoucherType): number {
+    if (!accountFilter.value) return voucher.total_amount ?? 0
+    return voucher.items
+      .filter((line) => lineMatchesAccount(line.category))
+      .reduce((sum, line) => sum + (line.amount ?? 0), 0)
+  }
+
+  /** Whether the row should show a matched part under the account filter. */
+  function isPartialMatch(voucher: VoucherType): boolean {
+    return !!accountFilter.value && Math.abs(matchedAmount(voucher) - (voucher.total_amount ?? 0)) > 0.005
+  }
 
   /**
    * Vouchers matching the search box.
@@ -97,9 +196,18 @@ export function useDisbursementVouchers() {
    * status chip.
    */
   const filteredVouchers = computed(() => {
-    const query = search.value.trim().toLowerCase()
-    if (!query) return vouchers.value
+    const query = (search.value ?? '').trim().toLowerCase()
+    // Typed as an amount, it also matches the voucher total or any one line —
+    // as well as any text containing those digits (a voucher number, say).
+    const amountQuery = query ? parseAmountQuery(query) : null
     return vouchers.value.filter((voucher) => {
+      const month = voucherMonth(voucher)
+      if (monthFrom.value && month < monthFrom.value) return false
+      if (monthTo.value && month > monthTo.value) return false
+      if (accountFilter.value && !voucher.items.some((line) => lineMatchesAccount(line.category))) return false
+      if (!query) return true
+      if (amountQuery && (amountMatches(voucher.total_amount, amountQuery)
+        || voucher.items.some((line) => amountMatches(line.amount, amountQuery)))) return true
       const haystack = [
         voucher.dv_no,
         voucher.payee,
@@ -117,6 +225,8 @@ export function useDisbursementVouchers() {
   /**
    * What the matches add up to — the number their old system showed and the
    * reason this search exists: "what did all the LIQ. vouchers come to?"
+   * Under an account filter, only the lines in that account are added (see
+   * matchedAmount).
    *
    * CANCELLED vouchers are counted but NOT added. A cancelled voucher is a
    * document that exists and should still be findable, but no money left the
@@ -132,7 +242,7 @@ export function useDisbursementVouchers() {
       matches: rows.length,
       counted: counted.length,
       cancelled: cancelled.length,
-      total: counted.reduce((sum, voucher) => sum + (voucher.total_amount ?? 0), 0),
+      total: counted.reduce((sum, voucher) => sum + matchedAmount(voucher), 0),
     }
   })
 
@@ -144,7 +254,8 @@ export function useDisbursementVouchers() {
   }
 
   async function init() {
-    await Promise.all([voucherStore.fetchVouchers(), financeStore.fetchCashAccounts()])
+    // The chart names the accounts in the account filter.
+    await Promise.all([voucherStore.fetchVouchers(), financeStore.fetchCashAccounts(), ensureAccountsLoaded()])
   }
 
   function openCreateDialog() {
@@ -250,7 +361,8 @@ export function useDisbursementVouchers() {
     showStampDialog, stampTarget, openStamp, closeStampDialog,
     showCancelDialog, cancelTarget, cancelReason,
     statusMeta, canEdit, canPrint, canRecord, canCancel, recordBlockedReason, particularsSummary,
-    search, filteredVouchers, searchTotals,
+    search, monthFrom, monthTo, monthFromOptions, monthToOptions, accountFilter, accountOptions, isFiltering,
+    matchedAmount, isPartialMatch, filteredVouchers, searchTotals,
     init, openCreateDialog, openEditDialog, closeFormDialog, handleSubmit,
     openPrint, closePrintDialog, handleRecord,
     openCancelDialog, closeCancelDialog, handleCancel,

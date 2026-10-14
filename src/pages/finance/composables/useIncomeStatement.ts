@@ -93,6 +93,31 @@ export type StatementRow = {
   negate: boolean
   /** The closing figure. Carries the double rule that says nothing follows. */
   final?: boolean
+  /** Each amount as a % of that column's NET SALES; null where sales are nil. */
+  ratios?: (number | null)[]
+  totalRatio?: number | null
+}
+
+/**
+ * A figure as a percentage of net sales — the common-size view the OM and the
+ * accountant read the statement by: COGS 62%, expenses 21%, net income 9%.
+ * Null when there are no sales to divide by, so the column shows a dash rather
+ * than a meaningless or infinite figure.
+ */
+export function ratioOfSales(amount: number, netSales: number): number | null {
+  if (!netSales || netSales <= 0) return null
+  return (amount / netSales) * 100
+}
+
+/** Fills in each row's % of sales, one per column plus the total. Section headings carry none. */
+function withRatios(rows: StatementRow[], salesPerColumn: number[], totalSales: number): StatementRow[] {
+  return rows.map((row) => (row.kind === 'section'
+    ? row
+    : {
+        ...row,
+        ratios: row.amounts.map((amount, i) => ratioOfSales(amount, salesPerColumn[i] ?? 0)),
+        totalRatio: ratioOfSales(row.total, totalSales),
+      }))
 }
 
 export function useIncomeStatement() {
@@ -212,7 +237,7 @@ export function useIncomeStatement() {
         rows.push({ kind: 'result', label: block.result.label, amounts: [], total: st[block.result.key] ?? 0, negate: false, final: block.final })
       }
     }
-    return rows
+    return withRatios(rows, [], st.netSales ?? 0)
   })
 
   /**
@@ -277,7 +302,7 @@ export function useIncomeStatement() {
         })
       }
     }
-    return rows
+    return withRatios(rows, m.perMonth.map((p) => p?.netSales ?? 0), m.total?.netSales ?? 0)
   })
 
   async function load() {

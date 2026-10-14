@@ -48,15 +48,15 @@ const filename = computed(() => {
 })
 
 /**
- * How many month columns still land legibly on A4 landscape.
+ * How many months still land legibly on A4 landscape.
  *
- * At print metrics a figure column is ~68px and the label column ~190px, against
- * ~1047px of usable page (297mm less 10mm margins). Twelve months plus a total
- * is a hair over and html2pdf's fit-to-width absorbs it; beyond that it scales
- * the whole sheet down far enough to stop being readable, which is worse than
- * saying so.
+ * Each month is TWO columns now — the amount and its % of sales — against
+ * ~1047px of usable page (297mm less 10mm margins). Measured: seven months of
+ * real figures plus the total fit at full size; past eight, html2pdf scales the
+ * whole sheet down and the label column wraps to three or four lines, far
+ * enough to stop being readable, which is worse than saying so.
  */
-const legibleColumns = 12
+const legibleColumns = 8
 const columnCount = computed(() =>
   props.isMonthly ? (props.isCash ? props.monthlyCash?.months.length : props.monthly?.months.length) ?? 0 : 0,
 )
