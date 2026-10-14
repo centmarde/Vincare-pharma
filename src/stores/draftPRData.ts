@@ -53,6 +53,8 @@ export type DraftPRType = {
   source_order_type: string | null
   converted_pr_id: number | null
   supplier_charges?: SupplierCharges[] | null
+  // NEW — user-editable date captured on the manual PR form; date-only 'YYYY-MM-DD' string.
+  purchase_requisition_date?: string | null
   items: DraftPRItemType[]
 }
 
@@ -587,6 +589,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     payload: {
       draftId?: number | null
       remarks?: string | null
+      purchaseRequisitionDate?: string | null
       supplierCharges: SupplierCharges[]
       lines: ManualDraftLineInput[]
     },
@@ -611,6 +614,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
           origin: 'manual',
           status: 'draft',
           remarks: payload.remarks ?? null,
+          purchase_requisition_date: payload.purchaseRequisitionDate ?? null,
           supplier_charges: payload.supplierCharges,
           created_by: user.id,
           source_order_id: null,
@@ -705,6 +709,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
         .from('draft_purchase_requisitions')
         .update({
           remarks: payload.remarks ?? null,
+          purchase_requisition_date: payload.purchaseRequisitionDate ?? null,
           supplier_charges: payload.supplierCharges,
           updated_at: new Date().toISOString(),
         })

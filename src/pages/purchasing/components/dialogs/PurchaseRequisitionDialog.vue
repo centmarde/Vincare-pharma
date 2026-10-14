@@ -152,6 +152,15 @@ watch(
           </v-chip>
         </div>
         <div class="d-flex align-center" style="gap: 12px">
+          <v-text-field
+            v-model="currentPR.purchase_requisition_date"
+            type="date"
+            label="Purchase Requisition Date"
+            density="compact"
+            variant="outlined"
+            hide-details
+            class="pr-date-field"
+          />
           <v-btn icon="mdi-close" variant="text" size="small" @click="close" />
         </div>
       </v-card-title>
@@ -276,5 +285,9 @@ watch(
 }
 :deep(.v-field--focused .v-field__outline) {
   --v-field-border-opacity: 0.5;
+}
+/* Keep the header date field compact beside the Close button. */
+.pr-date-field {
+  max-width: 190px;
 }
 </style>

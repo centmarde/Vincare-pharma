@@ -57,6 +57,7 @@ export async function updatePR(payload: {
   prId: number
   items: PRItem[]
   remarks: string
+  purchase_requisition_date?: string | null
 }): Promise<boolean> {
   loading.value = true
   error.value = ''
@@ -104,6 +105,11 @@ export async function updatePR(payload: {
       subtotal: breakdown.netTotal,
       purchase_discount_amount: breakdown.discountAmount,
       total_amount: breakdown.purchaseTotal,
+      // Only touch the date when the caller supplies it, so a caller that
+      // doesn't manage the date can't accidentally clear it.
+      ...(payload.purchase_requisition_date !== undefined
+        ? { purchase_requisition_date: payload.purchase_requisition_date }
+        : {}),
       updated_at: new Date().toISOString(),
     })
     .eq('id', payload.prId)
@@ -613,6 +619,7 @@ export async function savePurchaseRequisition(
               transaction_type: 'purchase_requisition',
               status: 'pending_approval',
               remarks: currentPR.value.remarks ?? '',
+              purchase_requisition_date: currentPR.value.purchase_requisition_date ?? null,
               subtotal: breakdown.netTotal,
               purchase_discount_percent: breakdown.discountPercent,
               purchase_discount_amount: breakdown.discountAmount,

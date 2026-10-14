@@ -67,6 +67,7 @@ export type SupplierPurchaseSummary = PurchaseBreakdown & {
 
 type DraftPayload = {
   remarks: string | null
+  purchaseRequisitionDate: string | null
   supplierCharges: SupplierCharges[]
   lines: ManualDraftLineInput[]
 }
@@ -114,6 +115,7 @@ export function usePurchaseRequisition() {
 
   const currentPR = ref({
     remarks: '',
+    purchase_requisition_date: null as string | null,
   })
 
   const items = ref<PRFormItem[]>([])
@@ -132,7 +134,9 @@ export function usePurchaseRequisition() {
   // restore or the datepicker's .getFullYear()/.getMonth() calls would crash.
   const draft = useFormDraft({
     key: 'purchasing-requisition',
-    version: 3,
+    // v4: currentPR gained purchase_requisition_date. Bumping discards older
+    // drafts rather than restoring a currentPR without the new field.
+    version: 4,
     refs: { currentPR, items, currentDraftId, supplierCharges, lastSavedDraftSnapshot },
     isEmpty: () => !currentPR.value.remarks
       && !items.value.some((i) => i.product_name.trim() || i.supplier_id != null
@@ -335,6 +339,7 @@ export function usePurchaseRequisition() {
 
     // Sync to store state so savePurchaseRequisition can read it
     prStore.currentPR.remarks     = currentPR.value.remarks || null
+    prStore.currentPR.purchase_requisition_date = currentPR.value.purchase_requisition_date || null
     prStore.currentPR.supplier_id = null
     prStore.items                 = validItems.map(i => ({
       no:               i.no,
@@ -415,7 +420,7 @@ export function usePurchaseRequisition() {
 
   // ─── Reset ────────────────────────────────────────────────────────
   function reset() {
-    currentPR.value      = { remarks: '' }
+    currentPR.value      = { remarks: '', purchase_requisition_date: null }
     items.value          = []
     currentDraftId.value = null
     supplierCharges.value = []
@@ -425,7 +430,7 @@ export function usePurchaseRequisition() {
 
   // ─── Clear form (single blank row, no draft) ──────────────────────
   function clearForm() {
-    currentPR.value      = { remarks: '' }
+    currentPR.value      = { remarks: '', purchase_requisition_date: null }
     items.value          = []
     currentDraftId.value = null
     supplierCharges.value = []
@@ -455,6 +460,7 @@ export function usePurchaseRequisition() {
   function draftPayloadFromForm(): DraftPayload {
     return {
       remarks: currentPR.value.remarks || null,
+      purchaseRequisitionDate: currentPR.value.purchase_requisition_date || null,
       supplierCharges: chargesForSuppliersOnForm(),
       lines: draftLinesFromForm(),
     }
@@ -561,7 +567,10 @@ export function usePurchaseRequisition() {
       .filter((id): id is number => id != null)
     const stillPending = await productsStore.filterPendingReorderRequestIds(linkedReorderIds)
 
-    currentPR.value = { remarks: loaded.remarks ?? '' }
+    currentPR.value = {
+      remarks: loaded.remarks ?? '',
+      purchase_requisition_date: loaded.purchase_requisition_date ?? null,
+    }
     supplierCharges.value = loaded.supplier_charges ?? []
     items.value = loaded.items.map((item, index) => ({
       no:               index + 1,
