@@ -34,7 +34,9 @@ const {
   shortDatedBatches, shortDatedRequest, shortDatedNote, requestShortDatedApproval,
   proposedTotal, proposedCost, ratioLabel, ratioClass, profitLabel, marginLabel, deliveredPct, remaining, balance, paidPct,
   payCashAccountId, cashAccountOptions,
-  applyPickedProduct, recordCounter, agree, recheck, deliver, recordPayment, notifyPurchasing,
+  applyPickedProduct, recordCounter, recheck, deliver, recordPayment, notifyPurchasing,
+  termsRequest, lockPending, unlockPending, lockRejected, unlockRejected, canRequestUnlock,
+  requestTermsApproval, withdrawTermsRequest, requestUnapprove,
 } = useOrderDetail(() => props.order, () => emit('changed'))
 
 // Counter-offer product swap goes through the shared search dialog — the
@@ -103,7 +105,9 @@ const productName = (id: number | null) =>
         <div>
           <div class="text-h6 font-weight-bold">{{ order.order_no }}</div>
           <div class="text-caption text-medium-emphasis">
-            {{ order.customer?.name ?? '—' }} · PO: {{ order.po_no ?? '— (assigned once stock is confirmed)' }} · Govt PO: {{ order.govt_po_no ?? '—' }}
+            {{ order.customer?.name ?? '—' }} · PO: {{ order.po_no ?? '— (assigned once stock is confirmed)' }}
+            · Govt PR: {{ order.govt_po_no ?? '—' }}
+            · PR Amount: {{ order.po_amount != null ? formatCurrency(order.po_amount) : '—' }}
           </div>
         </div>
         <div class="d-flex align-center ga-1">
@@ -125,6 +129,12 @@ const productName = (id: number | null) =>
       <v-divider />
 
       <v-card-text class="pa-4 pa-sm-5">
+        <!-- The notes typed when the order was placed. Always saved, but never
+             shown on this screen, so staff took them for lost. -->
+        <v-sheet v-if="order.remarks" border rounded="lg" class="px-3 py-2 mb-4">
+          <div class="text-caption text-medium-emphasis">Notes</div>
+          <div class="text-body-2" style="white-space: pre-wrap">{{ order.remarks }}</div>
+        </v-sheet>
         <!-- delivery progress -->
         <div class="d-flex justify-space-between text-body-2 mb-1">
           <span class="font-weight-medium">Delivery progress</span><span>{{ deliveredPct }}%</span>
@@ -144,7 +154,33 @@ const productName = (id: number | null) =>
             </div>
             <div v-else class="text-caption text-medium-emphasis mb-2">No rounds yet — the customer's initial offer is the order total.</div>
 
-            <template v-if="isNegotiating">
+            <!-- Sent to the executives: frozen until they decide, so what they
+                 approve is what they were shown. -->
+            <v-alert
+              v-if="isNegotiating && lockPending"
+              type="info"
+              variant="tonal"
+              density="compact"
+              class="mb-1"
+            >
+              <div class="d-flex align-center flex-wrap ga-2">
+                <span class="flex-grow-1">
+                  Awaiting executive approval to lock these terms —
+                  <b>{{ formatCurrency(order.total_amount ?? 0) }}</b>, sent {{ formatDatePR_ISO(termsRequest?.created_at) }}.
+                  The order can't be changed meanwhile.
+                </span>
+                <v-btn size="small" variant="text" class="text-none" :loading="loading" @click="withdrawTermsRequest">
+                  Withdraw request
+                </v-btn>
+              </div>
+            </v-alert>
+
+            <template v-if="isNegotiating && !lockPending">
+              <v-alert v-if="lockRejected" type="warning" variant="tonal" density="compact" class="mb-3">
+                Not approved by the executives on {{ formatDatePR_ISO(termsRequest?.resolved_at) }}<template v-if="termsRequest?.resolution_note">:
+                  <b>{{ termsRequest.resolution_note }}</b></template>.
+                Adjust the terms and send them again.
+              </v-alert>
               <div class="text-caption font-weight-bold mb-1">Counter-offer (add or remove products, edit quantities and per-unit prices)</div>
               <v-table density="compact">
                 <thead><tr><th class="text-left">Product</th><th class="text-right" style="width:100px">Qty</th><th class="text-right" style="width:140px">PR Price</th><th class="text-right" style="width:110px">Cost/Unit</th><th style="width:48px" /></tr></thead>
@@ -215,7 +251,7 @@ const productName = (id: number | null) =>
                   </tr>
                 </tbody>
               </v-table>
-              <v-btn variant="text" size="small" class="text-none mt-1" prepend-icon="mdi-plus" @click="addNewLine">Add product</v-btn>
+              <v-btn variant="text" size="small" color="primary" class="text-none mt-1" prepend-icon="mdi-plus" @click="addNewLine">Add product</v-btn>
               <div class="text-caption text-medium-emphasis mt-1">
                 Swapping a product re-snapshots its cost so the ratio below stays accurate — the PR price is left for you to adjust.
                 Line changes are saved when you record the counter-offer.
@@ -241,13 +277,37 @@ const productName = (id: number | null) =>
 
               <v-textarea v-model="offerNote" placeholder="Note (optional)" variant="outlined" density="compact" rows="2" hide-details class="mt-2" />
               <div class="d-flex justify-end mt-2" style="gap:8px">
-                <span v-if="hasUnsavedLineChanges" class="text-caption text-warning align-self-center">Unsaved line changes — record them before agreeing</span>
+                <span v-if="hasUnsavedLineChanges" class="text-caption text-warning align-self-center">Unsaved line changes — record them before sending for approval</span>
                 <v-btn variant="outlined" size="small" class="text-none" :loading="loading" @click="recordCounter">Record Counter-Offer</v-btn>
-                <v-btn color="success" size="small" class="text-none font-weight-bold" elevation="0" :loading="loading" :disabled="hasUnsavedLineChanges" @click="agree">Agree (Lock Terms)</v-btn>
+                <!-- Locking the terms is an executive's call: this asks them. -->
+                <v-btn color="success" size="small" class="text-none font-weight-bold" elevation="0" :loading="loading" :disabled="hasUnsavedLineChanges" @click="requestTermsApproval">Request Approval (Lock Terms)</v-btn>
               </div>
             </template>
-            <div v-else class="text-body-2">
-              Agreed total: <b>{{ formatCurrency(order.total_amount ?? 0) }}</b>
+            <div v-else-if="!isNegotiating" class="text-body-2">
+              <div class="d-flex align-center flex-wrap ga-2">
+                <span class="flex-grow-1">Agreed total: <b>{{ formatCurrency(order.total_amount ?? 0) }}</b></span>
+                <template v-if="unlockPending">
+                  <v-chip size="small" color="warning" variant="tonal">Unapprove requested — awaiting the executives</v-chip>
+                  <v-btn size="small" variant="text" class="text-none" :loading="loading" @click="withdrawTermsRequest">Withdraw</v-btn>
+                </template>
+                <!-- Until the first delivery or payment the terms can still be undone,
+                     with an executive's say-so. -->
+                <v-btn
+                  v-else-if="canRequestUnlock"
+                  size="small"
+                  variant="text"
+                  color="error"
+                  class="text-none"
+                  prepend-icon="mdi-lock-open-variant-outline"
+                  :loading="loading"
+                  @click="requestUnapprove"
+                >
+                  Request Unapprove
+                </v-btn>
+              </div>
+              <div v-if="unlockRejected" class="text-caption text-medium-emphasis mt-1">
+                Unapprove not approved on {{ formatDatePR_ISO(termsRequest?.resolved_at) }}: {{ termsRequest?.resolution_note }}
+              </div>
             </div>
           </v-card-text>
         </v-card>

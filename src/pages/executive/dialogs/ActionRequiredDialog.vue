@@ -7,6 +7,8 @@ import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
 import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
 import { useExecutiveApproveDisposal } from '../composables/useExecutiveApproveDisposal'
 import { useExecutiveApproveShortDated } from '../composables/useExecutiveApproveShortDated'
+import { useExecutiveApproveTerms } from '../composables/useExecutiveApproveTerms'
+import TermsDecisionPanel from '../components/TermsDecisionPanel.vue'
 import type { PRItem } from '@/stores/purchaseRequisitionData'
 import { usePurchaseBreakdown } from '@/pages/purchasing/composables/usePurchaseBreakdown'
 import PurchaseChargeLines from '@/pages/purchasing/components/PurchaseChargeLines.vue'
@@ -26,6 +28,7 @@ const sharedChangeRequests = useSharedChangeRequests()
 const { approve: approvePR, reject: rejectPR } = useExecutiveApprovePR()
 const { approve: approveDisposal, reject: rejectDisposal } = useExecutiveApproveDisposal()
 const { approve: approveShortDated, reject: rejectShortDated } = useExecutiveApproveShortDated()
+const { approve: approveTerms, reject: rejectTerms } = useExecutiveApproveTerms()
 const prStore = usePurchaseRequisitionStore()
 
 
@@ -41,8 +44,9 @@ const selected = defineModel<boolean>('modelValue', { default: false })
 const props = defineProps<{ request?: any }>()
 
 const request = computed(() => props.request)
-const kind = computed(() => request.value?.kind as 'undo' | 'pr_approval' | 'disposal' | 'short_dated' | undefined)
+const kind = computed(() => request.value?.kind as 'undo' | 'pr_approval' | 'disposal' | 'short_dated' | 'terms' | undefined)
 const raw = computed(() => request.value?.raw)
+
 
 const disposalStockAfter = computed(() => {
   const onHand = raw.value?.product?.current_stock ?? 0
@@ -135,6 +139,7 @@ async function runApprove() {
   if (kind.value === 'undo') return changeRequestOwner(raw.value.source).approve(raw.value.id)
   if (kind.value === 'disposal') return approveDisposal(raw.value.id)
   if (kind.value === 'short_dated') return approveShortDated(raw.value.id)
+  if (kind.value === 'terms') return approveTerms(raw.value.id)
   if (kind.value === 'pr_approval') return approvePR(raw.value.id)
   // Never fall through to approvePR: it takes the id it is given at face
   // value, so an unrecognised request would approve whichever PR shares its id.
@@ -146,6 +151,7 @@ async function runReject(reason: string) {
   if (kind.value === 'undo') return changeRequestOwner(raw.value.source).reject(raw.value.id, reason)
   if (kind.value === 'disposal') return rejectDisposal(raw.value.id, reason)
   if (kind.value === 'short_dated') return rejectShortDated(raw.value.id, reason)
+  if (kind.value === 'terms') return rejectTerms(raw.value.id, reason)
   if (kind.value === 'pr_approval') return rejectPR(raw.value.id, reason)
   toast.error('This request type is not recognised — nothing was rejected.')
   return { success: false }
@@ -465,6 +471,13 @@ async function confirmReject() {
             <strong>{{ QUALIFICATION_MONTHS }} months</strong> of shelf life, which government
             contracts normally refuse.
           </v-alert>
+        </template>
+
+        <!-- ═══ TERMS APPROVAL BRANCH ═══ Lock an order's terms (In-House
+             Agree / Ethical Invoice), or undo them. Everything the decision
+             turns on — deal figures, ratio, PR, stock — lives in the panel. -->
+        <template v-else-if="kind === 'terms'">
+          <TermsDecisionPanel :request="raw" />
         </template>
 
         <!-- ═══ UNDO REQUEST BRANCH (unchanged) ═══ -->

@@ -10,7 +10,8 @@ import { useSharedChangeRequests } from '../composables/useSharedChangeRequests'
 import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
 import { useExecutiveApproveDisposal } from '../composables/useExecutiveApproveDisposal'
 import { useExecutiveApproveShortDated } from '../composables/useExecutiveApproveShortDated'
-import { formatDatePR_ISO } from '@/utils/helpers'
+import { useExecutiveApproveTerms } from '../composables/useExecutiveApproveTerms'
+import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import { useRequestHistory } from '../composables/useRequestHistory'
 
 const {
@@ -48,6 +49,11 @@ const {
   loading: shortDatedLoading,
   refresh: refreshShortDated,
 } = useExecutiveApproveShortDated()
+const {
+  requests: pendingTerms,
+  loading: termsLoading,
+  refresh: refreshTerms,
+} = useExecutiveApproveTerms()
 const { mobile } = useDisplay()
 
 type MergedActionItem =
@@ -55,6 +61,7 @@ type MergedActionItem =
   | { kind: 'pr_approval'; id: number; created_at: string; raw: any }
   | { kind: 'disposal'; id: number; created_at: string; raw: any }
   | { kind: 'short_dated'; id: number; created_at: string; raw: any }
+  | { kind: 'terms'; id: number; created_at: string; raw: any }
 
 type ChangeRequestSource = 'pr' | 'finance' | 'sales' | 'shared'
 
@@ -91,7 +98,13 @@ const mergedItems = computed<MergedActionItem[]>(() => {
     created_at: s.created_at,
     raw: s,
   }))
-  return [...undoItems, ...prItems, ...disposalItems, ...shortDatedItems].sort(
+  const termsItems: MergedActionItem[] = (pendingTerms.value || []).map((t: any) => ({
+    kind: 'terms',
+    id: t.id,
+    created_at: t.created_at,
+    raw: t,
+  }))
+  return [...undoItems, ...prItems, ...disposalItems, ...shortDatedItems, ...termsItems].sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   )
 })
@@ -104,7 +117,8 @@ const loading = computed(
     sharedLoading.value ||
     prLoading.value ||
     disposalLoading.value ||
-    shortDatedLoading.value,
+    shortDatedLoading.value ||
+    termsLoading.value,
 )
 
 const refreshing = ref(false)
@@ -120,6 +134,7 @@ async function refreshAll() {
       refreshPRApprovals(),
       refreshDisposals(),
       refreshShortDated(),
+      refreshTerms(),
     ])
   } finally {
     refreshing.value = false
@@ -155,6 +170,7 @@ function itemColor(kind: MergedActionItem['kind']): string {
   if (kind === 'undo') return 'red'
   if (kind === 'disposal') return 'error'
   if (kind === 'short_dated') return 'warning'
+  if (kind === 'terms') return 'indigo'
   return 'green'
 }
 
@@ -162,6 +178,7 @@ function itemIcon(kind: MergedActionItem['kind']): string {
   if (kind === 'undo') return 'mdi-cancel'
   if (kind === 'disposal') return 'mdi-delete-alert-outline'
   if (kind === 'short_dated') return 'mdi-clock-alert-outline'
+  if (kind === 'terms') return 'mdi-handshake-outline'
   return 'mdi-file-document-check-outline'
 }
 
@@ -294,6 +311,41 @@ watch(historyDialog, (val) => {
               >
                 {{ item.raw.summary }}
                 <span v-if="item.raw.customer_name"> — {{ item.raw.customer_name }}</span>
+                <span v-if="item.raw.reason"> · {{ item.raw.reason }}</span>
+              </v-list-item-subtitle>
+            </template>
+
+            <!-- Terms approval row: lock an order's terms (In-House Agree /
+                 Ethical Invoice), or undo them before delivery or payment. -->
+            <template v-else-if="item.kind === 'terms'">
+              <v-list-item-title
+                :class="
+                  mobile
+                    ? 'd-flex flex-column align-start ga-1 mb-1'
+                    : 'd-flex align-center ga-2 mb-1'
+                "
+              >
+                <div class="d-flex align-center ga-2 w-100">
+                  <v-chip size="x-small" :color="item.raw.request_type === 'unlock_terms' ? 'red' : 'indigo'" variant="tonal" label>
+                    {{ item.raw.request_type === 'unlock_terms' ? 'Unapprove' : 'Lock terms' }}
+                  </v-chip>
+                  <span class="text-body-2 font-weight-medium action-item-number">
+                    {{ item.raw.order_no ?? (item.raw.order_type === 'ethical_order' ? `Draft #${item.raw.transaction_id}` : `#${item.raw.transaction_id}`) }}
+                  </span>
+                </div>
+                <span class="text-caption text-medium-emphasis">
+                  {{ formatDatePR_ISO(item.raw.created_at) }}
+                </span>
+              </v-list-item-title>
+
+              <v-list-item-subtitle
+                class="text-caption text-medium-emphasis"
+                :class="mobile ? 'reason-clamp' : ''"
+                style="white-space: normal; line-height: 1.4"
+              >
+                {{ item.raw.order_type === 'ethical_order' ? 'Ethical' : 'In-House' }}
+                <span v-if="item.raw.customer_name"> — {{ item.raw.customer_name }}</span>
+                <span v-if="item.raw.total != null"> · {{ formatCurrency(item.raw.total) }}</span>
                 <span v-if="item.raw.reason"> · {{ item.raw.reason }}</span>
               </v-list-item-subtitle>
             </template>
