@@ -21,6 +21,7 @@ export type PurchaseOrder = {
   is_delivered: boolean
   requisition_id: number | null
   updated_at:   string | null
+  purchase_order_received_date: string | null
 }
 
 export const company = {

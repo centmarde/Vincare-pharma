@@ -292,7 +292,17 @@ export function usePurchaseRequisition() {
     })
   }
 
+  function hasInvalidPurchaseRequisitionDate(): boolean {
+    const date = currentPR.value.purchase_requisition_date?.trim()
+    return Boolean(date && !fromLocalISODate(date))
+  }
+
   async function handleSubmit(): Promise<SubmitResult> {
+    if (hasInvalidPurchaseRequisitionDate()) {
+      toast.info('Please enter a valid Purchase Requisition Date.')
+      return { success: false, resolvedReorderIds: [], requisitionNos: [], productIds: [] }
+    }
+
     const validItems = items.value.filter(i => i.product_name.trim())
     if (!validItems.length) {
       toast.warning('Please add at least one item.')
@@ -489,8 +499,12 @@ export function usePurchaseRequisition() {
     toast.warning('Your changes are still in the form. Use Save as Draft to keep them as a new draft.')
   }
 
-  // Not validated like handleSubmit — a draft is meant to hold a half-finished requisition.
   async function saveDraft(): Promise<{ success: boolean }> {
+    if (hasInvalidPurchaseRequisitionDate()) {
+      toast.info('Please enter a valid Purchase Requisition Date.')
+      return { success: false }
+    }
+
     const payload = draftPayloadFromForm()
     if (!payload.lines.length) {
       toast.warning('Add at least one item before saving a draft.')

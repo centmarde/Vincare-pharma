@@ -71,7 +71,7 @@ const { breakdown } = usePurchaseBreakdown(() => props.po)
                 Delivered
               </div>
               <div v-if="po?.status === 'complete'" :class="mobile ? 'text-caption text-medium-emphasis mt-1' : 'text-body-2 text-medium-emphasis mt-1'">
-                DELIVERED DATE: {{ po?.updated_at ? formatDatePO_Written(po.updated_at) : '—' }}
+                RECEIVED DATE: {{ po?.purchase_order_received_date ? formatDateOnlyLongMonth(po.purchase_order_received_date) : '—' }}
               </div>
             </v-col>
           </v-row>

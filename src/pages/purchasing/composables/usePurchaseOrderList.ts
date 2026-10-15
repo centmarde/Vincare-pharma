@@ -139,6 +139,7 @@ export function usePurchaseOrderList() {
       ship_method:    row.ship_method ?? null,
       requisition_id: row.id,
       updated_at:     row.updated_at  ?? null,
+      purchase_order_received_date: row.purchase_order_received_date ?? null,
     }))
 
     totalItems.value = totalCount

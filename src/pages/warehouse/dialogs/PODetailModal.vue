@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { usePODetailModal, company } from '@/pages/purchasing/composables/usePODetailModal'
 import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
-import { formatCurrency, formatDatePO_Written, formatExpiryMonthYear } from '@/utils/helpers'
+import { formatCurrency, formatDatePO_Written, formatDateOnlyLongMonth, formatExpiryMonthYear } from '@/utils/helpers'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import { useDisplay } from 'vuetify'
 
@@ -53,10 +53,13 @@ const { poNumber, emptyRows, uniqueSuppliers } = usePODetailModal(props, emit)
             </v-col>
             <v-col :cols="mobile ? 12 : undefined" :class="mobile ? 'text-left' : 'text-right'">
               <div :class="mobile ? 'text-subtitle-1 font-weight-bold mb-1' : 'text-h6 font-weight-bold mb-2'">PURCHASE ORDER</div>
-              <div :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">DATE: {{ po?.created_at ? formatDatePO_Written(po.created_at) : '—' }}</div>
+              <div :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">REQUISITION DATE: {{ pr?.purchase_requisition_date ? formatDateOnlyLongMonth(pr.purchase_requisition_date) : '—' }}</div>
               <div :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">PR #: {{ pr?.requisition_no ?? '—' }}</div>
               <div :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">
                 PO #: <span class="font-weight-bold text-primary">{{ poNumber }}</span>
+              </div>
+              <div v-if="po?.purchase_order_received_date" :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">
+                RECEIVED DATE: {{ formatDateOnlyLongMonth(po.purchase_order_received_date) }}
               </div>
               <div v-if="po?.is_delivered" :class="mobile ? 'text-caption text-green font-weight-bold mt-1' : 'text-body-2 text-green font-weight-bold mt-1'">
                 <v-icon start size="14">mdi-check-circle</v-icon>
