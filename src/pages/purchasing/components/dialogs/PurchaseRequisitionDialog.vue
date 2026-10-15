@@ -8,8 +8,9 @@ import PurchaseRequisitionItems from '../PurchaseRequisitionItems.vue'
 import SupplierChargesSummary from '../SupplierChargesSummary.vue'
 import { useDisplay } from 'vuetify'
 import { storeToRefs } from 'pinia'
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useToast } from 'vue-toastification'
+import { fromLocalISODate, toLocalISODate } from '@/utils/helpers'
 
 const props = defineProps<{
   modelValue: boolean
@@ -100,6 +101,25 @@ async function onSaveDraft() {
   }
 }
 
+// ─── Purchase Requisition Date picker ───────────────────────────
+// Bridges the YYYY-MM-DD string and Date object without timezone shifts.
+const prDatePickerMenu = ref(false)
+
+const prDatePickerDate = computed<Date | null>({
+  get: () =>
+    currentPR.value.purchase_requisition_date
+      ? fromLocalISODate(currentPR.value.purchase_requisition_date)
+      : null,
+  set: (val) => {
+    currentPR.value.purchase_requisition_date = val ? toLocalISODate(val) : null
+  },
+})
+
+function onPrDatePicker(val: Date | null) {
+  prDatePickerDate.value = val
+  prDatePickerMenu.value = false // close after a day is chosen
+}
+
 // Fetch suppliers once when dialog opens; start from a clean form each time
 watch(
   () => props.modelValue,
@@ -152,15 +172,31 @@ watch(
           </v-chip>
         </div>
         <div class="d-flex align-center" style="gap: 12px">
-          <v-text-field
-            v-model="currentPR.purchase_requisition_date"
-            type="date"
-            label="Purchase Requisition Date"
-            density="compact"
-            variant="outlined"
-            hide-details
-            class="pr-date-field"
-          />
+          <v-menu
+            v-model="prDatePickerMenu"
+            :close-on-content-click="false"
+            location="bottom"
+          >
+            <template #activator="{ props: menuProps }">
+              <v-text-field
+                v-bind="menuProps"
+                v-model="currentPR.purchase_requisition_date"
+                label="Purchase Requisition Date"
+                density="compact"
+                variant="outlined"
+                hide-details
+                clearable
+                readonly
+                class="pr-date-field"
+                prepend-inner-icon="mdi-calendar"
+                autocomplete="off"
+              />
+            </template>
+            <v-date-picker
+              :model-value="prDatePickerDate"
+              @update:model-value="onPrDatePicker"
+            />
+          </v-menu>
           <v-btn icon="mdi-close" variant="text" size="small" @click="close" />
         </div>
       </v-card-title>
@@ -288,6 +324,8 @@ watch(
 }
 /* Keep the header date field compact beside the Close button. */
 .pr-date-field {
-  max-width: 190px;
+  width: 100%;
+  max-width: 360px;
+  min-width: 200px;
 }
 </style>

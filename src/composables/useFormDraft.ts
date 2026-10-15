@@ -87,7 +87,7 @@ export function useFormDraft(opts: FormDraftOptions) {
     }
   }
 
-  // Returns true if a valid, same-version, non-empty draft was applied.
+  // Returns true if a valid, non-empty draft was applied.
   function restore(): boolean {
     let raw: string | null = null
     try { raw = localStorage.getItem(fullKey) } catch { return false }
