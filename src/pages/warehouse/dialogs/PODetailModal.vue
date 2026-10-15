@@ -96,7 +96,7 @@ const { poNumber, emptyRows, uniqueSuppliers } = usePODetailModal(props, emit)
             </v-col>
           </v-row>
 
-          <!-- Ship Via / Method / Declared Value -->
+          <!-- Ship Via / Method / Shipping Details -->
           <v-row class="mb-4">
             <v-col :cols="mobile ? 4 : 4">
               <div :class="mobile ? 'text-caption font-weight-bold text-medium-emphasis mb-1' : 'text-caption font-weight-bold text-medium-emphasis mb-2'">SHIP VIA</div>
@@ -111,10 +111,10 @@ const { poNumber, emptyRows, uniqueSuppliers } = usePODetailModal(props, emit)
               </v-card>
             </v-col>
             <v-col :cols="mobile ? 4 : 4">
-              <div :class="mobile ? 'text-caption font-weight-bold text-medium-emphasis mb-1' : 'text-caption font-weight-bold text-medium-emphasis mb-2'">DECLARED VALUE</div>
+              <div :class="mobile ? 'text-caption font-weight-bold text-medium-emphasis mb-1' : 'text-caption font-weight-bold text-medium-emphasis mb-2'">SHIPPING DETAILS</div>
               <v-card flat border rounded="lg" class="pa-2">
                 <div :class="mobile ? 'text-body-1 font-weight-bold' : 'text-body-1 font-weight-bold'">
-                  {{ formatCurrency(po?.total_amount ?? 0) }}
+                  {{ po?.shipping_details || '—' }}
                 </div>
               </v-card>
             </v-col>

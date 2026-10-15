@@ -25,6 +25,7 @@ returns table (
   purchase_order_received_date date,
   ship_via       text,
   ship_method    text,
+  shipping_details text,
   items          jsonb,
   total_count    bigint
 )
@@ -73,6 +74,7 @@ begin
       t.purchase_order_received_date,
       t.ship_via,
       t.ship_method,
+      t.shipping_details,
       coalesce(items.items, '[]'::jsonb) as items,
       count(*) over() as total_count
     from transactions t
@@ -108,6 +110,7 @@ begin
         or t.status         ilike $1
         or t.ship_via       ilike $1
         or t.ship_method    ilike $1
+        or t.shipping_details ilike $1
         or sup.name         ilike $1
         -- any item whose product belongs to a matching supplier
         or exists (

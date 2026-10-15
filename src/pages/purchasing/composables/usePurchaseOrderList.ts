@@ -137,6 +137,7 @@ export function usePurchaseOrderList() {
       is_delivered:   row.status === 'complete',
       ship_via:       row.ship_via    ?? null,
       ship_method:    row.ship_method ?? null,
+      shipping_details: row.shipping_details ?? null,
       requisition_id: row.id,
       updated_at:     row.updated_at  ?? null,
       purchase_order_received_date: row.purchase_order_received_date ?? null,

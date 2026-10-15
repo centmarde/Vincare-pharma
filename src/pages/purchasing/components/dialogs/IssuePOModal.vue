@@ -124,7 +124,7 @@ const {
           </v-col>
         </v-row>
 
-        <!-- ── Ship Via / Method / Declared Value ────────────── -->
+        <!-- ── Ship Via / Method / Shipping Details ────────────── -->
         <v-row class="mb-4">
           <v-col :cols="mobile ? 12 : 4" :class="mobile ? 'mb-3' : ''">
             <div :class="mobile ? 'text-caption font-weight-bold text-medium-emphasis mb-1' : 'text-caption font-weight-bold text-medium-emphasis mb-2'">SHIP VIA</div>
@@ -149,10 +149,15 @@ const {
             />
           </v-col>
           <v-col :cols="mobile ? 12 : 4">
-            <div :class="mobile ? 'text-caption font-weight-bold text-medium-emphasis mb-1' : 'text-caption font-weight-bold text-medium-emphasis mb-2'">DECLARED VALUE</div>
-            <v-card flat border rounded="lg" :class="mobile ? 'pa-2' : 'pa-3'">
-              <div :class="mobile ? 'text-body-1 font-weight-medium' : 'text-body-1 font-weight-medium'">{{ formatCurrency(declaredValue) }}</div>
-            </v-card>
+            <div :class="mobile ? 'text-caption font-weight-bold text-medium-emphasis mb-1' : 'text-caption font-weight-bold text-medium-emphasis mb-2'">SHIPPING DETAILS</div>
+            <v-text-field
+              v-model="form.shipping_details"
+              variant="outlined"
+              density="compact"
+              hide-details
+              placeholder="Enter shipping details"
+              autocomplete="off"
+            />
           </v-col>
         </v-row>
 

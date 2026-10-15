@@ -16,6 +16,7 @@ export type PurchaseOrder = {
   total_amount: number
   ship_via:     string | null
   ship_method:  string | null
+  shipping_details: string | null
   created_at:   string
   created_by:   string | null
   is_delivered: boolean
