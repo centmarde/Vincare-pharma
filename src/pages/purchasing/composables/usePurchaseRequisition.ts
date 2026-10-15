@@ -292,14 +292,26 @@ export function usePurchaseRequisition() {
     })
   }
 
+  function prDateErrorForSubmit(): string | null {
+    const date = currentPR.value.purchase_requisition_date?.trim()
+    if (!date) return 'Please select the Purchase Requisition Date.'
+    if (!fromLocalISODate(date)) return 'Please enter a valid Purchase Requisition Date.'
+    if (date > toLocalISODate(new Date()))
+      return 'Purchase Requisition Date cannot be in the future.'
+    return null
+  }
+
   function hasInvalidPurchaseRequisitionDate(): boolean {
     const date = currentPR.value.purchase_requisition_date?.trim()
-    return Boolean(date && !fromLocalISODate(date))
+    if (!date) return false
+    if (!fromLocalISODate(date)) return true
+    return date > toLocalISODate(new Date())
   }
 
   async function handleSubmit(): Promise<SubmitResult> {
-    if (hasInvalidPurchaseRequisitionDate()) {
-      toast.info('Please enter a valid Purchase Requisition Date.')
+    const dateError = prDateErrorForSubmit()
+    if (dateError) {
+      toast.info(dateError)
       return { success: false, resolvedReorderIds: [], requisitionNos: [], productIds: [] }
     }
 
@@ -531,6 +543,11 @@ export function usePurchaseRequisition() {
   async function autoSaveOpenDraft(outcome: 'saved.' | 'restored and saved.'): Promise<void> {
     const draftId = currentDraftId.value
     if (draftId == null || loading.value || !hasUnsavedDraftChanges.value) return
+
+    if (hasInvalidPurchaseRequisitionDate()) {
+      toast.info(`Draft #${draftId} was not updated because the Purchase Requisition Date is invalid or in the future.`)
+      return
+    }
 
     const payload = draftPayloadFromForm()
     if (!payload.lines.length) {
