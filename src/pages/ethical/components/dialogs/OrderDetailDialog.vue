@@ -34,6 +34,7 @@ const {
   isInvoiced, isPartial, isPaid, isAwaitingStock, isCancellable, isOverdue, balance, shortfall, collections,
   collectionCashAccountId, cashAccountOptions,
   recordCollection, cancelOrder, markCommissionPaid, recheck, issueDR, notifyPurchasing,
+  termsRequest, unlockPending, unlockRejected, canRequestUnlock, requestUnapprove, withdrawTermsRequest,
 } = useOrderDetail(() => order.value)
 
 // Pop the printable DR as soon as one is issued.
@@ -137,6 +138,39 @@ watch(
             </v-chip>
           </v-col>
         </v-row>
+        <!-- The notes typed when the order was placed. Always saved, but never
+             shown on this screen, so staff took them for lost. -->
+        <v-sheet v-if="order.remarks" border rounded="lg" class="px-3 py-2 mb-4">
+          <div class="text-caption text-medium-emphasis">Notes</div>
+          <div class="text-body-2" style="white-space: pre-wrap">{{ order.remarks }}</div>
+        </v-sheet>
+
+        <!-- Undoing the invoice: an executive's call, until the first payment
+             or delivery receipt. -->
+        <v-alert v-if="unlockPending" type="info" variant="tonal" density="compact" class="mb-4">
+          <div class="d-flex align-center flex-wrap ga-2">
+            <span class="flex-grow-1">
+              Unapprove requested {{ formatDatePR_ISO(termsRequest?.created_at) }} — awaiting the executives.
+            </span>
+            <v-btn size="small" variant="text" class="text-none" :loading="loading" @click="withdrawTermsRequest">Withdraw</v-btn>
+          </div>
+        </v-alert>
+        <div v-else-if="canRequestUnlock" class="d-flex justify-end mb-2">
+          <v-btn
+            size="small"
+            variant="text"
+            color="error"
+            class="text-none"
+            prepend-icon="mdi-lock-open-variant-outline"
+            :loading="loading"
+            @click="requestUnapprove"
+          >
+            Request Unapprove
+          </v-btn>
+        </div>
+        <div v-if="unlockRejected" class="text-caption text-medium-emphasis mb-3">
+          Unapprove not approved on {{ formatDatePR_ISO(termsRequest?.resolved_at) }}: {{ termsRequest?.resolution_note }}
+        </div>
 
         <v-divider class="my-4" />
 

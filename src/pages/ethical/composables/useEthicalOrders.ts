@@ -1,11 +1,21 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useEthicalDataStore } from '@/stores/ethicalData'
+import { useTermsApprovalStore } from '@/stores/termsApprovalData'
 import type { EthicalOrderType } from '@/stores/ethicalData'
 
 export function useEthicalOrders() {
   const ethical = useEthicalDataStore()
   const { orders, loading } = storeToRefs(ethical)
+
+  // Orders whose terms are waiting on the executives (lock or unlock) — a chip
+  // on the list, so staff can see what is held up without opening each one.
+  // Reloaded whenever the order list is.
+  const termsStore = useTermsApprovalStore()
+  const awaitingApprovalIds = ref<Set<number>>(new Set())
+  async function loadAwaitingApproval() { awaitingApprovalIds.value = await termsStore.pendingOrderIds('ethical_order') }
+  watch(orders, () => { void loadAwaitingApproval() })
+  const isAwaitingApproval = (id: number) => awaitingApprovalIds.value.has(id)
 
   const searchText = ref('')
   const statusFilter = ref('')
@@ -96,6 +106,7 @@ export function useEthicalOrders() {
     balanceAmount,
     isDraft,
     orderLabel,
+    isAwaitingApproval,
     init,
   }
 }

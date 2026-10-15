@@ -7,13 +7,19 @@ import { useProcurementDataStore } from '@/stores/procurementData'
 import { useFinanceDataStore } from '@/stores/financeData'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
+import { useTermsApprovalStore, isWithdrawn } from '@/stores/termsApprovalData'
+import type { TermsRequest } from '@/stores/termsApprovalData'
 import { formatCurrency } from '@/utils/helpers'
 
 const toast = useToast()
-const { confirmDialog } = useConfirmDialog()
+const { confirmDialog, inputValue: confirmInput } = useConfirmDialog()
 
 export function useOrderDetail(order: () => EthicalOrderType | undefined) {
   const ethical = useEthicalDataStore()
+  // Undoing an invoice back to a draft is an executive's call (termsApprovalData).
+  // Declared before the order watcher below, which runs immediately.
+  const termsStore = useTermsApprovalStore()
+  const termsRequest = ref<TermsRequest | null>(null)
   const drStore = useDeliveryReceiptsDataStore()
   const procurementStore = useProcurementDataStore()
   const authStore = useAuthUserStore()
@@ -86,7 +92,9 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
       requestedAt.value = null
       requestNote.value = ''
       collectionCashAccountId.value = null
+      termsRequest.value = null
       if (o?.id) {
+        void loadTermsRequest(o.id)
         // Deposit accounts are needed as soon as the dialog opens so the
         // collection form can offer them.
         await Promise.all([ethical.fetchCollections(o.id), financeStore.fetchCashAccounts()])
@@ -95,6 +103,43 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
     },
     { immediate: true },
   )
+
+  async function loadTermsRequest(id: number) { termsRequest.value = await termsStore.requestFor(id) }
+
+  const unlockPending = computed(() =>
+    termsRequest.value?.status === 'pending' && termsRequest.value.request_type === 'unlock_terms')
+  /** The executives turned down an unapprove request. */
+  const unlockRejected = computed(() =>
+    termsRequest.value?.request_type === 'unlock_terms' && termsRequest.value.status === 'rejected'
+    && !isWithdrawn(termsRequest.value))
+  /** Invoiced, nothing collected — the terms can still be undone (the store
+   *  also refuses once a delivery receipt has been issued). */
+  const canRequestUnlock = computed(() =>
+    isInvoiced.value && !collections.value.some((c) => !c.voided_at) && termsRequest.value?.status !== 'pending')
+
+  async function requestUnapprove() {
+    const o = order(); if (!o) return
+    const ok = await confirmDialog(
+      `Ask the executives to unapprove ${o.order_no ?? 'this invoice'}? If they approve, the stock goes back, the `
+      + 'sale is reversed in the ledger and the order returns to draft (its EO number is kept).',
+      { title: 'Request unapprove', confirmText: 'Send request', inputLabel: 'Reason (required)' },
+    )
+    if (!ok) return
+    const reason = confirmInput.value.trim()
+    loading.value = true
+    const result = await termsStore.requestUnlock({ orderId: o.id, orderType: 'ethical_order', orderNo: o.order_no, reason })
+    loading.value = false
+    if (result.success) await loadTermsRequest(o.id)
+  }
+
+  async function withdrawTermsRequest() {
+    const o = order(); const r = termsRequest.value
+    if (!o || !r || r.status !== 'pending') return
+    loading.value = true
+    const result = await termsStore.withdraw(r.id)
+    loading.value = false
+    if (result.success) await loadTermsRequest(o.id)
+  }
 
   async function loadRequestStatus(id: number) {
     const latest = await procurementStore.fetchLatestRequest(id)
@@ -227,5 +272,11 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
     recheck,
     issueDR,
     notifyPurchasing,
+    termsRequest,
+    unlockPending,
+    unlockRejected,
+    canRequestUnlock,
+    requestUnapprove,
+    withdrawTermsRequest,
   }
 }

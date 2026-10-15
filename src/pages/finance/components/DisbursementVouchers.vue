@@ -118,16 +118,16 @@ onMounted(async () => {
         hover
       >
         <template #item.dv_no="{ item }">
-          <!-- The column header already says DV NO., so the "DV-" prefix is
-               dropped here only — the stored number, the printed voucher and
-               search ("DV-2026-131" still matches) keep it. -->
+          <!-- The full number, "DV-2026-131", as stored and printed. The
+               "DV-" was briefly dropped because the header says DV NO.; staff
+               asked for it back so the list reads like the paper voucher. -->
           <span
             class="font-weight-medium text-no-wrap"
             :class="{
               'text-decoration-line-through text-medium-emphasis': item.status === 'cancelled',
             }"
           >
-            {{ item.dv_no?.replace(/^DV-/, '') ?? '—' }}
+            {{ item.dv_no ?? '—' }}
           </span>
         </template>
 

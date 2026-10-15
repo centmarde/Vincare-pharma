@@ -329,7 +329,7 @@ export type ARReceivableDetail = {
   invoice_date: string | null
   // trace-back / terms
   po_no: string | null          // In-House company PO
-  govt_po_no: string | null     // In-House government PO
+  govt_po_no: string | null     // In-House government PR number
   terms_days: number | null     // Ethical credit terms
   due_date: string | null       // Ethical due date
   // money

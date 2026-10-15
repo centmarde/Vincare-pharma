@@ -2,6 +2,7 @@ import { computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useChangeRequestsDataStore } from '@/stores/changeRequestsData'
 import { shortDatedRequestType } from '@/pages/inhouse/stores/shortDatedApproval'
+import { termsRequestTypes } from '@/stores/shared/termsApprovalGuards'
 
 // Approver-side wrapper around the SHARED changeRequestsData store, scoped to
 // the in-house/ethical payment (collection) requests that store still owns —
@@ -21,8 +22,10 @@ export function useSharedChangeRequests() {
   // (useExecutiveApproveShortDated), so here they were listed TWICE — and
   // approving this copy ran them as a payment correction, which fails with
   // "missing payment reference". Only payment corrections belong in this list.
+  // The same goes for the lock / unlock terms requests (useExecutiveApproveTerms).
+  const ownQueues = [shortDatedRequestType, ...termsRequestTypes]
   const requests = computed(() =>
-    allRequests.value.filter((r) => (r.request_type as string) !== shortDatedRequestType),
+    allRequests.value.filter((r) => !ownQueues.includes(r.request_type as string)),
   )
 
   async function refresh() {

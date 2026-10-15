@@ -74,7 +74,7 @@ const paymentHeaders = [
               <div class="text-body-2">{{ detail.po_no ?? '—' }}</div>
             </div>
             <div v-if="detail.source === 'inhouse_order'">
-              <div class="field-label">Government PO</div>
+              <div class="field-label">Government PR #</div>
               <div class="text-body-2">{{ detail.govt_po_no ?? '—' }}</div>
             </div>
             <div v-if="detail.source === 'ethical_order'">

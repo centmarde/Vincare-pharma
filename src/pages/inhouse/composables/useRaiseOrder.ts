@@ -3,7 +3,7 @@ import { useToast } from 'vue-toastification'
 import { useInhouseDataStore } from '@/stores/inhouseData'
 import type { ProductPickerResult } from '@/stores/productsData'
 import { useFormDraft } from '@/composables/useFormDraft'
-import { formatCurrency } from '@/utils/helpers'
+import { formatCurrency, toLocalISODate } from '@/utils/helpers'
 import { useCustomerPicker } from '@/composables/useCustomerPicker'
 
 const toast = useToast()
@@ -26,8 +26,18 @@ export function useRaiseOrder(onCreated: () => void) {
 
   const loading = ref(false)
   const customerId = ref<number | null>(null)
-  const govtPoNo = ref('')   // the government's external PO # (documentation-only)
-  const poAmount = ref<number | null>(null)  // the value on that PO (documentation-only)
+  // The government's own PR — its number and amount, for the record. (Named
+  // "PO" in code and in the database from before staff clarified the document
+  // is a PR; only the labels changed.)
+  const govtPoNo = ref('')
+  // A MoneyField (shows 1,114,600 as it is typed): 0 means not entered, and is
+  // saved as blank rather than ₱0.00.
+  const poAmount = ref(0)
+  // When the order was placed: today, or earlier for one that came in on paper
+  // first. Deliberately NOT in the form draft below — a draft saved yesterday
+  // would quietly restore yesterday's date and backdate the order.
+  const today = () => toLocalISODate(new Date())
+  const orderDate = ref(today())
   const remarks = ref('')
   const lines = ref<FormLine[]>([])
 
@@ -38,7 +48,7 @@ export function useRaiseOrder(onCreated: () => void) {
     key: 'inhouse-raise-order',
     version: 3,
     refs: { customerId, govtPoNo, poAmount, remarks, lines },
-    isEmpty: () => customerId.value == null && !govtPoNo.value && poAmount.value == null && !remarks.value
+    isEmpty: () => customerId.value == null && !govtPoNo.value && !poAmount.value && !remarks.value
       && !lines.value.some((l) => l.product_id != null || l.offer_unit > 0 || l.cost_unit > 0),
   })
 
@@ -71,8 +81,10 @@ export function useRaiseOrder(onCreated: () => void) {
   // complement of the displayed ratio (0.72 always reads alongside 28%).
   const ratioValue = computed(() => costRatio.value === null ? null : Number(costRatio.value.toFixed(2)))
   const ratioLabel = computed(() => ratioValue.value === null ? '—' : ratioValue.value.toFixed(2))
+  // Explicit green, not 'success': the theme derives success from the brand red,
+  // so a healthy ratio would read exactly like a losing one.
   const ratioClass = computed(() =>
-    ratioValue.value === null ? 'text-medium-emphasis' : ratioValue.value < 1 ? 'text-success' : 'text-error')
+    ratioValue.value === null ? 'text-medium-emphasis' : ratioValue.value < 1 ? 'text-green-darken-1' : 'text-error')
 
   // Peso profit is exact; the percentage beside it is the ratio's complement.
   // Both go blank whenever the ratio does — showing the whole offer as "profit"
@@ -83,7 +95,7 @@ export function useRaiseOrder(onCreated: () => void) {
     ratioValue.value === null ? '—' : `${Math.round((1 - ratioValue.value) * 100)}%`)
 
   // Clear a stale govt PO # if the user switches to a customer that isn't govt/LGU.
-  watch(isGovtCustomer, (govt) => { if (!govt) { govtPoNo.value = ''; poAmount.value = null } })
+  watch(isGovtCustomer, (govt) => { if (!govt) { govtPoNo.value = ''; poAmount.value = 0 } })
 
   function addLine() { lines.value.push({ product_id: null, product_name: '', unit: '', qty: 1, offer_unit: 0, cost_unit: 0 }) }
   function removeLine(i: number) { lines.value.splice(i, 1) }
@@ -105,12 +117,16 @@ export function useRaiseOrder(onCreated: () => void) {
   async function submit() {
     if (!customerId.value) { toast.warning('Select a customer (government/LGU).'); return }
     if (!validLines.value.length) { toast.warning('Add at least one product with quantity.'); return }
+    if (!orderDate.value) { toast.warning('Enter the order date.'); return }
+    if (orderDate.value > today()) { toast.warning('The order date cannot be in the future.'); return }
 
     loading.value = true
     const result = await inhouse.createOrder({
       customerId: customerId.value,
+      // Only a backdated order carries its date: today's keeps the real time.
+      orderDate: orderDate.value === today() ? undefined : orderDate.value,
       govtPoNo: govtPoNo.value || undefined,
-      poAmount: poAmount.value ?? undefined,
+      poAmount: poAmount.value || undefined,
       remarks: remarks.value || undefined,
       lines: validLines.value.map((l) => ({
         product_id: l.product_id!, qty: l.qty, unit_price: l.offer_unit, cost_price: l.cost_unit,
@@ -121,17 +137,19 @@ export function useRaiseOrder(onCreated: () => void) {
   }
 
   function reset() {
-    customerId.value = null; govtPoNo.value = ''; poAmount.value = null; remarks.value = ''; lines.value = []; addLine()
+    customerId.value = null; govtPoNo.value = ''; poAmount.value = 0; remarks.value = ''; lines.value = []; addLine()
+    orderDate.value = today()
   }
 
   async function init() {
+    orderDate.value = today()
     await initCustomerPicker()
     // Restore a saved draft first; only seed an empty line if there's nothing to restore.
     if (!draft.restore() && !lines.value.length) addLine()
   }
 
   return {
-    loading, customerId, govtPoNo, poAmount, remarks, lines,
+    loading, customerId, govtPoNo, poAmount, orderDate, today, remarks, lines,
     customerSearch, customerOptions, selectedCustomer, discountProfile, isGovtCustomer,
     offerTotal, costTotal, costRatio, ratioLabel, ratioClass, profitLabel, marginLabel,
     addLine, removeLine, applyPickedProduct, submit, reset, init,
