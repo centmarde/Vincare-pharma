@@ -20,6 +20,7 @@ import type { ProductPickerResult } from '@/stores/productsData'
 import { unitOptions } from '../../composables/usePurchaseRequisition'
 import type { SupplierPurchaseSummary } from '../../composables/usePurchaseRequisition'
 import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import {
   computePurchaseBreakdown,
   emptySupplierCharges,
@@ -44,9 +45,33 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   save: [data: { items: any[]; remarks: string; charges: SupplierCharges | null }]
+  'create-replacement': [
+    data: {
+      items: any[]
+      charges: SupplierCharges | null
+      newSupplierId: number
+      originalPrId: number
+      purchase_requisition_date: string | null
+    },
+  ]
+  'split-save': [
+    data: {
+      originalRows: any[]
+      originalRemarks: string
+      originalCharges: SupplierCharges | null
+      replacements: {
+        items: any[]
+        charges: SupplierCharges | null
+        newSupplierId: number
+        originalPrId: number
+        purchase_requisition_date: string | null
+      }[]
+    },
+  ]
 }>()
 
 const prStore = usePurchaseRequisitionStore()
+const { confirmDialog } = useConfirmDialog()
 
 const localRemarks = ref('')
 const showProductPicker = ref(false)
@@ -65,35 +90,65 @@ const latestExpiryDate = `${latestExpiryYear}-12-31`
 
 const items = ref<PRItem[]>([])
 
-// ─── Supplier charges (editable, same logic as PurchaseRequisitionDialog) ────
-// Single-PR edit: one transactions row = one supplier. Reuses
-// SupplierChargesSummary + computePurchaseBreakdown so discount/tax/shipping
-// and purchaseTotal match the create dialog exactly.
-const localCharges = ref<SupplierCharges | null>(null)
+// Tracks charges per supplier, rendering each supplier's summary card automatically.
+const localCharges = ref<SupplierCharges[]>([])
 
-function resolveEditSupplierId(): number | null {
-  const raw =
-    props.pr?.supplier_id ??
-    items.value.find((i) => i.supplier_id != null)?.supplier_id ??
-    null
+// Tracks the original PR to detect supplier changes and revert edits on cancel; confirmed changes create a replacement PR.
+const originalSupplierId = ref<number | null>(null)
+const originalChargesSnapshot = ref<SupplierCharges[]>([])
+const originalItemSuppliers = ref<Map<number, string | null>>(new Map())
+
+function parseSupplierId(raw: unknown): number | null {
   if (raw == null || raw === '') return null
   const parsed = Number(raw)
   return Number.isFinite(parsed) ? parsed : null
 }
 
+function supplierNameOf(supplierId: number | null): string {
+  if (supplierId == null) return '—'
+  return activeSuppliers.value.find((s) => s.id === supplierId)?.name ?? `Supplier #${supplierId}`
+}
+
 async function loadChargesForPR(prId: number, supplierId: number | null) {
-  localCharges.value = null
+  localCharges.value = []
   if (supplierId == null) return
   try {
     const breakdown = await prStore.fetchPurchaseBreakdown(prId)
-    localCharges.value = {
-      supplier_id: supplierId,
-      discount_percent: breakdown?.discountPercent ?? 0,
-      tax_amount: breakdown?.taxAmount ?? 0,
-      shipping_amount: breakdown?.shippingAmount ?? 0,
-    }
+    localCharges.value = [
+      {
+        supplier_id: supplierId,
+        discount_percent: breakdown?.discountPercent ?? 0,
+        tax_amount: breakdown?.taxAmount ?? 0,
+        shipping_amount: breakdown?.shippingAmount ?? 0,
+      },
+    ]
   } catch {
-    localCharges.value = emptySupplierCharges(supplierId)
+    localCharges.value = [emptySupplierCharges(supplierId)]
+  }
+}
+
+// All suppliers currently on the form, in first-seen order — mirrors supplierIdsOnForm in usePurchaseRequisition.
+const supplierIdsOnForm = computed<number[]>(() => {
+  const ids: number[] = []
+  for (const item of items.value) {
+    const id = parseSupplierId(item.supplier_id)
+    if (id != null && !ids.includes(id)) ids.push(id)
+  }
+  return ids
+})
+
+function netTotalForSupplier(supplierId: number): number {
+  return items.value
+    .filter((i) => parseSupplierId(i.supplier_id) === supplierId)
+    .reduce((sum, i) => sum + (i.qty || 0) * (i.cost_per_unit || 0), 0)
+}
+
+// Adds a zeroed charge entry for each new supplier without inheriting another supplier's deal.
+function addMissingSupplierCharges() {
+  for (const supplierId of supplierIdsOnForm.value) {
+    if (!localCharges.value.some((c) => c.supplier_id === supplierId)) {
+      localCharges.value.push(emptySupplierCharges(supplierId))
+    }
   }
 }
 
@@ -105,33 +160,22 @@ watch(
       localRemarks.value = props.pr.remarks ?? ''
       expiryMenuOpen.value = {}
       editingExpiry.value = null
-      // Hydrate saved charges so reopen shows persisted discount/tax/shipping.
-      await loadChargesForPR(props.pr.id, resolveEditSupplierId())
+      originalSupplierId.value = parseSupplierId(props.pr.supplier_id)
+      originalItemSuppliers.value = new Map(
+        items.value
+          .filter((item) => typeof item.id === 'number')
+          .map((item) => [item.id, item.supplier_id ?? null]),
+      )
+      originalChargesSnapshot.value = []
+      await loadChargesForPR(props.pr.id, parseSupplierId(props.pr.supplier_id))
+      originalChargesSnapshot.value = localCharges.value.map((c) => ({ ...c }))
     }
   },
   { immediate: true },
 )
 
-// If the user re-points line items at a different supplier mid-edit, keep a
-// charge row for the effective supplier (mirrors create's addMissing charges).
-watch(
-  () => items.value.map((i) => i.supplier_id).join('|'),
-  () => {
-    if (!props.modelValue || !props.pr) return
-    const supplierId = resolveEditSupplierId()
-    if (supplierId == null) {
-      localCharges.value = null
-      return
-    }
-    if (!localCharges.value || localCharges.value.supplier_id !== supplierId) {
-      const previous = localCharges.value
-      localCharges.value = {
-        ...(previous ?? emptySupplierCharges(supplierId)),
-        supplier_id: supplierId,
-      }
-    }
-  },
-)
+// Keeps charge entries synced with form suppliers so each gets a summary card immediately.
+watch(supplierIdsOnForm, addMissingSupplierCharges)
 
 function close() {
   emit('update:modelValue', false)
@@ -265,45 +309,158 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
   expiryPickerView.value = 'months'
 }
 
-function save() {
+async function save() {
   if (!props.pr) return
+  const currentPr = props.pr
   if (
-    localCharges.value &&
-    (localCharges.value.discount_percent < 0 ||
-      localCharges.value.discount_percent > 100 ||
-      localCharges.value.tax_amount < 0 ||
-      localCharges.value.shipping_amount < 0)
+    localCharges.value.some(
+      (c) =>
+        c.discount_percent < 0 ||
+        c.discount_percent > 100 ||
+        c.tax_amount < 0 ||
+        c.shipping_amount < 0,
+    )
   ) {
     toast.error('Discount must be 0–100% and tax/shipping cannot be negative.')
     return
   }
-  emit('save', {
-    items: [...items.value],
-    remarks: localRemarks.value,
-    charges: localCharges.value ? { ...localCharges.value } : null,
+  // Group rows per supplier — like create, each supplier owns its slice and its own charge card. Save semantics per group below.
+  const groups = new Map<number, PRItem[]>()
+  for (const item of items.value) {
+    const sid = parseSupplierId(item.supplier_id)
+    if (sid == null) {
+      toast.error('Every item needs a supplier before saving.')
+      return
+    }
+    if (!groups.has(sid)) groups.set(sid, [])
+    groups.get(sid)!.push(item)
+  }
+  if (!items.value.length || !groups.size) {
+    toast.error('Add at least one item before saving.')
+    return
+  }
+
+  const chargesFor = (supplierId: number): SupplierCharges => {
+    const found = localCharges.value.find((c) => c.supplier_id === supplierId)
+    return found ? { ...found } : emptySupplierCharges(supplierId)
+  }
+
+  const supplierIds = [...groups.keys()]
+  const originalId = originalSupplierId.value
+
+  function revertSupplierEdits() {
+    items.value.forEach((item) => {
+      if (typeof item.id !== 'number' || !originalItemSuppliers.value.has(item.id)) return
+      item.supplier_id = originalItemSuppliers.value.get(item.id) ?? null
+    })
+    localCharges.value = originalChargesSnapshot.value.map((c) => ({ ...c }))
+  }
+
+  // Case 1: single supplier, unchanged → plain update of the original PR.
+  if (supplierIds.length === 1 && (originalId == null || supplierIds[0] === originalId)) {
+    emit('save', {
+      items: [...items.value],
+      remarks: localRemarks.value,
+      charges: chargesFor(supplierIds[0]),
+    })
+    close()
+    return
+  }
+
+  // Case 2: all rows moved to one new supplier → confirm, then a NEW
+  // replacement PR. The original transactions row stays pending_approval.
+  if (supplierIds.length === 1) {
+    const newId = supplierIds[0]
+    const ok = await confirmDialog(
+      `Change supplier from "${supplierNameOf(originalId)}" to "${supplierNameOf(newId)}"?\n\n` +
+        'A NEW requisition for the new supplier will be created and sent for executive approval.\n' +
+        `The original PR (${props.pr.requisition_no}) stays Pending Approval — executive will approve one and reject the other.`,
+      {
+        title: 'Create Replacement PR?',
+        confirmText: 'Create New PR',
+        cancelText: 'Keep Current',
+      },
+    )
+    if (!ok) {
+      revertSupplierEdits()
+      return
+    }
+    emit('create-replacement', {
+      items: [...items.value],
+      charges: chargesFor(newId),
+      newSupplierId: newId,
+      originalPrId: currentPr.id,
+      purchase_requisition_date: currentPr.purchase_requisition_date ?? null,
+    })
+    close()
+    return
+  }
+
+  // Case 3: rows split across suppliers — same as create (one requisition per
+  // supplier). The original supplier's slice updates this PR; every other
+  // supplier's slice becomes a NEW replacement PR after one confirmation.
+  const originalRows = originalId != null ? (groups.get(originalId) ?? []) : []
+  if (originalId == null || !originalRows.length) {
+    toast.error(
+      'Keep at least one item on the original supplier, or move all rows to a single new supplier.',
+    )
+    return
+  }
+  const newIds = supplierIds.filter((id) => id !== originalId)
+  const newLines = newIds
+    .map((id) => {
+      const total = computePurchaseBreakdown(
+        netTotalForSupplier(id),
+        chargesFor(id),
+      ).purchaseTotal
+      return `• ${supplierNameOf(id)} — ${groups.get(id)!.length} item(s), ${formatCurrency(total)}`
+    })
+    .join('\n')
+  const splitOk = await confirmDialog(
+    `Items are split across ${supplierIds.length} suppliers.\n\n` +
+      `Saving keeps "${supplierNameOf(originalId)}" (${originalRows.length} item's on this PR (${props.pr.requisition_no}) and creates NEW requisition(s):\n` +
+      `${newLines}\n\n` +
+      'All new requisitions are sent for executive approval. The original PR stays Pending Approval.',
+    {
+      title: 'Split Into Multiple PRs?',
+      confirmText: 'Save & Create',
+      cancelText: 'Keep Editing',
+    },
+  )
+  if (!splitOk) return
+  emit('split-save', {
+    originalRows: [...originalRows],
+    originalRemarks: localRemarks.value,
+    originalCharges: chargesFor(originalId),
+    replacements: newIds.map((newId) => ({
+      items: [...groups.get(newId)!],
+      charges: chargesFor(newId),
+      newSupplierId: newId,
+      originalPrId: currentPr.id,
+      purchase_requisition_date: currentPr.purchase_requisition_date ?? null,
+    })),
   })
-  close()
 }
 
 const companyCostTotal = computed(() => {
   return items.value.reduce((sum, item) => sum + (item.qty || 0) * (item.cost_per_unit || 0), 0)
 })
 
-// Live purchase total — same computePurchaseBreakdown() formula as the create
-// dialog. Typing discount/tax/shipping or editing qty/cost recalculates
-// immediately (previously this showed the stale stored total).
+// Recalculates each supplier's totals live using computePurchaseBreakdown().
 const supplierSummaries = computed<SupplierPurchaseSummary[]>(() => {
-  if (!localCharges.value) return []
-  return [
-    {
-      ...computePurchaseBreakdown(companyCostTotal.value, localCharges.value),
-      charges: localCharges.value,
-    },
-  ]
+  return supplierIdsOnForm.value.map((supplierId) => {
+    const charges =
+      localCharges.value.find((c) => c.supplier_id === supplierId) ??
+      emptySupplierCharges(supplierId)
+    return {
+      ...computePurchaseBreakdown(netTotalForSupplier(supplierId), charges),
+      charges,
+    }
+  })
 })
 
-const purchaseGrandTotal = computed(
-  () => supplierSummaries.value[0]?.purchaseTotal ?? companyCostTotal.value,
+const purchaseGrandTotal = computed(() =>
+  supplierSummaries.value.reduce((sum, s) => sum + s.purchaseTotal, 0),
 )
 </script>
 

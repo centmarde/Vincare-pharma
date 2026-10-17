@@ -18,6 +18,31 @@ const emit = defineEmits<{
   reject: [pr: PR]
   unapprove: [pr: PR, reason: string]
   update: [data: { pr: PR; items: any[]; remarks: string; charges?: SupplierCharges | null }]
+  'create-replacement': [
+    data: {
+      pr: PR
+      items: any[]
+      charges: SupplierCharges | null
+      newSupplierId: number
+      originalPrId: number
+      purchase_requisition_date: string | null
+    },
+  ]
+  'split-save': [
+    data: {
+      pr: PR
+      originalRows: any[]
+      originalRemarks: string
+      originalCharges: SupplierCharges | null
+      replacements: {
+        items: any[]
+        charges: SupplierCharges | null
+        newSupplierId: number
+        originalPrId: number
+        purchase_requisition_date: string | null
+      }[]
+    },
+  ]
 }>()
 
 const showEditDialog = ref<boolean>(false)
@@ -277,6 +302,8 @@ async function onUnapprove() {
         v-model="showEditDialog"
         :pr="pr"
         @save="(data) => emit('update', { pr: props.pr, ...data })"
+        @create-replacement="(data) => emit('create-replacement', { pr: props.pr, ...data })"
+        @split-save="(data) => emit('split-save', { pr: props.pr, ...data })"
       />
     </v-card>
   </v-dialog>
