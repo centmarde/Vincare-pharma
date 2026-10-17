@@ -37,6 +37,7 @@ import {
   approvePR,
   rejectPR,
 } from './purchaseRequisition/prActions'
+import { createReplacementPR, deleteReplacementPR } from './purchaseRequisition/replacementPR'
 import { issuePurchaseOrder, markPOAsReceived } from './purchaseRequisition/poActions'
 import {
   subscribeToPurchaseRequisitions,
@@ -81,6 +82,8 @@ export const usePurchaseRequisitionStore = defineStore('purchaseRequisitionData'
     // PR actions
     updatePR,
     savePurchaseRequisition,
+    createReplacementPR,
+    deleteReplacementPR,
     resetStore,
     fetchPurchaseRequisition,
     fetchPRByRequisitionId,

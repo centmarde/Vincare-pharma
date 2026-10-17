@@ -58,6 +58,9 @@ export async function updatePR(payload: {
   items: PRItem[]
   remarks: string
   purchase_requisition_date?: string | null
+  // Edited discount/tax/shipping from PREditDialog's SupplierChargesSummary.
+  // When omitted, the stored charges are preserved (legacy callers).
+  charges?: SupplierCharges | null
 }): Promise<boolean> {
   loading.value = true
   error.value = ''
@@ -92,18 +95,43 @@ export async function updatePR(payload: {
     return false
   }
 
-  const breakdown = computePurchaseBreakdown(companyCostTotal, {
-    discount_percent: storedCharges.purchase_discount_percent,
-    tax_amount: storedCharges.purchase_tax_amount,
-    shipping_amount: storedCharges.purchase_shipping_amount,
-  })
+  // Edited charges from PREditDialog win; otherwise preserve stored charges.
+  const effectiveCharges: SupplierCharges = payload.charges
+    ? {
+        supplier_id: payload.charges.supplier_id,
+        discount_percent: Number(payload.charges.discount_percent) || 0,
+        tax_amount: Number(payload.charges.tax_amount) || 0,
+        shipping_amount: Number(payload.charges.shipping_amount) || 0,
+      }
+    : {
+        supplier_id: 0,
+        discount_percent: storedCharges.purchase_discount_percent,
+        tax_amount: storedCharges.purchase_tax_amount,
+        shipping_amount: storedCharges.purchase_shipping_amount,
+      }
+
+  if (
+    effectiveCharges.discount_percent < 0 ||
+    effectiveCharges.discount_percent > 100 ||
+    effectiveCharges.tax_amount < 0 ||
+    effectiveCharges.shipping_amount < 0
+  ) {
+    toast.error('Discount must be 0–100% and tax/shipping cannot be negative.')
+    loading.value = false
+    return false
+  }
+
+  const breakdown = computePurchaseBreakdown(companyCostTotal, effectiveCharges)
 
   const { error: updateError } = await supabase
     .from('transactions')
     .update({
       remarks: payload.remarks,
       subtotal: breakdown.netTotal,
+      purchase_discount_percent: breakdown.discountPercent,
       purchase_discount_amount: breakdown.discountAmount,
+      purchase_tax_amount: breakdown.taxAmount,
+      purchase_shipping_amount: breakdown.shippingAmount,
       total_amount: breakdown.purchaseTotal,
       // Only touch the date when the caller supplies it, so a caller that
       // doesn't manage the date can't accidentally clear it.
