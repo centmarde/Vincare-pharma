@@ -6,6 +6,7 @@ import { useDisplay } from 'vuetify'
 import PREditDialog from '@/pages/purchasing/components/dialogs/PREditDialog.vue'
 import PurchaseChargeLines from '@/pages/purchasing/components/PurchaseChargeLines.vue'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
+import type { SupplierCharges } from '@/utils/computationHelpers'
 
 const { mobile } = useDisplay()
 
@@ -15,7 +16,7 @@ const emit = defineEmits<{
   approve: [pr: PR]
   reject: [pr: PR]
   unapprove: [pr: PR, reason: string]
-  update: [data: { pr: PR; items: any[]; remarks: string }]
+  update: [data: { pr: PR; items: any[]; remarks: string; charges?: SupplierCharges | null }]
 }>()
 const showEditDialog = ref<boolean>(false)
 const { confirmDialog: showUnapproveDialog, inputValue } = useConfirmDialog()

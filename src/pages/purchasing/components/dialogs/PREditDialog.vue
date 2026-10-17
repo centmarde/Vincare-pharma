@@ -15,9 +15,16 @@ import { useSuppliersDataStore } from '@/stores/suppliersData'
 import { storeToRefs } from 'pinia'
 import ProductPickerDialog from '@/components/products/ProductPicker.vue'
 import PREditItemsMobile from '../../mobile/PREditItemsMobile.vue'
+import SupplierChargesSummary from '../SupplierChargesSummary.vue'
 import type { ProductPickerResult } from '@/stores/productsData'
 import { unitOptions } from '../../composables/usePurchaseRequisition'
-import { usePurchaseBreakdown } from '../../composables/usePurchaseBreakdown'
+import type { SupplierPurchaseSummary } from '../../composables/usePurchaseRequisition'
+import { usePurchaseRequisitionStore } from '@/stores/purchaseRequisitionData'
+import {
+  computePurchaseBreakdown,
+  emptySupplierCharges,
+} from '@/utils/computationHelpers'
+import type { SupplierCharges } from '@/utils/computationHelpers'
 
 const { mobile } = useDisplay()
 const toast = useToast()
@@ -36,8 +43,10 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
-  save: [data: { items: any[]; remarks: string }]
+  save: [data: { items: any[]; remarks: string; charges: SupplierCharges | null }]
 }>()
+
+const prStore = usePurchaseRequisitionStore()
 
 const localRemarks = ref('')
 const showProductPicker = ref(false)
@@ -56,17 +65,72 @@ const latestExpiryDate = `${latestExpiryYear}-12-31`
 
 const items = ref<PRItem[]>([])
 
+// ─── Supplier charges (editable, same logic as PurchaseRequisitionDialog) ────
+// Single-PR edit: one transactions row = one supplier. Reuses
+// SupplierChargesSummary + computePurchaseBreakdown so discount/tax/shipping
+// and purchaseTotal match the create dialog exactly.
+const localCharges = ref<SupplierCharges | null>(null)
+
+function resolveEditSupplierId(): number | null {
+  const raw =
+    props.pr?.supplier_id ??
+    items.value.find((i) => i.supplier_id != null)?.supplier_id ??
+    null
+  if (raw == null || raw === '') return null
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+async function loadChargesForPR(prId: number, supplierId: number | null) {
+  localCharges.value = null
+  if (supplierId == null) return
+  try {
+    const breakdown = await prStore.fetchPurchaseBreakdown(prId)
+    localCharges.value = {
+      supplier_id: supplierId,
+      discount_percent: breakdown?.discountPercent ?? 0,
+      tax_amount: breakdown?.taxAmount ?? 0,
+      shipping_amount: breakdown?.shippingAmount ?? 0,
+    }
+  } catch {
+    localCharges.value = emptySupplierCharges(supplierId)
+  }
+}
+
 watch(
   () => props.modelValue,
-  (isOpen) => {
+  async (isOpen) => {
     if (isOpen && props.pr) {
       items.value = props.pr.items.map((item) => ({ ...item }))
       localRemarks.value = props.pr.remarks ?? ''
       expiryMenuOpen.value = {}
       editingExpiry.value = null
+      // Hydrate saved charges so reopen shows persisted discount/tax/shipping.
+      await loadChargesForPR(props.pr.id, resolveEditSupplierId())
     }
   },
   { immediate: true },
+)
+
+// If the user re-points line items at a different supplier mid-edit, keep a
+// charge row for the effective supplier (mirrors create's addMissing charges).
+watch(
+  () => items.value.map((i) => i.supplier_id).join('|'),
+  () => {
+    if (!props.modelValue || !props.pr) return
+    const supplierId = resolveEditSupplierId()
+    if (supplierId == null) {
+      localCharges.value = null
+      return
+    }
+    if (!localCharges.value || localCharges.value.supplier_id !== supplierId) {
+      const previous = localCharges.value
+      localCharges.value = {
+        ...(previous ?? emptySupplierCharges(supplierId)),
+        supplier_id: supplierId,
+      }
+    }
+  },
 )
 
 function close() {
@@ -203,7 +267,21 @@ function onExpiryYearSelect(item: PRItem, index: number, year: number) {
 
 function save() {
   if (!props.pr) return
-  emit('save', { items: [...items.value], remarks: localRemarks.value })
+  if (
+    localCharges.value &&
+    (localCharges.value.discount_percent < 0 ||
+      localCharges.value.discount_percent > 100 ||
+      localCharges.value.tax_amount < 0 ||
+      localCharges.value.shipping_amount < 0)
+  ) {
+    toast.error('Discount must be 0–100% and tax/shipping cannot be negative.')
+    return
+  }
+  emit('save', {
+    items: [...items.value],
+    remarks: localRemarks.value,
+    charges: localCharges.value ? { ...localCharges.value } : null,
+  })
   close()
 }
 
@@ -211,14 +289,22 @@ const companyCostTotal = computed(() => {
   return items.value.reduce((sum, item) => sum + (item.qty || 0) * (item.cost_per_unit || 0), 0)
 })
 
-const { breakdown, hasCharges } = usePurchaseBreakdown(() => props.pr)
-
-const totalLabel = computed(() => (hasCharges.value ? 'Purchase Total' : 'Total Cost'))
-
-const totalAmount = computed(() => {
-  if (hasCharges.value && breakdown.value) return breakdown.value.purchaseTotal
-  return companyCostTotal.value
+// Live purchase total — same computePurchaseBreakdown() formula as the create
+// dialog. Typing discount/tax/shipping or editing qty/cost recalculates
+// immediately (previously this showed the stale stored total).
+const supplierSummaries = computed<SupplierPurchaseSummary[]>(() => {
+  if (!localCharges.value) return []
+  return [
+    {
+      ...computePurchaseBreakdown(companyCostTotal.value, localCharges.value),
+      charges: localCharges.value,
+    },
+  ]
 })
+
+const purchaseGrandTotal = computed(
+  () => supplierSummaries.value[0]?.purchaseTotal ?? companyCostTotal.value,
+)
 </script>
 
 <template>
@@ -447,29 +533,18 @@ const totalAmount = computed(() => {
 
         <v-divider class="my-6" />
 
-        <!-- Justification -->
-        <label class="text-subtitle-2 font-weight-bold d-block mb-2">Justification / Notes</label>
-        <v-textarea
-          v-model="localRemarks"
-          placeholder="Reason for requisition..."
-          variant="outlined"
-          rows="3"
-          hide-details
-          class="mb-6"
-        />
-
-        <!-- Summary -->
-        <v-row align="end">
-          <v-col cols="12" md="6" :order="mobile ? 1 : 2">
-            <v-card variant="flat" rounded="lg" class="pa-4 border mb-4 mb-md-0">
-              <div class="d-flex justify-space-between align-center">
-                <span class="text-body-2">{{ totalLabel }}</span>
-                <span class="text-h6 font-weight-bold">{{ formatCurrency(totalAmount) }}</span>
-              </div>
-            </v-card>
-          </v-col>
-
-          <v-col cols="12" md="6" :order="mobile ? 2 : 1" class="d-flex flex-column justify-end">
+        <!-- Justification + Save (left) / Supplier charges (right) — mirrors PurchaseRequisitionDialog layout -->
+        <v-row align="start">
+          <v-col cols="12" md="6" :order="mobile ? 2 : 1" class="d-flex flex-column">
+            <label class="text-subtitle-2 font-weight-bold d-block mb-2">Justification / Notes</label>
+            <v-textarea
+              v-model="localRemarks"
+              placeholder="Reason for requisition..."
+              variant="outlined"
+              rows="3"
+              hide-details
+              class="mb-6"
+            />
             <v-btn
               color="primary"
               size="large"
@@ -481,6 +556,15 @@ const totalAmount = computed(() => {
             >
               Save Changes
             </v-btn>
+          </v-col>
+
+          <v-col cols="12" md="6" :order="mobile ? 1 : 2">
+            <SupplierChargesSummary
+              :supplier-summaries="supplierSummaries"
+              :suppliers="activeSuppliers"
+              :company-cost-total="companyCostTotal"
+              :purchase-grand-total="purchaseGrandTotal"
+            />
           </v-col>
         </v-row>
       </v-card-text>

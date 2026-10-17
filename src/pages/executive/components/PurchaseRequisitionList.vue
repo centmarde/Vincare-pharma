@@ -54,12 +54,13 @@ function goToPage(p: number) {
   loadItems({ page: p, itemsPerPage: itemsPerPage.value, sortBy: [] })
 }
 
-async function onPRUpdate(data: { items: any[]; remarks: string }) {
+async function onPRUpdate(data: { items: any[]; remarks: string; charges?: any | null }) {
   if (!selectedPR.value) return
   const success = await prStore.updatePR({
     prId: selectedPR.value.id,
     items: data.items,
     remarks: data.remarks,
+    ...(data.charges ? { charges: data.charges } : {}),
   })
   if (success) {
     showModal.value = false

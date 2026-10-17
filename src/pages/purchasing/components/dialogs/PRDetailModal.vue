@@ -7,6 +7,7 @@ import { ref } from 'vue'
 import PREditDialog from './PREditDialog.vue'
 import PurchaseChargeLines from '../PurchaseChargeLines.vue'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
+import type { SupplierCharges } from '@/utils/computationHelpers'
 
 const { mobile } = useDisplay()
 
@@ -16,7 +17,7 @@ const emit = defineEmits<{
   approve: [pr: PR]
   reject: [pr: PR]
   unapprove: [pr: PR, reason: string]
-  update: [data: { pr: PR; items: any[]; remarks: string }]
+  update: [data: { pr: PR; items: any[]; remarks: string; charges?: SupplierCharges | null }]
 }>()
 
 const showEditDialog = ref<boolean>(false)
