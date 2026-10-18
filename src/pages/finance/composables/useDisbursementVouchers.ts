@@ -4,7 +4,6 @@ import { useFinanceDataStore } from '@/stores/financeData'
 import { useDisbursementVouchersStore } from '@/stores/disbursementVouchersData'
 import type { VoucherType, VoucherInput } from '@/stores/disbursementVouchersData'
 import { isCashAdvanceAccount } from '@/utils/cashAccountTypes'
-import { toLocalISODate } from '@/utils/helpers'
 import { useExpenseAccounts } from './useExpenseAccounts'
 
 // List + lifecycle actions for the Disbursement Vouchers page. Form state lives
@@ -49,10 +48,22 @@ export function amountMatches(value: number | null | undefined, query: { amount:
   return query.wholePeso ? cents >= wanted && cents < wanted + 100 : cents === wanted
 }
 
+// In Manila time, the zone the DATE column shows (formatDatePR_ISO), so a
+// voucher always sits in the month its date reads, whatever zone the browser
+// is in. Not the first 7 characters of the value: paid_at is a timestamp,
+// stored in UTC.
+const manilaMonth = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit' })
+
 /** "2026-08" for a voucher, from its own date (falling back to when it was made). */
 function voucherMonth(voucher: VoucherType): string {
   const raw = voucher.voucher_date ?? voucher.created_at
-  return raw ? toLocalISODate(new Date(raw)).slice(0, 7) : ''
+  if (!raw) return ''
+  const date = new Date(raw)
+  if (isNaN(date.getTime())) return ''
+  const parts = manilaMonth.formatToParts(date)
+  const year = parts.find((p) => p.type === 'year')?.value
+  const month = parts.find((p) => p.type === 'month')?.value
+  return year && month ? `${year}-${month}` : ''
 }
 
 const voucherStatusMeta: Record<string, { color: string; label: string; hint: string }> = {
@@ -180,6 +191,13 @@ export function useDisbursementVouchers() {
   function isPartialMatch(voucher: VoucherType): boolean {
     return !!accountFilter.value && Math.abs(matchedAmount(voucher) - (voucher.total_amount ?? 0)) > 0.005
   }
+
+  // AMOUNT shows matchedAmount, so it sorts on it too: under the account
+  // filter a "₱50 of ₱1,000" row sorts as ₱50. With no filter it is the total.
+  const tableHeaders = headers.map((header) =>
+    header.key === 'total_amount'
+      ? { ...header, sortRaw: (a: VoucherType, b: VoucherType) => matchedAmount(a) - matchedAmount(b) }
+      : header)
 
   /**
    * Vouchers matching the search box.
@@ -362,7 +380,7 @@ export function useDisbursementVouchers() {
     showCancelDialog, cancelTarget, cancelReason,
     statusMeta, canEdit, canPrint, canRecord, canCancel, recordBlockedReason, particularsSummary,
     search, monthFrom, monthTo, monthFromOptions, monthToOptions, accountFilter, accountOptions, isFiltering,
-    matchedAmount, isPartialMatch, filteredVouchers, searchTotals,
+    matchedAmount, isPartialMatch, tableHeaders, filteredVouchers, searchTotals,
     init, openCreateDialog, openEditDialog, closeFormDialog, handleSubmit,
     openPrint, closePrintDialog, handleRecord,
     openCancelDialog, closeCancelDialog, handleCancel,

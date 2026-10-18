@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { useDisbursementVouchers, headers } from '../composables/useDisbursementVouchers'
+import { useDisbursementVouchers } from '../composables/useDisbursementVouchers'
 import VoucherFormDialog from './dialogs/VoucherFormDialog.vue'
 import VoucherPrintDialog from './dialogs/VoucherPrintDialog.vue'
 import VoucherStampDialog from './dialogs/VoucherStampDialog.vue'
@@ -21,6 +21,7 @@ const {
   isFiltering,
   matchedAmount,
   isPartialMatch,
+  tableHeaders,
   filteredVouchers,
   searchTotals,
   cashAccounts,
@@ -164,7 +165,7 @@ onMounted(async () => {
       <v-data-table
         :items-per-page-options="financePageSizes"
         mobile-breakpoint="md"
-        :headers="headers"
+        :headers="tableHeaders"
         :items="filteredVouchers"
         :loading="loading"
         loading-text="Loading vouchers..."
