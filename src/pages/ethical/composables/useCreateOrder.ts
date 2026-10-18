@@ -389,6 +389,7 @@ export function useCreateOrder(onCreated: () => void) {
       return
     }
 
+    const startedNew = editingDraftId.value === null
     loading.value = true
     try {
       // Save the latest edits first — the executives approve what is on the server.
@@ -399,6 +400,11 @@ export function useCreateOrder(onCreated: () => void) {
       // Adopt the draft at once: if the request below fails, a retry re-saves
       // THIS draft rather than creating a second one for the same lines.
       editingDraftId.value = saved.orderId
+      // A new order now lives on the server, so its browser copy is done with.
+      // Left behind, the next New Order would reopen it and a second submit
+      // would file the same sale twice. (Done here, not on finish(), which
+      // now sees a saved draft and keeps the copy.)
+      if (startedNew) draft.clear()
       const requested = await termsStore.requestLock({ orderId: saved.orderId, orderType: 'ethical_order', orderNo: null })
       if (requested.success) finish()
     } finally {

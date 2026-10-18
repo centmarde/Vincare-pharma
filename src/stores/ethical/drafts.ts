@@ -412,8 +412,9 @@ export async function unlockTerms(orderId: number): Promise<{ success: boolean; 
 
   const warnings: string[] = []
 
-  const { data: itemRows } = await supabase
+  const { data: itemRows, error: itemsError } = await supabase
     .from('transaction_items').select('id, product_id, actual_count_stock_out').eq('transaction_id', orderId)
+  if (itemsError) warnings.push(`the order's lines could not be read, so no stock was put back (${itemsError.message})`)
   for (const row of (itemRows ?? []) as { id: number; product_id: number | null; actual_count_stock_out: number | null }[]) {
     const drawn = row.actual_count_stock_out ?? 0
     if (row.product_id == null || drawn <= 0) continue
@@ -432,7 +433,9 @@ export async function unlockTerms(orderId: number): Promise<{ success: boolean; 
   if (detailsError) warnings.push('the due date and stock status were not cleared')
 
   // The live invoice entry only: not one already reversed, and not a reversal.
-  const { data: invoiceEntry } = await supabase
+  // No entry at all is fine: the invoice was never booked, so there is nothing
+  // to reverse. A failed read is not — it must not pass as "nothing to reverse".
+  const { data: invoiceEntry, error: entryError } = await supabase
     .from('journal_entries')
     .select('id')
     .eq('reference_type', 'sales_invoice')
@@ -440,7 +443,9 @@ export async function unlockTerms(orderId: number): Promise<{ success: boolean; 
     .eq('status', 'posted')
     .is('reverses_entry', null)
     .maybeSingle()
-  if (invoiceEntry) {
+  if (entryError) {
+    warnings.push(`the invoice's ledger entry could not be read, so it was not reversed (${entryError.message})`)
+  } else if (invoiceEntry) {
     const reversed = await getGLStore().reverseJournalEntry(invoiceEntry.id as number, user.id)
     if (!reversed.success) warnings.push(`the invoice was not reversed in the ledger (${reversed.error ?? 'unknown error'})`)
   }

@@ -442,7 +442,7 @@ export const useTermsApprovalStore = defineStore('termsApproval', () => {
     })
   }
 
-  /** Staff: ask to undo locked terms. A reason is required. */
+  /** Staff: ask to undo locked terms. A reason is required (the callers check it). */
   function requestUnlock(payload: { orderId: number; orderType: TermsOrderType; orderNo: string | null; reason: string }) {
     return file({
       ...payload,
@@ -490,6 +490,10 @@ export const useTermsApprovalStore = defineStore('termsApproval', () => {
   async function approve(requestId: number): Promise<{ success: boolean }> {
     loading.value = true
     error.value = ''
+    // True from the claim until the action returns: an error thrown in that
+    // window means nothing (or not all) was applied, so the request reopens.
+    // Not after: by then the order really was agreed / invoiced / unlocked.
+    let reopenOnError = false
     try {
       const request = await claim(requestId, 'approved', 'Approved.')
       if (!request) {
@@ -501,6 +505,7 @@ export const useTermsApprovalStore = defineStore('termsApproval', () => {
       if (!type) { await unclaim(requestId); toast.error('The order for this request was not found.'); return { success: false } }
       const label = orderLabel(type, request.order_no, request.transaction_id)
 
+      reopenOnError = true
       let applied: { success: boolean; error?: string; warnings?: string[] }
       if (request.request_type === lockTermsRequestType) {
         applied = type === 'inhouse_order'
@@ -511,6 +516,7 @@ export const useTermsApprovalStore = defineStore('termsApproval', () => {
           ? await useInhouseDataStore().unlockTerms(request.transaction_id)
           : await useEthicalDataStore().unlockTerms(request.transaction_id)
       }
+      reopenOnError = false
 
       if (!applied.success) {
         await unclaim(requestId)
@@ -532,7 +538,13 @@ export const useTermsApprovalStore = defineStore('termsApproval', () => {
       return { success: true }
     } catch (err) {
       handleError(err, 'Failed to approve the request')
-      toast.error(error.value || 'Failed to approve the request.')
+      if (reopenOnError) {
+        await unclaim(requestId)
+        toast.error(`Not applied — ${error.value || 'an unexpected error stopped it'}. The request is still pending; check the order before trying again.`)
+        await fetchRequests({ status: 'pending' }).catch(() => {})
+      } else {
+        toast.error(error.value || 'Failed to approve the request.')
+      }
       return { success: false }
     } finally {
       loading.value = false

@@ -425,7 +425,9 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
       { title: 'Request unapprove', confirmText: 'Send request', inputLabel: 'Reason (required)' },
     )
     if (!ok) return
+    // The dialog blocks an empty box but not one of only spaces.
     const reason = confirmInput.value.trim()
+    if (!reason) { toast.error('Give a reason for the unapprove request.'); return }
     loading.value = true
     const result = await termsStore.requestUnlock({ orderId: o.id, orderType: 'inhouse_order', orderNo: o.order_no, reason })
     loading.value = false
