@@ -51,6 +51,7 @@ export type PR = {
   requester_name?: string
   reviewer_name?: string
   actual_count_stock_in?: number | null
+  purchase_requisition_date: string | null
   items: PRItem[]
 }
 
@@ -59,6 +60,8 @@ export type PurchaseRequisitionType = {
   status: string
   requested_by: string | null
   supplier_id: string | null
+  // NEW — user-editable date captured on the PR form; date-only 'YYYY-MM-DD' string.
+  purchase_requisition_date: string | null
 }
 
 export type CreatedPR = {
@@ -79,6 +82,7 @@ export const defaultPRForm: PurchaseRequisitionType = {
   status: 'pending_approval',
   requested_by: null,
   supplier_id: null,
+  purchase_requisition_date: null,
 }
 
 // References kept for clarity (these come from @/utils/computationHelpers), so

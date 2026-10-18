@@ -35,11 +35,11 @@ export function useIssuePOModal(
   })
 
   // ─── Form ─────────────────────────────────────────────────────────
-  const form        = ref({ ship_via: '', ship_method: '' })
+  const form        = ref({ ship_via: '', ship_method: '', shipping_details: '' })
   const showConfirm = ref(false)
 
   watch(() => props.modelValue, val => {
-    if (val) form.value = { ship_via: '', ship_method: '' }
+    if (val) form.value = { ship_via: '', ship_method: '', shipping_details: '' }
   })
 
   // ─── Computed ─────────────────────────────────────────────────────
@@ -86,6 +86,7 @@ export function useIssuePOModal(
       pr:         props.pr,
       ship_via:   form.value.ship_via,
       ship_method: form.value.ship_method,
+      shipping_details: form.value.shipping_details.trim() || null,
     })
 
     if (result.success) {

@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import { ref, computed } from 'vue'
 import { usePODetailModal } from '@/pages/purchasing/composables/usePODetailModal'
 import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
 import { usePODetailView } from '../composables/usePODetailView'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import PODetailViewBody from '../components/PODetailViewBody.vue'
+import { fromLocalISODate, toLocalISODate } from '@/utils/helpers'
 import { useDisplay } from 'vuetify'
 
 const { mobile } = useDisplay()
@@ -29,7 +31,32 @@ const {
   missingActualCount,
   missingBatchNoCount,
   handleMarkAsReceived,
+  receivedDate,
+  missingReceivedDate,
 } = usePODetailView(props as any, emit as any)
+
+// Inline validator for the Purchase Received Date field.
+const receivedDateRules = [
+  (v: string) => !!v || 'Purchase Received Date is required',
+]
+
+// Converts receivedDate to a Date for v-date-picker without timezone shifts.
+const datePickerMenu = ref(false)
+
+const pickerDate = computed<Date | null>({
+  get: () => (receivedDate.value ? fromLocalISODate(receivedDate.value) : null),
+  set: (val) => {
+    receivedDate.value = val ? toLocalISODate(val) : ''
+  },
+})
+
+function onPickerDate(val: Date | null) {
+  pickerDate.value = val
+  datePickerMenu.value = false 
+}
+function onReceivedDateInput(val: string | null) {
+  receivedDate.value = val ?? ''
+}
 </script>
 
 <template>
@@ -52,6 +79,36 @@ const {
           />
         </div>
 
+        <!-- Purchase Received Date (edit mode only; excluded from the printed doc) -->
+        <div v-if="skuEditMode" class="d-flex justify-end mb-2">
+          <v-menu
+            v-model="datePickerMenu"
+            :close-on-content-click="false"
+            location="bottom"
+          >
+            <template #activator="{ props: menuProps }">
+              <v-text-field
+                v-bind="menuProps"
+                :model-value="receivedDate ?? ''"
+                @update:model-value="onReceivedDateInput"
+                label="Purchase Received Date"
+                density="compact"
+                variant="outlined"
+                :rules="receivedDateRules"
+                hide-details="auto"
+                clearable
+                class="received-date-field"
+                prepend-inner-icon="mdi-calendar"
+                autocomplete="off"
+              />
+            </template>
+            <v-date-picker
+              :model-value="pickerDate"
+              @update:model-value="onPickerDate"
+            />
+          </v-menu>
+        </div>
+
         <div ref="printArea">
           <PODetailViewBody
             :po="po"
@@ -69,7 +126,7 @@ const {
       <!-- Actions -->
       <v-card-actions :class="mobile ? 'pa-3 ga-2 flex-wrap' : 'pa-4 justify-end'">
         <div
-          v-if="skuEditMode && (missingSkuCount > 0 || missingActualCount > 0 || missingBatchNoCount > 0)"
+          v-if="skuEditMode && (missingSkuCount > 0 || missingActualCount > 0 || missingBatchNoCount > 0 || missingReceivedDate)"
           :class="mobile ? 'text-caption text-medium-emphasis w-100 mb-2' : 'text-body-2 text-medium-emphasis'"
         >
           <v-icon size="16" color="error" class="mr-1">mdi-alert-circle-outline</v-icon>
@@ -78,7 +135,10 @@ const {
             {{ missingSkuCount > 0 ? ' / ' : '' }}{{ missingActualCount }} actual count{{ missingActualCount !== 1 ? 's' : '' }} missing,
           </template>
           <template v-if="missingBatchNoCount > 0">
-            {{ missingSkuCount > 0 || missingActualCount > 0 ? ' / ' : '' }}{{ missingBatchNoCount }} batch number{{ missingBatchNoCount !== 1 ? 's' : '' }} missing
+            {{ missingSkuCount > 0 || missingActualCount > 0 ? ' / ' : '' }}{{ missingBatchNoCount }} batch number{{ missingBatchNoCount !== 1 ? 's' : '' }} missing{{ missingReceivedDate ? ',' : '' }}
+          </template>
+          <template v-if="missingReceivedDate">
+            {{ missingSkuCount > 0 || missingActualCount > 0 || missingBatchNoCount > 0 ? ' / ' : '' }}Purchase Received Date required
           </template>
         </div>
 
@@ -90,11 +150,11 @@ const {
             variant="flat"
             size="small"
             :loading="savingAll"
-            :disabled="missingSkuCount > 0 || missingActualCount > 0 || missingBatchNoCount > 0 || savingAll"
+            :disabled="missingSkuCount > 0 || missingActualCount > 0 || missingBatchNoCount > 0 || missingReceivedDate || savingAll"
             @click="handleMarkAsReceived"
           >
-            <template v-if="missingSkuCount + missingActualCount + missingBatchNoCount > 0">
-              Input Field ({{ missingSkuCount + missingActualCount + missingBatchNoCount }})            </template>
+            <template v-if="missingSkuCount + missingActualCount + missingBatchNoCount + (missingReceivedDate ? 1 : 0) > 0">
+              Input Field ({{ missingSkuCount + missingActualCount + missingBatchNoCount + (missingReceivedDate ? 1 : 0) }})            </template>
             <template v-else> Mark as Received </template>
           </v-btn>
         </template>
@@ -109,3 +169,12 @@ const {
     </v-card>
   </v-dialog>
 </template>
+
+<style scoped>
+/* Keep the received-date input compact, mirroring pr-date-field in the PR dialog. */
+.received-date-field {
+  width: 100%;
+  max-width: 240px;
+  min-width: 200px;
+}
+</style>

@@ -3,7 +3,7 @@ import { usePODetailModal, company } from '../../composables/usePODetailModal'
 import { usePurchaseBreakdown } from '../../composables/usePurchaseBreakdown'
 import PurchaseChargeRows from '../PurchaseChargeRows.vue'
 import PurchaseChargeLines from '../PurchaseChargeLines.vue'
-import { formatCurrency, formatDatePO_Written, formatExpiryMonthYear } from '@/utils/helpers'
+import { formatCurrency, formatDatePO_Written, formatExpiryMonthYear, formatDateOnlyLongMonth } from '@/utils/helpers'
 import type { PurchaseOrder } from '../../composables/usePODetailModal'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import { useDisplay } from 'vuetify'
@@ -60,7 +60,8 @@ const { breakdown } = usePurchaseBreakdown(() => props.po)
             </v-col>
             <v-col :cols="mobile ? 12 : undefined" :class="mobile ? 'text-left' : 'text-right'">
               <div :class="mobile ? 'text-subtitle-1 font-weight-bold mb-1' : 'text-h6 font-weight-bold mb-2'">PURCHASE ORDER</div>
-              <div :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">DATE: {{ po?.created_at ? formatDatePO_Written(po.created_at) : '—' }}</div>
+              <!-- <div :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">DATE: {{ po?.created_at ? formatDatePO_Written(po.created_at) : '—' }}</div> -->
+              <div v-if="pr?.purchase_requisition_date" :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">DATE: {{ formatDateOnlyLongMonth(pr.purchase_requisition_date) }}</div> 
               <div :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">PR #: {{ pr?.requisition_no ?? '—' }}</div>
               <div :class="mobile ? 'text-caption text-medium-emphasis' : 'text-body-2 text-medium-emphasis'">
                 PO #: <span class="font-weight-bold text-primary">{{ poNumber }}</span>
@@ -70,7 +71,7 @@ const { breakdown } = usePurchaseBreakdown(() => props.po)
                 Delivered
               </div>
               <div v-if="po?.status === 'complete'" :class="mobile ? 'text-caption text-medium-emphasis mt-1' : 'text-body-2 text-medium-emphasis mt-1'">
-                DELIVERED DATE: {{ po?.updated_at ? formatDatePO_Written(po.updated_at) : '—' }}
+                RECEIVED DATE: {{ po?.purchase_order_received_date ? formatDateOnlyLongMonth(po.purchase_order_received_date) : '—' }}
               </div>
             </v-col>
           </v-row>
@@ -101,7 +102,7 @@ const { breakdown } = usePurchaseBreakdown(() => props.po)
             </v-col>
           </v-row>
 
-          <!-- Ship Via / Method / Declared Value -->
+          <!-- Ship Via / Method / Shipping Details -->
           <v-row class="mb-4">
             <v-col :cols="mobile ? 12 : 4" :class="mobile ? 'mb-3' : ''">
               <div :class="mobile ? 'text-caption font-weight-bold text-medium-emphasis mb-1' : 'text-caption font-weight-bold text-medium-emphasis mb-2'">SHIP VIA</div>
@@ -116,10 +117,10 @@ const { breakdown } = usePurchaseBreakdown(() => props.po)
               </v-card>
             </v-col>
             <v-col :cols="mobile ? 12 : 4">
-              <div :class="mobile ? 'text-caption font-weight-bold text-medium-emphasis mb-1' : 'text-caption font-weight-bold text-medium-emphasis mb-2'">DECLARED VALUE</div>
+              <div :class="mobile ? 'text-caption font-weight-bold text-medium-emphasis mb-1' : 'text-caption font-weight-bold text-medium-emphasis mb-2'">SHIPPING DETAILS</div>
               <v-card flat border rounded="lg" :class="mobile ? 'pa-2' : 'pa-3'">
                 <div :class="mobile ? 'text-body-1 font-weight-bold' : 'text-body-1 font-weight-bold'">
-                  {{ formatCurrency(po?.total_amount ?? 0) }}
+                  {{ po?.shipping_details || '—' }}
                 </div>
               </v-card>
             </v-col>

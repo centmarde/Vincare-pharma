@@ -579,6 +579,8 @@ export {
   endOfMonthISODate,
   formatDatePR_ISO,
   formatDatePO_Written,
+  formatDateOnly,
+  formatDateOnlyLongMonth,
   toLocalISODate,
   fromLocalISODate,
 } from './dateFormats'

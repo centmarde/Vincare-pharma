@@ -10,7 +10,7 @@ import { useExecutiveApproveShortDated } from '../composables/useExecutiveApprov
 import type { PRItem } from '@/stores/purchaseRequisitionData'
 import { usePurchaseBreakdown } from '@/pages/purchasing/composables/usePurchaseBreakdown'
 import PurchaseChargeLines from '@/pages/purchasing/components/PurchaseChargeLines.vue'
-import { formatCurrency, formatDatePR_ISO, formatExpiryMonthYear } from '@/utils/helpers'
+import { formatCurrency, formatDatePR_ISO, formatExpiryMonthYear, formatDateOnly } from '@/utils/helpers'
 import { QUALIFICATION_MONTHS } from '@/utils/qualification'
 import { computed, ref, watch } from 'vue'
 import { useToast } from 'vue-toastification'
@@ -247,8 +247,15 @@ async function confirmReject() {
           </v-sheet>
 
           <div class="mb-4">
-            <div class="text-caption font-weight-bold text-medium-emphasis mb-2">
-              ITEMS ({{ raw.items?.length ?? 0 }})
+            <div class="d-flex align-center justify-space-between flex-wrap ga-2 mb-2">
+              <span class="text-caption font-weight-bold text-medium-emphasis">
+                ITEMS ({{ raw.items?.length ?? 0 }})
+              </span>
+              <span v-if="raw.purchase_requisition_date" class="text-caption text-medium-emphasis">
+                <v-icon icon="mdi-calendar-blank-outline" size="14" class="mr-1" />
+                Inputted Requisition Date:
+                <strong><span class="text-high-emphasis">{{ formatDateOnly(raw.purchase_requisition_date) }}</span></strong>
+              </span>
             </div>
             <v-table density="compact" class="rounded-lg border">
               <thead>

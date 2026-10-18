@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { usePRDetailModal } from '../../composables/usePRDetailModal'
-import { formatCurrency, formatDatePR_ISO, formatExpiryMonthYear } from '@/utils/helpers'
+import { formatCurrency, formatDatePR_ISO, formatExpiryMonthYear, formatDateOnly } from '@/utils/helpers'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import { useDisplay } from 'vuetify'
 import { ref } from 'vue'
@@ -83,6 +83,9 @@ async function onUnapprove() {
           <div>
             Requested by <strong>{{ pr.requester_name ?? '—' }}</strong> &middot;
             {{ formatDatePR_ISO(pr.created_at) }}
+          </div>
+          <div v-if="pr.purchase_requisition_date">
+            Purchase Requisition Date: <strong>{{ formatDateOnly(pr.purchase_requisition_date) }}</strong>
           </div>
           <template
             v-if="

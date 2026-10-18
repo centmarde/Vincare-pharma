@@ -61,6 +61,7 @@ export function mapToPR(
     reference_no: tx.reference_no,
     recent_transaction_no: tx.recent_transaction_no ?? null,
     actual_count_stock_in: tx.actual_count_stock_in,
+    purchase_requisition_date: tx.purchase_requisition_date ?? null,
     items: prItems,
   }
 }
@@ -104,6 +105,7 @@ export function mapRPCRowToPR(
     reference_no: row.reference_no,
     recent_transaction_no: row.recent_transaction_no,
     actual_count_stock_in: null,
+    purchase_requisition_date: row.purchase_requisition_date ?? null,
     items: mapRPCItemsToPR(row.items),
   }
 }
