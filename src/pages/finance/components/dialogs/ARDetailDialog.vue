@@ -2,6 +2,7 @@
 import { formatCurrency, formatDate } from '@/utils/helpers'
 import type { ARReceivableDetail } from '@/stores/financeData'
 import { financePageSizes, financeDefaultPageSize } from '../../composables/financeTable'
+import { arSourceDocument } from '../../composables/useAccountsReceivable'
 
 defineProps<{
   modelValue: boolean
@@ -11,6 +12,8 @@ defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
+  /** A POS charge: its payments are recorded here, at the office. */
+  (e: 'recordPayment'): void
 }>()
 
 const lineHeaders = [
@@ -42,7 +45,7 @@ const paymentHeaders = [
             {{ detail?.reference_no ?? 'Receivable' }}
           </div>
           <div class="text-caption text-medium-emphasis">
-            {{ detail?.source === 'ethical_order' ? 'Ethical Order' : 'In-House Order' }}
+            {{ detail ? arSourceDocument[detail.source] : '' }}
             <template v-if="detail?.customer_name"> · {{ detail.customer_name }}</template>
           </div>
         </div>
@@ -77,11 +80,11 @@ const paymentHeaders = [
               <div class="field-label">Government PR #</div>
               <div class="text-body-2">{{ detail.govt_po_no ?? '—' }}</div>
             </div>
-            <div v-if="detail.source === 'ethical_order'">
+            <div v-if="detail.source !== 'inhouse_order'">
               <div class="field-label">Terms</div>
               <div class="text-body-2">{{ detail.terms_days != null ? `Net ${detail.terms_days} days` : '—' }}</div>
             </div>
-            <div v-if="detail.source === 'ethical_order'">
+            <div v-if="detail.source !== 'inhouse_order'">
               <div class="field-label">Due Date</div>
               <div class="text-body-2">{{ detail.due_date ? formatDate(detail.due_date) : '—' }}</div>
             </div>
@@ -144,8 +147,18 @@ const paymentHeaders = [
       </v-card-text>
 
       <v-divider />
-      <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end">
+      <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end ga-2">
         <v-btn variant="outlined" class="text-none" @click="emit('update:modelValue', false)">Close</v-btn>
+        <v-btn
+          v-if="detail?.source === 'sale' && detail.balance > 0.01"
+          color="primary"
+          variant="flat"
+          class="text-none font-weight-bold"
+          prepend-icon="mdi-cash-plus"
+          @click="emit('recordPayment')"
+        >
+          Record payment
+        </v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>

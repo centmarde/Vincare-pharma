@@ -8,6 +8,7 @@
  * GL account by reading `payment_method` —
  *
  *     cash | petty_cash  ->  1010 Cash on Hand
+ *     on_account (POS)   ->  1030 Accounts Receivable (see chargeToAccount)
  *     anything else      ->  1020 Cash in Bank
  *
  * so adding a value here decides where its money lands in the ledger. See the
@@ -44,4 +45,25 @@ export const paymentMethodOptions = paymentMethods.map((m) => ({ title: m.title,
 
 export function paymentMethodMeta(value: PaymentMethod | string | null): PaymentMethodMeta {
   return paymentMethods.find((m) => m.value === value) ?? paymentMethods[0]
+}
+
+/**
+ * POS only: the sale is charged to a customer account and paid later. No money
+ * changes hands at the till, so it is NOT in `paymentMethods` (which rebate
+ * payouts and the trade profile offer). gl_project_events books it to 1030
+ * Accounts Receivable; the payments go through `collections` like In-House
+ * and Ethical ones.
+ */
+export const chargeToAccount = 'on_account'
+export type PosPaymentMethod = PaymentMethod | typeof chargeToAccount
+export type PosPaymentMethodMeta = Omit<PaymentMethodMeta, 'value'> & { value: PosPaymentMethod }
+
+export const posPaymentMethods: PosPaymentMethodMeta[] = [
+  ...paymentMethods,
+  { value: chargeToAccount, title: 'Charge to account', icon: 'mdi-account-clock-outline', takesTendered: false, referenceLabel: null },
+]
+
+/** Like paymentMethodMeta, but knows a charge — so a charge sale never reads as "Cash". */
+export function posPaymentMethodMeta(value: PosPaymentMethod | string | null): PosPaymentMethodMeta {
+  return posPaymentMethods.find((m) => m.value === value) ?? paymentMethods[0]
 }
