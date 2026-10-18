@@ -1,32 +1,34 @@
 import { ref, computed } from 'vue'
-import { useGLDataStore, type IncomeStatement } from '@/stores/glData'
+import { useGLDataStore, type CollectionIncomeStatement, type IncomeStatement } from '@/stores/glData'
+import { toLocalISODate } from '@/utils/helpers'
 
 function startOfYear(): string {
   return `${new Date().getFullYear()}-01-01`
 }
+// The local date, not toISOString's UTC one: before 8am in Manila that is
+// still yesterday, and the statement would stop a day short.
 function today(): string {
-  return new Date().toISOString().slice(0, 10)
+  return toLocalISODate(new Date())
 }
 
 /**
- * Which event recognises a peso.
+ * Which event recognises a sale.
  *
  * `accrual` is THE Income Statement — revenue when delivered, expense when
  * incurred. It is the statutory basis and the default.
  *
- * `cash` is a management view of the same ledger — revenue when collected,
- * expense when paid. Useful for "what did we actually take in", but it is NOT
- * a P&L and the page labels it as such rather than letting a printed copy pass
- * for one.
+ * `collections` is the same statement with a credit sale (and its cost)
+ * recognised as it is collected; every other line is as booked. A management
+ * view — see CollectionIncomeStatement in stores/gl/types.
  */
-export type StatementBasis = 'accrual' | 'cash'
+export type StatementBasis = 'accrual' | 'collections'
 
 /** One column for the whole period, or one column per month for comparison. */
 export type StatementLayout = 'period' | 'monthly'
 
 export const basisOptions: { value: StatementBasis; title: string }[] = [
   { value: 'accrual', title: 'By deliveries' },
-  { value: 'cash', title: 'By collections' },
+  { value: 'collections', title: 'By collections' },
 ]
 
 export const layoutOptions: { value: StatementLayout; title: string }[] = [
@@ -128,10 +130,11 @@ export function useIncomeStatement() {
   const basis = ref<StatementBasis>('accrual')
   const layout = ref<StatementLayout>('period')
 
-  const statement = computed(() => gl.incomeStatement)
-  const cashStatement = computed(() => gl.cashBasisStatement)
-  const monthly = computed(() => gl.monthlyIncomeStatement)
-  const monthlyCash = computed(() => gl.monthlyCashBasisStatement)
+  const isCollections = computed(() => basis.value === 'collections')
+  // Both bases are the same statement, so the rows below are built the same
+  // way from whichever one is showing.
+  const statement = computed(() => (isCollections.value ? gl.collectionIncomeStatement : gl.incomeStatement))
+  const monthly = computed(() => (isCollections.value ? gl.monthlyCollectionIncomeStatement : gl.monthlyIncomeStatement))
   const loading = computed(() => gl.loading)
   /**
    * Surfaced so a failed fetch can say so. Without it the page falls through to
@@ -140,8 +143,26 @@ export function useIncomeStatement() {
    */
   const error = computed(() => gl.error)
 
-  const isCash = computed(() => basis.value === 'cash')
   const isMonthly = computed(() => layout.value === 'monthly')
+
+  /**
+   * What the statement by collections could not apply collections to, shown
+   * under it: sales entered by manual journal entry (kept as booked), and
+   * money collected that is not revenue here — on pre-cutover (opening)
+   * receivables, and on orders with no sale in the ledger to match. Null when
+   * there is none.
+   */
+  const collectionNote = computed(() => {
+    if (!isCollections.value) return null
+    const st: CollectionIncomeStatement | null | undefined = isMonthly.value
+      ? gl.monthlyCollectionIncomeStatement?.total
+      : gl.collectionIncomeStatement
+    if (!st) return null
+    const manualSales = st.salesFromManualEntries ?? 0
+    const opening = st.collectedOnOpeningReceivables ?? 0
+    const unmatched = st.collectedUnmatched ?? 0
+    return manualSales || opening || unmatched ? { manualSales, opening, unmatched } : null
+  })
 
   /**
    * Revenue accounts from the chart, split the way the statement reads them:
@@ -313,11 +334,11 @@ export function useIncomeStatement() {
     if (!gl.accounts.length) await gl.fetchAccounts()
     if (!gl.accounts.length) return
     if (isMonthly.value) {
-      if (isCash.value) await gl.fetchMonthlyCashBasisStatement(dateFrom.value, dateTo.value)
+      if (isCollections.value) await gl.fetchMonthlyCollectionIncomeStatement(dateFrom.value, dateTo.value)
       else await gl.fetchMonthlyIncomeStatement(dateFrom.value, dateTo.value)
       return
     }
-    if (isCash.value) await gl.fetchCashBasisStatement(dateFrom.value, dateTo.value)
+    if (isCollections.value) await gl.fetchCollectionIncomeStatement(dateFrom.value, dateTo.value)
     else await gl.fetchIncomeStatement(dateFrom.value, dateTo.value)
   }
 
@@ -335,8 +356,8 @@ export function useIncomeStatement() {
 
   return {
     dateFrom, dateTo, basis, layout, basisOptions, layoutOptions,
-    isCash, isMonthly, monthLabel,
-    statement, cashStatement, monthly, monthlyCash, periodRows, monthlyRows,
+    isCollections, isMonthly, monthLabel, collectionNote,
+    statement, monthly, periodRows, monthlyRows,
     loading, error, load, setBasis, setLayout,
   }
 }
