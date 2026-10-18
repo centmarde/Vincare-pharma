@@ -37,6 +37,7 @@ export type TransactionType = {
   supplier_id: number | null
   ship_via: string | null
   ship_method: string | null
+  shipping_details: string | null
   requisition_no: string | null
   po_no: string | null
   remittance_id: number | null
@@ -60,6 +61,9 @@ export type TransactionType = {
   subtotal: number | null
   cash_account_id: number | null
   funding_account_id: number | null
+  // NEW — user-editable date-only value on Purchase Requisitions ('YYYY-MM-DD').
+  purchase_requisition_date: string | null
+  purchase_order_received_date: string | null
 }
 
 export type CreateTransactionData = Partial<Omit<TransactionType, 'id' | 'created_at'>>
