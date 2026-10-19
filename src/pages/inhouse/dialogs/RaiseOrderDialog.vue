@@ -5,6 +5,7 @@ import { formatCurrency } from '@/utils/helpers'
 import type { ProductPickerResult } from '@/stores/productsData'
 import CustomerTermsCard from '@/components/customers/CustomerTermsCard.vue'
 import ProductPickerDialog from '@/components/products/ProductPicker.vue'
+import MoneyField from '@/components/inputs/MoneyField.vue'
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
@@ -13,7 +14,7 @@ const emit = defineEmits<{
 defineProps<{ modelValue: boolean }>()
 
 const {
-  loading, customerId, govtPoNo, poAmount, remarks, lines,
+  loading, customerId, govtPoNo, poAmount, orderDate, today, remarks, lines,
   customerSearch, customerOptions, selectedCustomer, discountProfile, isGovtCustomer,
   offerTotal, costTotal, ratioLabel, ratioClass, profitLabel, marginLabel,
   addLine, removeLine, applyPickedProduct, submit, init,
@@ -63,6 +64,16 @@ onMounted(init)
               no-data-text="No customer matches that search"
             />
           </v-col>
+          <v-col cols="12" md="3">
+            <label class="lbl">Order Date *</label>
+            <!-- Today unless the order came in earlier on paper. -->
+            <v-text-field
+              v-model="orderDate"
+              type="date"
+              :max="today()"
+              variant="outlined" density="compact" hide-details
+            />
+          </v-col>
           <v-col v-if="selectedCustomer" cols="12">
             <!-- What was agreed with this account. 54 of 81 government
                  customers carry a pricing basis ('AS PER PR', 'PLUS 15%') that
@@ -70,16 +81,13 @@ onMounted(init)
             <CustomerTermsCard :customer="selectedCustomer" :profile="discountProfile" />
           </v-col>
           <v-col v-if="isGovtCustomer" cols="12" md="6">
-            <label class="lbl">Government PO # (documentation)</label>
-            <v-text-field v-model="govtPoNo" placeholder="Their PO number, for the record" variant="outlined" density="compact" hide-details />
+            <label class="lbl">Government PR # (documentation)</label>
+            <v-text-field v-model="govtPoNo" placeholder="Their PR number, for the record" variant="outlined" density="compact" hide-details />
           </v-col>
           <v-col v-if="isGovtCustomer" cols="12" md="6">
-            <label class="lbl">PO Amount (documentation)</label>
-            <v-text-field
-              v-model.number="poAmount" type="number" min="0"
-              placeholder="Value printed on their PO"
-              variant="outlined" density="compact" hide-details
-            />
+            <label class="lbl">Government PR Amount (documentation)</label>
+            <!-- Comma-separated as it is typed (1,114,600); negatives refused. -->
+            <MoneyField v-model="poAmount" variant="outlined" density="compact" hide-details />
           </v-col>
         </v-row>
         <!-- The company's own PO number is NOT typed — it's derived from the order

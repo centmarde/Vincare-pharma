@@ -88,6 +88,7 @@ export type {
   PnLSummary,
   RemittanceDiscrepancyRow,
   ARAgingTerm,
+  ARSource,
   ARAgingRow,
   ARReceivableLine,
   ARReceivablePayment,

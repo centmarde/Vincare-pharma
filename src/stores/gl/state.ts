@@ -9,11 +9,11 @@ import { ref } from 'vue'
 import type { Ref } from 'vue'
 import type {
   BalanceSheet,
-  CashBasisStatement,
+  CollectionIncomeStatement,
   GLAccount,
   IncomeStatement,
   JournalEntry,
-  MonthlyCashBasisStatement,
+  MonthlyCollectionIncomeStatement,
   MonthlyIncomeStatement,
   TrialBalanceRow,
 } from './types'
@@ -34,9 +34,9 @@ export const journal: Ref<JournalEntry[]> = ref([])
 export const trialBalance: Ref<TrialBalanceRow[]> = ref([])
 export const incomeStatement: Ref<IncomeStatement | null> = ref(null)
 export const balanceSheet: Ref<BalanceSheet | null> = ref(null)
-export const cashBasisStatement: Ref<CashBasisStatement | null> = ref(null)
+export const collectionIncomeStatement: Ref<CollectionIncomeStatement | null> = ref(null)
 export const monthlyIncomeStatement: Ref<MonthlyIncomeStatement | null> = ref(null)
-export const monthlyCashBasisStatement: Ref<MonthlyCashBasisStatement | null> = ref(null)
+export const monthlyCollectionIncomeStatement: Ref<MonthlyCollectionIncomeStatement | null> = ref(null)
 
 export const loading = ref(false)
 export const error: Ref<string> = ref('')

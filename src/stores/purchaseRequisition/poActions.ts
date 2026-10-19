@@ -19,6 +19,7 @@ export async function issuePurchaseOrder(payload: {
   pr: PR
   ship_via: string
   ship_method: string
+  shipping_details: string | null
 }) {
   loading.value = true
 
@@ -45,6 +46,7 @@ export async function issuePurchaseOrder(payload: {
           requisition_no: payload.pr.reference_no,
           ship_via: payload.ship_via,
           ship_method: payload.ship_method,
+          shipping_details: payload.shipping_details,
           updated_at: new Date().toISOString(),
         })
         .eq('id', payload.pr.id)

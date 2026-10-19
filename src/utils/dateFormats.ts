@@ -65,6 +65,33 @@ export const formatDatePR_ISO = (dateString: string | null | undefined): string 
   return formatDateShort(dateString)
 }
 
+/**
+ * formatDateShort without the time part — e.g. "May-01-2023".
+ * Used for date-only values (like the PR Date) where a time would be misleading.
+ * Reuses formatDateShort so the date format stays identical to the system's convention.
+ */
+export const formatDateOnly = (dateString: string | null | undefined): string => {
+  return formatDateShort(dateString).split('/')[0] ?? ''
+}
+export const formatDateOnlyLongMonth = (
+  dateString: string | null | undefined
+): string => {
+  if (!dateString) return ''
+
+  const date = new Date(dateString)
+  if (isNaN(date.getTime())) return ''
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    day: '2-digit',
+    year: 'numeric',
+    timeZone: 'Asia/Manila',
+  })
+    .format(date)
+    .replace(/,/g, '')
+    .replace(/ (\d{4})$/, ', $1') // Add comma before the year
+}
+
 // This is for Exporting PDF PO
 export const formatDatePO_Written = (dateString: string | null | undefined) => {
   if (!dateString) return ''

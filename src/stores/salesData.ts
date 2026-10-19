@@ -6,6 +6,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
+import { chargeToAccount } from '@/utils/paymentMethods'
 import { issueRow, useIssueList } from '@/composables/useIssueList'
 import type { ProductType } from '@/stores/productsData'
 import { useProductsDataStore } from '@/stores/productsData'
@@ -210,11 +211,15 @@ export const useSalesDataStore = defineStore('salesData', () => {
     lines: SaleLineInput[]
     amountTendered: number
     customer?: { name?: string | null; address?: string | null; mobile?: string | null }
+    /** A customer account picked from the list. Required to charge to account. */
+    customerId?: number | null
   }) => {
     loading.value = true
     clearError()
 
     const { warehouseId, lines, amountTendered, customer, paymentMethod = 'cash', paymentReference = null } = payload
+    // Charged to a customer account: nothing is tendered, the sale is owed.
+    const isCharge = paymentMethod === chargeToAccount
 
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) {
@@ -229,6 +234,12 @@ export const useSalesDataStore = defineStore('salesData', () => {
     }
     if (!lines.length) {
       toast.warning('Cart is empty.')
+      loading.value = false
+      return { success: false }
+    }
+    // A receivable must belong to a real account, never a name typed at the till.
+    if (isCharge && !payload.customerId) {
+      toast.warning('Choose the customer account to charge.')
       loading.value = false
       return { success: false }
     }
@@ -251,7 +262,7 @@ export const useSalesDataStore = defineStore('salesData', () => {
 
     const subtotal = lines.reduce((sum, l) => sum + l.quantity * l.unit_price, 0)
     const total = subtotal
-    if (amountTendered < total) {
+    if (!isCharge && amountTendered < total) {
       toast.error(`Amount tendered (${amountTendered}) is less than total (${total}).`)
       loading.value = false
       return { success: false }
@@ -314,7 +325,17 @@ export const useSalesDataStore = defineStore('salesData', () => {
     const address = customer?.address?.trim() || null
     const mobile = customer?.mobile?.trim() || null
     let customerId: number | null = null
-    if (mobile) {
+    if (payload.customerId) {
+      // Picked from the list: that exact account, never re-matched by mobile.
+      const { data: picked, error: pickedError } = await supabase
+        .from('customers').select('id').eq('id', payload.customerId).maybeSingle()
+      if (pickedError || !picked) {
+        toast.error('That customer account was not found.')
+        loading.value = false
+        return { success: false }
+      }
+      customerId = picked.id
+    } else if (mobile) {
       const { data: existingCustomer } = await supabase
         .from('customers')
         .select('id')
@@ -388,12 +409,12 @@ export const useSalesDataStore = defineStore('salesData', () => {
       return { success: false }
     }
 
-    const changeDue = amountTendered - total
+    const changeDue = isCharge ? 0 : amountTendered - total
     const { error: detailsError } = await supabase.from('pos_sale_details').insert({
       transaction_id: created.id,
       payment_method: paymentMethod,
       subtotal,
-      amount_tendered: amountTendered,
+      amount_tendered: isCharge ? 0 : amountTendered,
       change_due: changeDue,
     })
     if (detailsError) {
@@ -445,7 +466,7 @@ export const useSalesDataStore = defineStore('salesData', () => {
     }
 
     const { error: logError } = await supabase.from('logs').insert({
-      action: 'created', description: `POS sale ${saleNo} completed`,
+      action: 'created', description: `POS sale ${saleNo} completed${isCharge ? ' — charged to account' : ''}`,
       module: 'pos', created_by: user.id, transaction_id: created.id,
     })
     if (logError) console.warn('createSale: activity log insert failed:', logError.message)
@@ -505,6 +526,21 @@ export const useSalesDataStore = defineStore('salesData', () => {
     }
     if (sale.remittance_id) {
       toast.error('Sale already remitted; cannot void.')
+      loading.value = false
+      return { success: false }
+    }
+    // A sale charged to account may have payments against it; voiding it would
+    // leave them paying for a sale that no longer exists. Fails closed.
+    const { count: paymentCount, error: paymentsError } = await supabase
+      .from('collections').select('id', { count: 'exact', head: true })
+      .eq('transaction_id', saleId).is('voided_at', null)
+    if (paymentsError) {
+      toast.error('Could not check this sale\'s payments. Try again.')
+      loading.value = false
+      return { success: false }
+    }
+    if ((paymentCount ?? 0) > 0) {
+      toast.error('This sale has payments recorded against it. Void those payments first.')
       loading.value = false
       return { success: false }
     }

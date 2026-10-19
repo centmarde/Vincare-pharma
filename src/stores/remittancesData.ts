@@ -7,6 +7,7 @@ import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useSalesDataStore } from '@/stores/salesData'
 import { generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
+import { chargeToAccount } from '@/utils/paymentMethods'
 import type { WarehouseType } from '@/stores/warehouseData'
 
 // A shortfall this large is flagged as too big to reasonably ask a cashier to
@@ -58,6 +59,11 @@ export type ExpectedSummary = {
    */
   nonCash: { method: string; amount: number; saleCount: number }[]
   nonCashTotal: number
+  /**
+   * Sales charged to a customer account. Kept apart from `nonCash`: nothing
+   * was taken for them at all, by any rail; they are paid later at the office.
+   */
+  charged: { amount: number; saleCount: number }
 }
 
 // A remittance shortfall being carried as a debt owed BY the employee TO the
@@ -199,13 +205,14 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
 
     if (fetchError) {
       handleError(fetchError, 'Failed to compute expected amount')
-      return { expected: 0, saleCount: 0, totalSaleCount: 0, nonCash: [], nonCashTotal: 0 }
+      return { expected: 0, saleCount: 0, totalSaleCount: 0, nonCash: [], nonCashTotal: 0, charged: { amount: 0, saleCount: 0 } }
     }
 
     const rows = (data || []) as { total_amount: number | null; pos_sale_details: { payment_method: string | null } | { payment_method: string | null }[] | null }[]
     let expected = 0
     let saleCount = 0
     const byMethod = new Map<string, { amount: number; saleCount: number }>()
+    const charged = { amount: 0, saleCount: 0 }
 
     for (const r of rows) {
       const details = Array.isArray(r.pos_sale_details) ? r.pos_sale_details[0] : r.pos_sale_details
@@ -214,6 +221,9 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
       if (method === 'cash') {
         expected += amount
         saleCount += 1
+      } else if (method === chargeToAccount) {
+        charged.amount += amount
+        charged.saleCount += 1
       } else {
         const bucket = byMethod.get(method) ?? { amount: 0, saleCount: 0 }
         bucket.amount += amount
@@ -229,6 +239,7 @@ export const useRemittancesDataStore = defineStore('remittancesData', () => {
       totalSaleCount: rows.length,
       nonCash,
       nonCashTotal: nonCash.reduce((sum, n) => sum + n.amount, 0),
+      charged,
     }
   }
 

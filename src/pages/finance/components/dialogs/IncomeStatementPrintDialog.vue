@@ -4,7 +4,7 @@ import html2pdf from 'html2pdf.js'
 import { useToast } from 'vue-toastification'
 import StatementBody from '../StatementBody.vue'
 import type { StatementRow } from '../../composables/useIncomeStatement'
-import type { CashBasisStatement, MonthlyCashBasisStatement, MonthlyIncomeStatement } from '@/stores/glData'
+import type { MonthlyIncomeStatement } from '@/stores/glData'
 import { companyFor, companyOptions, defaultCompanyFor } from '@/utils/companyProfiles'
 import type { CompanyKey } from '@/utils/companyProfiles'
 
@@ -13,14 +13,13 @@ const props = defineProps<{
   title: string
   periodLine: string
   basisLine: string
-  isCash: boolean
+  isCollections: boolean
   isMonthly: boolean
   periodRows: StatementRow[]
   monthlyRows: StatementRow[]
   monthly: MonthlyIncomeStatement | null
-  cashStatement: CashBasisStatement | null
-  monthlyCash: MonthlyCashBasisStatement | null
   monthLabel: (month: string) => string
+  collectionNote?: { manualSales: number; opening: number; unmatched: number } | null
 }>()
 
 const emit = defineEmits<{
@@ -42,25 +41,23 @@ const company = computed(() => companyFor(companyKey.value))
 const orientation = computed(() => (props.isMonthly ? 'landscape' : 'portrait'))
 
 const filename = computed(() => {
-  const kind = props.isCash ? 'Cash-Received-and-Paid' : 'Income-Statement'
+  const kind = props.isCollections ? 'Income-Statement-by-collections' : 'Income-Statement'
   const span = props.isMonthly ? 'monthly' : 'period'
   return `${kind}-${span}-${new Date().toISOString().slice(0, 10)}.pdf`
 })
 
 /**
- * How many month columns still land legibly on A4 landscape.
+ * How many months still land legibly on A4 landscape.
  *
- * At print metrics a figure column is ~68px and the label column ~190px, against
- * ~1047px of usable page (297mm less 10mm margins). Twelve months plus a total
- * is a hair over and html2pdf's fit-to-width absorbs it; beyond that it scales
- * the whole sheet down far enough to stop being readable, which is worse than
- * saying so.
+ * Each month is TWO columns — the amount and its % of sales — on both bases,
+ * against ~1047px of usable page (297mm less 10mm margins). Measured: seven
+ * months of real figures plus the total fit at full size; past eight, html2pdf
+ * scales the whole sheet down and the label column wraps to three or four
+ * lines, far enough to stop being readable, which is worse than saying so.
  */
-const legibleColumns = 12
-const columnCount = computed(() =>
-  props.isMonthly ? (props.isCash ? props.monthlyCash?.months.length : props.monthly?.months.length) ?? 0 : 0,
-)
-const tooWide = computed(() => columnCount.value > legibleColumns)
+const legibleMonths = 8
+const columnCount = computed(() => (props.isMonthly ? props.monthly?.months.length ?? 0 : 0))
+const tooWide = computed(() => columnCount.value > legibleMonths)
 
 const loading = ref(false)
 
@@ -137,7 +134,7 @@ async function handlePrint() {
           class="mb-4 text-body-2"
         >
           {{ columnCount }} month columns will be scaled down to fit one page and may
-          be hard to read. Narrow the date range to {{ legibleColumns }} months or fewer
+          be hard to read. Narrow the date range to {{ legibleMonths }} months or fewer
           for a full-size statement.
         </v-alert>
 
@@ -148,14 +145,12 @@ async function handlePrint() {
             :title="title"
             :period-line="periodLine"
             :basis-line="basisLine"
-            :is-cash="isCash"
             :is-monthly="isMonthly"
             :period-rows="periodRows"
             :monthly-rows="monthlyRows"
             :monthly="monthly"
-            :cash-statement="cashStatement"
-            :monthly-cash="monthlyCash"
             :month-label="monthLabel"
+            :collection-note="collectionNote"
             :letterhead="company"
             print
           />

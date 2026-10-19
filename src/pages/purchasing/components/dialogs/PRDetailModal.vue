@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { usePRDetailModal } from '../../composables/usePRDetailModal'
-import { formatCurrency, formatDatePR_ISO, formatExpiryMonthYear } from '@/utils/helpers'
+import { formatCurrency, formatDatePR_ISO, formatExpiryMonthYear, formatDateOnly } from '@/utils/helpers'
 import type { PR } from '@/stores/purchaseRequisitionData'
 import { useDisplay } from 'vuetify'
 import { ref } from 'vue'
 import PREditDialog from './PREditDialog.vue'
 import PurchaseChargeLines from '../PurchaseChargeLines.vue'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
+import type { SupplierCharges } from '@/utils/computationHelpers'
 
 const { mobile } = useDisplay()
 
@@ -16,7 +17,32 @@ const emit = defineEmits<{
   approve: [pr: PR]
   reject: [pr: PR]
   unapprove: [pr: PR, reason: string]
-  update: [data: { pr: PR; items: any[]; remarks: string }]
+  update: [data: { pr: PR; items: any[]; remarks: string; charges?: SupplierCharges | null }]
+  'create-replacement': [
+    data: {
+      pr: PR
+      items: any[]
+      charges: SupplierCharges | null
+      newSupplierId: number
+      originalPrId: number
+      purchase_requisition_date: string | null
+    },
+  ]
+  'split-save': [
+    data: {
+      pr: PR
+      originalRows: any[]
+      originalRemarks: string
+      originalCharges: SupplierCharges | null
+      replacements: {
+        items: any[]
+        charges: SupplierCharges | null
+        newSupplierId: number
+        originalPrId: number
+        purchase_requisition_date: string | null
+      }[]
+    },
+  ]
 }>()
 
 const showEditDialog = ref<boolean>(false)
@@ -83,6 +109,9 @@ async function onUnapprove() {
           <div>
             Requested by <strong>{{ pr.requester_name ?? '—' }}</strong> &middot;
             {{ formatDatePR_ISO(pr.created_at) }}
+          </div>
+          <div v-if="pr.purchase_requisition_date">
+            Purchase Requisition Date: <strong>{{ formatDateOnly(pr.purchase_requisition_date) }}</strong>
           </div>
           <template
             v-if="
@@ -273,6 +302,8 @@ async function onUnapprove() {
         v-model="showEditDialog"
         :pr="pr"
         @save="(data) => emit('update', { pr: props.pr, ...data })"
+        @create-replacement="(data) => emit('create-replacement', { pr: props.pr, ...data })"
+        @split-save="(data) => emit('split-save', { pr: props.pr, ...data })"
       />
     </v-card>
   </v-dialog>

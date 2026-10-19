@@ -18,7 +18,7 @@ import {
   resetStore,
 } from './ethical/state'
 import { fetchOrders, fetchOrderById } from './ethical/orders'
-import { createOrder, saveDraft, confirmDraft, deleteDraft } from './ethical/drafts'
+import { saveDraft, confirmDraft, deleteDraft, unlockTerms } from './ethical/drafts'
 import {
   recordCollection,
   fetchCollections,
@@ -62,11 +62,11 @@ export const useEthicalDataStore = defineStore('ethicalData', () => {
     fetchOrders,
     fetchOrderById,
 
-    // Draft -> invoice
-    createOrder,
+    // Draft -> invoice (confirming and unlocking need executive approval)
     saveDraft,
     confirmDraft,
     deleteDraft,
+    unlockTerms,
 
     // Collections and commissions
     recordCollection,

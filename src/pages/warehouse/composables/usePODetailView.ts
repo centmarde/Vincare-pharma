@@ -1,8 +1,9 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useToast } from 'vue-toastification'
 import type { PR, PRItem } from '@/stores/purchaseRequisitionData'
 import { useProductsDataStore } from '@/stores/productsData'
 import type { SkuConflict } from '@/stores/productsData'
+import { useTransactionsDataStore } from '@/stores/transactionsData'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
 
@@ -20,10 +21,25 @@ export function usePODetailView(
   emit: PODetailEmits,
 ) {
   const productsStore = useProductsDataStore()
+  const transactionsStore = useTransactionsDataStore()
   const toast = useToast()
   const { confirmDialog } = useConfirmDialog()
 
   const savingAll = ref(false)
+
+  // Warehouse-selected receipt date, stored as 'YYYY-MM-DD' to avoid timezone shifts; '' means unset.
+  const receivedDate = ref<string>(props.po?.purchase_order_received_date ?? '')
+
+  // Receipt date is required before marking the PO as received.
+  const missingReceivedDate = computed(() => !receivedDate.value?.trim())
+
+  // Reset the date when switching POs in the reused modal.
+  watch(
+    () => props.po?.id,
+    () => {
+      receivedDate.value = props.po?.purchase_order_received_date ?? ''
+    },
+  )
 
   const transactionItems = computed(() => props.pr?.items ?? [])
   const effectiveEmptyRows = computed(() => Math.max(0, 7 - transactionItems.value.length))
@@ -124,6 +140,10 @@ export function usePODetailView(
       toast.error(`Please fill in Batch No for all ${missingBatchNoCount.value} item(s).`)
       return
     }
+    if (missingReceivedDate.value) {
+      toast.error('Please select a Purchase Received Date.')
+      return
+    }
     if (props.po?.id == null) {
       toast.error('No purchase order selected.')
       return
@@ -142,6 +162,20 @@ export function usePODetailView(
     if (!saved) {
       return
     }
+
+    // Persist the chosen Purchase Received Date on the same transaction row.
+    // Kept as a raw 'YYYY-MM-DD' string (empty -> null) so it round-trips the
+    // date-only column without a timezone shift. A failure here is reported but
+    // does not block the receive itself — the item data is already committed.
+    const dateSaved = await transactionsStore.updateTransaction(props.po.id, {
+      purchase_order_received_date: receivedDate.value?.trim() || null,
+      updated_at: new Date().toISOString(),
+    })
+    if (!dateSaved) {
+      toast.error('Items saved, but the Purchase Received Date could not be saved.')
+      return
+    }
+
     toast.success('All items saved successfully.')
     emit('mark-received', props.po.id)
   }
@@ -154,5 +188,7 @@ export function usePODetailView(
     missingActualCount,
     missingBatchNoCount,
     handleMarkAsReceived,
+    receivedDate,
+    missingReceivedDate,
   }
 }

@@ -136,12 +136,23 @@ async function handlePrint() {
               <div class="d-flex justify-space-between text-body-1 font-weight-bold mb-1">
                 <span>Total:</span><span>Php {{ formatCurrency(receipt.total).replace('₱', '') }}</span>
               </div>
-              <div class="d-flex justify-space-between text-body-2 mb-1">
-                <span>Cash Tendered:</span><span>Php {{ formatCurrency(receipt.tendered).replace('₱', '') }}</span>
-              </div>
-              <div class="d-flex justify-space-between text-body-2 font-weight-medium">
-                <span>Change:</span><span>Php {{ formatCurrency(receipt.change).replace('₱', '') }}</span>
-              </div>
+              <!-- Charged to the customer's account: nothing was tendered. -->
+              <template v-if="receipt.charged">
+                <div class="d-flex justify-space-between text-body-2 font-weight-bold mb-1">
+                  <span>CHARGED TO ACCOUNT</span>
+                </div>
+                <div class="d-flex justify-space-between text-body-2 font-weight-medium">
+                  <span>Amount Due:</span><span>Php {{ formatCurrency(receipt.total).replace('₱', '') }}</span>
+                </div>
+              </template>
+              <template v-else>
+                <div class="d-flex justify-space-between text-body-2 mb-1">
+                  <span>Cash Tendered:</span><span>Php {{ formatCurrency(receipt.tendered).replace('₱', '') }}</span>
+                </div>
+                <div class="d-flex justify-space-between text-body-2 font-weight-medium">
+                  <span>Change:</span><span>Php {{ formatCurrency(receipt.change).replace('₱', '') }}</span>
+                </div>
+              </template>
             </v-col>
           </v-row>
 

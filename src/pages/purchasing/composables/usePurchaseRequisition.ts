@@ -67,6 +67,7 @@ export type SupplierPurchaseSummary = PurchaseBreakdown & {
 
 type DraftPayload = {
   remarks: string | null
+  purchaseRequisitionDate: string | null
   supplierCharges: SupplierCharges[]
   lines: ManualDraftLineInput[]
 }
@@ -114,6 +115,7 @@ export function usePurchaseRequisition() {
 
   const currentPR = ref({
     remarks: '',
+    purchase_requisition_date: null as string | null,
   })
 
   const items = ref<PRFormItem[]>([])
@@ -132,11 +134,25 @@ export function usePurchaseRequisition() {
   // restore or the datepicker's .getFullYear()/.getMonth() calls would crash.
   const draft = useFormDraft({
     key: 'purchasing-requisition',
-    version: 3,
+    // v4 adds purchase_requisition_date while keeping the v3 draft fields.
+    version: 4,
     refs: { currentPR, items, currentDraftId, supplierCharges, lastSavedDraftSnapshot },
     isEmpty: () => !currentPR.value.remarks
+      && !currentPR.value.purchase_requisition_date
       && !items.value.some((i) => i.product_name.trim() || i.supplier_id != null
         || i.qty > 0 || i.cost_per_unit > 0 || i.expiry_date != null),
+    migrate: (data, fromVersion) => {
+      if (fromVersion !== 3) return null
+      const previousCurrentPR = data.currentPR
+      if (!previousCurrentPR || typeof previousCurrentPR !== 'object') return null
+      return {
+        ...data,
+        currentPR: {
+          ...(previousCurrentPR as Record<string, unknown>),
+          purchase_requisition_date: null,
+        },
+      }
+    },
     deserialize: (data) => ({
       ...data,
       items: Array.isArray(data.items)
@@ -276,7 +292,29 @@ export function usePurchaseRequisition() {
     })
   }
 
+  function prDateErrorForSubmit(): string | null {
+    const date = currentPR.value.purchase_requisition_date?.trim()
+    if (!date) return 'Please select the Purchase Requisition Date.'
+    if (!fromLocalISODate(date)) return 'Please enter a valid Purchase Requisition Date.'
+    if (date > toLocalISODate(new Date()))
+      return 'Purchase Requisition Date cannot be in the future.'
+    return null
+  }
+
+  function hasInvalidPurchaseRequisitionDate(): boolean {
+    const date = currentPR.value.purchase_requisition_date?.trim()
+    if (!date) return false
+    if (!fromLocalISODate(date)) return true
+    return date > toLocalISODate(new Date())
+  }
+
   async function handleSubmit(): Promise<SubmitResult> {
+    const dateError = prDateErrorForSubmit()
+    if (dateError) {
+      toast.info(dateError)
+      return { success: false, resolvedReorderIds: [], requisitionNos: [], productIds: [] }
+    }
+
     const validItems = items.value.filter(i => i.product_name.trim())
     if (!validItems.length) {
       toast.warning('Please add at least one item.')
@@ -335,6 +373,7 @@ export function usePurchaseRequisition() {
 
     // Sync to store state so savePurchaseRequisition can read it
     prStore.currentPR.remarks     = currentPR.value.remarks || null
+    prStore.currentPR.purchase_requisition_date = currentPR.value.purchase_requisition_date || null
     prStore.currentPR.supplier_id = null
     prStore.items                 = validItems.map(i => ({
       no:               i.no,
@@ -415,7 +454,7 @@ export function usePurchaseRequisition() {
 
   // ─── Reset ────────────────────────────────────────────────────────
   function reset() {
-    currentPR.value      = { remarks: '' }
+    currentPR.value      = { remarks: '', purchase_requisition_date: null }
     items.value          = []
     currentDraftId.value = null
     supplierCharges.value = []
@@ -425,7 +464,7 @@ export function usePurchaseRequisition() {
 
   // ─── Clear form (single blank row, no draft) ──────────────────────
   function clearForm() {
-    currentPR.value      = { remarks: '' }
+    currentPR.value      = { remarks: '', purchase_requisition_date: null }
     items.value          = []
     currentDraftId.value = null
     supplierCharges.value = []
@@ -455,6 +494,7 @@ export function usePurchaseRequisition() {
   function draftPayloadFromForm(): DraftPayload {
     return {
       remarks: currentPR.value.remarks || null,
+      purchaseRequisitionDate: currentPR.value.purchase_requisition_date || null,
       supplierCharges: chargesForSuppliersOnForm(),
       lines: draftLinesFromForm(),
     }
@@ -471,8 +511,12 @@ export function usePurchaseRequisition() {
     toast.warning('Your changes are still in the form. Use Save as Draft to keep them as a new draft.')
   }
 
-  // Not validated like handleSubmit — a draft is meant to hold a half-finished requisition.
   async function saveDraft(): Promise<{ success: boolean }> {
+    if (hasInvalidPurchaseRequisitionDate()) {
+      toast.info('Please enter a valid Purchase Requisition Date.')
+      return { success: false }
+    }
+
     const payload = draftPayloadFromForm()
     if (!payload.lines.length) {
       toast.warning('Add at least one item before saving a draft.')
@@ -499,6 +543,11 @@ export function usePurchaseRequisition() {
   async function autoSaveOpenDraft(outcome: 'saved.' | 'restored and saved.'): Promise<void> {
     const draftId = currentDraftId.value
     if (draftId == null || loading.value || !hasUnsavedDraftChanges.value) return
+
+    if (hasInvalidPurchaseRequisitionDate()) {
+      toast.info(`Draft #${draftId} was not updated because the Purchase Requisition Date is invalid or in the future.`)
+      return
+    }
 
     const payload = draftPayloadFromForm()
     if (!payload.lines.length) {
@@ -561,7 +610,10 @@ export function usePurchaseRequisition() {
       .filter((id): id is number => id != null)
     const stillPending = await productsStore.filterPendingReorderRequestIds(linkedReorderIds)
 
-    currentPR.value = { remarks: loaded.remarks ?? '' }
+    currentPR.value = {
+      remarks: loaded.remarks ?? '',
+      purchase_requisition_date: loaded.purchase_requisition_date ?? null,
+    }
     supplierCharges.value = loaded.supplier_charges ?? []
     items.value = loaded.items.map((item, index) => ({
       no:               index + 1,

@@ -16,8 +16,10 @@ import { useAuthUserStore } from '@/stores/authUser'
 import { isProductEditRestricted } from '@/utils/roleHelpers'
 import { ref, onMounted, watch, computed } from 'vue'
 import { useDisplay } from 'vuetify'
+import { useToast } from 'vue-toastification'
 
 const prStore = usePurchaseRequisitionStore()
+const toast = useToast()
 
 const selectedReorderIds = ref<number[]>([])
 const prefillItemsForDialog = ref<ReorderPrefillItem[]>([])
@@ -159,17 +161,104 @@ function onPRSubmitted() {
 }
 
 // PurchaseRequisitionList.vue — restore the direct-save version
-async function onPRUpdate(data: { items: any[]; remarks: string }) {
+async function onPRUpdate(data: { items: any[]; remarks: string; charges?: any | null }) {
   if (!selectedPR.value) return
   const success = await prStore.updatePR({
     prId: selectedPR.value.id,
     items: data.items,
     remarks: data.remarks,
+    ...(data.charges ? { charges: data.charges } : {}),
   })
   if (success) {
     showModal.value = false
     loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
   }
+}
+
+// Confirmed supplier changes create replacement PRs, keeping the original pending approval; each save/create handler refreshes the list independently.
+async function onPRReplacement(data: {
+  items: any[]
+  charges: any | null
+  newSupplierId: number
+  originalPrId: number
+  purchase_requisition_date: string | null
+}) {
+  const result = await prStore.createReplacementPR({
+    originalPrId: data.originalPrId,
+    items: data.items,
+    charges: data.charges,
+    newSupplierId: data.newSupplierId,
+    purchase_requisition_date: data.purchase_requisition_date,
+  })
+  if (result.success) {
+    showModal.value = false
+    loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
+  }
+}
+
+async function onPRSplitSave(data: {
+  pr: any
+  originalRows: any[]
+  originalRemarks: string
+  originalCharges: any | null
+  replacements: {
+    items: any[]
+    charges: any | null
+    newSupplierId: number
+    originalPrId: number
+    purchase_requisition_date: string | null
+  }[]
+}) {
+  if (!selectedPR.value) return
+
+  async function rollbackCreatedReplacements(
+    replacements: { transactionId: number; createdProductIds: number[] }[],
+  ): Promise<boolean> {
+    for (const created of replacements) {
+      const rollback = await prStore.deleteReplacementPR(
+        created.transactionId,
+        created.createdProductIds,
+      )
+      if (!rollback.success) {
+        toast.error(`Failed to fully roll back a replacement PR: ${rollback.error ?? 'Unknown error'}`)
+        return false
+      }
+    }
+    return true
+  }
+
+  const createdReplacements: { transactionId: number; createdProductIds: number[] }[] = []
+  for (const replacement of data.replacements) {
+    const result = await prStore.createReplacementPR({
+      originalPrId: replacement.originalPrId,
+      items: replacement.items,
+      charges: replacement.charges,
+      newSupplierId: replacement.newSupplierId,
+      purchase_requisition_date: replacement.purchase_requisition_date,
+    })
+    if (!result.success || result.transactionId == null) {
+      await rollbackCreatedReplacements(createdReplacements)
+      return
+    }
+    createdReplacements.push({
+      transactionId: result.transactionId,
+      createdProductIds: result.createdProductIds ?? [],
+    })
+  }
+
+  const updated = await prStore.updatePR({
+    prId: selectedPR.value.id,
+    items: data.originalRows,
+    remarks: data.originalRemarks,
+    ...(data.originalCharges ? { charges: data.originalCharges } : {}),
+  })
+  if (!updated) {
+    await rollbackCreatedReplacements(createdReplacements)
+    return
+  }
+
+  showModal.value = false
+  loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
 }
 
 async function onPOIssued() {
@@ -298,7 +387,8 @@ async function onPOIssued() {
     <!-- Detail Modal -->
     <PRDetailModal v-if="selectedPR" v-model="showModal" :pr="selectedPR"
     @approve="openConfirm('APPROVE', $event)" @reject="openConfirm('REJECT', $event)"
-    @unapprove="handleUnapprove" @update="onPRUpdate"/>
+    @unapprove="handleUnapprove" @update="onPRUpdate" @create-replacement="onPRReplacement"
+    @split-save="onPRSplitSave"/>
 
     <!-- Reorder Requests Dialog -->
     <ReorderRequestsDialog

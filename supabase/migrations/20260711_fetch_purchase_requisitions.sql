@@ -21,6 +21,7 @@ returns table (
   created_by             uuid,
   approved_by            uuid,
   updated_at             timestamptz,
+  purchase_requisition_date date,
   items                  jsonb,
   total_count            bigint
 )
@@ -48,6 +49,7 @@ begin
       t.reference_no,
       t.status, t.remarks, t.total_amount,
       t.supplier_id, t.created_at, t.created_by, t.approved_by, t.updated_at,
+      t.purchase_requisition_date,
       coalesce(items.items, '[]'::jsonb) as items,
       count(*) over() as total_count
     from transactions t

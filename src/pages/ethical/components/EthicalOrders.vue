@@ -8,7 +8,7 @@ import type { EthicalOrderType } from '@/stores/ethicalData'
 import { useDisplay } from 'vuetify'
 
 const { mobile } = useDisplay()
-const { orders, loading, searchText, statusFilter, statusOptions, statusMeta, isOverdue, balanceAmount, isDraft, orderLabel, headers, init } = useEthicalOrders()
+const { orders, loading, searchText, statusFilter, statusOptions, statusMeta, isOverdue, balanceAmount, isDraft, orderLabel, isAwaitingApproval, headers, init } = useEthicalOrders()
 
 const showCreateDialog = ref(false)
 const showDetailDialog = ref(false)
@@ -140,6 +140,9 @@ const notSet = (field: string) => `No ${field} set`
                     >
                       {{ statusMeta(item.status).label }}
                     </v-chip>
+                    <v-chip v-if="isAwaitingApproval(item.id)" size="x-small" variant="tonal" color="info" class="font-weight-bold">
+                      Awaiting Approval
+                    </v-chip>
                     <v-chip
                       v-if="item.fulfillment_status === 'awaiting_stock'"
                       size="x-small" variant="tonal" color="orange"
@@ -216,6 +219,10 @@ const notSet = (field: string) => `No ${field} set`
             </v-chip>
             <v-chip v-if="item.fulfillment_status === 'awaiting_stock'" color="orange" label size="small" class="ml-1">
               Awaiting Stock
+            </v-chip>
+            <!-- Sent to the executives (to invoice, or to unapprove), not yet decided. -->
+            <v-chip v-if="isAwaitingApproval(item.id)" color="info" label size="small" class="ml-1">
+              Awaiting Approval
             </v-chip>
           </template>
           <template #item.due_date="{ item }">

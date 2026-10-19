@@ -1,12 +1,13 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useInhouseDataStore } from '@/stores/inhouseData'
+import { useTermsApprovalStore } from '@/stores/termsApprovalData'
 import type { InhouseOrderType } from '@/stores/inhouseData'
 
 export const headers = [
   { title: 'ORDER #',   key: 'order_no',     sortable: true,  align: 'start' as const },
   { title: 'PO #',      key: 'po_no',        sortable: false, align: 'center' as const },
-  { title: 'GOVT PO #', key: 'govt_po_no',   sortable: false, align: 'center' as const },
+  { title: 'GOVT PR #', key: 'govt_po_no',   sortable: false, align: 'center' as const },
   { title: 'CUSTOMER',  key: 'customer',     sortable: false, align: 'start' as const },
   { title: 'TOTAL',     key: 'total_amount', sortable: true,  align: 'center' as const },
   { title: 'DELIVERED', key: 'delivered',    sortable: false, align: 'center' as const },
@@ -35,6 +36,15 @@ export function deliveryPct(order: InhouseOrderType): number {
 export function useInhouseOrders() {
   const store = useInhouseDataStore()
   const { orders, loading } = storeToRefs(store)
+
+  // Orders whose terms are waiting on the executives (lock or unlock) — a chip
+  // on the list, so staff can see what is held up without opening each one.
+  // Reloaded whenever the order list is.
+  const termsStore = useTermsApprovalStore()
+  const awaitingApprovalIds = ref<Set<number>>(new Set())
+  async function loadAwaitingApproval() { awaitingApprovalIds.value = await termsStore.pendingOrderIds('inhouse_order') }
+  watch(orders, () => { void loadAwaitingApproval() })
+  const isAwaitingApproval = (id: number) => awaitingApprovalIds.value.has(id)
 
   const search = ref('')
   const filterStatus = ref<string | null>(null)
@@ -81,7 +91,7 @@ export function useInhouseOrders() {
   return {
     orders, loading, search, filterStatus, statusOptions,
     filtered, showRaise, showDetail, selected,
-    statusLabel, statusColor, deliveryPct,
+    statusLabel, statusColor, deliveryPct, isAwaitingApproval,
     openRaise, openDetail, handleRaised, handleChanged, init,
   }
 }

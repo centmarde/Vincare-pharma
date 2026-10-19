@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useIncomeStatement } from '../composables/useIncomeStatement'
-import { formatDatePR_ISO } from '@/utils/helpers'
+import { formatDateOnly } from '@/utils/helpers'
 import { useDisplay } from 'vuetify'
 import StatementBody from './StatementBody.vue'
 import IncomeStatementPrintDialog from './dialogs/IncomeStatementPrintDialog.vue'
@@ -10,20 +10,29 @@ const { mobile } = useDisplay()
 
 const {
   dateFrom, dateTo, basis, layout, basisOptions, layoutOptions,
-  isCash, isMonthly, monthLabel,
-  cashStatement, monthly, monthlyCash, periodRows, monthlyRows,
+  isCollections, isMonthly, monthLabel, collectionNote,
+  monthly, periodRows, monthlyRows,
   loading, error, load, setBasis, setLayout,
 } = useIncomeStatement()
 
-const title = computed(() => (isCash.value ? 'CASH RECEIVED & PAID' : 'INCOME STATEMENT'))
+// One statement on both bases; the basis line says which, on screen and on paper.
+const title = 'INCOME STATEMENT'
 const basisLine = computed(() =>
-  isCash.value ? 'Cash basis — management view' : 'Accrual basis',
+  isCollections.value
+    ? 'By collections — sales and their cost counted as collected; expenses as booked'
+    : 'Accrual basis',
 )
+// Date only: a period runs whole days, and a time ("08:00am") on the printed
+// statement read as if it started mid-morning.
 const periodLine = computed(
-  () => `For the period ${formatDatePR_ISO(dateFrom.value)} to ${formatDatePR_ISO(dateTo.value)}`,
+  () => `For the period ${formatDateOnly(dateFrom.value)} to ${formatDateOnly(dateTo.value)}`,
 )
 
 const showPrint = ref(false)
+
+// Load the statement on open. Without this the page showed "nothing posted"
+// (or whatever another screen left in the store) until a date or toggle changed.
+onMounted(load)
 </script>
 
 <template>
@@ -120,14 +129,12 @@ const showPrint = ref(false)
           :title="title"
           :period-line="periodLine"
           :basis-line="basisLine"
-          :is-cash="isCash"
           :is-monthly="isMonthly"
           :period-rows="periodRows"
           :monthly-rows="monthlyRows"
           :monthly="monthly"
-          :cash-statement="cashStatement"
-          :monthly-cash="monthlyCash"
           :month-label="monthLabel"
+          :collection-note="collectionNote"
         />
       </v-card-text>
     </v-card>
@@ -137,14 +144,13 @@ const showPrint = ref(false)
       :title="title"
       :period-line="periodLine"
       :basis-line="basisLine"
-      :is-cash="isCash"
+      :is-collections="isCollections"
       :is-monthly="isMonthly"
       :period-rows="periodRows"
       :monthly-rows="monthlyRows"
       :monthly="monthly"
-      :cash-statement="cashStatement"
-      :monthly-cash="monthlyCash"
       :month-label="monthLabel"
+      :collection-note="collectionNote"
     />
   </v-container>
 </template>

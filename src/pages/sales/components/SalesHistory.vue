@@ -12,7 +12,7 @@ import { useDisplay } from 'vuetify'
 const { mobile } = useDisplay()
 const {
   loading, search, filterStatus, filterWarehouseId, warehouseOptions, dateFrom, dateTo, statusOptions,
-  filteredSales, cashierName, canVoid,
+  filteredSales, cashierName, canVoid, isCharged, chargeOwed,
   showReceipt, receipt,
   load, openReceipt,
 } = useSalesHistory()
@@ -189,6 +189,15 @@ onMounted(loadPending)
           <v-chip :color="item.status === 'voided' ? 'error' : 'success'" size="small" variant="tonal" class="font-weight-bold">
             {{ item.status === 'voided' ? 'Voided' : 'Completed' }}
           </v-chip>
+          <!-- Charged to the customer's account: what is still owed. Payments
+               are recorded at the office, in Finance → Accounts Receivable. -->
+          <div v-if="isCharged(item) && item.status !== 'voided'" class="text-caption mt-1">
+            <template v-if="chargeOwed(item) === null">Charged · balance not available</template>
+            <span v-else-if="(chargeOwed(item) ?? 0) > 0.005" class="text-warning font-weight-medium">
+              Charged · {{ formatCurrency(chargeOwed(item) ?? 0) }} owed
+            </span>
+            <span v-else class="text-green-darken-1 font-weight-medium">Charged · paid</span>
+          </div>
         </template>
 
         <template #item.actions="{ item }">

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { formatCurrency } from '@/utils/helpers'
 import { useDisplay } from 'vuetify'
-import { paymentMethods, paymentMethodMeta } from '@/utils/paymentMethods'
-import type { PaymentMethod } from '@/utils/paymentMethods'
+import { posPaymentMethods, posPaymentMethodMeta } from '@/utils/paymentMethods'
+import type { PosPaymentMethod } from '@/utils/paymentMethods'
 import { computed } from 'vue'
 
 const { mobile } = useDisplay()
@@ -17,10 +17,16 @@ const props = defineProps<{
   customerName: string
   customerAddress: string
   customerMobile: string
-  paymentMethod: PaymentMethod
+  paymentMethod: PosPaymentMethod
   paymentReference: string
   customerSuggestions: { id: number; name: string | null; address: string | null; contact_no: string | null }[]
   customerSearching: boolean
+  /** Charge to account is selected. */
+  isCharge: boolean
+  /** A customer account was picked from the suggestions (not just typed). */
+  customerPicked: boolean
+  /** What the picked account already owes; null if unreadable, undefined while loading. */
+  chargeBalance: number | null | undefined
 }>()
 
 const emit = defineEmits<{
@@ -29,7 +35,7 @@ const emit = defineEmits<{
   (e: 'update:customerName', value: string): void
   (e: 'update:customerAddress', value: string): void
   (e: 'update:customerMobile', value: string): void
-  (e: 'update:paymentMethod', value: PaymentMethod): void
+  (e: 'update:paymentMethod', value: PosPaymentMethod): void
   (e: 'update:paymentReference', value: string): void
   (e: 'searchCustomer', term: string): void
   (e: 'pickCustomer', customer: { id: number; name: string | null; address: string | null; contact_no: string | null }): void
@@ -40,7 +46,7 @@ const quickAmounts = [20, 50, 100, 200, 500, 1000]
 
 // Cash takes an amount and returns change; everything else settles at the
 // exact total and is identified by its own reference instead.
-const meta = computed(() => paymentMethodMeta(props.paymentMethod))
+const meta = computed(() => posPaymentMethodMeta(props.paymentMethod))
 
 // v-combobox hands back a string when the cashier types a new name, or the
 // bound item when they pick a suggestion. Unpacked here because template
@@ -70,7 +76,11 @@ function onCustomerInput(value: unknown) {
           <span class="text-h5 font-weight-bold">{{ formatCurrency(total) }}</span>
         </div>
 
-        <label class="field-label">Customer <span class="text-medium-emphasis">(optional)</span></label>
+        <label class="field-label">
+          Customer
+          <span v-if="isCharge" class="text-error">* pick the account from the list</span>
+          <span v-else class="text-medium-emphasis">(optional)</span>
+        </label>
         <!-- Typeable, not a picker: an unrecognised name is a NEW walk-in and
              is created on save, so free text has to stay valid. Suggestions
              are a shortcut for someone who has been here before, never a
@@ -138,7 +148,7 @@ function onCustomerInput(value: unknown) {
           @update:model-value="emit('update:paymentMethod', $event)"
         >
           <v-btn
-            v-for="m in paymentMethods"
+            v-for="m in posPaymentMethods"
             :key="m.value"
             :value="m.value"
             size="small"
@@ -184,6 +194,25 @@ function onCustomerInput(value: unknown) {
             {{ formatCurrency(changeDue) }}
           </span>
         </div>
+        </template>
+
+        <!-- Charged to the customer's account: nothing is paid now. The
+             account is required, and what it already owes is shown so the
+             cashier sees it before adding to it. -->
+        <template v-else-if="isCharge">
+          <v-alert v-if="!customerPicked" type="warning" variant="tonal" density="compact" class="text-body-2">
+            Pick the customer's account from the suggestions above. A charge needs an existing account; a name typed here is not one.
+          </v-alert>
+          <template v-else>
+            <div class="text-body-2">
+              {{ formatCurrency(total) }} will be charged to <strong>{{ customerName }}</strong> and paid later at the office.
+            </div>
+            <div class="text-caption text-medium-emphasis mt-1">
+              <template v-if="chargeBalance === undefined">Checking what this account already owes…</template>
+              <template v-else-if="chargeBalance === null">Could not read what this account already owes.</template>
+              <template v-else>Already owes {{ formatCurrency(chargeBalance) }} on earlier charges.</template>
+            </div>
+          </template>
         </template>
 
         <!-- Non-cash: the reference IS the proof the money moved, so it is
