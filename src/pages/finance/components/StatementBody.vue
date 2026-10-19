@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { StatementRow } from '../composables/useIncomeStatement'
-import type { CashBasisStatement, MonthlyCashBasisStatement, MonthlyIncomeStatement } from '@/stores/glData'
+import type { MonthlyIncomeStatement } from '@/stores/glData'
 import type { CompanyProfile } from '@/utils/companyProfiles'
 import { formatCurrency } from '@/utils/helpers'
 
@@ -16,18 +17,17 @@ import { formatCurrency } from '@/utils/helpers'
  * carry a company header, but the page that leaves the building must say who
  * issued it.
  */
-defineProps<{
+const props = defineProps<{
   title: string
   periodLine: string
   basisLine: string
-  isCash: boolean
   isMonthly: boolean
   periodRows: StatementRow[]
   monthlyRows: StatementRow[]
   monthly: MonthlyIncomeStatement | null
-  cashStatement: CashBasisStatement | null
-  monthlyCash: MonthlyCashBasisStatement | null
   monthLabel: (month: string) => string
+  /** By collections: what the statement could not apply collections to. */
+  collectionNote?: { manualSales: number; opening: number; unmatched: number } | null
   letterhead?: CompanyProfile | null
   /**
    * Typeset for paper rather than a screen: tighter metrics, and NO horizontal
@@ -37,8 +37,31 @@ defineProps<{
   print?: boolean
 }>()
 
+/** By collections: what the statement could not apply collections to, in plain sentences. */
+const collectionNoteText = computed(() => {
+  const note = props.collectionNote
+  if (!note) return ''
+  const sentences: string[] = []
+  if (note.manualSales) {
+    sentences.push(`${formatCurrency(note.manualSales)} of sales were entered by manual journal entry `
+      + '(such as the bookings carried over from the old system). The ledger has no collection data for them, so they are shown as booked.')
+  }
+  const parts: string[] = []
+  if (note.opening) parts.push(`${formatCurrency(note.opening)} on receivables from before the system (sold and counted in the old books)`)
+  if (note.unmatched) parts.push(`${formatCurrency(note.unmatched)} on orders with no sale in the ledger to match`)
+  if (parts.length) sentences.push(`Also collected in this period but not counted as sales: ${parts.join('; ')}.`)
+  return sentences.join(' ')
+})
+
 function amountText(row: { negate: boolean }, amount: number) {
   return row.negate ? `(${formatCurrency(amount)})` : formatCurrency(amount)
+}
+/** "62.3%"; a loss gets a minus, as its amount does; a dash when there are no sales. */
+function ratioText(ratio: number | null | undefined) {
+  if (ratio == null) return '—'
+  // Rounded first, so a figure that rounds to zero never prints as "-0.0%".
+  const rounded = Math.round(ratio * 10) / 10
+  return `${rounded < 0 ? '-' : ''}${Math.abs(rounded).toFixed(1)}%`
 }
 function rowClass(row: StatementRow) {
   return `is-row is-${row.kind}${row.final ? ' is-final' : ''}`
@@ -61,117 +84,63 @@ function rowClass(row: StatementRow) {
         <div class="statement-sub">{{ basisLine }}</div>
       </header>
 
-      <!-- A cash statement that travels on paper needs the caveat ON the
-           document, not only in the app chrome around it. -->
-      <div v-if="isCash" class="cash-caveat mb-6">
-        Recognised when money moved — revenue on collection, costs on payment.
-        This is not a Statement of Income and will not agree with one.
-      </div>
-
-      <!-- ── Period, accrual ─────────────────────────────────── -->
-      <table v-if="!isMonthly && !isCash && periodRows.length" class="stmt" style="max-width: 720px; margin: 0 auto">
+      <!-- ── Period ──────────────────────────────────────────── -->
+      <table v-if="!isMonthly && periodRows.length" class="stmt" style="max-width: 820px; margin: 0 auto">
+        <thead>
+          <tr>
+            <th class="stmt-label"></th>
+            <th class="stmt-amount stmt-col-head">AMOUNT</th>
+            <th class="stmt-amount stmt-col-head stmt-pct">% OF SALES</th>
+          </tr>
+        </thead>
         <tbody>
           <tr v-for="(row, i) in periodRows" :key="i" :class="rowClass(row)">
             <th scope="row" class="stmt-label">{{ row.label }}</th>
             <td class="stmt-amount">
               <template v-if="row.kind !== 'section'">{{ amountText(row, row.total) }}</template>
             </td>
+            <td class="stmt-amount stmt-pct">
+              <template v-if="row.kind !== 'section'">{{ ratioText(row.totalRatio) }}</template>
+            </td>
           </tr>
         </tbody>
       </table>
 
-      <!-- ── Monthly, accrual ────────────────────────────────── -->
-      <div v-else-if="isMonthly && !isCash && monthly" :class="print ? '' : 'stmt-scroll'">
+      <!-- ── Monthly ─────────────────────────────────────────── -->
+      <div v-else-if="isMonthly && monthly" :class="print ? '' : 'stmt-scroll'">
         <table class="stmt stmt-wide">
           <thead>
             <tr>
               <th class="stmt-label"></th>
-              <th v-for="m in monthly.months" :key="m" class="stmt-amount stmt-col-head">
-                {{ monthLabel(m) }}
-              </th>
+              <!-- Each month carries its own % of sales beside it, so a month
+                   can be compared with the next: COGS 62% in Aug, 58% in Sep. -->
+              <template v-for="m in monthly.months" :key="m">
+                <th class="stmt-amount stmt-col-head">{{ monthLabel(m) }}</th>
+                <th class="stmt-amount stmt-col-head stmt-pct">%</th>
+              </template>
               <th class="stmt-amount stmt-col-head is-total-col">TOTAL</th>
+              <th class="stmt-amount stmt-col-head stmt-pct is-total-pct">%</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="(row, i) in monthlyRows" :key="i" :class="rowClass(row)">
               <th scope="row" class="stmt-label">{{ row.label }}</th>
               <template v-if="row.kind === 'section'">
-                <td v-for="(m, j) in monthly.months" :key="j" />
+                <template v-for="(m, j) in monthly.months" :key="j">
+                  <td />
+                  <td />
+                </template>
                 <td class="is-total-col" />
+                <td />
               </template>
               <template v-else>
-                <td v-for="(amt, j) in row.amounts" :key="j" class="stmt-amount">
-                  {{ amountText(row, amt) }}
-                </td>
+                <template v-for="(amt, j) in row.amounts" :key="j">
+                  <td class="stmt-amount">{{ amountText(row, amt) }}</td>
+                  <td class="stmt-amount stmt-pct">{{ ratioText(row.ratios?.[j]) }}</td>
+                </template>
                 <td class="stmt-amount is-total-col">{{ amountText(row, row.total) }}</td>
+                <td class="stmt-amount stmt-pct is-total-pct">{{ ratioText(row.totalRatio) }}</td>
               </template>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- ── Period, cash ────────────────────────────────────── -->
-      <table v-else-if="!isMonthly && isCash && cashStatement" class="stmt" style="max-width: 720px; margin: 0 auto">
-        <tbody>
-          <tr class="is-row is-account">
-            <th scope="row" class="stmt-label">Collected from customers</th>
-            <td class="stmt-amount">{{ formatCurrency(cashStatement.collected) }}</td>
-          </tr>
-          <tr class="is-row is-account">
-            <th scope="row" class="stmt-label">Paid to suppliers</th>
-            <td class="stmt-amount">({{ formatCurrency(cashStatement.paidToSuppliers) }})</td>
-          </tr>
-          <tr v-for="e in cashStatement.paidExpenses" :key="e.code" class="is-row is-account">
-            <th scope="row" class="stmt-label">{{ e.name }}</th>
-            <td class="stmt-amount">({{ formatCurrency(e.amount) }})</td>
-          </tr>
-          <tr class="is-row is-result is-final">
-            <th scope="row" class="stmt-label">NET CASH FROM TRADING</th>
-            <td class="stmt-amount">{{ formatCurrency(cashStatement.netCash) }}</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <!-- ── Monthly, cash ───────────────────────────────────── -->
-      <div v-else-if="isMonthly && isCash && monthlyCash" :class="print ? '' : 'stmt-scroll'">
-        <table class="stmt stmt-wide">
-          <thead>
-            <tr>
-              <th class="stmt-label"></th>
-              <th v-for="m in monthlyCash.months" :key="m" class="stmt-amount stmt-col-head">
-                {{ monthLabel(m) }}
-              </th>
-              <th class="stmt-amount stmt-col-head is-total-col">TOTAL</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr class="is-row is-account">
-              <th scope="row" class="stmt-label">Collected from customers</th>
-              <td v-for="(p, i) in monthlyCash.perMonth" :key="i" class="stmt-amount">
-                {{ formatCurrency(p.collected) }}
-              </td>
-              <td class="stmt-amount is-total-col">{{ formatCurrency(monthlyCash.total.collected) }}</td>
-            </tr>
-            <tr class="is-row is-account">
-              <th scope="row" class="stmt-label">Paid to suppliers</th>
-              <td v-for="(p, i) in monthlyCash.perMonth" :key="i" class="stmt-amount">
-                ({{ formatCurrency(p.paidToSuppliers) }})
-              </td>
-              <td class="stmt-amount is-total-col">({{ formatCurrency(monthlyCash.total.paidToSuppliers) }})</td>
-            </tr>
-            <tr class="is-row is-account">
-              <th scope="row" class="stmt-label">Paid expenses</th>
-              <td v-for="(p, i) in monthlyCash.perMonth" :key="i" class="stmt-amount">
-                ({{ formatCurrency(p.paidExpensesTotal) }})
-              </td>
-              <td class="stmt-amount is-total-col">({{ formatCurrency(monthlyCash.total.paidExpensesTotal) }})</td>
-            </tr>
-            <tr class="is-row is-result is-final">
-              <th scope="row" class="stmt-label">NET CASH FROM TRADING</th>
-              <td v-for="(p, i) in monthlyCash.perMonth" :key="i" class="stmt-amount">
-                {{ formatCurrency(p.netCash) }}
-              </td>
-              <td class="stmt-amount is-total-col">{{ formatCurrency(monthlyCash.total.netCash) }}</td>
             </tr>
           </tbody>
         </table>
@@ -181,19 +150,8 @@ function rowClass(row: StatementRow) {
         Nothing posted to the ledger in this period.
       </div>
 
-      <!-- Non-trading cash is listed rather than dropped, so the figure can
-           still be reconciled against the bank. -->
-      <template v-if="isCash && !isMonthly && cashStatement?.excluded.length">
-        <div class="excluded-head mt-8 mb-2">Cash movements excluded as non-trading</div>
-        <table class="stmt" style="max-width: 720px; margin: 0 auto">
-          <tbody>
-            <tr v-for="x in cashStatement.excluded" :key="x.code" class="is-row is-account">
-              <th scope="row" class="stmt-label">{{ x.name }}</th>
-              <td class="stmt-amount">{{ formatCurrency(x.amount) }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </template>
+      <!-- On the document itself, so a printed copy says what it leaves out. -->
+      <div v-if="collectionNoteText" class="collection-note mt-6">{{ collectionNoteText }}</div>
   </div>
 </template>
 
@@ -211,16 +169,13 @@ function rowClass(row: StatementRow) {
   font-size: 0.8rem;
   opacity: 0.75;
 }
-.cash-caveat {
+.collection-note {
   font-size: 0.78rem;
   line-height: 1.5;
   text-align: center;
   max-width: 620px;
   margin-inline: auto;
-  padding: 0.6rem 0.9rem;
-  border: 1px solid rgb(var(--v-theme-warning));
-  border-radius: 6px;
-  opacity: 0.9;
+  opacity: 0.8;
 }
 
 /* ── The statement table ────────────────────────────────────── */
@@ -321,13 +276,15 @@ function rowClass(row: StatementRow) {
   font-weight: 600;
 }
 
-.excluded-head {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-  opacity: 0.65;
-  text-align: center;
+/* % of sales: a narrower, quieter column beside the amount it describes. */
+.stmt-pct {
+  min-width: 68px;
+  padding-left: 0.75rem;
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+.is-total-pct {
+  font-weight: 600;
 }
 
 /* ── Paper ──────────────────────────────────────────────────
@@ -371,6 +328,9 @@ function rowClass(row: StatementRow) {
 }
 .is-print .is-total-col {
   padding-left: 0.5rem;
+}
+.is-print .stmt-pct {
+  padding-left: 0.3rem;
 }
 .is-print .statement-title {
   font-size: 1rem;
