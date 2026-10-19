@@ -30,7 +30,7 @@ export function useRemittance() {
   // ─── State ────────────────────────────────────────────────────────
   const selectedWarehouseId = ref<number | null>(null)
   const showSubmitDialog = ref(false)
-  const expected = ref<ExpectedSummary>({ expected: 0, saleCount: 0, totalSaleCount: 0, nonCash: [], nonCashTotal: 0 })
+  const expected = ref<ExpectedSummary>({ expected: 0, saleCount: 0, totalSaleCount: 0, nonCash: [], nonCashTotal: 0, charged: { amount: 0, saleCount: 0 } })
   const actualAmount = ref<number | null>(null)
   const notes = ref('')
   // Which Cash on Hand account the counted cash is handed into. It sits there

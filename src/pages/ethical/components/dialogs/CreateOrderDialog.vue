@@ -8,7 +8,7 @@ import ProductPickerDialog from '@/components/products/ProductPicker.vue'
 import CustomerTermsCard from '@/components/customers/CustomerTermsCard.vue'
 import DraftOrderPrintDialog from '@/components/orderPrint/DraftOrderPrintDialog.vue'
 import { useCreateOrder } from '../../composables/useCreateOrder'
-import { formatCurrency } from '@/utils/helpers'
+import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 
 const { mobile } = useDisplay()
 
@@ -30,6 +30,10 @@ const internalValue = computed({
 
 const {
   loading,
+  termsRequest,
+  draftPending,
+  draftRejected,
+  withdrawTermsRequest,
   customerId,
   customerSearch,
   customerOptions,
@@ -135,7 +139,7 @@ watch(
              labelled button, this one does not. Without it a draft reopened on
              a phone could be saved but never removed. -->
         <v-btn
-          v-if="isEditingDraft"
+          v-if="isEditingDraft && !draftPending"
           icon="mdi-delete-outline"
           color="error"
           variant="text"
@@ -143,18 +147,19 @@ watch(
           @click="discardDraft"
         />
         <v-btn icon="mdi-printer" variant="text" aria-label="Print draft" @click="showDraftPrint = true" />
-        <v-btn variant="text" class="text-none" :loading="loading" @click="saveAsDraft">
+        <v-btn variant="text" class="text-none" :loading="loading" :disabled="draftPending" @click="saveAsDraft">
           Save Draft
         </v-btn>
+        <!-- Invoicing is an executive's call: this sends the draft to them. -->
         <v-btn
           variant="flat"
           color="primary"
           class="text-none mr-2"
           :loading="loading"
-          :disabled="hasBelowCostLine"
+          :disabled="hasBelowCostLine || draftPending"
           @click="submit"
         >
-          Invoice
+          Submit
         </v-btn>
       </v-toolbar>
 
@@ -170,6 +175,25 @@ watch(
       <v-divider />
 
       <v-card-text class="pa-4 pa-sm-5">
+        <!-- Sent to the executives: frozen until they decide, so what they
+             approve is what they were shown. -->
+        <v-alert v-if="draftPending" type="info" variant="tonal" density="compact" class="mb-4">
+          <div class="d-flex align-center flex-wrap ga-2">
+            <span class="flex-grow-1">
+              Awaiting executive approval to invoice — sent {{ formatDatePR_ISO(termsRequest?.created_at) }}.
+              The draft can't be changed meanwhile.
+            </span>
+            <v-btn size="small" variant="text" class="text-none" :loading="loading" @click="withdrawTermsRequest">
+              Withdraw request
+            </v-btn>
+          </div>
+        </v-alert>
+        <v-alert v-else-if="draftRejected" type="warning" variant="tonal" density="compact" class="mb-4">
+          Not approved by the executives on {{ formatDatePR_ISO(termsRequest?.resolved_at) }}<template v-if="termsRequest?.resolution_note">:
+            <b>{{ termsRequest.resolution_note }}</b></template>.
+          Adjust the draft and submit it again.
+        </v-alert>
+        <v-form :disabled="draftPending" @submit.prevent>
         <div class="mb-4 d-flex ga-2" :class="mobile ? 'flex-column' : 'flex-wrap'">
           <v-autocomplete
             v-model="customerId"
@@ -561,6 +585,7 @@ watch(
             <span v-if="termsDays"> (Due {{ dueDatePreview }}) </span>
           </div>
         </div>
+        </v-form>
       </v-card-text>
 
       <template v-if="!mobile">
@@ -568,7 +593,7 @@ watch(
 
         <v-card-actions>
           <v-btn
-            v-if="isEditingDraft"
+            v-if="isEditingDraft && !draftPending"
             color="error"
             variant="text"
             class="text-none"
@@ -596,13 +621,14 @@ watch(
           </v-btn>
 
           <!-- Still haggling: saves lines/qty/prices with no stock or invoice. -->
-          <v-btn variant="tonal" class="text-none" :loading="loading" @click="saveAsDraft">
+          <v-btn variant="tonal" class="text-none" :loading="loading" :disabled="draftPending" @click="saveAsDraft">
             Save Draft
           </v-btn>
 
-          <!-- Locks the terms: mints the EO number and draws the stock. -->
-          <v-btn color="primary" class="text-none" :loading="loading" :disabled="hasBelowCostLine" @click="submit">
-            {{ isEditingDraft ? 'Confirm & Invoice' : 'Create & Invoice' }}
+          <!-- Locking the terms is an executive's call: this saves the draft and
+               sends it to them. They invoice it (EO number, stock drawn). -->
+          <v-btn color="primary" class="text-none" :loading="loading" :disabled="hasBelowCostLine || draftPending" @click="submit">
+            Submit for Approval
           </v-btn>
         </v-card-actions>
       </template>

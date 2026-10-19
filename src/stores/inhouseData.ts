@@ -16,6 +16,7 @@ import type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult } from 
 import { govtShelfLife, QUALIFICATION_MONTHS } from '@/utils/qualification'
 import { describeProduct } from '@/utils/helpers'
 import { issueRow, useIssueList } from '@/composables/useIssueList'
+import { hasPendingTermsRequest, isApprovedLockRequest, unlockBlocker } from '@/stores/shared/termsApprovalGuards'
 import type { IssueRow } from '@/composables/useIssueList'
 import { useShortDatedApprovalStore } from '@/pages/inhouse/stores/shortDatedApproval'
 import type { CollectionType } from '@/stores/ethicalData'
@@ -56,9 +57,11 @@ export type InhouseOrderType = {
                                  // series at the agree step — but ONLY once stock is confirmed
                                  // sufficient. Stays null while awaiting_stock (not yet sourced),
                                  // minted later by recheckStock once the shortfall clears.
-  govt_po_no: string | null      // the government's own external PO number, typed at raise
+  govt_po_no: string | null      // the government's own PR number (labelled "Govt PR" — the
+                                 // column predates staff clarifying it is a PR), typed at raise
                                  // time — pure transparency/documentation, no logic keys off
                                  // it (lives in inhouse_details, NOT transactions.po_no)
+  po_amount: number | null       // the amount on that government PR, documentation only
   customer_id: number | null
   status: string | null
   total_amount: number | null
@@ -97,6 +100,7 @@ function mapRow(row: any): InhouseOrderType {
     order_no:     row.inhouse_no,
     po_no:        row.po_no,
     govt_po_no:   details.govt_po_no ?? null,
+    po_amount:    row.po_amount ?? null,
     customer_id:  row.customer_id,
     status:       row.status,
     total_amount: row.total_amount,
@@ -187,8 +191,10 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
   // JS-over-RPC convention).
   const createOrder = async (payload: {
     customerId: number
-    govtPoNo?: string   // the government's external PO number (documentation-only)
-    poAmount?: number   // the value on that PO (documentation-only; AR SOA column)
+    /** 'YYYY-MM-DD' for an order placed before today; omitted for today's. */
+    orderDate?: string
+    govtPoNo?: string   // the government's PR number (documentation-only)
+    poAmount?: number   // the amount on that PR (documentation-only; AR SOA column)
     remarks?: string
     lines: InhouseLineInput[]
   }) => {
@@ -230,6 +236,9 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
           po_amount: payload.poAmount ?? null,
           remarks: payload.remarks || null,
           created_by: user.id,
+          // A backdated order is dated the day it was placed, the way opening
+          // receivables carry their invoice date. Today's keeps the real time.
+          ...(payload.orderDate ? { created_at: payload.orderDate } : {}),
         })
         .select('id')
         .single(),
@@ -316,6 +325,12 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     }
     if (order.status !== 'negotiating') {
       toast.error('Order is no longer under negotiation.')
+      loading.value = false; return { success: false }
+    }
+    // Frozen while the executives are deciding on these terms: what they were
+    // shown must be what they approve.
+    if (await hasPendingTermsRequest(payload.orderId)) {
+      toast.error('These terms are awaiting executive approval. Withdraw the request to change them.')
       loading.value = false; return { success: false }
     }
 
@@ -451,15 +466,27 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
   }
 
   // Read-only warehouse stock check, flag ready vs awaiting_stock (was inhouse_agree).
-  const agreeOrder = async (orderId: number): Promise<{ success: boolean; shortfall?: Shortfall[] }> => {
+  // Locks the terms. Only ever run by an executive APPROVING a lock-terms
+  // request (termsApprovalData), which passes that request's id: the id is
+  // checked here so no other path — and no older approval from before an
+  // unlock — can agree an order. approved_by is the approving executive.
+  const agreeOrder = async (
+    orderId: number,
+    options: { approvedRequestId?: number } = {},
+  ): Promise<{ success: boolean; shortfall?: Shortfall[]; error?: string }> => {
     loading.value = true
     clearError()
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
 
+    if (!(await isApprovedLockRequest(options.approvedRequestId, orderId))) {
+      loading.value = false
+      return { success: false, error: 'Locking the terms needs an executive\'s approval.' }
+    }
+
     const { data: order, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, transaction_items!transaction_items_transaction_id_fkey(product_id, qty_stock_out)')
+      .select('id, status, po_no, transaction_items!transaction_items_transaction_id_fkey(product_id, qty_stock_out)')
       .eq('id', orderId)
       .eq('transaction_type', 'inhouse_order')
       .maybeSingle()
@@ -468,8 +495,8 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       loading.value = false; return { success: false }
     }
     if (order.status !== 'negotiating') {
-      toast.error('Order is not under negotiation.')
-      loading.value = false; return { success: false }
+      // Returned, not toasted: the approver's screen says why it was not applied.
+      loading.value = false; return { success: false, error: 'the order is no longer under negotiation' }
     }
 
     const lines = ((order.transaction_items ?? []) as unknown as { product_id: number; qty_stock_out: number | null }[])
@@ -483,10 +510,15 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     // yet — reads as an auto-created PO despite no canvassing having happened.
     // So: sufficient stock → mint po_no now (as before). Short → leave po_no
     // null; it gets minted once recheckStock finds the shortfall resolved.
-    const poNo = shortfall.length > 0 ? null : await generateDocNumber('PO', getLatestReferenceNo)
+    // An order agreed before, then unlocked, KEEPS its PO number: it is
+    // reused rather than a second one minted, so the series has no gap and
+    // paperwork already printed with it stays valid.
+    const existingPo = (order as { po_no?: string | null }).po_no ?? null
+    const poNo = existingPo ?? (shortfall.length > 0 ? null : await generateDocNumber('PO', getLatestReferenceNo))
 
     const nowIso = new Date().toISOString()
-    const { error: statusError } = await supabase
+    // Guarded on 'negotiating', so two approvals landing together lock once.
+    const { data: locked, error: statusError } = await supabase
       .from('transactions')
       .update({
         approved_by: user.id, approved_at: nowIso, updated_at: nowIso,
@@ -494,9 +526,12 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
         status: shortfall.length > 0 ? 'awaiting_stock' : 'ready',
       })
       .eq('id', orderId)
-    if (statusError) {
-      handleError(statusError, 'Failed to agree order.'); toast.error(statusError.message || 'Failed to agree order.')
-      loading.value = false; return { success: false }
+      .eq('status', 'negotiating')
+      .select('id')
+    if (statusError || !locked?.length) {
+      handleError(statusError, 'Failed to agree order.')
+      loading.value = false
+      return { success: false, error: statusError?.message || 'The order is no longer under negotiation.' }
     }
 
     const { error: logError } = await supabase.from('logs').insert({
@@ -510,6 +545,39 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     await fetchOrders()
     loading.value = false
     return { success: true, shortfall }
+  }
+
+  // Undoes Agree: the order goes back to negotiation so its terms can change.
+  // Run only by an executive approving an unlock request. Allowed until the
+  // first delivery or payment — after that the terms have been acted on. The
+  // PO number stays on the order (reused when it is agreed again). Nothing is
+  // in the ledger yet for an agreed In-House order — deliveries are what book.
+  const unlockTerms = async (orderId: number): Promise<{ success: boolean; error?: string }> => {
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) return { success: false, error: 'User not authenticated.' }
+
+    const blocker = await unlockBlocker(orderId)
+    if (blocker) return { success: false, error: `Cannot unapprove: ${blocker}` }
+
+    const nowIso = new Date().toISOString()
+    const { data: reopened, error: updateError } = await supabase
+      .from('transactions')
+      .update({ status: 'negotiating', approved_by: null, approved_at: null, updated_at: nowIso })
+      .eq('id', orderId)
+      .eq('transaction_type', 'inhouse_order')
+      .in('status', ['ready', 'awaiting_stock'])
+      .select('id')
+    if (updateError) return { success: false, error: updateError.message }
+    if (!reopened?.length) return { success: false, error: 'Only an agreed order that has not started delivering can be unapproved.' }
+
+    const { error: logError } = await supabase.from('logs').insert({
+      created_by: user.id, action: 'terms_unlocked',
+      description: 'Terms unapproved — back to negotiation (PO number kept)',
+      module: 'inhouse', transaction_id: orderId,
+    })
+    if (logError) console.warn('unlockTerms: activity log insert failed:', logError.message)
+    await fetchOrders()
+    return { success: true }
   }
 
   // Read-only warehouse stock check for display — NO status flip, NO po_no
@@ -1007,7 +1075,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
   return {
     orders, loading, error,
-    fetchOrders, fetchOrderById, createOrder, recordOffer, agreeOrder,
+    fetchOrders, fetchOrderById, createOrder, recordOffer, agreeOrder, unlockTerms,
     computeShortfall, recheckStock, deliver, recordPayment, fetchPayments, canvassToPRs, fetchNegotiation,
     startRealtime, stopRealtime, clearError, resetStore,
   }

@@ -1,6 +1,7 @@
 // Draft -> invoice: saving and discarding drafts, confirming one into an
-// invoice (mints the EO number and draws the stock), and createOrder, which is
-// the two in one go.
+// invoice (mints the EO number and draws the stock), and unlocking an invoice
+// back to a draft. Confirming and unlocking each need an executive's approval
+// (termsApprovalData); staff submit the draft for approval instead.
 
 import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
@@ -10,6 +11,8 @@ import { useStockSourcingStore } from '@/stores/stockSourcingData'
 import { useProductsDataStore } from '@/stores/productsData'
 import type { StockLocationId } from '@/stores/stockSourcingData'
 import { generateNextNumber, insertWithDocRetry } from '@/utils/helpers'
+import { useGLDataStore } from '@/stores/glData'
+import { hasPendingTermsRequest, isApprovedLockRequest, unlockBlocker } from '@/stores/shared/termsApprovalGuards'
 import type { OrderPayload } from './types'
 import { loading, handleError, clearError } from './state'
 import { fetchOrders } from './orders'
@@ -26,6 +29,8 @@ let sourcingStore: ReturnType<typeof useStockSourcingStore> | null = null
 const getSourcingStore = () => (sourcingStore ??= useStockSourcingStore())
 let productsStore: ReturnType<typeof useProductsDataStore> | null = null
 const getProductsStore = () => (productsStore ??= useProductsDataStore())
+let glStore: ReturnType<typeof useGLDataStore> | null = null
+const getGLStore = () => (glStore ??= useGLDataStore())
 
 // ---- Draft → invoice -------------------------------------------------------
 // An ethical order starts as a DRAFT while the client is still haggling:
@@ -75,6 +80,12 @@ export async function saveDraft(payload: OrderPayload & { draftId?: number }, op
     const { user, error: authError } = await getAuthStore().getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); return { success: false as const } }
     if (!payload.lines.length) { toast.warning('Add at least one line item.'); return { success: false as const } }
+    // Frozen while the executives decide on these terms: what they were shown
+    // must be what they approve.
+    if (payload.draftId && (await hasPendingTermsRequest(payload.draftId))) {
+      toast.error('This draft is awaiting executive approval. Withdraw the request to change it.')
+      return { success: false as const }
+    }
     if (!(await validateLocations(payload.outletId, payload.sourceLocationId))) return { success: false as const }
 
     const subtotal = payload.lines.reduce((sum, l) => sum + l.quantity * l.unit_price, 0)
@@ -174,16 +185,26 @@ export async function saveDraft(payload: OrderPayload & { draftId?: number }, op
 // Stock comes from ONE location (the draft's warehouse_id; null = the main
 // warehouse) and nowhere else. A shortfall stays a shortfall and surfaces as
 // `awaiting_stock` for a transfer or a procurement request to resolve.
-export async function confirmDraft(draftId: number, options: { silent?: boolean } = {}) {
+// Run only by an executive APPROVING a lock-terms request, which passes that
+// request's id: checked here so no other path — and no approval from before an
+// unlock — can invoice. approved_by is the approving executive.
+export async function confirmDraft(
+  draftId: number,
+  options: { silent?: boolean; approvedRequestId?: number } = {},
+) {
   loading.value = true
   clearError()
   try {
     const { user, error: authError } = await getAuthStore().getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); return { success: false as const } }
 
+    if (!(await isApprovedLockRequest(options.approvedRequestId, draftId))) {
+      return { success: false as const, error: 'Invoicing needs an executive\'s approval.' }
+    }
+
     const { data: draft, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, outlet_id, warehouse_id, ethical_details(terms_days), transaction_items!transaction_items_transaction_id_fkey(id, product_id, qty_stock_out)')
+      .select('id, status, ethical_no, outlet_id, warehouse_id, ethical_details(terms_days), transaction_items!transaction_items_transaction_id_fkey(id, product_id, qty_stock_out)')
       .eq('id', draftId)
       .eq('transaction_type', 'ethical_order')
       .maybeSingle()
@@ -209,8 +230,12 @@ export async function confirmDraft(draftId: number, options: { silent?: boolean 
     // what stops a double click (or two users) from confirming — and drawing
     // stock — twice: only one of them can flip it out of 'draft'.
     const year = new Date().getFullYear().toString()
+    // An order invoiced before and then unlocked KEEPS its EO number: reused
+    // here rather than a second one minted, so the series has no gap and an
+    // invoice already printed with it stays valid.
+    const existingNo = (draft as { ethical_no?: string | null }).ethical_no ?? null
     const { data: claimed, docNo: orderNo, error: claimError } = await insertWithDocRetry<{ id: number }>(
-      () => generateNextNumber('ethical_no', `EO-${year}-`, ['reference_no']),
+      async () => existingNo ?? generateNextNumber('ethical_no', `EO-${year}-`, ['reference_no']),
       async (docNo) => supabase
         .from('transactions')
         .update({
@@ -301,26 +326,6 @@ export async function confirmDraft(draftId: number, options: { silent?: boolean 
   }
 }
 
-// Straight to invoice — a draft that is confirmed immediately. If the confirm
-// step fails, the order is left as a DRAFT (visible, editable, no stock moved)
-// rather than as a half-built invoice.
-export async function createOrder(payload: OrderPayload) {
-  const saved = await saveDraft(payload, { silent: true })
-  if (!saved.success) return { success: false as const }
-  const confirmed = await confirmDraft(saved.orderId, { silent: true })
-  if (!confirmed.success) {
-    toast.warning('The order was saved as a draft but not invoiced — retry to invoice it.')
-    await fetchOrders()
-    // The draft id is RETURNED on failure, not swallowed. Without it the form
-    // stays in create mode, and pressing submit again runs saveDraft from
-    // scratch — a second draft for the same order. The caller adopts this id
-    // so a retry re-saves and re-confirms the draft that already exists.
-    return { success: false as const, draftId: saved.orderId }
-  }
-  toast.success(`Ethical order ${confirmed.orderNo} created.`)
-  return { success: true as const, orderId: confirmed.orderId }
-}
-
 // Discard a draft. It has no number, no stock movement and no ledger entry,
 // so it is removed outright rather than cancelled. Its activity logs are
 // kept: logs.transaction_id is ON DELETE SET NULL, so they survive unlinked,
@@ -333,8 +338,19 @@ export async function deleteDraft(draftId: number) {
     if (authError || !user) { toast.error('User not authenticated.'); return { success: false } }
 
     const { data: draft } = await supabase
-      .from('transactions').select('id, status').eq('id', draftId).eq('transaction_type', 'ethical_order').maybeSingle()
+      .from('transactions').select('id, status, ethical_no').eq('id', draftId).eq('transaction_type', 'ethical_order').maybeSingle()
     if (!draft || draft.status !== 'draft') { toast.error('Only drafts can be discarded.'); return { success: false } }
+    if (await hasPendingTermsRequest(draftId)) {
+      toast.error('This draft is awaiting executive approval. Withdraw the request first.')
+      return { success: false }
+    }
+    // A draft that was invoiced once and then unlocked has an EO number and
+    // ledger history (the invoice and its reversal). Deleting it would leave a
+    // gap in the invoice series and entries pointing at nothing.
+    if (draft.ethical_no) {
+      toast.error(`This order was invoiced before as ${draft.ethical_no} and can't be discarded. Submit it for approval again.`)
+      return { success: false }
+    }
 
     // transaction_items is ON DELETE SET NULL (not cascade), so the lines
     // must go first or they would linger as orphans.
@@ -358,4 +374,89 @@ export async function deleteDraft(draftId: number) {
   } finally {
     loading.value = false
   }
+}
+
+/**
+ * Undoes an invoice back to a DRAFT so its terms can change. Run only by an
+ * executive approving an unlock request; allowed until the first delivery
+ * receipt or payment.
+ *
+ * Puts back everything confirmDraft did: the drawn stock goes back where it
+ * came from, the lines' drawn counts and the due date are cleared, and the
+ * invoice is reversed in the ledger (DR revenue / CR AR, and the COGS pair) —
+ * keeping its reference, so the ledger function books it afresh when it is
+ * invoiced again. The EO number stays on the order and is reused.
+ *
+ * Best-effort after the order is claimed, like cancelOrder: a step that fails
+ * is reported for manual correction rather than rolled back.
+ */
+export async function unlockTerms(orderId: number): Promise<{ success: boolean; error?: string; warnings?: string[] }> {
+  const { user, error: authError } = await getAuthStore().getCurrentUser()
+  if (authError || !user) return { success: false, error: 'User not authenticated.' }
+
+  const blocker = await unlockBlocker(orderId)
+  if (blocker) return { success: false, error: `Cannot unapprove: ${blocker}` }
+
+  // Claim first: only an invoice with no collection yet ('invoiced', not
+  // 'partial'/'paid') goes back, and only once.
+  const { data: claimed, error: claimError } = await supabase
+    .from('transactions')
+    .update({ status: 'draft', approved_by: null, approved_at: null, updated_at: new Date().toISOString() })
+    .eq('id', orderId)
+    .eq('transaction_type', 'ethical_order')
+    .eq('status', 'invoiced')
+    .select('id, warehouse_id')
+  if (claimError) return { success: false, error: claimError.message }
+  if (!claimed?.length) return { success: false, error: 'Only an invoice with no payment yet can be unapproved.' }
+  const warehouseId = claimed[0].warehouse_id as StockLocationId
+
+  const warnings: string[] = []
+
+  const { data: itemRows, error: itemsError } = await supabase
+    .from('transaction_items').select('id, product_id, actual_count_stock_out').eq('transaction_id', orderId)
+  if (itemsError) warnings.push(`the order's lines could not be read, so no stock was put back (${itemsError.message})`)
+  for (const row of (itemRows ?? []) as { id: number; product_id: number | null; actual_count_stock_out: number | null }[]) {
+    const drawn = row.actual_count_stock_out ?? 0
+    if (row.product_id == null || drawn <= 0) continue
+    const returned = await getSourcingStore().returnStock(warehouseId, row.product_id, drawn)
+    if (!returned) {
+      warnings.push(`${drawn} of product #${row.product_id} could not be put back into stock`)
+      continue
+    }
+    const { error: lineError } = await supabase
+      .from('transaction_items').update({ actual_count_stock_out: 0 }).eq('id', row.id)
+    if (lineError) warnings.push(`product #${row.product_id} went back to stock, but its line still shows it drawn`)
+  }
+
+  const { error: detailsError } = await supabase
+    .from('ethical_details').update({ due_date: null, fulfillment_status: null }).eq('transaction_id', orderId)
+  if (detailsError) warnings.push('the due date and stock status were not cleared')
+
+  // The live invoice entry only: not one already reversed, and not a reversal.
+  // No entry at all is fine: the invoice was never booked, so there is nothing
+  // to reverse. A failed read is not — it must not pass as "nothing to reverse".
+  const { data: invoiceEntry, error: entryError } = await supabase
+    .from('journal_entries')
+    .select('id')
+    .eq('reference_type', 'sales_invoice')
+    .eq('reference_id', orderId)
+    .eq('status', 'posted')
+    .is('reverses_entry', null)
+    .maybeSingle()
+  if (entryError) {
+    warnings.push(`the invoice's ledger entry could not be read, so it was not reversed (${entryError.message})`)
+  } else if (invoiceEntry) {
+    const reversed = await getGLStore().reverseJournalEntry(invoiceEntry.id as number, user.id)
+    if (!reversed.success) warnings.push(`the invoice was not reversed in the ledger (${reversed.error ?? 'unknown error'})`)
+  }
+
+  const { error: logError } = await supabase.from('logs').insert({
+    created_by: user.id, action: 'terms_unlocked',
+    description: `Invoice unapproved — back to draft (EO number kept)${warnings.length ? ` — CHECK: ${warnings.join('; ')}` : ''}`,
+    module: 'ethical', transaction_id: orderId,
+  })
+  if (logError) console.warn('unlockTerms: activity log insert failed:', logError.message)
+
+  await fetchOrders()
+  return { success: true, warnings }
 }

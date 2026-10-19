@@ -9,6 +9,7 @@ import {
 } from '../composables/useDiscrepancies'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import { financePageSizes } from '../composables/financeTable'
+import { arSourceLabel } from '../composables/useAccountsReceivable'
 
 const {
   tab,
@@ -168,9 +169,7 @@ const {
             hover
           >
             <template #item.source="{ item }">
-              <v-chip size="small" variant="tonal">{{
-                item.source === 'ethical_order' ? 'Ethical' : 'In-House'
-              }}</v-chip>
+              <v-chip size="small" variant="tonal">{{ arSourceLabel[item.source] }}</v-chip>
             </template>
             <template #item.customer_name="{ item }">
               {{ item.customer_name ?? '—' }}

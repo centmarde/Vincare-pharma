@@ -14,8 +14,9 @@ export const SOA_HEADERS = [
   { title: 'DR Date', key: 'dr_date', width: 110 },
   { title: 'DR No.', key: 'dr_no', width: 140 },
   { title: 'SO No.', key: 'so_no', width: 140 },
-  { title: 'PO No.', key: 'po_no', width: 140 },
-  { title: 'PO Amount', key: 'po_amount', align: 'end' as const, width: 130 },
+  // The government's PR when the order has one (In-House), else our company PO.
+  { title: 'PR / PO No.', key: 'po_no', width: 140 },
+  { title: 'PR Amount', key: 'po_amount', align: 'end' as const, width: 130 },
   { title: 'DR Amount', key: 'dr_amount', align: 'end' as const, width: 130 },
   { title: 'OR Date', key: 'or_date', width: 110 },
   { title: 'OR No.', key: 'or_no', width: 140 },

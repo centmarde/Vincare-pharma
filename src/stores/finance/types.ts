@@ -286,9 +286,15 @@ export type RemittanceDiscrepancyRow = {
 // the sheet has no column for; they are never overdue, so they never age.
 export type ARAgingTerm = 'current' | '1-30' | '31-60' | '61-90' | '91-180' | '180+' | 'no-term'
 
+/**
+ * Where a receivable comes from. 'sale' is a POS sale charged to a customer
+ * account (pos_sale_details.payment_method 'on_account').
+ */
+export type ARSource = 'ethical_order' | 'inhouse_order' | 'sale'
+
 export type ARAgingRow = {
   id: number
-  source: 'ethical_order' | 'inhouse_order'
+  source: ARSource
   reference_no: string | null
   customer_id: number | null
   customer_name: string | null
@@ -322,14 +328,14 @@ export type ARReceivablePayment = {
 
 export type ARReceivableDetail = {
   id: number
-  source: 'ethical_order' | 'inhouse_order'
+  source: ARSource
   reference_no: string | null
   status: string | null
   customer_name: string | null
   invoice_date: string | null
   // trace-back / terms
   po_no: string | null          // In-House company PO
-  govt_po_no: string | null     // In-House government PO
+  govt_po_no: string | null     // In-House government PR number
   terms_days: number | null     // Ethical credit terms
   due_date: string | null       // Ethical due date
   // money
@@ -361,7 +367,7 @@ export type StatementOfAccount = {
   customer_address: string | null
   customer_contact: string | null
   customer_tin: string | null
-  source: 'ethical_order' | 'inhouse_order'
+  source: ARSource
   entries: SOAEntry[]
   totalCharges: number
   totalPayments: number

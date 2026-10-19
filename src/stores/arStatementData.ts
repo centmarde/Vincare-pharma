@@ -50,8 +50,8 @@ export type SOARegisterRow = {
   dr_date: string
   dr_no: string | null
   so_no: string | null        // the parent order's own number (IH-/EO-YYYY-###)
-  po_no: string | null        // customer/government PO number
-  po_amount: number | null    // customer/government PO value
+  po_no: string | null        // government PR number (In-House), else our company PO
+  po_amount: number | null    // government PR amount (In-House), documentation only
 
   // money
   dr_amount: number

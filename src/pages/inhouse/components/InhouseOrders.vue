@@ -10,7 +10,7 @@ const { mobile } = useDisplay()
 const {
   loading, search, filterStatus, statusOptions,
   filtered, showRaise, showDetail, selected,
-  statusLabel, statusColor, deliveryPct,
+  statusLabel, statusColor, deliveryPct, isAwaitingApproval,
   openRaise, openDetail, handleRaised, handleChanged, init,
 } = useInhouseOrders()
 
@@ -110,6 +110,9 @@ const notSet = (field: string) => `No ${field} set`
                     >
                       {{ statusLabel(item.status) }}
                     </v-chip>
+                    <v-chip v-if="isAwaitingApproval(item.id)" size="x-small" variant="tonal" color="info" class="font-weight-bold">
+                      Awaiting Approval
+                    </v-chip>
                     <v-chip v-if="item.po_no" size="x-small" variant="tonal">
                       PO: {{ item.po_no }}
                     </v-chip>
@@ -163,6 +166,8 @@ const notSet = (field: string) => `No ${field} set`
           </template>
           <template #item.status="{ item }">
             <v-chip :color="statusColor(item.status)" size="small" variant="tonal" class="font-weight-bold">{{ statusLabel(item.status) }}</v-chip>
+            <!-- Terms sent to the executives (lock or unapprove), not yet decided. -->
+            <v-chip v-if="isAwaitingApproval(item.id)" size="small" variant="tonal" color="info" class="font-weight-bold ml-1">Awaiting Approval</v-chip>
           </template>
           <template #item.actions="{ item }">
             <v-btn variant="text" size="small" color="primary" class="text-none" @click="openDetail(item)">Open</v-btn>
