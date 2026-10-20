@@ -238,8 +238,7 @@ watch(() => props.modelValue, (val) => {
                     <v-col cols="12" :sm="mobile ? 12 : 6">
                     <v-select
                       v-model="productForm.category" label="Category" prepend-inner-icon="mdi-shape" variant="outlined"
-                      density="comfortable" :items="categoryOptions" clearable :rules="[rules.required]" required
-                      :disabled="isFieldDisabled"
+                      density="comfortable" :items="categoryOptions" clearable :disabled="isFieldDisabled"
                     ></v-select>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
