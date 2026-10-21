@@ -29,6 +29,7 @@ const emptyForm = (): CreateProductData & UpdateProductData => ({
   product_name: '',
   category: null,
   unit: null,
+  brand: null,
   cost_price: null,
   selling_price: null,
   current_stock: null,
