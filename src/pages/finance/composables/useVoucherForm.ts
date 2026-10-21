@@ -1,6 +1,5 @@
 import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useToast } from 'vue-toastification'
 import { expenseDepartments } from '@/stores/financeData'
 import { useExpenseAccounts } from './useExpenseAccounts'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
@@ -39,20 +38,22 @@ type VoucherFormLine = {
 }
 
 /**
- * A voucher prints a FIXED five account rows, padded with blanks when it has
- * fewer. That fixed height is what lets the RECORDED stamp be overprinted at
- * one calibrated position on every voucher — a variable-length sheet would move
- * the signature row and the stamp would miss. A sixth account goes on a second
- * voucher.
+ * The printed voucher always shows at least this many account rows, padded
+ * with blanks when it has fewer — so an ordinary voucher keeps the standard
+ * height, and the RECORDED stamp stays calibrated for it.
+ *
+ * It is NOT a cap (it was, until 2026-10-11). Staff asked to put more accounts
+ * on one voucher; one that has more simply prints longer, and its stamp
+ * position is theirs to adjust — the print dialog says so when it happens.
  */
-export const maxVoucherAccounts = 5
+export const standardVoucherRows = 5
 
 /**
  * How many lines of particulars fit beside the account rows.
  *
  * Derived, not chosen: the particulars cell sits BESIDE the account block in the
  * printed sheet, so its height budget is that block's height —
- * maxVoucherAccounts rows at the 22px min-height each `.dv-cell` carries,
+ * standardVoucherRows rows at the 22px min-height each `.dv-cell` carries,
  * about 110px, which is ~7 lines at the sheet's line height. Anything longer
  * stretches the cell, pushes the signature row down, and breaks the one thing
  * the layout must hold: the signature row's distance from the top of the sheet
@@ -73,9 +74,6 @@ const emptyItem = (): VoucherFormLine => ({
 })
 
 export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
-  // Inside the factory, not at module scope -- a store/composable factory called
-  // on import runs before Pinia is installed.
-  const toast = useToast()
   const editingId = ref<number | null>(null)
 
   /**
@@ -265,15 +263,9 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
   // What's still stopping a save. Drives a visible hint next to the submit
   // button — a disabled button with no explanation is unusable, since nothing
   // on the form says which cell it's waiting on.
-  // Both of these guard the printed sheet's fixed height rather than the data.
-  // A voucher loaded from an older shape can carry more accounts than the form
-  // would now let anyone add, so the cap has to be checked on save too, not
-  // only in addItem().
+  // Guards the printed sheet's standard height. (Accounts are no longer
+  // capped — see standardVoucherRows.)
   const particularsLines = computed(() => particulars.value.split('\n').length)
-  // Counted on what actually saves, not on the rows on screen: clearing the
-  // amounts off an over-long legacy voucher until it fits is a valid way to
-  // resolve one, and counting blank rows would block that.
-  const tooManyAccounts = computed(() => validItems.value.length > maxVoucherAccounts)
   const particularsTooTall = computed(() => particularsLines.value > maxParticularsLines)
 
   const blockers = computed(() => {
@@ -289,9 +281,6 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
         : `an account on each of the ${linesMissingAccount.value} lines that have amounts`)
     }
     if (insufficientFunds.value) missing.push('a total within the account balance')
-    if (tooManyAccounts.value) {
-      missing.push(`no more than ${maxVoucherAccounts} accounts (move the rest to a second voucher)`)
-    }
     if (particularsTooTall.value) {
       missing.push(`a particulars of ${maxParticularsLines} lines or fewer`)
     }
@@ -358,15 +347,7 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
       : [emptyItem()]
   }
 
-  const canAddItem = computed(() => items.value.length < maxVoucherAccounts)
-
   function addItem() {
-    if (!canAddItem.value) {
-      toast.warning(
-        `A voucher holds ${maxVoucherAccounts} accounts. Record the rest on a second voucher.`,
-      )
-      return
-    }
     items.value.push(emptyItem())
   }
 
@@ -414,7 +395,7 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
     payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, department, particulars, remarks, signatories, items,
     categoryOptions, departmentOptions, accountOptions, metaForAccount, selectedAccount,
     voucherTotal, insufficientFunds, canSubmit, blockers,
-    canAddItem, particularsLines, tooManyAccounts, particularsTooTall, linesMissingAccount,
+    particularsLines, particularsTooTall, linesMissingAccount,
     payeeType, supplierId, isSupplierVoucher, supplierOptions, ensureSuppliersLoaded,
     expenseAccountLabel, ensureAccountsLoaded,
     resetForm, loadFrom, addItem, removeItem, buildPayload, setSignatory, applyCachedSignatories,

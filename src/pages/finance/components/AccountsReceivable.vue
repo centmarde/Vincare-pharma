@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { useAccountsReceivable, arHeaders } from '../composables/useAccountsReceivable'
+import { useAccountsReceivable, arHeaders, arSourceLabel } from '../composables/useAccountsReceivable'
 import type { ARAgingRow } from '@/stores/financeData'
 import { formatCurrency } from '@/utils/helpers'
 import ARDetailDialog from './dialogs/ARDetailDialog.vue'
+import RecordChargePaymentDialog from './dialogs/RecordChargePaymentDialog.vue'
 import SOADialog from './dialogs/SOADialog.vue'
+import { financePageSizes, financeDefaultPageSize } from '../composables/financeTable'
 
 const {
   loading,
@@ -15,11 +17,22 @@ const {
   detailLoading,
   selectedDetail,
   openDetail,
+  paymentOpen, payAmount, payMethod, payReference, payRemarks, payCashAccountId, paying,
+  cashAccountOptions, paymentMethodOptions, canRecordPayment, openPayment, confirmPayment,
   soaOpen,
   soaLoading,
   soaData,
   openSOA,
 } = useAccountsReceivable()
+
+/**
+ * What the customer's open items are, when they are all one kind — the hint a
+ * customer with no department needs for its statement (fetchStatementOfAccount).
+ */
+function jacketSource(rows: ARAgingRow[]) {
+  const first = rows[0]?.source
+  return first && rows.every((r) => r.source === first) ? first : undefined
+}
 
 // v-data-table @click:row passes (pointerEvent, { item }); typing lives here in
 // <script> because an inline type annotation in the template is a parse error.
@@ -116,7 +129,7 @@ const termLabels: Record<string, string> = {
                   color="primary"
                   class="text-none"
                   prepend-icon="mdi-file-document-outline"
-                  @click.stop="openSOA(jacket.customerId)"
+                  @click.stop="openSOA(jacket.customerId, jacketSource(jacket.rows))"
                 >
                   View SOA
                 </v-btn>
@@ -129,17 +142,16 @@ const termLabels: Record<string, string> = {
             </v-expansion-panel-title>
             <v-expansion-panel-text class="pa-0">
               <v-data-table
+                :items-per-page-options="financePageSizes"
                 mobile-breakpoint="md"
                 :headers="arHeaders"
                 :items="jacket.rows"
-                hide-default-footer
+                :hide-default-footer="jacket.rows.length <= financeDefaultPageSize"
                 hover
                 @click:row="onRowClick"
               >
                 <template #item.source="{ item }">
-                  <v-chip size="small" variant="tonal">{{
-                    item.source === 'ethical_order' ? 'Ethical' : 'In-House'
-                  }}</v-chip>
+                  <v-chip size="small" variant="tonal">{{ arSourceLabel[item.source] }}</v-chip>
                 </template>
 
                 <template #item.total_amount="{ item }">
@@ -169,7 +181,24 @@ const termLabels: Record<string, string> = {
         </v-expansion-panels>
       </v-card>
 
-      <ARDetailDialog v-model="detailOpen" :loading="detailLoading" :detail="selectedDetail" />
+      <ARDetailDialog v-model="detailOpen" :loading="detailLoading" :detail="selectedDetail" @record-payment="openPayment" />
+
+      <RecordChargePaymentDialog
+        v-model="paymentOpen"
+        v-model:amount="payAmount"
+        v-model:method="payMethod"
+        v-model:reference="payReference"
+        v-model:remarks="payRemarks"
+        v-model:cash-account-id="payCashAccountId"
+        :sale-no="selectedDetail?.reference_no ?? null"
+        :customer-name="selectedDetail?.customer_name ?? null"
+        :balance="selectedDetail?.balance ?? 0"
+        :cash-account-options="cashAccountOptions"
+        :method-options="paymentMethodOptions"
+        :can-confirm="canRecordPayment"
+        :loading="paying"
+        @confirm="confirmPayment"
+      />
 
       <SOADialog v-model="soaOpen" :loading="soaLoading" :soa="soaData" />
     </div>

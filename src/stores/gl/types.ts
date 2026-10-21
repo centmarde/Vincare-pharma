@@ -154,35 +154,35 @@ export type IncomeStatement = {
 }
 
 /**
- * A CASH-BASIS profit figure, derived from the SAME ledger as the accrual one so
- * the two reconcile instead of being two unrelated queries.
+ * The Income Statement BY COLLECTIONS: the same statement, from the same
+ * ledger, with a credit sale recognised as it is COLLECTED instead of when it
+ * is invoiced or delivered.
  *
- * ⚠️ This is NOT an Income Statement. A statutory P&L is accrual — revenue when
- * earned, expense when incurred. This recognises both when the money actually
- * moves, which is what an owner means by "what did we actually make", and is a
- * management view only. Never present it as the P&L, and never hand it to an
- * examiner as one.
+ * Collect 40% of an order and 40% of its sales, discount AND cost of goods
+ * count, so gross profit is the profit actually realised in cash (the
+ * installment-method idea). A POS sale is paid on the spot and counts in full.
+ * Every other line (rebates, selling, admin, other income, finance costs) is
+ * exactly as booked, the same as the accrual statement. Agreed with the
+ * accountant, 2026-10-19.
  *
- * Classification is by what each entry's cash line sits OPPOSITE:
- *   cash IN  vs 1030 or 4010          -> collected revenue
- *   cash OUT vs 2010                  -> paid to suppliers (purchases)
- *   cash OUT vs 5000-8999             -> paid expenses, bucketed by account
- * Anything else touching cash (loan drawdowns, capital injections, transfers
- * between two cash accounts) is deliberately EXCLUDED -- it is not trading
- * income or expense, and counting it would overstate performance.
+ * ⚠️ A management view. The statutory statement is the accrual one.
  */
-export type CashBasisRow = { code: string; name: string; amount: number }
-export type CashBasisStatement = {
-  from: string
-  to: string
-  collected: number
-  paidToSuppliers: number
-  paidExpenses: CashBasisRow[]
-  paidExpensesTotal: number
-  netCash: number
-  /** Cash movements excluded as non-trading, shown so the view is not silently lossy. */
-  excluded: CashBasisRow[]
-  excludedTotal: number
+export type CollectionIncomeStatement = IncomeStatement & {
+  /**
+   * Collected in the period on pre-cutover (opening) receivables. Those sales
+   * were earned before this system and are not revenue in either statement;
+   * shown as a note so the collections are not silently left out.
+   */
+  collectedOnOpeningReceivables: number
+  /** Collected on orders with no sale in the ledger to match — shown as a note, not revenue. */
+  collectedUnmatched: number
+  /**
+   * Net sales entered by MANUAL journal entry in the period (e.g. the monthly
+   * bookings carried over from the old system). They carry no collection data,
+   * so they stay as booked; noted so the two statements agreeing on them is
+   * not mistaken for this one not working.
+   */
+  salesFromManualEntries: number
 }
 
 /**
@@ -205,12 +205,12 @@ export type MonthlyIncomeStatement = {
   total: IncomeStatement
 }
 
-export type MonthlyCashBasisStatement = {
+export type MonthlyCollectionIncomeStatement = {
   from: string
   to: string
   months: string[]
-  perMonth: CashBasisStatement[]
-  total: CashBasisStatement
+  perMonth: CollectionIncomeStatement[]
+  total: CollectionIncomeStatement
 }
 
 /** Most months a business will report on at once. A date range spanning years

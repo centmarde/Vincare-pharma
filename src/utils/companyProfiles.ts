@@ -64,6 +64,7 @@ export type PrintedDocumentKind =
   | 'rfq'
   | 'purchase_order'
   | 'expiry_report'
+  | 'draft_order'
 
 /**
  * Customer- and tax-facing documents issue from Exelmed (the entity that holds
@@ -82,6 +83,9 @@ const DEFAULTS: Record<PrintedDocumentKind, CompanyKey> = {
   // operating entity that holds the warehouse; the print dialog still offers
   // the chooser, since either entity may need to circulate it.
   expiry_report: 'vincare',
+  // An In-House / Ethical order before it is invoiced. Customer-facing, so it
+  // issues from the same entity the invoice will.
+  draft_order: 'exelmed',
 }
 
 /**

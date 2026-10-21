@@ -11,6 +11,9 @@ import type { LocationStock, StockLocationId } from '@/stores/stockSourcingData'
 import { parseTermDays } from '@/utils/helpers'
 import { useCustomerPicker } from '@/composables/useCustomerPicker'
 import { useFormDraft } from '@/composables/useFormDraft'
+import type { DraftPrintDocument } from '@/components/orderPrint/useDraftOrderPrint'
+import { useTermsApprovalStore, isWithdrawn } from '@/stores/termsApprovalData'
+import type { TermsRequest } from '@/stores/termsApprovalData'
 
 const toast = useToast()
 
@@ -75,6 +78,17 @@ export function useCreateOrder(onCreated: () => void) {
   const editingDraftId = ref<number | null>(null)
   const isEditingDraft = computed(() => editingDraftId.value !== null)
 
+  // Invoicing (locking the terms) is an executive's call: staff submit the
+  // draft and it waits in Action Required. While it waits the draft is frozen.
+  const termsStore = useTermsApprovalStore()
+  const termsRequest = ref<TermsRequest | null>(null)
+  const draftPending = computed(() => termsRequest.value?.status === 'pending')
+  /** The executives turned these terms down — shown so staff know what to fix. */
+  const draftRejected = computed(() =>
+    termsRequest.value?.request_type === 'lock_terms' && termsRequest.value.status === 'rejected'
+    && !isWithdrawn(termsRequest.value))
+  async function loadTermsRequest(orderId: number) { termsRequest.value = await termsStore.requestFor(orderId) }
+
   // Persist a draft so a reload / crash mid-entry doesn't wipe the order.
   // sourceLocationId is deliberately excluded from the "touched" check — it
   // defaults on open, so it isn't a sign the user actually started.
@@ -130,7 +144,10 @@ export function useCreateOrder(onCreated: () => void) {
   })
 
   const validLines = computed(() => lines.value.filter(l => l.product_id != null && l.quantity > 0))
-  const subtotal = computed(() => lines.value.reduce((s, l) => s + l.quantity * l.unit_price, 0))
+  // Over the lines that are actually saved (and printed), not every row on the
+  // form: a priced row with no product used to swell the subtotal — and with
+  // it the discount, rebate and ads saved on the order.
+  const subtotal = computed(() => validLines.value.reduce((s, l) => s + l.quantity * l.unit_price, 0))
 
   // Discount & rebate rates come from the customer's trade profile — locked, not
   // hand-entered per order (single source of truth on the customer). Discount is
@@ -360,31 +377,48 @@ export function useCreateOrder(onCreated: () => void) {
     if (result.success) finish()
   }
 
-  // Lock the terms and invoice: mints the EO number and draws the stock.
+  // Submit for approval: saves the draft as it stands, then asks the
+  // executives to lock the terms. They invoice it from Action Required — that
+  // is when the EO number is issued and the stock is drawn.
   async function submit() {
     if (!validateForm()) return
     // Never let a below-cost sale through — after discount + rebate this order
     // would realize less than the goods cost us.
     if (hasBelowCostLine.value) {
-      toast.error(`Cannot invoice: ${belowCostLines.value.length} line(s) are priced below the allowed minimum.`)
+      toast.error(`Cannot submit: ${belowCostLines.value.length} line(s) are priced below the allowed minimum.`)
       return
     }
 
+    const startedNew = editingDraftId.value === null
     loading.value = true
-    let ok: boolean
-    if (editingDraftId.value !== null) {
-      // Save the latest edits first — confirm invoices what is on the server.
-      const saved = await ethical.saveDraft({ ...buildPayload(), draftId: editingDraftId.value }, { silent: true })
-      ok = saved.success && (await ethical.confirmDraft(editingDraftId.value)).success
-    } else {
-      const created = await ethical.createOrder(buildPayload())
-      ok = created.success
-      // Saved as a draft but not invoiced: adopt that draft so the next submit
-      // re-confirms IT rather than creating a second order for the same lines.
-      if (!created.success && created.draftId != null) editingDraftId.value = created.draftId
+    try {
+      // Save the latest edits first — the executives approve what is on the server.
+      const saved = await ethical.saveDraft(
+        { ...buildPayload(), draftId: editingDraftId.value ?? undefined }, { silent: true },
+      )
+      if (!saved.success || saved.orderId == null) return
+      // Adopt the draft at once: if the request below fails, a retry re-saves
+      // THIS draft rather than creating a second one for the same lines.
+      editingDraftId.value = saved.orderId
+      // A new order now lives on the server, so its browser copy is done with.
+      // Left behind, the next New Order would reopen it and a second submit
+      // would file the same sale twice. (Done here, not on finish(), which
+      // now sees a saved draft and keeps the copy.)
+      if (startedNew) draft.clear()
+      const requested = await termsStore.requestLock({ orderId: saved.orderId, orderType: 'ethical_order', orderNo: null })
+      if (requested.success) finish()
+    } finally {
+      loading.value = false
     }
+  }
+
+  async function withdrawTermsRequest() {
+    const r = termsRequest.value
+    if (!r || r.status !== 'pending' || editingDraftId.value === null) return
+    loading.value = true
+    const result = await termsStore.withdraw(r.id)
     loading.value = false
-    if (ok) finish()
+    if (result.success) await loadTermsRequest(editingDraftId.value)
   }
 
   // Reopen a saved draft in this form. Line details come off the order's own
@@ -436,7 +470,11 @@ export function useCreateOrder(onCreated: () => void) {
   async function init(draftOrder: EthicalOrderType | null = null) {
     // Load the saved draft BEFORE the pickers init, so the customer picker
     // resolves the draft's customer rather than an empty selection.
-    if (draftOrder) loadDraft(draftOrder)
+    termsRequest.value = null
+    if (draftOrder) {
+      loadDraft(draftOrder)
+      void loadTermsRequest(draftOrder.id)
+    }
     await initCustomerPicker()
     if (!agents.value.length) await agentsStore.fetchAgents({ activeOnly: true })
     if (!outlets.value.length) await outletsStore.fetchOutlets()
@@ -451,7 +489,37 @@ export function useCreateOrder(onCreated: () => void) {
     await refreshSourcing()
   }
 
+  /**
+   * What is on screen right now, for Print Draft — saved or not. A draft has no
+   * EO number yet (that is minted on confirm), so none is shown. Totals use the
+   * same subtotal and discount as the form; the rebate is a separate payout,
+   * not an invoice deduction, so like the invoice it is not printed.
+   */
+  const draftPrintDocument = computed<DraftPrintDocument>(() => ({
+    docNo: null,
+    date: null,
+    customer: selectedCustomer.value ?? null,
+    meta: [
+      { label: 'Medical Sales Representative', value: agentOptions.value.find((a) => a.value === agentId.value)?.title },
+      { label: 'Terms', value: termsDays.value ? `Net ${termsDays.value} days` : null },
+    ],
+    lines: lines.value.map((l) => ({
+      product_id: l.product_id,
+      product_name: l.product_name,
+      unit: l.unit || null,
+      qty: l.quantity,
+      unit_price: l.unit_price,
+      // Never passed: selling staff are not shown company cost (see the
+      // below-cost warning), so it must not be printable from here either.
+      cost_price: null,
+    })),
+    discount: discountAmount.value,
+    remarks: remarks.value || null,
+    notice: isEditingDraft.value ? null : 'This draft is not saved yet. Save it to keep it.',
+  }))
+
   return {
+    draftPrintDocument,
     loading, customerId, agentId, outletId, sourceLocationId, remarks, lines, editingDraftId, isEditingDraft,
     customerSearch, customerOptions, selectedCustomer, agentOptions,
     outletOptions, locationOptions, sourceLocationName,
@@ -461,5 +529,6 @@ export function useCreateOrder(onCreated: () => void) {
     markupDivisorLabel,
     giveawayRate, netRevenue, belowCostLines, hasBelowCostLine, lineBelowCost, erodesSystemPrice,
     addLine, removeLine, applyPickedProduct, onCustomerChange, submit, saveAsDraft, discardDraft, reset, init,
+    termsRequest, draftPending, draftRejected, withdrawTermsRequest,
   }
 }

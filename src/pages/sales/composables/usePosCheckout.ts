@@ -1,13 +1,14 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useSalesDataStore } from '@/stores/salesData'
+import { useSalesChargesStore } from '@/stores/salesChargesData'
 import { useCustomersDataStore } from '@/stores/customersData'
 import type { CustomerType } from '@/stores/customersData'
 import type { SaleType } from '@/stores/salesData'
 import type { usePos } from './usePos'
-import { paymentMethodMeta } from '@/utils/paymentMethods'
-import type { PaymentMethod } from '@/utils/paymentMethods'
+import { chargeToAccount, posPaymentMethodMeta } from '@/utils/paymentMethods'
+import type { PosPaymentMethod } from '@/utils/paymentMethods'
 
 const toast = useToast()
 
@@ -31,6 +32,8 @@ export type Receipt = {
   total: number
   tendered: number
   change: number
+  /** Charged to the customer's account: nothing was tendered, the total is owed. */
+  charged?: boolean
 }
 
 // Rebuild a printable Receipt from a persisted sale (used by Sales History reprint).
@@ -59,12 +62,14 @@ export function buildReceiptFromSale(sale: SaleType, cashierName: string): Recei
     total:    sale.total_amount ?? 0,
     tendered: sale.amount_tendered ?? 0,
     change:   sale.change_due ?? 0,
+    charged:  sale.payment_method === chargeToAccount,
   }
 }
 
 // Receives the usePos instance so cart/total stay a single source of truth.
 export function usePosCheckout(pos: ReturnType<typeof usePos>) {
   const salesStore = useSalesDataStore()
+  const chargesStore = useSalesChargesStore()
   const customersStore = useCustomersDataStore()
   const { loading } = storeToRefs(salesStore)
 
@@ -74,14 +79,35 @@ export function usePosCheckout(pos: ReturnType<typeof usePos>) {
   const lastReceipt = ref<Receipt | null>(null)
 
   // Cash is the default because it is the overwhelming majority at a till.
-  const paymentMethod = ref<PaymentMethod>('cash')
+  const paymentMethod = ref<PosPaymentMethod>('cash')
   const paymentReference = ref('')
-  const methodMeta = computed(() => paymentMethodMeta(paymentMethod.value))
+  const methodMeta = computed(() => posPaymentMethodMeta(paymentMethod.value))
+  /** Charged to the customer's account: paid later, at the office. */
+  const isCharge = computed(() => paymentMethod.value === chargeToAccount)
 
   // Optional customer the sale is billed to (shown on the receipt).
   const customerName = ref('')
   const customerAddress = ref('')
   const customerMobile = ref('')
+  // The account picked from the suggestions. A charge needs one: a name typed
+  // at the till is not an account anyone can be asked to pay.
+  const customerId = ref<number | null>(null)
+  let pickedName = ''
+  // Typing a different name after picking means a different customer.
+  watch(customerName, (name) => {
+    if (customerId.value != null && name.trim() !== pickedName.trim()) customerId.value = null
+  })
+
+  /** What the picked account already owes on charged sales; null if unreadable, undefined until read. */
+  const chargeBalance = ref<number | null | undefined>(undefined)
+  let balanceRequest = 0
+  watch([isCharge, customerId], async ([charging, id]) => {
+    const requestId = ++balanceRequest
+    chargeBalance.value = undefined
+    if (!charging || id == null) return
+    const balance = await chargesStore.customerBalance(id)
+    if (requestId === balanceRequest) chargeBalance.value = balance
+  })
 
   // ─── Customer suggestions ─────────────────────────────────────────
   // createSale already remembers a new walk-in (it resolves-or-creates by
@@ -108,7 +134,9 @@ export function usePosCheckout(pos: ReturnType<typeof usePos>) {
     // per keystroke would be ~10 round trips for a single lookup.
     customerSearchTimer = setTimeout(async () => {
       customerSearching.value = true
-      const results = await customersStore.searchCustomers(s, 20, 'pos')
+      // The store's own customers plus the unassigned book (the drugstores),
+      // as Sales → Customers lists them; charging needs to find those accounts.
+      const results = await customersStore.searchCustomers(s, 20, 'pos', true)
       if (requestId !== customerSearchId) return
       customerSuggestions.value = results
       customerSearching.value = false
@@ -120,6 +148,8 @@ export function usePosCheckout(pos: ReturnType<typeof usePos>) {
     // Invalidate anything in flight so a late response cannot repopulate the
     // list after the cashier has already chosen.
     customerSearchId++
+    pickedName = customer.name ?? ''
+    customerId.value = customer.id
     customerName.value = customer.name ?? ''
     customerAddress.value = customer.address ?? ''
     customerMobile.value = customer.contact_no ?? ''
@@ -140,6 +170,7 @@ export function usePosCheckout(pos: ReturnType<typeof usePos>) {
   // trace the payment left.
   const canComplete = computed(() => {
     if (pos.isEmpty.value) return false
+    if (isCharge.value) return customerId.value != null
     if (methodMeta.value.takesTendered) {
       return (amountTendered.value ?? 0) >= pos.total.value
     }
@@ -181,10 +212,11 @@ export function usePosCheckout(pos: ReturnType<typeof usePos>) {
         cost_price: l.cost_price,
       })),
       // Non-cash settles at exactly the total, so the ledger records the money
-      // actually received rather than a blank.
-      amountTendered: methodMeta.value.takesTendered ? (amountTendered.value ?? 0) : pos.total.value,
+      // actually received rather than a blank. A charge receives nothing.
+      amountTendered: isCharge.value ? 0 : methodMeta.value.takesTendered ? (amountTendered.value ?? 0) : pos.total.value,
       paymentMethod: paymentMethod.value,
-      paymentReference: paymentReference.value.trim() || null,
+      paymentReference: isCharge.value ? null : paymentReference.value.trim() || null,
+      customerId: customerId.value,
       customer: {
         name:    customerName.value.trim() || null,
         address: customerAddress.value.trim() || null,
@@ -206,8 +238,9 @@ export function usePosCheckout(pos: ReturnType<typeof usePos>) {
       lines:    snapshot,
       subtotal: result.subtotal as number,
       total:    result.total as number,
-      tendered: methodMeta.value.takesTendered ? (amountTendered.value ?? 0) : pos.total.value,
+      tendered: isCharge.value ? 0 : methodMeta.value.takesTendered ? (amountTendered.value ?? 0) : pos.total.value,
       change:   result.change as number,
+      charged:  isCharge.value,
     }
 
     showPayment.value = false
@@ -215,6 +248,8 @@ export function usePosCheckout(pos: ReturnType<typeof usePos>) {
     customerName.value = ''
     customerAddress.value = ''
     customerMobile.value = ''
+    customerId.value = null
+    pickedName = ''
     await pos.refreshStock()
     showReceipt.value = true
   }
@@ -223,8 +258,8 @@ export function usePosCheckout(pos: ReturnType<typeof usePos>) {
     loading,
     showPayment, showReceipt,
     amountTendered, changeDue, canComplete,
-    paymentMethod, paymentReference, methodMeta,
-    customerName, customerAddress, customerMobile,
+    paymentMethod, paymentReference, methodMeta, isCharge, chargeBalance,
+    customerName, customerAddress, customerMobile, customerId,
     customerSuggestions, customerSearching, searchCustomers, applyCustomer,
     lastReceipt,
     openPayment, confirmPayment,

@@ -5,12 +5,15 @@ import type { CashClassification, ClassifiedCashAccount, CreateCashAccountPayloa
 import { glCashCode, glAccountCodeFor } from '@/stores/financeData'
 import { useGLDataStore } from '@/stores/glData'
 import { useFinanceDataStore } from '@/stores/financeData'
+import { useCashAccountLedgerStore } from '@/stores/cashAccountLedgerData'
 
 // Grouping/display derivations + add-account form state for CashAccountsManager.
 // Component stays markup-only (binds v-models, emits the built payload).
 export function useCashAccountsManager(accounts: () => ClassifiedCashAccount[]) {
   const gl = useGLDataStore()
   const finance = useFinanceDataStore()
+  const cashLedger = useCashAccountLedgerStore()
+  const { history, loading: historyLoading, error: historyError } = storeToRefs(cashLedger)
 
   const groupedAccounts = computed(() =>
     cashClassifications.map((meta) => {
@@ -207,7 +210,28 @@ export function useCashAccountsManager(accounts: () => ClassifiedCashAccount[]) 
     await loadReconciliation()
   }
 
+  // ─── Account history ────────────────────────────────────────────────────
+  // Clicking an account opens its money in / money out. Built from the
+  // documents that moved its balance, not the GL — see cashAccountLedgerData.
+  const showHistory = ref(false)
+  const historyAccount = ref<ClassifiedCashAccount | null>(null)
+
+  /** The history's own total against the balance on the card. A gap means the
+   *  balance moved somewhere that left no document behind. */
+  const historyVariance = computed(() =>
+    history.value && historyAccount.value
+      ? (historyAccount.value.balance ?? 0) - history.value.computedBalance
+      : 0,
+  )
+
+  async function openHistory(account: ClassifiedCashAccount) {
+    historyAccount.value = account
+    showHistory.value = true
+    await cashLedger.fetchCashAccountHistory(account)
+  }
+
   return {
+    showHistory, historyAccount, history, historyLoading, historyError, historyVariance, openHistory,
     groupedAccounts, totalActiveBalance, selectedClassificationMeta,
     glVariances, loadReconciliation,
     showConfirm, busy, confirmMode, confirmTarget,

@@ -203,7 +203,10 @@ export const useCustomersDataStore = defineStore('customersData', () => {
     try {
       const { search, activeOnly, department, includeUnassigned } = options
       let q = supabase.from('customers').select('*')
-      if (activeOnly) q = q.eq('is_active', true)
+      // NOT eq(true): the imported customer file left is_active blank on 5,276
+      // of 5,287 rows, so "= true" matched only 10 customers. Blank means
+      // never deactivated — only an explicit false is excluded.
+      if (activeOnly) q = q.not('is_active', 'is', false)
       if (department) {
         q = includeUnassigned
           ? q.or(`department.eq.${department},department.is.null`)
@@ -249,12 +252,20 @@ export const useCustomersDataStore = defineStore('customersData', () => {
    * checkout suggests the walk-ins and drugstore accounts it created itself
    * (department='pos'), not the whole 5,000-row book shared with In-House and
    * Ethical.
+   *
+   * `includeUnassigned` adds the customers no module has claimed (department
+   * null: ~5,000 rows of the imported book, the drugstores among them), the
+   * same set the Sales → Customers page lists alongside department 'pos'.
    */
-  async function searchCustomers(term: string, limit = 50, department?: string) {
+  async function searchCustomers(term: string, limit = 50, department?: string, includeUnassigned = false) {
     clearError()
     try {
-      let q = supabase.from('customers').select('*').eq('is_active', true)
-      if (department) q = q.eq('department', department)
+      // Blank is_active counts as active — see fetchCustomers. "= true" made
+      // this search, and every picker built on it, find only 10 customers.
+      let q = supabase.from('customers').select('*').not('is_active', 'is', false)
+      // Two .or() groups are ANDed by PostgREST, so this still narrows the name search below.
+      if (department && includeUnassigned) q = q.or(`department.eq.${department},department.is.null`)
+      else if (department) q = q.eq('department', department)
       const s = term.trim().replace(/[,()]/g, '')
       if (s) {
         q = q.or(`name.ilike.%${s}%,contact_person.ilike.%${s}%,contact_no.ilike.%${s}%`)

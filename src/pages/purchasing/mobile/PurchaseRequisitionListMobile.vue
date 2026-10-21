@@ -10,6 +10,7 @@ const props = defineProps<{
   page: number
   totalItems: number
   itemsPerPage: number
+  canAddProduct?: boolean
 }>()
 
 const searchInput = defineModel<string>('searchInput', { required: true })
@@ -20,6 +21,7 @@ const emit = defineEmits<{
   'clear-search': []
   refresh: []
   'new-pr': []
+  'add-product': []
   'view-detail': [item: PR]
   'issue-po': [item: PR]
   'change-page': [newPage: number]
@@ -57,6 +59,14 @@ function clearFilters() {
           :disabled="loading"
           :loading="loading"
           @click="emit('refresh')"
+        />
+        <v-btn
+          v-if="canAddProduct"
+          icon="mdi-package-variant-plus"
+          color="primary"
+          variant="outlined"
+          aria-label="Add Product"
+          @click="emit('add-product')"
         />
         <v-btn
           color="primary"

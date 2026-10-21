@@ -8,8 +8,9 @@ import PurchaseRequisitionItems from '../PurchaseRequisitionItems.vue'
 import SupplierChargesSummary from '../SupplierChargesSummary.vue'
 import { useDisplay } from 'vuetify'
 import { storeToRefs } from 'pinia'
-import { ref, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useToast } from 'vue-toastification'
+import { fromLocalISODate, toLocalISODate } from '@/utils/helpers'
 
 const props = defineProps<{
   modelValue: boolean
@@ -80,6 +81,14 @@ async function close() {
 }
 
 async function onSubmit() {
+  const dateOk = await validatePrDateField()
+  if (!dateOk) {
+    const value = currentPR.value.purchase_requisition_date?.trim()
+    if (!value) toast.info('Please select the Purchase Requisition Date.')
+    else if (!fromLocalISODate(value)) toast.info('Please enter a valid Purchase Requisition Date.')
+    else toast.info('Purchase Requisition Date cannot be in the future.')
+    return
+  }
   const result = await handleSubmit()
   if (result.success) {
     // handleSubmit already resets currentPR/items internally on success,
@@ -99,6 +108,54 @@ async function onSaveDraft() {
     close()
   }
 }
+
+// ─── Purchase Requisition Date picker ───────────────────────────
+// Bridges the YYYY-MM-DD string and Date object without timezone shifts.
+const prDatePickerMenu = ref(false)
+const prDateFieldRef = ref<any>(null)
+
+// Today as local YYYY-MM-DD — the upper bound for the date (no future dates).
+const prDateMax = ref(toLocalISODate(new Date()))
+const prDateRules = [
+  (v: string | null) => !!v?.trim() || 'Purchase Requisition Date is required.',
+  (v: string | null) => {
+    if (!v?.trim()) return true
+    const trimmed = v.trim()
+    if (!fromLocalISODate(trimmed)) return 'Enter a valid date (YYYY-MM-DD).'
+    if (trimmed > toLocalISODate(new Date()))
+      return 'Purchase Requisition Date cannot be in the future.'
+    return true
+  },
+]
+
+function isPrDateValid(): boolean {
+  const value = currentPR.value.purchase_requisition_date
+  return prDateRules.every((rule) => rule(value) === true)
+}
+async function validatePrDateField(): Promise<boolean> {
+  await nextTick()
+  const result = await prDateFieldRef.value?.validate()
+  return typeof result === 'boolean' ? result : isPrDateValid()
+}
+
+const prDatePickerDate = computed<Date | null>({
+  get: () =>
+    currentPR.value.purchase_requisition_date
+      ? fromLocalISODate(currentPR.value.purchase_requisition_date)
+      : null,
+  set: (val) => {
+    currentPR.value.purchase_requisition_date = val ? toLocalISODate(val) : null
+  },
+})
+
+function onPrDatePicker(val: Date | null) {
+  prDatePickerDate.value = val
+  prDatePickerMenu.value = false // close after a day is chosen
+}
+
+watch(prDatePickerMenu, (isOpen) => {
+  if (isOpen) prDateMax.value = toLocalISODate(new Date())
+})
 
 // Fetch suppliers once when dialog opens; start from a clean form each time
 watch(
@@ -152,6 +209,35 @@ watch(
           </v-chip>
         </div>
         <div class="d-flex align-center" style="gap: 12px">
+          <v-menu
+            v-model="prDatePickerMenu"
+            :close-on-content-click="false"
+            location="bottom"
+          >
+            <template #activator="{ props: menuProps }">
+              <v-text-field
+                ref="prDateFieldRef"
+                v-bind="menuProps"
+                v-model="currentPR.purchase_requisition_date"
+                label="Purchase Requisition Date"
+                density="compact"
+                variant="outlined"
+                :rules="prDateRules"
+                validate-on="input"
+                hide-details="auto"
+                clearable
+                readonly
+                class="pr-date-field"
+                prepend-inner-icon="mdi-calendar"
+                autocomplete="off"
+              />
+            </template>
+            <v-date-picker
+              :model-value="prDatePickerDate"
+              :max="prDateMax"
+              @update:model-value="onPrDatePicker"
+            />
+          </v-menu>
           <v-btn icon="mdi-close" variant="text" size="small" @click="close" />
         </div>
       </v-card-title>
@@ -276,5 +362,11 @@ watch(
 }
 :deep(.v-field--focused .v-field__outline) {
   --v-field-border-opacity: 0.5;
+}
+/* Keep the header date field compact beside the Close button. */
+.pr-date-field {
+  width: 100%;
+  max-width: 360px;
+  min-width: 200px;
 }
 </style>

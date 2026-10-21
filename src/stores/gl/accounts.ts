@@ -81,6 +81,10 @@ export async function createAccount(payload: { category: AccountCategory; name: 
     return { success: false }
   }
   toast.success(`Account ${docNo} — ${payload.name} created.`)
-  await fetchAccounts()
+  // Refresh BOTH copies of the chart. `allAccounts` is what a code is turned
+  // back into a name with (vouchers, expenses, reports); refreshing only the
+  // active list left the new account pickable but labelled by its bare code
+  // until a page reload.
+  await Promise.all([fetchAccounts(), fetchAllAccounts()])
   return { success: true, code: docNo }
 }

@@ -8,6 +8,8 @@ import {
   employeeReceivableHeaders,
 } from '../composables/useDiscrepancies'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import { financePageSizes } from '../composables/financeTable'
+import { arSourceLabel } from '../composables/useAccountsReceivable'
 
 const {
   tab,
@@ -52,6 +54,7 @@ const {
             />
           </div>
           <v-data-table
+            :items-per-page-options="financePageSizes"
             mobile-breakpoint="md"
             :headers="remittanceHeaders"
             :items="remittanceDiscrepancies"
@@ -108,6 +111,7 @@ const {
 
         <v-window-item value="employeeReceivables">
           <v-data-table
+            :items-per-page-options="financePageSizes"
             mobile-breakpoint="md"
             :headers="employeeReceivableHeaders"
             :items="receivables"
@@ -155,6 +159,7 @@ const {
 
         <v-window-item value="ar">
           <v-data-table
+            :items-per-page-options="financePageSizes"
             mobile-breakpoint="md"
             :headers="arAgingHeaders"
             :items="arAging"
@@ -164,9 +169,7 @@ const {
             hover
           >
             <template #item.source="{ item }">
-              <v-chip size="small" variant="tonal">{{
-                item.source === 'ethical_order' ? 'Ethical' : 'In-House'
-              }}</v-chip>
+              <v-chip size="small" variant="tonal">{{ arSourceLabel[item.source] }}</v-chip>
             </template>
             <template #item.customer_name="{ item }">
               {{ item.customer_name ?? '—' }}
@@ -193,6 +196,7 @@ const {
 
         <v-window-item value="commission">
           <v-data-table
+            :items-per-page-options="financePageSizes"
             mobile-breakpoint="md"
             :headers="commissionHeaders"
             :items="commissionLiability"
@@ -225,6 +229,7 @@ const {
             quantities — it never auto-corrects.
           </v-alert>
           <v-data-table
+            :items-per-page-options="financePageSizes"
             mobile-breakpoint="md"
             :headers="stockReconHeaders"
             :items="stockReconciliation"

@@ -56,6 +56,16 @@ export const authGuard = async (
       // Get current user data to access role ID from metadata
       const currentUserResult = await authStore.getCurrentUser()
 
+      // getCurrentUser never throws — a failed session check (dropped
+      // connection, expired login) comes back as "no user". That used to skip
+      // every check below and fall through to next(), opening the page. When
+      // access cannot be confirmed, the answer is no.
+      if (!currentUserResult.user) {
+        console.log('Could not confirm the current user; redirecting to forbidden')
+        toast.error('Could not confirm your access to this page. Reload, or sign in again.')
+        return next('/forbidden')
+      }
+
       if (currentUserResult.user) {
         const userRoleId = currentUserResult.user.user_metadata?.role
 
@@ -92,7 +102,11 @@ export const authGuard = async (
       }
     } catch (error) {
       console.error('Error checking role-based page access:', error)
-      // Continue with navigation if there's an error to avoid blocking the user
+      // Fail closed. This used to let the navigation through "to avoid blocking
+      // the user" — which meant any error opened pages the role is not allowed
+      // to see. A blip now costs a reload; a restricted page stays restricted.
+      toast.error('Could not confirm your access to this page. Reload, or sign in again.')
+      return next('/forbidden')
     }
   }
 

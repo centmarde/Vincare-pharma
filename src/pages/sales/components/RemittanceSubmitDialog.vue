@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ExpectedSummary } from '@/stores/remittancesData'
-import { paymentMethodMeta } from '@/utils/paymentMethods'
+import { posPaymentMethodMeta } from '@/utils/paymentMethods'
 import { formatCurrency } from '@/utils/helpers'
 import { useDisplay } from 'vuetify'
 
@@ -74,7 +74,7 @@ const noteRequiredRule = (v: string) => !!v?.trim() || 'A note is required for a
             :key="n.method"
             class="d-flex justify-space-between align-center text-body-2 text-medium-emphasis"
           >
-            <span>{{ paymentMethodMeta(n.method).title }} ({{ n.saleCount }})</span>
+            <span>{{ posPaymentMethodMeta(n.method).title }} ({{ n.saleCount }})</span>
             <span>{{ formatCurrency(n.amount) }}</span>
           </div>
           <div class="d-flex justify-space-between align-center text-body-2 font-weight-medium mt-1 mb-4">
@@ -82,6 +82,16 @@ const noteRequiredRule = (v: string) => !!v?.trim() || 'A note is required for a
             <span>{{ formatCurrency(expected.nonCashTotal) }}</span>
           </div>
         </template>
+
+        <!-- Charged to customer accounts: nothing was taken for these at all.
+             They are paid later at the office, never through this drawer. -->
+        <div
+          v-if="expected.charged.saleCount"
+          class="d-flex justify-space-between align-center text-body-2 text-medium-emphasis mb-4"
+        >
+          <span>Charged to accounts ({{ expected.charged.saleCount }}) &mdash; paid later at the office</span>
+          <span>{{ formatCurrency(expected.charged.amount) }}</span>
+        </div>
 
         <v-alert
           v-if="expected.saleCount === 0"

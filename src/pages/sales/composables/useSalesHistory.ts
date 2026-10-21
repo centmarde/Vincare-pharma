@@ -1,6 +1,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSalesDataStore } from '@/stores/salesData'
+import { useSalesChargesStore } from '@/stores/salesChargesData'
+import { chargeToAccount } from '@/utils/paymentMethods'
 import { useWarehousesDataStore } from '@/stores/warehouseData'
 import type { WarehouseType } from '@/stores/warehouseData'
 import { useAuthUserStore } from '@/stores/authUser'
@@ -21,6 +23,7 @@ export const headers = [
 
 export function useSalesHistory() {
   const salesStore = useSalesDataStore()
+  const chargesStore = useSalesChargesStore()
   const warehousesStore = useWarehousesDataStore()
   const authStore = useAuthUserStore()
   const { sales, loading } = storeToRefs(salesStore)
@@ -78,6 +81,27 @@ export function useSalesHistory() {
     return sale.status === 'completed' && sale.remittance_id == null
   }
 
+  // ── Sales charged to a customer account ─────────────────────────────────
+  // What is still owed on each, read after the list loads. Payments are taken
+  // at the office (Finance → Accounts Receivable), not here.
+  const paidOnCharges = ref<Map<number, number> | null>(new Map())
+  const isCharged = (sale: SaleType) => sale.payment_method === chargeToAccount
+
+  /** Still owed on a charged sale; null when the payments could not be read. */
+  function chargeOwed(sale: SaleType): number | null {
+    if (!paidOnCharges.value) return null
+    return Math.max(0, (sale.total_amount ?? 0) - (paidOnCharges.value.get(sale.id) ?? 0))
+  }
+
+  async function loadChargePayments() {
+    const ids = sales.value.filter((s) => isCharged(s) && s.status !== 'voided').map((s) => s.id)
+    try {
+      paidOnCharges.value = ids.length ? await chargesStore.paidBySale(ids) : new Map()
+    } catch {
+      paidOnCharges.value = null
+    }
+  }
+
   async function load() {
     if (!authStore.users.length) await authStore.getAllUsers()
     if (!warehouses.value.length) await warehousesStore.fetchWarehouses()
@@ -86,6 +110,7 @@ export function useSalesHistory() {
       dateFrom: dateFrom.value || undefined,
       dateTo: dateTo.value ? `${dateTo.value}T23:59:59` : undefined,
     })
+    await loadChargePayments()
   }
 
   function openReceipt(sale: SaleType) {
@@ -109,7 +134,7 @@ export function useSalesHistory() {
 
   return {
     loading, sales, search, filterStatus, filterWarehouseId, warehouseOptions, dateFrom, dateTo, statusOptions,
-    filteredSales, cashierName, canVoid,
+    filteredSales, cashierName, canVoid, isCharged, chargeOwed,
     showReceipt, receipt, showVoid, voidReason, selectedSale,
     load, openReceipt, openVoid, confirmVoid,
   }

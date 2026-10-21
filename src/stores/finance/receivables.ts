@@ -1,18 +1,45 @@
 // Accounts Receivable: order-level aging, the per-receivable drill-down and the
 // per-customer Statement of Account. Read-only — Finance never mutates orders.
+// (A payment on a POS charge is recorded through salesChargesData, not here.)
 
 import { supabase } from '@/lib/supabase'
 import type {
-  ARAgingRow, ARReceivableDetail, ARReceivableLine, ARReceivablePayment, SOAEntry, StatementOfAccount,
+  ARAgingRow, ARReceivableDetail, ARReceivableLine, ARReceivablePayment, ARSource, SOAEntry, StatementOfAccount,
 } from './types'
 import { termFor } from './helpers'
 import { arAging, loading, handleError, clearError } from './state'
+import { fetchAllRows, fetchAllRowsForIds } from '@/stores/shared/paging'
+import { chargeToAccount } from '@/utils/paymentMethods'
+import { parseTermDays, toLocalISODate } from '@/utils/helpers'
+
+// ─── POS sales charged to a customer account ───────────────────────────────
+// A sale keeps no amount_paid: what is paid is the sum of its non-voided
+// payments, and its due date is the customer's terms counted from the sale.
+
+/** A charge still counts while a void request on it is pending. */
+const openChargeStatuses = ['completed', 'change_request']
+
+async function paidBySale(saleIds: number[]): Promise<Map<number, number>> {
+  const rows = await fetchAllRowsForIds<{ transaction_id: number; amount: number | null }>(saleIds, (batch) =>
+    supabase.from('collections').select('id, transaction_id, amount')
+      .in('transaction_id', batch).is('voided_at', null).order('id', { ascending: true }))
+  const paid = new Map<number, number>()
+  for (const r of rows) paid.set(Number(r.transaction_id), (paid.get(Number(r.transaction_id)) ?? 0) + Number(r.amount ?? 0))
+  return paid
+}
+
+/** Sale date + the customer's terms ('30 Days' -> 30). Null when the terms carry no number. */
+function chargeDueDate(saleDate: string, termText: string | null | undefined): string | null {
+  const days = parseTermDays(termText)
+  if (days == null) return null
+  return toLocalISODate(new Date(new Date(saleDate).getTime() + days * 86400000))
+}
 
 export async function fetchARAging() {
   loading.value = true
   clearError()
   try {
-    const [ethicalRes, inhouseRes] = await Promise.all([
+    const [ethicalRes, inhouseRes, posCharges] = await Promise.all([
       supabase.from('transactions')
         .select('id, ethical_no, total_amount, customer_id, ethical_details(amount_paid, due_date), customer:customer_id(name)')
         .eq('transaction_type', 'ethical_order').in('status', ['invoiced', 'partial']),
@@ -26,9 +53,15 @@ export async function fetchARAging() {
         // (harmless — filtered by the balance<=0.01 check below) so a rounding
         // underpayment still surfaces.
         .eq('transaction_type', 'inhouse_order').in('status', ['delivered', 'paid', 'partial']),
+      fetchAllRows<any>(() => supabase.from('transactions')
+        .select('id, sale_no, created_at, total_amount, customer_id, customer:customer_id(name, term_days), pos_sale_details!inner(payment_method)')
+        .eq('transaction_type', 'sale').in('status', openChargeStatuses)
+        .eq('pos_sale_details.payment_method', chargeToAccount)
+        .order('id', { ascending: true })),
     ])
     if (ethicalRes.error) throw ethicalRes.error
     if (inhouseRes.error) throw inhouseRes.error
+    const posPaid = await paidBySale(posCharges.map((r) => Number(r.id)))
 
     const now = Date.now()
     const rows: ARAgingRow[] = []
@@ -68,6 +101,20 @@ export async function fetchARAging() {
       })
     }
 
+    for (const r of posCharges) {
+      const amountPaid = posPaid.get(Number(r.id)) ?? 0
+      const balance = (r.total_amount ?? 0) - amountPaid
+      if (balance <= 0.01) continue
+      const dueDate = chargeDueDate(r.created_at, r.customer?.term_days)
+      const daysOverdue = dueDate ? Math.floor((now - new Date(dueDate).getTime()) / 86400000) : null
+      rows.push({
+        id: r.id, source: 'sale', reference_no: r.sale_no,
+        customer_id: r.customer_id ?? null, customer_name: r.customer?.name ?? null, total_amount: r.total_amount ?? 0,
+        amount_paid: amountPaid, balance, due_date: dueDate,
+        days_overdue: daysOverdue, term: termFor(daysOverdue),
+      })
+    }
+
     rows.sort((a, b) => (b.days_overdue ?? -1) - (a.days_overdue ?? -1))
     arAging.value = rows
     return rows
@@ -87,7 +134,7 @@ export async function fetchARAging() {
 //     line_total. Payments read from the shared `collections` ledger, which
 //     both In-House recordPayment and Ethical recordCollection write to. ──
 export async function fetchReceivableDetail(
-  source: 'ethical_order' | 'inhouse_order',
+  source: ARSource,
   transactionId: number,
 ): Promise<ARReceivableDetail | null> {
   loading.value = true
@@ -97,12 +144,14 @@ export async function fetchReceivableDetail(
       ? 'ethical_details(amount_paid, due_date, terms_days)'
       // due_date too: aging (fetchARAging) ages In-House orders by it, so the
       // detail must show the date the order is reported overdue against.
-      : 'inhouse_details(amount_paid, govt_po_no, due_date)'
+      : source === 'inhouse_order'
+        ? 'inhouse_details(amount_paid, govt_po_no, due_date)'
+        : 'pos_sale_details(payment_method)'
 
     const [txnRes, paymentsRes] = await Promise.all([
       supabase.from('transactions')
-        .select(`id, status, created_at, total_amount, po_no, ethical_no, inhouse_no,
-                 customer:customer_id(name),
+        .select(`id, status, created_at, total_amount, po_no, ethical_no, inhouse_no, sale_no,
+                 customer:customer_id(name, term_days),
                  ${extension},
                  transaction_items!transaction_items_transaction_id_fkey(qty_stock_out, actual_count_stock_out, unit_price, line_total, products(product_name, unit))`)
         .eq('id', transactionId)
@@ -119,14 +168,16 @@ export async function fetchReceivableDetail(
     const t = txnRes.data as any
     if (!t) { handleError(null, 'Receivable not found'); return null }
 
-    const ext = t[source === 'ethical_order' ? 'ethical_details' : 'inhouse_details'] ?? {}
-    const amountPaid = ext.amount_paid ?? 0
+    const isSale = source === 'sale'
+    const ext = isSale ? {} : (t[source === 'ethical_order' ? 'ethical_details' : 'inhouse_details'] ?? {})
     const total = t.total_amount ?? 0
 
+    // Ethical bills what was ordered and a POS sale what was rung up (both
+    // qty_stock_out); In-House bills what was delivered.
     const lines: ARReceivableLine[] = (t.transaction_items || []).map((li: any) => ({
       product_name: li.products?.product_name ?? null,
       unit: li.products?.unit ?? null,
-      qty: (source === 'ethical_order' ? li.qty_stock_out : li.actual_count_stock_out) ?? 0,
+      qty: (source === 'inhouse_order' ? li.actual_count_stock_out : li.qty_stock_out) ?? 0,
       unit_price: li.unit_price ?? 0,
       line_total: li.line_total ?? 0,
     }))
@@ -138,18 +189,20 @@ export async function fetchReceivableDetail(
       payment_method: p.payment_method ?? null,
       reference_no: p.reference_no ?? null,
     }))
+    // A sale keeps no amount_paid: it is the sum of its (non-voided) payments.
+    const amountPaid = isSale ? payments.reduce((sum, p) => sum + p.amount, 0) : (ext.amount_paid ?? 0)
 
     return {
       id: t.id,
       source,
-      reference_no: source === 'ethical_order' ? t.ethical_no : t.inhouse_no,
+      reference_no: source === 'ethical_order' ? t.ethical_no : source === 'inhouse_order' ? t.inhouse_no : t.sale_no,
       status: t.status ?? null,
       customer_name: t.customer?.name ?? null,
       invoice_date: t.created_at ?? null,
       po_no: source === 'inhouse_order' ? (t.po_no ?? null) : null,
       govt_po_no: source === 'inhouse_order' ? (ext.govt_po_no ?? null) : null,
-      terms_days: source === 'ethical_order' ? (ext.terms_days ?? null) : null,
-      due_date: ext.due_date ?? null,
+      terms_days: source === 'ethical_order' ? (ext.terms_days ?? null) : isSale ? parseTermDays(t.customer?.term_days) : null,
+      due_date: isSale ? chargeDueDate(t.created_at, t.customer?.term_days) : (ext.due_date ?? null),
       total_amount: total,
       amount_paid: amountPaid,
       balance: total - amountPaid,
@@ -166,7 +219,13 @@ export async function fetchReceivableDetail(
 
 // ─── Statement of Account (per customer, full order + payment history) ──────
 
-export async function fetchStatementOfAccount(customerId: number): Promise<StatementOfAccount | null> {
+/**
+ * `sourceHint`: which documents to state for a customer with NO department
+ * (most of the imported book, the drugstores among them, is unassigned). An
+ * assigned customer's department always decides. Without a hint an unassigned
+ * customer gets the In-House statement, as before.
+ */
+export async function fetchStatementOfAccount(customerId: number, sourceHint?: ARSource): Promise<StatementOfAccount | null> {
   loading.value = true
   clearError()
   try {
@@ -180,17 +239,33 @@ export async function fetchStatementOfAccount(customerId: number): Promise<State
 
     // A customer belongs to exactly one department — that's which order
     // type + which per-type reference column ("refCol") this statement reads.
-    const source: 'ethical_order' | 'inhouse_order' = customer.department === 'ethical' ? 'ethical_order' : 'inhouse_order'
-    const refCol = source === 'ethical_order' ? 'ethical_no' : 'inhouse_no'
+    // A POS customer's charges are their sales charged to account.
+    const source: ARSource = customer.department === 'ethical'
+      ? 'ethical_order'
+      : customer.department === 'inhouse'
+        ? 'inhouse_order'
+        : customer.department === 'pos' ? 'sale' : (sourceHint ?? 'inhouse_order')
+    const refCol = source === 'ethical_order' ? 'ethical_no' : source === 'sale' ? 'sale_no' : 'inhouse_no'
 
-    const { data: orders, error: ordersError } = await supabase
-      .from('transactions')
-      .select(`id, created_at, approved_at, total_amount, ${refCol}`)
-      .eq('transaction_type', source)
-      .eq('customer_id', customerId)
-      // An Ethical draft is still being haggled — not a charge yet.
-      .neq('status', 'draft')
-      .order('created_at', { ascending: true })
+    const ordersQuery = source === 'sale'
+      ? supabase
+          .from('transactions')
+          .select('id, created_at, approved_at, total_amount, sale_no, pos_sale_details!inner(payment_method)')
+          .eq('transaction_type', 'sale')
+          .eq('customer_id', customerId)
+          // Only what was charged; a cash sale was paid at the till.
+          .eq('pos_sale_details.payment_method', chargeToAccount)
+          .neq('status', 'voided')
+          .order('created_at', { ascending: true })
+      : supabase
+          .from('transactions')
+          .select(`id, created_at, approved_at, total_amount, ${refCol}`)
+          .eq('transaction_type', source)
+          .eq('customer_id', customerId)
+          // An Ethical draft is still being haggled — not a charge yet.
+          .neq('status', 'draft')
+          .order('created_at', { ascending: true })
+    const { data: orders, error: ordersError } = await ordersQuery
     if (ordersError) throw ordersError
 
     const orderRows = (orders ?? []) as any[]
@@ -215,7 +290,7 @@ export async function fetchStatementOfAccount(customerId: number): Promise<State
         date: (o.approved_at ?? o.created_at) as string,
         type: 'charge' as const,
         reference_no: (o[refCol] as string | null) ?? null,
-        description: `Order ${o[refCol] ?? `#${o.id}`}`,
+        description: `${source === 'sale' ? 'Charged sale' : 'Order'} ${o[refCol] ?? `#${o.id}`}`,
         charge: o.total_amount ?? 0,
         payment: 0,
       })),

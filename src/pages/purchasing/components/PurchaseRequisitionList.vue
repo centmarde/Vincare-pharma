@@ -10,10 +10,16 @@ import ReorderRequestsDialog from './dialogs/ReorderRequestsDialog.vue'
 import PRDraftsDialog from './dialogs/PRDraftsDialog.vue'
 import PRDetailModal from './dialogs/PRDetailModal.vue'
 import IssuePOModal from './dialogs/IssuePOModal.vue'
-import { ref, onMounted, watch } from 'vue'
+import ProductFormDialog from '@/components/products/dialogs/ProductFormDialog.vue'
+import { useProductCreateForm } from '@/components/products/composables/useProductCreateForm'
+import { useAuthUserStore } from '@/stores/authUser'
+import { isProductEditRestricted } from '@/utils/roleHelpers'
+import { ref, onMounted, watch, computed } from 'vue'
 import { useDisplay } from 'vuetify'
+import { useToast } from 'vue-toastification'
 
 const prStore = usePurchaseRequisitionStore()
+const toast = useToast()
 
 const selectedReorderIds = ref<number[]>([])
 const prefillItemsForDialog = ref<ReorderPrefillItem[]>([])
@@ -55,6 +61,24 @@ const {
   // proposeEditPR,
 } = usePurchaseRequisitionList()
 const { mobile } = useDisplay()
+
+// Inline "Add product" flow (mirrors ProductsWidget) so a user building a PR can
+// create a missing product without leaving this page. Gated with the same
+// restriction as the Products page: hidden for Warehouse (3) & Purchaser (4).
+const authUser = useAuthUserStore()
+const canAddProduct = computed(() => !isProductEditRestricted(authUser.userRole))
+const {
+  showDialog: showProductDialog,
+  form: productFormRef,
+  dialogMode: productDialogMode,
+  productForm,
+  loading: productLoading,
+  rules: productRules,
+  openCreateDialog: openCreateProductDialog,
+  closeDialog: closeProductDialog,
+  handleSubmit: handleProductSubmit,
+} = useProductCreateForm()
+
 onMounted(() => {
   init()
   if (mobile.value) {
@@ -137,17 +161,104 @@ function onPRSubmitted() {
 }
 
 // PurchaseRequisitionList.vue — restore the direct-save version
-async function onPRUpdate(data: { items: any[]; remarks: string }) {
+async function onPRUpdate(data: { items: any[]; remarks: string; charges?: any | null }) {
   if (!selectedPR.value) return
   const success = await prStore.updatePR({
     prId: selectedPR.value.id,
     items: data.items,
     remarks: data.remarks,
+    ...(data.charges ? { charges: data.charges } : {}),
   })
   if (success) {
     showModal.value = false
     loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
   }
+}
+
+// Confirmed supplier changes create replacement PRs, keeping the original pending approval; each save/create handler refreshes the list independently.
+async function onPRReplacement(data: {
+  items: any[]
+  charges: any | null
+  newSupplierId: number
+  originalPrId: number
+  purchase_requisition_date: string | null
+}) {
+  const result = await prStore.createReplacementPR({
+    originalPrId: data.originalPrId,
+    items: data.items,
+    charges: data.charges,
+    newSupplierId: data.newSupplierId,
+    purchase_requisition_date: data.purchase_requisition_date,
+  })
+  if (result.success) {
+    showModal.value = false
+    loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
+  }
+}
+
+async function onPRSplitSave(data: {
+  pr: any
+  originalRows: any[]
+  originalRemarks: string
+  originalCharges: any | null
+  replacements: {
+    items: any[]
+    charges: any | null
+    newSupplierId: number
+    originalPrId: number
+    purchase_requisition_date: string | null
+  }[]
+}) {
+  if (!selectedPR.value) return
+
+  async function rollbackCreatedReplacements(
+    replacements: { transactionId: number; createdProductIds: number[] }[],
+  ): Promise<boolean> {
+    for (const created of replacements) {
+      const rollback = await prStore.deleteReplacementPR(
+        created.transactionId,
+        created.createdProductIds,
+      )
+      if (!rollback.success) {
+        toast.error(`Failed to fully roll back a replacement PR: ${rollback.error ?? 'Unknown error'}`)
+        return false
+      }
+    }
+    return true
+  }
+
+  const createdReplacements: { transactionId: number; createdProductIds: number[] }[] = []
+  for (const replacement of data.replacements) {
+    const result = await prStore.createReplacementPR({
+      originalPrId: replacement.originalPrId,
+      items: replacement.items,
+      charges: replacement.charges,
+      newSupplierId: replacement.newSupplierId,
+      purchase_requisition_date: replacement.purchase_requisition_date,
+    })
+    if (!result.success || result.transactionId == null) {
+      await rollbackCreatedReplacements(createdReplacements)
+      return
+    }
+    createdReplacements.push({
+      transactionId: result.transactionId,
+      createdProductIds: result.createdProductIds ?? [],
+    })
+  }
+
+  const updated = await prStore.updatePR({
+    prId: selectedPR.value.id,
+    items: data.originalRows,
+    remarks: data.originalRemarks,
+    ...(data.originalCharges ? { charges: data.originalCharges } : {}),
+  })
+  if (!updated) {
+    await rollbackCreatedReplacements(createdReplacements)
+    return
+  }
+
+  showModal.value = false
+  loadItems({ page: page.value, itemsPerPage: itemsPerPage.value, sortBy: [] })
 }
 
 async function onPOIssued() {
@@ -222,7 +333,9 @@ async function onPOIssued() {
       :items="serverItems"
       :loading="loading"
       :total-items="totalItems"
+      :can-add-product="canAddProduct"
       @new-pr="openNewPR"
+      @add-product="openCreateProductDialog"
       @commit-search="commitSearch"
       @clear-search="clearSearch"
       @refresh="refresh"
@@ -240,10 +353,12 @@ async function onPOIssued() {
       :page="page"
       :total-items="totalItems"
       :items-per-page="itemsPerPage"
+      :can-add-product="canAddProduct"
       @commit-search="commitSearch"
       @clear-search="clearSearch"
       @refresh="refresh"
       @new-pr="openNewPR"
+      @add-product="openCreateProductDialog"
       @view-detail="openDetail"
       @issue-po="openPurchaseOrder"
       @change-page="goToPage"
@@ -272,7 +387,8 @@ async function onPOIssued() {
     <!-- Detail Modal -->
     <PRDetailModal v-if="selectedPR" v-model="showModal" :pr="selectedPR"
     @approve="openConfirm('APPROVE', $event)" @reject="openConfirm('REJECT', $event)"
-    @unapprove="handleUnapprove" @update="onPRUpdate"/>
+    @unapprove="handleUnapprove" @update="onPRUpdate" @create-replacement="onPRReplacement"
+    @split-save="onPRSplitSave"/>
 
     <!-- Reorder Requests Dialog -->
     <ReorderRequestsDialog
@@ -281,6 +397,20 @@ async function onPOIssued() {
       :selectedReorderIds="selectedReorderIds"
       @update:selectedReorderIds="selectedReorderIds = $event"
       @create-pr="createPRFromReorder"
+    />
+
+    <!-- Inline Add Product dialog (create-only) -->
+    <ProductFormDialog
+      v-model="showProductDialog"
+      v-model:form="productFormRef"
+      :dialog-mode="productDialogMode"
+      :product-form="productForm"
+      :loading="productLoading"
+      :mobile="mobile"
+      :rules="productRules"
+      :is-edit-restricted="false"
+      @submit="handleProductSubmit"
+      @close="closeProductDialog"
     />
   </v-container>
 </template>

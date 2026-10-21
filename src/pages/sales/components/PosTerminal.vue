@@ -26,7 +26,7 @@ const {
   loading: saleLoading,
   showPayment, showReceipt, amountTendered, changeDue, canComplete,
   customerName, customerAddress, customerMobile,
-  paymentMethod, paymentReference,
+  paymentMethod, paymentReference, isCharge, chargeBalance, customerId,
   customerSuggestions, customerSearching, searchCustomers, applyCustomer,
   lastReceipt, openPayment, confirmPayment,
 } = checkout
@@ -283,6 +283,9 @@ onMounted(init)
       :payment-reference="paymentReference"
       :customer-suggestions="customerSuggestions"
       :customer-searching="customerSearching"
+      :is-charge="isCharge"
+      :customer-picked="customerId != null"
+      :charge-balance="chargeBalance"
       @search-customer="searchCustomers"
       @pick-customer="applyCustomer"
       @update:payment-method="paymentMethod = $event"

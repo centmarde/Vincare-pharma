@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useStockTransferDetail } from '../composables/useStockTransferDetail'
 import type { StockTransferType } from '@/stores/stockTransfersData'
 import { formatDatePR_ISO } from '@/utils/helpers'
@@ -18,13 +19,18 @@ const emit = defineEmits<{
 }>()
 
 const {
-  loading, receivedQtys, items,
+  loading, receivedQtys, displayItems,
   isPendingApproval, isApproved,
-  handleApprove, handleReject, handleMarkReceived,
+  onHand, stockLoading, shortProductCount, shortBy, onHandFor, batchLabel,
+  handleApprove, handleReject, handleMarkReceived, loadStock,
 } = useStockTransferDetail(
   () => props.transfer,
   () => emit('changed'),
+  () => props.modelValue && props.mode === 'warehouse',
 )
+
+// The approver sees warehouse on-hand in place of the (still empty) received column.
+const showStock = computed(() => props.mode === 'warehouse' && isPendingApproval.value)
 
 async function onApprove() {
   await handleApprove()
@@ -74,19 +80,60 @@ async function onMarkReceived() {
 
         <v-divider class="my-3" />
 
+        <template v-if="showStock">
+          <v-progress-linear v-if="stockLoading" indeterminate color="primary" class="mb-3" />
+          <v-alert
+            v-else-if="shortProductCount"
+            type="error"
+            variant="tonal"
+            density="compact"
+            class="mb-3"
+          >
+            <div class="d-flex align-center flex-wrap ga-2">
+              <span class="flex-grow-1">
+                {{ shortProductCount }} {{ shortProductCount === 1 ? 'product is' : 'products are' }}
+                short of warehouse stock, listed first. This transfer can't be approved until
+                {{ shortProductCount === 1 ? 'it is' : 'they are' }} covered.
+              </span>
+              <v-btn size="small" variant="text" class="text-none" prepend-icon="mdi-refresh" @click="loadStock">
+                Re-check stock
+              </v-btn>
+            </div>
+          </v-alert>
+          <v-alert
+            v-else-if="onHand === null"
+            type="warning"
+            variant="tonal"
+            density="compact"
+            class="mb-3"
+          >
+            Could not read warehouse stock. Approve still checks it.
+          </v-alert>
+        </template>
+
         <v-table density="compact">
           <thead>
             <tr>
               <th>PRODUCT</th>
               <th class="text-right">REQUESTED</th>
-              <th class="text-right" style="width: 140px">RECEIVED</th>
+              <th class="text-right" style="width: 140px">{{ showStock ? 'ON HAND' : 'RECEIVED' }}</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="item in items" :key="item.id">
-              <td>{{ item.product?.product_name ?? '—' }}</td>
+            <tr v-for="item in displayItems" :key="item.id" :class="{ 'short-line': shortBy(item) > 0 }">
+              <td>
+                <div>{{ item.product?.product_name ?? '—' }}</div>
+                <div v-if="batchLabel(item)" class="text-caption text-medium-emphasis">{{ batchLabel(item) }}</div>
+              </td>
               <td class="text-right">{{ item.requested_qty }}</td>
               <td class="text-right">
+                <template v-if="showStock">
+                  <template v-if="onHandFor(item) !== null">
+                    <div :class="{ 'text-error font-weight-bold': shortBy(item) > 0 }">{{ onHandFor(item) }}</div>
+                    <div v-if="shortBy(item) > 0" class="text-caption text-error">short {{ shortBy(item) }}</div>
+                  </template>
+                  <span v-else>—</span>
+                </template>
                 <v-text-field
                   v-if="isApproved && mode === 'outlet'"
                   v-model.number="receivedQtys[item.id]"
@@ -98,7 +145,7 @@ async function onMarkReceived() {
                   class="input-number"
                   style="width: 110px"
                 />
-                <span v-else>{{ item.received_qty ?? '—' }}</span>
+                <span v-else-if="!showStock">{{ item.received_qty ?? '—' }}</span>
               </td>
             </tr>
           </tbody>
@@ -113,7 +160,14 @@ async function onMarkReceived() {
           <v-btn variant="outlined" color="error" class="text-none" :loading="loading" @click="onReject">
             Reject
           </v-btn>
-          <v-btn color="primary" class="text-none font-weight-bold" elevation="0" :loading="loading" @click="onApprove">
+          <v-btn
+            color="primary"
+            class="text-none font-weight-bold"
+            elevation="0"
+            :loading="loading"
+            :disabled="shortProductCount > 0 || stockLoading"
+            @click="onApprove"
+          >
             Approve
           </v-btn>
         </template>
@@ -140,6 +194,9 @@ async function onMarkReceived() {
 </template>
 
 <style scoped>
+.short-line {
+  background: rgba(var(--v-theme-error), 0.06);
+}
 .input-number :deep(input[type="number"]) {
   -moz-appearance: textfield;
   appearance: textfield;

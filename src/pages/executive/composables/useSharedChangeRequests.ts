@@ -1,6 +1,8 @@
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useChangeRequestsDataStore } from '@/stores/changeRequestsData'
+import { shortDatedRequestType } from '@/pages/inhouse/stores/shortDatedApproval'
+import { termsRequestTypes } from '@/stores/shared/termsApprovalGuards'
 
 // Approver-side wrapper around the SHARED changeRequestsData store, scoped to
 // the in-house/ethical payment (collection) requests that store still owns —
@@ -13,7 +15,18 @@ const SHARED_TYPES = ['inhouse_order', 'ethical_order']
 
 export function useSharedChangeRequests() {
   const store = useChangeRequestsDataStore()
-  const { requests, loading } = storeToRefs(store)
+  const { requests: allRequests, loading } = storeToRefs(store)
+
+  // Short-dated delivery approvals are change_requests on in-house orders too,
+  // so the type scope above sweeps them in. They have their own queue
+  // (useExecutiveApproveShortDated), so here they were listed TWICE — and
+  // approving this copy ran them as a payment correction, which fails with
+  // "missing payment reference". Only payment corrections belong in this list.
+  // The same goes for the lock / unlock terms requests (useExecutiveApproveTerms).
+  const ownQueues = [shortDatedRequestType, ...termsRequestTypes]
+  const requests = computed(() =>
+    allRequests.value.filter((r) => !ownQueues.includes(r.request_type as string)),
+  )
 
   async function refresh() {
     await store.fetchRequests({ status: 'pending', types: SHARED_TYPES })

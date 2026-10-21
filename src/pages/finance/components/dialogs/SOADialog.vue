@@ -4,14 +4,22 @@ import { companyFor, companyOptions, defaultCompanyFor } from '@/utils/companyPr
 import type { CompanyKey } from '@/utils/companyProfiles'
 import html2pdf from 'html2pdf.js'
 import { useToast } from 'vue-toastification'
-import type { StatementOfAccount } from '@/stores/financeData'
+import type { ARSource, StatementOfAccount } from '@/stores/financeData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+
+const departmentLines: Record<ARSource, string> = {
+  ethical_order: 'Ethical Department',
+  inhouse_order: 'In-House / Government',
+  sale: 'POS — sales charged to account',
+}
 
 const props = defineProps<{
   modelValue: boolean
   loading: boolean
   soa: StatementOfAccount | null
 }>()
+
+const departmentLine = computed(() => (props.soa ? departmentLines[props.soa.source] : ''))
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
@@ -90,7 +98,7 @@ async function handlePrint() {
             </v-col>
             <v-col cols="5" class="text-right">
               <div class="text-body-2">As of: {{ formatDatePR_ISO(soa.generated_at) }}</div>
-              <div class="text-body-2">{{ soa.source === 'ethical_order' ? 'Ethical Department' : 'In-House / Government' }}</div>
+              <div class="text-body-2">{{ departmentLine }}</div>
             </v-col>
           </v-row>
 

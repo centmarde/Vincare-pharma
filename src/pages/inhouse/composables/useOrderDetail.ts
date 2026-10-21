@@ -6,6 +6,8 @@ import { useDeliveryReceiptsDataStore, type DeliveryReceiptType } from '@/stores
 import type { ProductPickerResult } from '@/stores/productsData'
 import { useProcurementDataStore } from '@/stores/procurementData'
 import { useShortDatedApprovalStore } from '@/pages/inhouse/stores/shortDatedApproval'
+import { useTermsApprovalStore, isWithdrawn } from '@/stores/termsApprovalData'
+import type { TermsRequest } from '@/stores/termsApprovalData'
 import type { ShortDatedBatch, ShortDatedRequest } from '@/pages/inhouse/stores/shortDatedApproval'
 import { govtShelfLife } from '@/utils/qualification'
 import { useFinanceDataStore } from '@/stores/financeData'
@@ -13,8 +15,9 @@ import { useAuthUserStore } from '@/stores/authUser'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { formatCurrency } from '@/utils/helpers'
 import type { CollectionType } from '@/stores/ethicalData'
+import type { DraftPrintDocument } from '@/components/orderPrint/useDraftOrderPrint'
 
-const { confirmDialog } = useConfirmDialog()
+const { confirmDialog, inputValue: confirmInput } = useConfirmDialog()
 
 export type NewNegotiationLine = {
   product_id: number | null
@@ -35,6 +38,10 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   const drStore = useDeliveryReceiptsDataStore()
   const procurementStore = useProcurementDataStore()
   const shortDatedStore = useShortDatedApprovalStore()
+  const termsStore = useTermsApprovalStore()
+  // The order's latest lock/unlock request. Declared up here: the order watcher
+  // below runs immediately and resets it.
+  const termsRequest = ref<TermsRequest | null>(null)
   const authStore = useAuthUserStore()
   const financeStore = useFinanceDataStore()
   // Inside the composable body, not at module scope — a factory called on
@@ -146,11 +153,11 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   const proposedRatio = computed(() =>
     proposedTotal.value > 0 && proposedCost.value > 0 ? proposedCost.value / proposedTotal.value : null)
 
-  // Rounded once, everything derives from it — see useRaiseOrder.
+  // Rounded once, everything derives from it; green is explicit — see useRaiseOrder.
   const ratioValue = computed(() => proposedRatio.value === null ? null : Number(proposedRatio.value.toFixed(2)))
   const ratioLabel = computed(() => ratioValue.value === null ? '—' : ratioValue.value.toFixed(2))
   const ratioClass = computed(() =>
-    ratioValue.value === null ? 'text-medium-emphasis' : ratioValue.value < 1 ? 'text-success' : 'text-error')
+    ratioValue.value === null ? 'text-medium-emphasis' : ratioValue.value < 1 ? 'text-green-darken-1' : 'text-error')
 
   const proposedProfit = computed(() =>
     proposedRatio.value === null ? null : proposedTotal.value - proposedCost.value)
@@ -197,7 +204,9 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     shortDatedRequest.value = null
     shortDatedNote.value = ''
     requestNote.value = ''
+    termsRequest.value = null
     if (!o) return
+    void loadTermsRequest(o.id)
     for (const it of o.items ?? []) {
       lineEdits.value[it.id] = it.unit_price
       lineProductEdits.value[it.id] = it.product_id
@@ -224,6 +233,27 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   }, { immediate: true })
 
   async function loadRounds(id: number) { rounds.value = await store.fetchNegotiation(id) }
+
+  // ── Executive approval to lock / unlock the terms ─────────────────────────
+  // Locking the terms (Agree) and undoing them both go to the executives
+  // (termsApprovalData). While a request is pending the order is frozen.
+  async function loadTermsRequest(id: number) { termsRequest.value = await termsStore.requestFor(id) }
+
+  const termsPending = computed(() => termsRequest.value?.status === 'pending')
+  const lockPending = computed(() => termsPending.value && termsRequest.value?.request_type === 'lock_terms')
+  const unlockPending = computed(() => termsPending.value && termsRequest.value?.request_type === 'unlock_terms')
+  /** The executive said no to these terms — shown on the order being renegotiated. */
+  const lockRejected = computed(() =>
+    isNegotiating.value && termsRequest.value?.request_type === 'lock_terms'
+    && termsRequest.value.status === 'rejected' && !isWithdrawn(termsRequest.value))
+  /** The executives turned down an unapprove request. */
+  const unlockRejected = computed(() =>
+    termsRequest.value?.request_type === 'unlock_terms' && termsRequest.value.status === 'rejected'
+    && !isWithdrawn(termsRequest.value))
+  /** Agreed, and nothing delivered or paid yet — the terms can still be undone. */
+  const canRequestUnlock = computed(() =>
+    (isReady.value || isAwaitingStock.value) && deliveredPct.value === 0
+    && !((order()?.amount_paid ?? 0) > 0) && !termsPending.value)
   // Passive: opening an awaiting_stock order only READS the shortfall for display.
   // Advancing the order + minting the PO is the explicit "Re-check stock" button
   // (recheck() → store.recheckStock), never a side effect of viewing.
@@ -359,16 +389,49 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     if (result.success) { offerNote.value = ''; onChanged() }
   }
 
-  async function agree() {
+  // Agree now ASKS: the executives lock the terms from Action Required.
+  async function requestTermsApproval() {
     const o = order(); if (!o) return
     if (hasUnsavedLineChanges.value) {
-      toast.warning('Record the counter-offer first — agreeing locks the saved lines, not unsaved edits.')
+      toast.warning('Record the counter-offer first — the executives approve the saved lines, not unsaved edits.')
       return
     }
+    const ok = await confirmDialog(
+      `Send the terms of ${o.order_no ?? 'this order'} (${formatCurrency(o.total_amount ?? 0)}) to the executives to approve? `
+      + 'The order cannot be changed while they decide.',
+      { title: 'Request approval', confirmText: 'Send for approval' },
+    )
+    if (!ok) return
     loading.value = true
-    const result = await store.agreeOrder(o.id)
+    const result = await termsStore.requestLock({ orderId: o.id, orderType: 'inhouse_order', orderNo: o.order_no })
     loading.value = false
-    if (result.success) { shortfall.value = result.shortfall ?? []; onChanged() }
+    if (result.success) { await loadTermsRequest(o.id); onChanged() }
+  }
+
+  async function withdrawTermsRequest() {
+    const o = order(); const r = termsRequest.value
+    if (!o || !r || r.status !== 'pending') return
+    loading.value = true
+    const result = await termsStore.withdraw(r.id)
+    loading.value = false
+    if (result.success) { await loadTermsRequest(o.id); onChanged() }
+  }
+
+  async function requestUnapprove() {
+    const o = order(); if (!o) return
+    const ok = await confirmDialog(
+      `Ask the executives to unapprove the terms of ${o.order_no ?? 'this order'}? If they approve, it goes back to `
+      + 'negotiation (its PO number is kept).',
+      { title: 'Request unapprove', confirmText: 'Send request', inputLabel: 'Reason (required)' },
+    )
+    if (!ok) return
+    // The dialog blocks an empty box but not one of only spaces.
+    const reason = confirmInput.value.trim()
+    if (!reason) { toast.error('Give a reason for the unapprove request.'); return }
+    loading.value = true
+    const result = await termsStore.requestUnlock({ orderId: o.id, orderType: 'inhouse_order', orderNo: o.order_no, reason })
+    loading.value = false
+    if (result.success) { await loadTermsRequest(o.id); onChanged() }
   }
 
   async function recheck() {
@@ -427,7 +490,40 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     }
   }
 
+  /**
+   * The order as last RECORDED, for Print Draft. Unsaved counter-offer edits
+   * are left out on purpose — the printout states the terms on file, the same
+   * ones agree() would lock — and the dialog says so when there are some.
+   */
+  const draftPrintDocument = computed<DraftPrintDocument | null>(() => {
+    const o = order()
+    if (!o) return null
+    return {
+      docNo: o.order_no,
+      date: o.created_at,
+      customer: o.customer ?? null,
+      meta: [
+        { label: 'Govt PR', value: o.govt_po_no },
+        { label: 'Govt PR Amount', value: o.po_amount != null ? formatCurrency(o.po_amount) : null },
+        { label: 'Company PO', value: o.po_no },
+      ],
+      lines: items.value.map((i) => ({
+        product_id: i.product_id,
+        product_name: i.product?.product_name ?? '',
+        unit: i.product?.unit ?? null,
+        qty: i.qty,
+        unit_price: i.unit_price,
+        cost_price: i.cost_price,
+      })),
+      remarks: o.remarks,
+      notice: hasUnsavedLineChanges.value
+        ? 'Some counter-offer changes are not recorded yet. This prints the order as last recorded — record the counter-offer first to include them.'
+        : null,
+    }
+  })
+
   return {
+    draftPrintDocument,
     loading, rounds, shortfall, payments, lineEdits, lineProductEdits, lineCostEdits, lineProductNames,
     lineBatchNos, lineExpiryDates, offerNote, deliverQtys,
     lineQtyEdits, newLines, hasUnsavedLineChanges, isRemoved, removeItem, restoreItem, addNewLine, removeNewLine, applyPickedProductToNewLine,
@@ -438,6 +534,8 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     loadShortDated, requestShortDatedApproval,
     items, status, isNegotiating, isAwaitingStock, isReady, isDelivered, isPartiallyPaid, isPaid, canRecordPayment,
     proposedTotal, proposedCost, proposedRatio, ratioLabel, ratioClass, profitLabel, marginLabel, deliveredPct, remaining, balance, paidPct,
-    applyPickedProduct, recordCounter, agree, recheck, deliver, recordPayment, notifyPurchasing,
+    applyPickedProduct, recordCounter, recheck, deliver, recordPayment, notifyPurchasing,
+    termsRequest, termsPending, lockPending, unlockPending, lockRejected, unlockRejected, canRequestUnlock,
+    requestTermsApproval, withdrawTermsRequest, requestUnapprove,
   }
 }
