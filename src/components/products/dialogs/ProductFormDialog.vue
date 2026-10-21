@@ -5,6 +5,7 @@ import { parseMonthYear, formatMonthYear, maskMonthYearInput } from '@/utils/hel
 import { computeSellingPrice } from '@/utils/computationHelpers'
 import { generateSku } from '@/utils/generativeHelpers'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
+import { categoryOptions, unitOptions } from '../composables/useProductCreateForm'
 import type { CreateProductData, UpdateProductData } from '@/stores/productsData'
 
 const props = defineProps<{
@@ -226,16 +227,19 @@ watch(() => props.modelValue, (val) => {
                 <div class="pa-4">
                   <v-row>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model="productForm.product_name" label="Product Name" prepend-inner-icon="mdi-package-variant" variant="outlined" density="comfortable" :rules="[rules.required]" required :disabled="isFieldDisabled"></v-text-field>
+                      <v-text-field v-model="productForm.product_name" label="Product Name" prepend-inner-icon="mdi-package-variant" variant="outlined" density="comfortable" :rules="[rules.required]" required :disabled="isFieldDisabled" autocomplete="off"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
                       <v-text-field v-model="productForm.barcode" label="Barcode" prepend-inner-icon="mdi-barcode" variant="outlined" density="comfortable" :disabled="isFieldDisabled"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model="productForm.sku" label="SKU" prepend-inner-icon="mdi-tag" variant="outlined" density="comfortable" :rules="[rules.required]" required :disabled="isFieldDisabled" :append-inner-icon="productForm.sku ? '' : 'mdi-dice-multiple'" :title="productForm.sku ? '' : 'Generate SKU'" @click:append-inner="generateSkuValue"></v-text-field>
+                      <v-text-field v-model="productForm.sku" label="SKU" prepend-inner-icon="mdi-tag" variant="outlined" density="comfortable" :rules="[rules.required]" required :disabled="isFieldDisabled" :append-inner-icon="productForm.sku ? '' : 'mdi-dice-multiple'" :title="productForm.sku ? '' : 'Generate SKU'" @click:append-inner="generateSkuValue" autocomplete="off"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model="productForm.category" label="Category" prepend-inner-icon="mdi-shape" variant="outlined" density="comfortable" :disabled="isFieldDisabled"></v-text-field>
+                    <v-select
+                      v-model="productForm.category" label="Category" prepend-inner-icon="mdi-shape" variant="outlined"
+                      density="comfortable" :items="categoryOptions" clearable :disabled="isFieldDisabled"
+                    ></v-select>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
                       <v-text-field v-model="productForm.status" label="Status" prepend-inner-icon="mdi-information" variant="outlined" density="comfortable" :disabled="isFieldDisabled"></v-text-field>
@@ -293,7 +297,7 @@ watch(() => props.modelValue, (val) => {
                       <v-text-field :model-value="expiryText" label="Expiry Date" placeholder="MM/YYYY" maxlength="7" inputmode="numeric" prepend-inner-icon="mdi-calendar-clock" variant="outlined" density="comfortable" :disabled="isFieldDisabled" @update:model-value="onExpiryInput" @blur="onExpiryBlur"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-select v-model="productForm.unit" label="Unit" prepend-inner-icon="mdi-counter" variant="outlined" density="comfortable" :items="['Box', 'Pcs', 'Set', 'Unit', 'Kg', 'M']" clearable :disabled="isFieldDisabled"></v-select>
+                      <v-select v-model="productForm.unit" label="Unit" prepend-inner-icon="mdi-counter" variant="outlined" density="comfortable" :items="unitOptions" clearable :disabled="isFieldDisabled"></v-select>
                     </v-col>
                   </v-row>
                 </div>

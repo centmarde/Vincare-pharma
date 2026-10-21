@@ -15,12 +15,20 @@ import {
 } from '@/stores/productsData'
 import { useLogsDataStore } from '@/stores/logsData'
 
+export const categoryOptions = [
+  'Oral Medicines', 'Injectables','Medical Supplies','Laboratory Supplies','Dental Supplies','Dental Instruments','Medical Device','TOPICAL','Ophthalmic/Otic','Veterinary','Vitamins and Supplements','Surgical Supplies','Diagnostic Reagents','Disinfectants and Antiseptics','Contraceptives',
+]
+
+export const unitOptions = [
+  'Ampoule','Bag','Blister','Bottle','Box','Canister','Capsule','Carton','Gallon','Jar','Kit','Nebule','Pack','Pair','Pcs','Piece','Roll','Sachet','Set','Strip','Suppository','Tablet','Tray','Tube','Unit','Vial',
+]
+
 const emptyForm = (): CreateProductData & UpdateProductData => ({
   barcode: '',
   sku: '',
   product_name: '',
-  category: '',
-  unit: '',
+  category: null,
+  unit: null,
   cost_price: null,
   selling_price: null,
   current_stock: null,
