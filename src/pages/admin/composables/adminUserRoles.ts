@@ -8,11 +8,13 @@ import {
 import { useUserPagesStore } from '@/stores/pages'
 import { navigationConfig, flattenNavigationItems } from '@/utils/navigation'
 import { useToast } from 'vue-toastification'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
 export function useAdminUserRoles() {
   const userRolesStore = useUserRolesStore()
   const userPagesStore = useUserPagesStore()
   const toast = useToast()
+  const { confirmDialog } = useConfirmDialog()
 
   // Local state for UI
   const isDialogOpen = ref(false)
@@ -174,6 +176,23 @@ export function useAdminUserRoles() {
     await userRolesStore.fetchRoles()
   }
 
+  // Toggle sa can_add_product permission gamit ang shared ConfirmDialog
+  // (gibutang sa App.vue). Una i-confirm sa user, dayon i-update sa store.
+  const toggleCanAddProductPermission = async (role: Role, newValue: boolean) => {
+    const confirmed = await confirmDialog(
+      `Are you sure you want to ${newValue ? 'allow' : 'disallow'} the role "${role.title || 'Untitled Role'}" to add products?\n\nThis will update the can_add_product permission for this role.`,
+      {
+        title: 'Confirm Permission Change',
+        confirmText: 'Confirm',
+        cancelText: 'Cancel',
+      },
+    )
+
+    if (!confirmed) return
+
+    await userRolesStore.toggleCanAddProduct(role.id, newValue)
+  }
+
   // Initialize data on mount
   onMounted(() => {
     refreshRoles()
@@ -205,6 +224,8 @@ export function useAdminUserRoles() {
     handleSubmit,
     handleDelete,
     refreshRoles,
+    toggleCanAddProductPermission,
+
     clearError: userRolesStore.clearError,
   }
 }
