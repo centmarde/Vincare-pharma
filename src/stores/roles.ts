@@ -8,14 +8,19 @@ export type Role = {
   id: number
   created_at: string
   title: string | null
+  // Permission flag nga mag-control kung ang role pwedeng mag-add og product.
+  // Kung null sa database, itreat isip `false` gamit `?? false`.
+  can_add_product: boolean | null
 }
 
 export type CreateRoleData = {
   title: string
+  can_add_product?: boolean
 }
 
 export type UpdateRoleData = {
   title?: string
+  can_add_product?: boolean
 }
 
 export type RoleWithPages = Role & {
@@ -193,6 +198,56 @@ export const useUserRolesStore = defineStore('userRoles', () => {
     }
   }
 
+  /**
+   * Toggle ang `can_add_product` permission sa usa ka role.
+   * Kung null ang value sa database, itreat isip `false` (default).
+   * Ginahimo ni sa switch sa AdminUserRolesView.
+   * NOTE: Wala ni gitabunan og try/catch kay ang Supabase query mag-handle na mismo sa iyang error.
+   */
+  const toggleCanAddProduct = async (id: number, newValue: boolean) => {
+    loading.value = true
+    error.value = null
+
+    const { data, error: updateError } = await supabase
+      .from('roles')
+      .update({ can_add_product: newValue })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (updateError) {
+      error.value = updateError.message
+      toast.error('Failed to update add product permission')
+      loading.value = false
+      return null
+    }
+
+    // Success toast para ma-hibalo ang user nga nausab na ang permission
+    if (newValue) {
+      toast.success('Role can now add products')
+    } else {
+      toast.success('Role can no longer add products')
+    }
+
+    // Update in local state (roles, currentRole, ug rolesWithPages)
+    const index = roles.value.findIndex((role) => role.id === id)
+    if (index !== -1) {
+      roles.value[index] = data
+    }
+
+    if (currentRole.value?.id === id) {
+      currentRole.value = data
+    }
+
+    const indexWithPages = rolesWithPages.value.findIndex((role) => role.id === id)
+    if (indexWithPages !== -1) {
+      rolesWithPages.value[indexWithPages] = data
+    }
+
+    loading.value = false
+    return data
+  }
+
   const deleteRole = async (id: number) => {
     loading.value = true
     error.value = null
@@ -247,6 +302,7 @@ export const useUserRolesStore = defineStore('userRoles', () => {
     fetchRoleWithPagesById,
     createRole,
     updateRole,
+    toggleCanAddProduct,
     deleteRole,
     clearError,
     clearCurrentRole,

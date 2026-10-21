@@ -30,6 +30,8 @@ const {
   handleSubmit,
   handleDelete,
   refreshRoles,
+  toggleCanAddProductPermission,
+
   clearError,
 } = useAdminUserRoles()
 
@@ -142,7 +144,20 @@ const formatDate = (dateString: string) => {
                   </v-tooltip>
                 </div>
 
-                <div class="d-flex align-center text-body-2 text-grey-darken-1 my-3"></div>
+                <!-- Can Add Product permission switch.
+                     Kung null ang can_add_product sa database, itreat isip false (?? false). -->
+                <div class="d-flex align-center justify-space-between mt-3">
+                  <span class="text-body-2 text-grey-darken-1">Can Add Product</span>
+                  <v-switch
+                    inset
+                    color="primary"
+                    density="compact"
+                    hide-details
+                    :model-value="role.can_add_product ?? false"
+                    :loading="loading"
+                    @update:model-value="(val) => toggleCanAddProductPermission(role, !!val)"
+                  />
+                </div>
               </v-card-text>
             </v-card>
           </v-col>
@@ -239,6 +254,9 @@ const formatDate = (dateString: string) => {
             }
           "
         />
+
+        <!-- Toggle confirmation naggamit sa shared ConfirmDialog (gibutang sa App.vue),
+             gi-trigger pinaagi sa useConfirmDialog() sa composable. -->
       </v-container>
     </template>
   </InnerLayoutWrapper>
