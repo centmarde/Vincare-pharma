@@ -67,7 +67,17 @@ const canSubmit = computed(() => {
   return mode.value === 'void' ? true : changedFields.value.length > 0
 })
 
+// One request per click. Two submits 84 ms apart both passed the store's
+// "one pending request per document" check and filed the same void twice
+// (#90/#91, EXP-2026-406). Held until the dialog is reopened, or briefly if the
+// filing failed and the dialog stayed open for a retry.
+const sent = ref(false)
+watch(() => props.modelValue, (open) => { if (open) sent.value = false })
+
 function submit() {
+  if (sent.value) return
+  sent.value = true
+  setTimeout(() => { sent.value = false }, 3000)
   if (mode.value === 'void') {
     emit('submit', { requestType: 'void', proposedChanges: {}, summary: props.voidSummary, reason: reason.value.trim() })
   } else {
@@ -145,7 +155,7 @@ function submit() {
         <v-btn variant="outlined" class="text-none" @click="emit('update:modelValue', false)">Cancel</v-btn>
         <v-btn
           color="primary" class="text-none font-weight-bold" elevation="0"
-          :disabled="!canSubmit" :loading="loading"
+          :disabled="!canSubmit || sent" :loading="loading || sent"
           @click="submit">
           Submit for Approval
         </v-btn>

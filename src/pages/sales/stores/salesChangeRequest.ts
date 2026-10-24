@@ -231,12 +231,23 @@ export const useSalesChangeRequestStore = defineStore('salesChangeRequest', () =
       .eq('id', payload.transactionId)
       .maybeSingle()
 
+    // A voided or cancelled document is finished: a request on it would flip
+    // its status to 'change_request', and approving that request then voided it
+    // AGAIN — EXP-2026-038 and EXP-2026-045 were each reissued twice this way
+    // (2026-10-21), crediting the petty fund twice and booking the expense twice.
+    if (txnCheck && (txnCheck.status === 'voided' || txnCheck.status === 'cancelled')) {
+      toast.warning('This document has already been voided, so it cannot be changed. Look for the document that replaced it.')
+      loading.value = false
+      return { success: false }
+    }
+
     if (txnCheck && txnCheck.status !== 'change_request') {
       await supabase
         .from('transactions')
         .update({ status: 'change_request', updated_at: new Date().toISOString() })
         .eq('id', payload.transactionId)
         .neq('status', 'change_request')
+        .not('status', 'in', '(voided,cancelled)') // never over a void
     }
 
     const proposedChanges: ProposedChange = { ...(payload.proposedChanges ?? {}) }
