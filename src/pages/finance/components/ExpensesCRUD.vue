@@ -7,8 +7,9 @@ import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import { financePageSizes } from '../composables/financeTable'
 
 const {
-  expenses,
   loading,
+  search,
+  filteredExpenses,
   showChangeDialog,
   changeTarget,
   changeFields,
@@ -40,8 +41,19 @@ onMounted(init)
 <template>
   <v-container fluid class="pa-2 fill-height align-start">
     <v-card class="mx-auto w-100" rounded="lg" elevation="1">
-      <v-card-title class="d-flex justify-space-between align-center pa-5">
+      <v-card-title class="d-flex flex-wrap align-center ga-3 pa-5">
         <span class="text-h6 font-weight-bold">Operational Expenses</span>
+        <v-spacer />
+        <v-text-field
+          v-model="search"
+          placeholder="Search EXP no., paid to, account, amount…"
+          prepend-inner-icon="mdi-magnify"
+          variant="outlined"
+          density="compact"
+          hide-details
+          clearable
+          style="min-width: 260px; max-width: 400px"
+        />
         <v-btn
           color="primary"
           class="text-none font-weight-bold"
@@ -59,10 +71,10 @@ onMounted(init)
         :items-per-page-options="financePageSizes"
         mobile-breakpoint="md"
         :headers="headers"
-        :items="expenses"
+        :items="filteredExpenses"
         :loading="loading"
         loading-text="Loading expenses..."
-        no-data-text="No expenses recorded yet."
+        :no-data-text="search ? 'No expense matches that search.' : 'No expenses recorded yet.'"
         hover
       >
         <template #item.reference_no="{ item }">
