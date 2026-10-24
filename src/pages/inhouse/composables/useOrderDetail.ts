@@ -224,7 +224,11 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     if (o.status === 'awaiting_stock') { void refreshShortfall(o.id); void loadRequestStatus(o.id) }
     // Only matters once the order can actually ship: a short-dated batch is
     // not a problem while the order is still being negotiated.
-    if (o.status === 'ready' || o.status === 'delivered') void loadShortDated(o.id)
+    // Awaiting stock too: short-dated stock does not count toward an order
+    // until an executive approves it, so an order held up ONLY by shelf life
+    // sits in awaiting_stock — and the request has to be possible from there,
+    // or it can never become ready.
+    if (o.status === 'awaiting_stock' || o.status === 'ready' || o.status === 'delivered') void loadShortDated(o.id)
     if (o.status === 'delivered' || o.status === 'partial' || o.status === 'paid') {
       void loadPayments(o.id)
       // Deposit accounts are only needed once the order can take a payment.

@@ -438,9 +438,16 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
    * Measured as of TODAY. The real test is the shelf life on the delivery day,
    * which nobody knows yet at agreement time, so this is a preview and
    * deliver() re-checks authoritatively.
+   *
+   * `allowShortDated`: the order has an executive's approval to ship
+   * short-dated stock, so that stock counts — the same rule deliver() applies.
+   * Without this an approved order stayed `awaiting_stock` for ever: the stock
+   * never counted, so it never became ready, so it could never be delivered.
+   * EXPIRED stock never counts, approval or not.
    */
   async function shortfallForLines(
     lines: { product_id: number; qty: number }[],
+    options: { allowShortDated?: boolean } = {},
   ): Promise<Shortfall[]> {
     const shortfall: Shortfall[] = []
     for (const line of lines) {
@@ -451,14 +458,15 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
         .maybeSingle()
       const physical = product?.current_stock ?? 0
       const shelf = govtShelfLife(product?.expiry_date as string | null)
-      const onHand = shelf.ok ? physical : 0
+      const usable = shelf.ok || (options.allowShortDated === true && shelf.reason === 'short_dated')
+      const onHand = usable ? physical : 0
       if (onHand < line.qty) {
         shortfall.push({
           product_id: line.product_id,
           ordered: line.qty,
           on_hand: onHand,
           needed: line.qty - onHand,
-          ...(shelf.ok ? {} : { blocked_reason: shelf.reason, physical_on_hand: physical }),
+          ...(usable || shelf.ok ? {} : { blocked_reason: shelf.reason, physical_on_hand: physical }),
         })
       }
     }
@@ -501,7 +509,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const lines = ((order.transaction_items ?? []) as unknown as { product_id: number; qty_stock_out: number | null }[])
       .map(li => ({ product_id: li.product_id, qty: li.qty_stock_out ?? 0 }))
-    const shortfall = await shortfallForLines(lines)
+    const shortfall = await shortfallForLines(lines, { allowShortDated: await shortDatedStore.hasApproval(orderId) })
 
     // Agreement is the PO stage — but only when the order can actually be
     // fulfilled from stock. Minting the company PO number (from the SHARED
@@ -594,7 +602,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const lines = ((order.transaction_items ?? []) as unknown as { product_id: number; qty_stock_out: number | null }[])
       .map(li => ({ product_id: li.product_id, qty: li.qty_stock_out ?? 0 }))
-    const shortfall = await shortfallForLines(lines)
+    const shortfall = await shortfallForLines(lines, { allowShortDated: await shortDatedStore.hasApproval(orderId) })
     return shortfall
   }
 

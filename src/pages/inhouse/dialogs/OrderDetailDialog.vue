@@ -376,7 +376,7 @@ const productName = (id: number | null) =>
              waives it for this order. Expired lines are never listed here —
              no approval can make expired goods deliverable. -->
         <v-card
-          v-if="shortDatedBatches.length && (isReady || isDelivered)"
+          v-if="shortDatedBatches.length && (isAwaitingStock || isReady || isDelivered)"
           variant="outlined"
           rounded="lg"
           class="mb-4 bg-amber-lighten-5"
@@ -421,7 +421,10 @@ const productName = (id: number | null) =>
 
             <template v-if="shortDatedRequest && shortDatedRequest.status === 'approved'">
               <div class="text-body-2 text-success font-weight-medium">
-                Approved — this order may be delivered.
+                <template v-if="isAwaitingStock">
+                  Approved — press <strong>Re-check stock</strong> above; the short-dated stock now counts.
+                </template>
+                <template v-else>Approved — this order may be delivered.</template>
                 <span v-if="shortDatedRequest.resolution_note">
                   ({{ shortDatedRequest.resolution_note }})
                 </span>
