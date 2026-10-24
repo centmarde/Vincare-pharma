@@ -42,8 +42,14 @@ const props = withDefaults(
      * "out of stock" and sends staff hunting for something that is right there.
      */
     requireShelfLife?: boolean
+    /**
+     * Let an EXPIRED batch be picked. Only for goods coming BACK — a customer
+     * returning expired stock has to name the batch it is returning. Everywhere
+     * stock is sold this stays off, so expired goods can never go out.
+     */
+    allowExpired?: boolean
   }>(),
-  { showCost: false, mode: 'name', locationId: null, requireShelfLife: false },
+  { showCost: false, mode: 'name', locationId: null, requireShelfLife: false, allowExpired: false },
 )
 
 const emit = defineEmits<{
@@ -172,7 +178,7 @@ function batchState(row: ProductPickerResult): 'ok' | 'expired' | 'short_dated' 
 
 /** Expired stock is never sellable; short-dated is, with executive approval. */
 function isSelectable(row: ProductPickerResult): boolean {
-  return batchState(row) !== 'expired'
+  return props.allowExpired || batchState(row) !== 'expired'
 }
 
 function isExpanded(name: string): boolean {

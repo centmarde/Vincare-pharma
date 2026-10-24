@@ -10,7 +10,8 @@ import type { InhouseOrderType } from '@/stores/inhouseData'
 import type { ProductPickerResult } from '@/stores/productsData'
 import ProductPickerDialog from '@/components/products/ProductPicker.vue'
 import type { CollectionType } from '@/stores/ethicalData'
-import { expensePaymentMethods } from '@/stores/financeData'
+import { chequeLabel, collectionMethodLabel, collectionPaymentMethodOptions } from '@/utils/paymentMethods'
+import CollectionPaymentFields from '@/components/collections/CollectionPaymentFields.vue'
 import { formatCurrency, formatDatePR_ISO, formatExpiryLabel } from '@/utils/helpers'
 
 const props = defineProps<{
@@ -27,7 +28,7 @@ const {
   lineBatchNos, lineExpiryDates, offerNote, deliverQtys,
   lineQtyEdits, newLines, hasUnsavedLineChanges, isRemoved, removeItem, restoreItem, addNewLine, removeNewLine, applyPickedProductToNewLine,
   receivedBy, issuedReceipt,
-  payAmount, payReference, payRemarks,
+  payAmount, payMethod, payChequeBank, payChequeNo, payChequeDate, payReference, payRemarks,
   requestedAt, requestNote,
   draftPrintDocument,
   items, isNegotiating, isAwaitingStock, isReady, isDelivered, isPartiallyPaid, isPaid, canRecordPayment,
@@ -83,8 +84,12 @@ function requestUndoPayment(p: CollectionType) {
     ref: props.order.order_no ?? null,
     fields: [
       { key: 'amount', label: 'Amount', value: p.amount ?? 0, type: 'number' },
-      { key: 'payment_method', label: 'Payment Method', value: p.payment_method, type: 'select', items: expensePaymentMethods.map((m) => ({ title: m.title, value: m.value })) },
+      { key: 'payment_method', label: 'Payment Method', value: p.payment_method, type: 'select', items: collectionPaymentMethodOptions },
       { key: 'reference_no', label: 'Reference / OR #', value: p.reference_no, type: 'text' },
+      { key: 'cheque_bank', label: 'Cheque bank', value: p.cheque_bank ?? null, type: 'text' },
+      { key: 'cheque_no', label: 'Cheque no.', value: p.cheque_no ?? null, type: 'text' },
+      { key: 'cheque_date', label: 'Cheque date', value: p.cheque_date ?? null, type: 'date' },
+      { key: 'remarks', label: 'Payment note', value: p.remarks, type: 'text' },
     ],
     voidSummary: `Void this ${formatCurrency(p.amount ?? 0)} payment on ${props.order.order_no ?? 'the order'} — reverses it in the ledger (DR AR / CR cash) and rolls the order's paid amount + status back.`,
     allowEdit: true,
@@ -376,7 +381,7 @@ const productName = (id: number | null) =>
              waives it for this order. Expired lines are never listed here —
              no approval can make expired goods deliverable. -->
         <v-card
-          v-if="shortDatedBatches.length && (isReady || isDelivered)"
+          v-if="shortDatedBatches.length && (isAwaitingStock || isReady || isDelivered)"
           variant="outlined"
           rounded="lg"
           class="mb-4 bg-amber-lighten-5"
@@ -421,7 +426,10 @@ const productName = (id: number | null) =>
 
             <template v-if="shortDatedRequest && shortDatedRequest.status === 'approved'">
               <div class="text-body-2 text-success font-weight-medium">
-                Approved — this order may be delivered.
+                <template v-if="isAwaitingStock">
+                  Approved — press <strong>Re-check stock</strong> above; the short-dated stock now counts.
+                </template>
+                <template v-else>Approved — this order may be delivered.</template>
                 <span v-if="shortDatedRequest.resolution_note">
                   ({{ shortDatedRequest.resolution_note }})
                 </span>
@@ -509,8 +517,10 @@ const productName = (id: number | null) =>
               <div v-for="p in payments" :key="p.id" class="d-flex justify-space-between align-center text-caption py-1" style="border-bottom:1px solid #eee">
                 <span>
                   <b>{{ formatCurrency(p.amount ?? 0) }}</b>
+                  <span class="text-medium-emphasis"> · {{ collectionMethodLabel(p.payment_method) }}</span>
+                  <span v-if="chequeLabel(p)" class="text-medium-emphasis"> ({{ chequeLabel(p) }})</span>
                   <span v-if="p.reference_no" class="text-medium-emphasis"> — Ref: {{ p.reference_no }}</span>
-                  <span v-if="p.remarks" class="text-medium-emphasis"> ({{ p.remarks }})</span>
+                  <span v-if="p.remarks" class="text-medium-emphasis"> — {{ p.remarks }}</span>
                 </span>
                 <span class="d-flex align-center ga-1">
                   <span class="text-medium-emphasis">{{ formatDatePR_ISO(p.created_at) }}</span>
@@ -529,22 +539,20 @@ const productName = (id: number | null) =>
                 {{ isPartiallyPaid ? 'Record next tranche' : 'Record payment (in full or in terms)' }}
                 — outstanding: {{ formatCurrency(balance) }}
               </div>
-              <v-row dense>
-                <v-col cols="12" sm="6" md="3">
-                  <v-text-field v-model.number="payAmount" type="number" min="0" :max="balance" prefix="₱" label="Amount" variant="outlined" density="compact" hide-details />
-                </v-col>
-                <!-- Where the money landed. Required: without it the payment
-                     never reaches cash_accounts.balance. -->
-                <v-col cols="12" sm="6" md="3">
-                  <v-select v-model="payCashAccountId" :items="cashAccountOptions" label="Deposit To *" variant="outlined" density="compact" hide-details />
-                </v-col>
-                <v-col cols="12" sm="6" md="3">
-                  <v-text-field v-model="payReference" label="Reference / OR #" variant="outlined" density="compact" hide-details />
-                </v-col>
-                <v-col cols="12" sm="6" md="3">
-                  <v-text-field v-model="payRemarks" label="Remarks (optional)" variant="outlined" density="compact" hide-details />
-                </v-col>
-              </v-row>
+              <!-- Deposited to is required: without it the payment never
+                   reaches cash_accounts.balance. -->
+              <CollectionPaymentFields
+                v-model:amount="payAmount"
+                v-model:method="payMethod"
+                v-model:reference="payReference"
+                v-model:cash-account-id="payCashAccountId"
+                v-model:cheque-bank="payChequeBank"
+                v-model:cheque-no="payChequeNo"
+                v-model:cheque-date="payChequeDate"
+                v-model:remarks="payRemarks"
+                :balance="balance"
+                :cash-account-options="cashAccountOptions"
+              />
               <div class="d-flex justify-end mt-2">
                 <v-btn color="success" size="small" class="text-none font-weight-bold" elevation="0" :loading="loading"
                   :disabled="!payAmount || payAmount <= 0 || payAmount > balance || payCashAccountId === null" @click="recordPayment">

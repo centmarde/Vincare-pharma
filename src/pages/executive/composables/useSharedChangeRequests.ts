@@ -3,6 +3,7 @@ import { storeToRefs } from 'pinia'
 import { useChangeRequestsDataStore } from '@/stores/changeRequestsData'
 import { shortDatedRequestType } from '@/pages/inhouse/stores/shortDatedApproval'
 import { termsRequestTypes } from '@/stores/shared/termsApprovalGuards'
+import { collectionIdKey } from '@/stores/changeRequests/types'
 
 // Approver-side wrapper around the SHARED changeRequestsData store, scoped to
 // the in-house/ethical payment (collection) requests that store still owns —
@@ -11,7 +12,9 @@ import { termsRequestTypes } from '@/stores/shared/termsApprovalGuards'
 // / useChangeRequestsPR so the executive Action Required widget can aggregate
 // all four queues with one call shape. No Supabase here — every query lives in
 // the store (fetchRequests carries the type scope).
-const SHARED_TYPES = ['inhouse_order', 'ethical_order']
+// 'sale' for payments on sales charged to account — only those: a request to
+// void the sale itself belongs to the Sales queue (useSalesChangeRequests).
+const SHARED_TYPES = ['inhouse_order', 'ethical_order', 'sale']
 
 export function useSharedChangeRequests() {
   const store = useChangeRequestsDataStore()
@@ -25,7 +28,9 @@ export function useSharedChangeRequests() {
   // The same goes for the lock / unlock terms requests (useExecutiveApproveTerms).
   const ownQueues = [shortDatedRequestType, ...termsRequestTypes]
   const requests = computed(() =>
-    allRequests.value.filter((r) => !ownQueues.includes(r.request_type as string)),
+    allRequests.value.filter((r) =>
+      !ownQueues.includes(r.request_type as string)
+      && (r.transaction_type !== 'sale' || collectionIdKey in (r.proposed_changes ?? {}))),
   )
 
   async function refresh() {

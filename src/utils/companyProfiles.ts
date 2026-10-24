@@ -60,6 +60,7 @@ export type PrintedDocumentKind =
   | 'ethical_invoice'
   | 'delivery_receipt'
   | 'statement_of_account'
+  | 'credit_memo'
   | 'disbursement_voucher'
   | 'rfq'
   | 'purchase_order'
@@ -76,6 +77,8 @@ const DEFAULTS: Record<PrintedDocumentKind, CompanyKey> = {
   ethical_invoice: 'exelmed',
   delivery_receipt: 'exelmed',
   statement_of_account: 'exelmed',
+  // Reduces what the customer owes — tax-facing, so the same entity as the invoice.
+  credit_memo: 'exelmed',
   disbursement_voucher: 'exelmed',
   rfq: 'vincare',
   purchase_order: 'vincare',

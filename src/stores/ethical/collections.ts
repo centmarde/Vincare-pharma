@@ -7,6 +7,8 @@ import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useGLDataStore } from '@/stores/glData'
 import type { CollectionType, CommissionSummaryRow } from './types'
+import { isCreditSettlement } from '@/utils/paymentMethods'
+import type { ChequeDetails } from '@/utils/paymentMethods'
 import { collections, commissionSummary, loading, handleError, clearError } from './state'
 import { fetchOrders } from './orders'
 
@@ -32,8 +34,18 @@ export async function recordCollection(payload: {
   // cash_accounts.balance, which only ever decreased (expenses, vouchers,
   // rebate payouts) and eventually blocks disbursements on a false
   // "insufficient balance".
-  cashAccountId: number
+  // Null only for a return credit (method 'return_credit'): returned goods
+  // settling the bill, so no money lands anywhere.
+  cashAccountId: number | null
+  /**
+   * The cheque, when the payment was one. Written to collections.cheque_bank /
+   * cheque_no / cheque_date — only when present, so a cash payment never
+   * touches those columns.
+   */
+  cheque?: ChequeDetails | null
 }) {
+  // A return credit or a credit memo: settled by a credit, so no money moves.
+  const isReturnCredit = isCreditSettlement(payload.method)
   loading.value = true
   clearError()
   const { user, error: authError } = await getAuthStore().getCurrentUser()
@@ -65,7 +77,8 @@ export async function recordCollection(payload: {
   }
 
   let commissionRate = 0
-  if (order.agent_id) {
+  // No commission on goods that came back.
+  if (order.agent_id && !isReturnCredit) {
     const { data: agent } = await supabase.from('agents').select('commission_rate').eq('id', order.agent_id).maybeSingle()
     commissionRate = agent?.commission_rate ?? 0
   }
@@ -73,12 +86,18 @@ export async function recordCollection(payload: {
   const newStatus = paid + payload.amount >= total ? 'paid' : 'partial'
 
   // Resolve the receiving account before writing anything — a collection
-  // pointing at a missing account would record money as landing nowhere.
-  const { data: account, error: accountError } = await supabase
-    .from('cash_accounts').select('id, name, balance').eq('id', payload.cashAccountId).maybeSingle()
-  if (accountError || !account) {
-    toast.error('Select a valid cash account to deposit this payment into.')
-    loading.value = false; return { success: false }
+  // pointing at a missing account would record money as landing nowhere. A
+  // return credit is the one collection with no account: no money moves.
+  let account: { id: number; name: string; balance: number | null } | null = null
+  if (!isReturnCredit) {
+    const { data, error: accountError } = payload.cashAccountId == null
+      ? { data: null, error: null }
+      : await supabase.from('cash_accounts').select('id, name, balance').eq('id', payload.cashAccountId).maybeSingle()
+    if (accountError || !data) {
+      toast.error('Select a valid cash account to deposit this payment into.')
+      loading.value = false; return { success: false }
+    }
+    account = data
   }
 
   const { data: collection, error: collectionError } = await supabase
@@ -88,7 +107,11 @@ export async function recordCollection(payload: {
       payment_method: payload.method || null, reference_no: payload.reference || null,
       collected_by: user.id, agent_id: order.agent_id,
       commission_rate: commissionRate, commission_amount: commissionAmount,
-      cash_account_id: payload.cashAccountId,
+      remarks: payload.remarks || null,
+      cash_account_id: isReturnCredit ? null : payload.cashAccountId,
+      ...(payload.cheque
+        ? { cheque_bank: payload.cheque.bank, cheque_no: payload.cheque.number, cheque_date: payload.cheque.date }
+        : {}),
     })
     .select('id')
     .single()
@@ -132,18 +155,20 @@ export async function recordCollection(payload: {
   // balance write in the app (JS-over-RPC convention) — a failure here is
   // logged and surfaced rather than rolled back, since the collection itself
   // is the record of record and cash_accounts.balance is an operational cache.
-  const { error: balanceError } = await supabase
-    .from('cash_accounts')
-    .update({ balance: (account.balance ?? 0) + payload.amount })
-    .eq('id', payload.cashAccountId)
-  if (balanceError) {
-    console.warn('recordCollection: cash account balance update failed:', balanceError.message)
-    toast.warning(`Collection recorded, but ${account.name}'s balance was not updated. Verify it manually.`)
+  if (account) {
+    const { error: balanceError } = await supabase
+      .from('cash_accounts')
+      .update({ balance: (account.balance ?? 0) + payload.amount })
+      .eq('id', account.id)
+    if (balanceError) {
+      console.warn('recordCollection: cash account balance update failed:', balanceError.message)
+      toast.warning(`Collection recorded, but ${account.name}'s balance was not updated. Verify it manually.`)
+    }
   }
 
   const { error: logError } = await supabase.from('logs').insert({
     created_by: user.id, action: 'collection',
-    description: `Collection of ${payload.amount} into ${account.name}${detailsError ? ' — WARNING: balance cache update failed, verify manually' : ''}`,
+    description: `${account ? `Collection of ${payload.amount} into ${account.name}` : `Returned goods credit of ${payload.amount} (${payload.reference ?? 'return'})`}${detailsError ? ' — WARNING: balance cache update failed, verify manually' : ''}`,
     module: 'ethical', transaction_id: payload.orderId,
   })
   if (logError) console.warn('recordCollection: activity log insert failed:', logError.message)
@@ -172,7 +197,7 @@ export async function recordCollection(payload: {
   }
 
   if (detailsError) toast.warning('Collection recorded, but the order balance may be out of sync — verify manually.')
-  else toast.success('Collection recorded.')
+  else toast.success(isReturnCredit ? 'Credit taken off the bill.' : 'Collection recorded.')
   await fetchOrders()
   await fetchCollections(payload.orderId)
   loading.value = false

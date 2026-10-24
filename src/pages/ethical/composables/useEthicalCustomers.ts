@@ -4,11 +4,10 @@ import { useToast } from 'vue-toastification'
 import { useCustomersDataStore } from '@/stores/customersData'
 import { useAgentsDataStore } from '@/stores/agentsData'
 import { useDiscountsDataStore } from '@/stores/discountsData'
-import { useConfirmDialog } from '@/composables/useConfirmDialog'
-import type { CreateCustomerData } from '@/stores/customersData'
+import type { CreateCustomerData, CustomerType } from '@/stores/customersData'
+import { useCustomerDelete } from '@/composables/useCustomerDelete'
 
 const toast = useToast()
-const { confirmDialog } = useConfirmDialog()
 
 // Server-side pagination size — the same 25 rows per page the list already
 // showed when the per-page dropdown was used.
@@ -148,11 +147,14 @@ export function useEthicalCustomers() {
     }
   }
 
-  async function deleteCustomer(id: number) {
-    if (!(await confirmDialog('Delete this customer?', { title: 'Confirm Delete', confirmText: 'Delete' }))) return
-    const result = await customersStore.deleteCustomer(id)
+  // Confirms first, saying what the customer is and what goes with it; a
+  // customer with orders is refused with the reason. Takes the customer, not
+  // its id: the mobile list emits the row, and an id-only handler sent the
+  // whole object as the id, so deleting from a phone always failed.
+  const { confirmAndDelete } = useCustomerDelete()
+  async function deleteCustomer(customer: CustomerType) {
+    const result = await confirmAndDelete(customer)
     if (result) {
-      toast.success('Customer deleted.')
       if (page.value > 1 && pagedCustomers.value.length === 1) {
         page.value -= 1
       } else {
@@ -160,6 +162,10 @@ export function useEthicalCustomers() {
       }
     }
   }
+
+  // Customers sharing a name, side by side (CustomerDuplicatesDialog).
+  const showDuplicates = ref(false)
+  function openDuplicates() { showDuplicates.value = true }
 
   function openCreateDialog() {
     showCreateDialog.value = true
@@ -200,6 +206,8 @@ export function useEthicalCustomers() {
     createCustomer,
     updateCustomer,
     deleteCustomer,
+    showDuplicates,
+    openDuplicates,
     openCreateDialog,
     cancelCreate,
     openEdit,

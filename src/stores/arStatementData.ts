@@ -2,7 +2,8 @@ import { ref } from 'vue'
 import type { Ref } from 'vue'
 import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
-import { getErrorMessage, parseTermDays } from '@/utils/helpers'
+import { getErrorMessage, isConsignmentTerm, parseTermDays } from '@/utils/helpers'
+import { creditMemo, isCreditSettlement, returnCredit } from '@/utils/paymentMethods'
 import { fetchAllRows, fetchAllRowsForIds } from '@/stores/shared/paging'
 import type { ARAgingTerm } from '@/stores/financeData'
 
@@ -27,12 +28,12 @@ import type { ARAgingTerm } from '@/stores/financeData'
 // a delivery_receipt_id on `collections` and a picker on the collection form —
 // at which point this allocation becomes the fallback for legacy rows.
 //
-// NOT SOURCED: the sheet's CREDIT (credit memos) and PDC (post-dated cheques)
-// columns have no table behind them and none is being added — they render blank
-// in the register. Deliberate: recording either on an existing table (as a
-// `collections` row, say) would overstate cash and misstate the GL. See
-// supabase/migrations/20260729_ar_soa_register.sql for what wiring them up
-// would actually take.
+// CREDIT: issued credit memos (and returned-goods credits), read from their
+// `collections` rows (payment_method 'credit_memo' / 'return_credit'). They are
+// applied to DRs oldest-first exactly like ORs, but land in this column, not in
+// the OR columns — a credit memo is not a payment.
+// NOT SOURCED: the PDC (post-dated cheques) column has no table behind it and
+// renders blank in the register.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type SOARegisterRow = {
@@ -60,14 +61,20 @@ export type SOARegisterRow = {
   or_no: string | null
   or_amount: number           // TOTAL applied to this DR, across every OR
   or_count: number            // how many ORs touched it (>1 => or_no is partial)
-  accounts_receivable: number // dr_amount - discount - or_amount
+  credit: number              // credit memos applied to this DR (not payments)
+  accounts_receivable: number // dr_amount - discount - or_amount - credit
 
   // aging
   due_date: string | null
   days_outstanding: number | null  // since DR date
   days_overdue: number | null      // past due date — what the buckets key off
   amount_unpaid: number
+  /**
+   * The bucket. For a consignment customer — no due date, they pay as they
+   * sell — it is the age since delivery (days_outstanding) instead.
+   */
   term: ARAgingTerm
+  consignment: boolean
   bucket_1_30: number
   bucket_31_60: number
   bucket_61_90: number
@@ -79,6 +86,7 @@ export type SOARegisterTotals = {
   dr_amount: number
   discount: number
   or_amount: number
+  credit: number
   accounts_receivable: number
   bucket_1_30: number
   bucket_31_60: number
@@ -117,7 +125,7 @@ function addDays(dateISO: string, days: number): string {
 }
 
 const EMPTY_TOTALS: SOARegisterTotals = {
-  dr_amount: 0, discount: 0, or_amount: 0, accounts_receivable: 0,
+  dr_amount: 0, discount: 0, or_amount: 0, credit: 0, accounts_receivable: 0,
   bucket_1_30: 0, bucket_31_60: 0, bucket_61_90: 0,
   bucket_91_180: 0, bucket_180_plus: 0,
 }
@@ -170,7 +178,7 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
       // back into date order: payments are applied oldest first.
       const collectionData = (await fetchAllRowsForIds<any>(orderIds, (batch) => supabase
         .from('collections')
-        .select('id, transaction_id, created_at, amount, reference_no')
+        .select('id, transaction_id, created_at, amount, reference_no, payment_method')
         .in('transaction_id', batch)
         .is('voided_at', null) // a voided payment never settled anything
         .order('created_at', { ascending: true })
@@ -193,6 +201,7 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
       const grossOf = new Map<number, number>()      // sum of line totals
       const discountOf = new Map<number, number>()
       const paidOf = new Map<number, number>()
+      const creditOf = new Map<number, number>()
       const orCountOf = new Map<number, number>()
       const lastOrOf = new Map<number, { date: string; no: string | null }>()
 
@@ -202,6 +211,7 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
         grossOf.set(dr.id, gross)
         discountOf.set(dr.id, 0)
         paidOf.set(dr.id, 0)
+        creditOf.set(dr.id, 0)
         orCountOf.set(dr.id, 0)
       }
 
@@ -236,12 +246,17 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
           const room =
             (grossOf.get(dr.id) ?? 0) -
             (discountOf.get(dr.id) ?? 0) -
-            (paidOf.get(dr.id) ?? 0)
+            (paidOf.get(dr.id) ?? 0) -
+            (creditOf.get(dr.id) ?? 0)
           if (room <= 0) continue
           const take = Math.min(room, remaining)
-          paidOf.set(dr.id, (paidOf.get(dr.id) ?? 0) + take)
-          orCountOf.set(dr.id, (orCountOf.get(dr.id) ?? 0) + 1)
-          lastOrOf.set(dr.id, { date: c.created_at, no: c.reference_no ?? null })
+          if (isCreditSettlement(c.payment_method)) {
+            creditOf.set(dr.id, (creditOf.get(dr.id) ?? 0) + take)
+          } else {
+            paidOf.set(dr.id, (paidOf.get(dr.id) ?? 0) + take)
+            orCountOf.set(dr.id, (orCountOf.get(dr.id) ?? 0) + 1)
+            lastOrOf.set(dr.id, { date: c.created_at, no: c.reference_no ?? null })
+          }
           remaining -= take
         }
       }
@@ -257,7 +272,8 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
         const drAmount = grossOf.get(dr.id) ?? 0
         const discount = discountOf.get(dr.id) ?? 0
         const orAmount = paidOf.get(dr.id) ?? 0
-        const ar = drAmount - discount - orAmount
+        const credit = creditOf.get(dr.id) ?? 0
+        const ar = drAmount - discount - orAmount - credit
 
         // Due date: the ethical order's own terms if it has them, else the
         // customer's standard terms counted from the delivery date. In-House
@@ -267,12 +283,15 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
         // returns null for arrangements that carry no day count, which keeps
         // the row un-aged instead of feeding NaN into the date arithmetic.
         const termDays = parseTermDays(customer?.term_days)
-        const dueDate: string | null =
-          ed?.due_date ?? (termDays != null ? addDays(dr.created_at, termDays) : null)
+        const consignment = isConsignmentTerm(customer?.term_days)
+        const dueDate: string | null = consignment
+          ? null
+          : ed?.due_date ?? (termDays != null ? addDays(dr.created_at, termDays) : null)
 
         const daysOverdue = dueDate ? daysBetween(dueDate, now) : null
+        const daysOutstanding = daysBetween(dr.created_at, now)
         const unpaid = ar > 0.01 ? ar : 0
-        const term = termFor(daysOverdue)
+        const term = termFor(consignment ? daysOutstanding : daysOverdue)
         const lastOr = lastOrOf.get(dr.id) ?? null
 
         return {
@@ -298,12 +317,14 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
           or_no: lastOr?.no ?? null,
           or_amount: orAmount,
           or_count: orCountOf.get(dr.id) ?? 0,
+          credit,
           accounts_receivable: ar,
           due_date: dueDate,
-          days_outstanding: daysBetween(dr.created_at, now),
+          days_outstanding: daysOutstanding,
           days_overdue: daysOverdue,
           amount_unpaid: unpaid,
           term,
+          consignment,
           bucket_1_30: term === '1-30' ? unpaid : 0,
           bucket_31_60: term === '31-60' ? unpaid : 0,
           bucket_61_90: term === '61-90' ? unpaid : 0,
@@ -359,6 +380,14 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
         .from('delivery_receipts').select('id, order_id').in('order_id', batch).order('id', { ascending: true }))
       const ordersWithDr = new Set(receiptOrders.map((r) => r.order_id))
 
+      // amount_paid includes credit memos; they belong in CREDIT, not OR.
+      const bareCredits = await fetchAllRowsForIds<any>(candidateIds, (batch) => supabase
+        .from('collections').select('id, transaction_id, amount')
+        .in('transaction_id', batch).is('voided_at', null).in('payment_method', [creditMemo, returnCredit])
+        .order('id', { ascending: true }))
+      const creditByOrder = new Map<number, number>()
+      for (const c of bareCredits) creditByOrder.set(c.transaction_id, (creditByOrder.get(c.transaction_id) ?? 0) + Number(c.amount ?? 0))
+
       const orderRows: SOARegisterRow[] = bareOrders
         .filter((o) => !ordersWithDr.has(o.id))
         .map((o) => {
@@ -373,10 +402,12 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
           const discount = Number(o.ethical_details?.discount_amount ?? 0)
           const paid = Number(details.amount_paid ?? 0)
           const ar = gross - discount - paid
-          const dueDate = details.due_date ?? null
+          const consignment = isConsignmentTerm(customer?.term_days)
+          const dueDate = consignment ? null : details.due_date ?? null
           const daysOverdue = dueDate ? daysBetween(dueDate, now) : null
+          const daysOutstanding = daysBetween(docDate, now)
           const unpaid = ar > 0.01 ? ar : 0
-          const term = termFor(daysOverdue)
+          const term = termFor(consignment ? daysOutstanding : daysOverdue)
           return {
             delivery_receipt_id: -o.id,
             order_id: o.id,
@@ -393,14 +424,16 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
             discount,
             or_date: null,
             or_no: null,
-            or_amount: paid,
+            or_amount: Math.max(0, paid - (creditByOrder.get(o.id) ?? 0)),
             or_count: 0,
+            credit: creditByOrder.get(o.id) ?? 0,
             accounts_receivable: ar,
             due_date: dueDate,
-            days_outstanding: daysBetween(docDate, now),
+            days_outstanding: daysOutstanding,
             days_overdue: daysOverdue,
             amount_unpaid: unpaid,
             term,
+            consignment,
             bucket_1_30: term === '1-30' ? unpaid : 0,
             bucket_31_60: term === '31-60' ? unpaid : 0,
             bucket_61_90: term === '61-90' ? unpaid : 0,
@@ -422,6 +455,7 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
         dr_amount: acc.dr_amount + r.dr_amount,
         discount: acc.discount + r.discount,
         or_amount: acc.or_amount + r.or_amount,
+        credit: acc.credit + r.credit,
         accounts_receivable: acc.accounts_receivable + r.accounts_receivable,
         bucket_1_30: acc.bucket_1_30 + r.bucket_1_30,
         bucket_31_60: acc.bucket_31_60 + r.bucket_31_60,

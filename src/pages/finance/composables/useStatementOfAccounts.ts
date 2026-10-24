@@ -3,7 +3,7 @@ import { storeToRefs } from 'pinia'
 import { useARStatementDataStore } from '@/stores/arStatementData'
 import type { SOARegisterRow } from '@/stores/arStatementData'
 import { useCustomersDataStore } from '@/stores/customersData'
-import { formatCurrency, formatDateShort } from '@/utils/helpers'
+import { formatCurrency, formatDateOnly, formatDateShort } from '@/utils/helpers'
 import type { ARAgingTerm } from '@/stores/financeData'
 
 // Column order mirrors the accountant's Excel sheet left-to-right, so a printed
@@ -36,6 +36,26 @@ export const SOA_HEADERS = [
   { title: 'Over 6 Months', key: 'bucket_180_plus', align: 'end' as const, width: 130 },
 ]
 
+/**
+ * The on-screen default: what a reader needs per receipt, fitting without a
+ * sideways scroll. Related figures share a cell (OR number and date under the
+ * amount collected), the five bucket columns become one aging chip with their
+ * totals shown above the table, and Credit / PDC — placeholders with nothing
+ * behind them — are left out. "Full sheet" and the CSV keep SOA_HEADERS.
+ */
+export const SOA_COMPACT_HEADERS = [
+  { title: 'Customer', key: 'customer_name' },
+  { title: 'DR', key: 'dr_no' },
+  { title: 'Order', key: 'so_no' },
+  { title: 'DR Amount', key: 'dr_amount', align: 'end' as const },
+  { title: 'Discount', key: 'discount', align: 'end' as const },
+  { title: 'Collected', key: 'or_amount', align: 'end' as const },
+  { title: 'Credit memo', key: 'credit', align: 'end' as const },
+  { title: 'Balance', key: 'accounts_receivable', align: 'end' as const },
+  { title: 'Due', key: 'due_date' },
+  { title: 'Aging', key: 'term' },
+]
+
 export const TERM_LABELS: Record<ARAgingTerm, string> = {
   current: 'Current',
   '1-30': '1–30 days',
@@ -46,14 +66,24 @@ export const TERM_LABELS: Record<ARAgingTerm, string> = {
   'no-term': 'No term',
 }
 
+// Explicit green for "current": the theme's 'success' is a shade of the brand
+// red, so a receivable not yet due read exactly like an overdue one.
 export const TERM_COLORS: Record<ARAgingTerm, string> = {
-  current: 'success',
+  current: 'green-darken-1',
   '1-30': 'warning',
   '31-60': 'warning',
   '61-90': 'error',
   '91-180': 'error',
   '180+': 'error',
   'no-term': 'grey',
+}
+
+/**
+ * A row's aging label. A consignment row is aged by days since delivery, not
+ * against a due date, so it says so: 'Consignment · 31–60 days'.
+ */
+export function termLabel(row: Pick<SOARegisterRow, 'term' | 'consignment'>): string {
+  return row.consignment ? `Consignment · ${TERM_LABELS[row.term]}` : TERM_LABELS[row.term]
 }
 
 export function useStatementOfAccounts() {
@@ -70,6 +100,8 @@ export function useStatementOfAccounts() {
   const filterDateFrom = ref<string | null>(null)
   const filterDateTo = ref<string | null>(null)
   const outstandingOnly = ref(true)
+  /** Every column, in the Excel order, instead of the compact view. */
+  const fullSheet = ref(false)
 
   const asOfLabel = computed(() =>
     new Date().toLocaleDateString('en-PH', {
@@ -90,6 +122,25 @@ export function useStatementOfAccounts() {
   )
 
   const outstandingTotal = computed(() => totals.value.accounts_receivable)
+
+  // The compact view drops the Discount column when no receipt has one — it
+  // would be a column of dashes.
+  // ...and the Credit memo column when none was issued.
+  const compactHeaders = computed(() => SOA_COMPACT_HEADERS.filter((h) =>
+    (h.key !== 'discount' || totals.value.discount > 0.005) && (h.key !== 'credit' || totals.value.credit > 0.005)))
+
+  /**
+   * The aging buckets as one strip of totals above the table, standing in for
+   * the five bucket columns. Every bucket shows (zero included) so the strip
+   * always reads the same.
+   */
+  const agingSummary = computed(() => {
+    const unpaid = (term: ARAgingTerm) =>
+      register.value.filter((r) => r.term === term).reduce((sum, r) => sum + r.amount_unpaid, 0)
+    return (['current', '1-30', '31-60', '61-90', '91-180', '180+', 'no-term'] as ARAgingTerm[])
+      .map((term) => ({ term, label: TERM_LABELS[term], color: TERM_COLORS[term], amount: unpaid(term) }))
+      .filter((b) => b.term !== 'no-term' || b.amount > 0)
+  })
 
   const agedTotal = computed(() =>
     totals.value.bucket_1_30 + totals.value.bucket_31_60 + totals.value.bucket_61_90 +
@@ -131,14 +182,17 @@ export function useStatementOfAccounts() {
       case 'dr_date':
       case 'or_date':
       case 'due_date':
-        return formatDateShort(row[key as 'dr_date' | 'or_date' | 'due_date'])
+        // Date only: these are calendar dates, and the time formatDateShort
+        // appends read as "08:00am" on every row and in the CSV.
+        return formatDateOnly(row[key as 'dr_date' | 'or_date' | 'due_date'])
       case 'term':
-        return TERM_LABELS[row.term]
+        return termLabel(row)
       case 'po_amount':
         return row.po_amount == null ? '' : formatCurrency(row.po_amount)
-      // Layout placeholders: no table backs credit memos or post-dated cheques,
-      // so these stay blank rather than showing a fabricated ₱0.00.
+      // Credit memos applied to this DR; blank when none.
       case 'credit':
+        return row.credit > 0.005 ? formatCurrency(row.credit) : ''
+      // Layout placeholder: no table backs post-dated cheques.
       case 'pdc_amount':
         return '—'
       case 'dr_amount':
@@ -184,7 +238,8 @@ export function useStatementOfAccounts() {
 
   return {
     register, totals, loading,
-    filterCustomerId, filterArea, filterSource, filterDateFrom, filterDateTo, outstandingOnly,
+    filterCustomerId, filterArea, filterSource, filterDateFrom, filterDateTo, outstandingOnly, fullSheet,
+    compactHeaders, agingSummary,
     areaOptions, customerOptions, asOfLabel, outstandingTotal, agedTotal,
     unagedRows, unagedTotal,
     SOA_HEADERS, TERM_LABELS, TERM_COLORS,

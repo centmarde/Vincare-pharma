@@ -4,7 +4,8 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { fetchAllRows, fetchAllRowsForIds } from '@/stores/shared/paging'
-import { chargeToAccount } from '@/utils/paymentMethods'
+import { chargeToAccount, isCreditSettlement } from '@/utils/paymentMethods'
+import type { ChequeDetails } from '@/utils/paymentMethods'
 import { formatCurrency, getErrorMessage } from '@/utils/helpers'
 
 // POS sales charged to a customer account (pos_sale_details.payment_method
@@ -69,8 +70,17 @@ export const useSalesChargesStore = defineStore('salesCharges', () => {
     method?: string | null
     reference?: string | null
     remarks?: string | null
-    cashAccountId: number
+    /** Null only for a return credit (method 'return_credit'): no money moves. */
+    cashAccountId: number | null
+    /**
+     * The cheque, when the payment was one. Written to collections.cheque_bank /
+     * cheque_no / cheque_date — only when present, so a cash payment never
+     * touches those columns.
+     */
+    cheque?: ChequeDetails | null
   }): Promise<{ success: boolean }> {
+    // A return credit or a credit memo: settled by a credit, so no money moves.
+    const isReturnCredit = isCreditSettlement(payload.method)
     loading.value = true
     error.value = ''
     try {
@@ -104,10 +114,15 @@ export const useSalesChargesStore = defineStore('salesCharges', () => {
       }
 
       // The receiving account first: a payment pointing at a missing account
-      // would record money as landing nowhere.
-      const { data: account, error: accountError } = await supabase
-        .from('cash_accounts').select('id, name, balance').eq('id', payload.cashAccountId).maybeSingle()
-      if (accountError || !account) { toast.error('Select a valid cash account to deposit this payment into.'); return { success: false } }
+      // would record money as landing nowhere. A return credit has none.
+      let account: { id: number; name: string; balance: number | null } | null = null
+      if (!isReturnCredit) {
+        const { data, error: accountError } = payload.cashAccountId == null
+          ? { data: null, error: null }
+          : await supabase.from('cash_accounts').select('id, name, balance').eq('id', payload.cashAccountId).maybeSingle()
+        if (accountError || !data) { toast.error('Select a valid cash account to deposit this payment into.'); return { success: false } }
+        account = data
+      }
 
       const { error: insertError } = await supabase.from('collections').insert({
         transaction_id: sale.id,
@@ -116,28 +131,36 @@ export const useSalesChargesStore = defineStore('salesCharges', () => {
         reference_no: payload.reference || null,
         collected_by: user.id,
         remarks: payload.remarks || null,
-        cash_account_id: payload.cashAccountId,
+        cash_account_id: isReturnCredit ? null : payload.cashAccountId,
+        ...(payload.cheque
+          ? { cheque_bank: payload.cheque.bank, cheque_no: payload.cheque.number, cheque_date: payload.cheque.date }
+          : {}),
       })
       if (insertError) throw insertError
 
       // Best-effort like every other balance write here (JS-over-RPC
       // convention): surfaced, not rolled back — the collections row is the record.
-      const { error: balanceError } = await supabase
-        .from('cash_accounts')
-        .update({ balance: (account.balance ?? 0) + payload.amount })
-        .eq('id', payload.cashAccountId)
-      if (balanceError) {
-        console.warn('recordPayment: cash account balance update failed:', balanceError.message)
-        toast.warning(`Payment recorded, but ${account.name}'s balance was not updated. Verify it manually.`)
+      if (account) {
+        const { error: balanceError } = await supabase
+          .from('cash_accounts')
+          .update({ balance: (account.balance ?? 0) + payload.amount })
+          .eq('id', account.id)
+        if (balanceError) {
+          console.warn('recordPayment: cash account balance update failed:', balanceError.message)
+          toast.warning(`Payment recorded, but ${account.name}'s balance was not updated. Verify it manually.`)
+        }
       }
 
       const { error: logError } = await supabase.from('logs').insert({
         created_by: user.id, action: 'payment', module: 'pos', transaction_id: sale.id,
-        description: `Payment of ${formatCurrency(payload.amount)} on ${sale.sale_no ?? `sale #${sale.id}`} into ${account.name} (${formatCurrency(paid + payload.amount)} of ${formatCurrency(Number(sale.total_amount ?? 0))})`,
+        description: `${account ? 'Payment' : 'Returned goods credit'} of ${formatCurrency(payload.amount)} on ${sale.sale_no ?? `sale #${sale.id}`}${account ? ` into ${account.name}` : ` (${payload.reference ?? 'return'})`} (${formatCurrency(paid + payload.amount)} of ${formatCurrency(Number(sale.total_amount ?? 0))})`,
       })
       if (logError) console.warn('recordPayment: activity log insert failed:', logError.message)
 
-      toast.success(balance - payload.amount <= 0.005 ? 'Payment recorded — paid in full.' : 'Payment recorded.')
+      const settled = balance - payload.amount <= 0.005
+      toast.success(isReturnCredit
+        ? (settled ? 'Credit taken off the bill — paid in full.' : 'Credit taken off the bill.')
+        : (settled ? 'Payment recorded — paid in full.' : 'Payment recorded.'))
       return { success: true }
     } catch (err) {
       error.value = getErrorMessage(err) || 'Failed to record the payment.'
