@@ -4,6 +4,7 @@ import { useToast } from 'vue-toastification'
 import { useCustomersDataStore } from '@/stores/customersData'
 import { useDiscountsDataStore } from '@/stores/discountsData'
 import type { CustomerType, CreateCustomerData } from '@/stores/customersData'
+import { useCustomerDelete } from '@/composables/useCustomerDelete'
 
 export const headers = [
   {title: 'Customer',key: 'name',sortable: true,align: 'start' as const,},
@@ -231,13 +232,16 @@ export function useCustomers() {
     return true
   }
 
+  // Confirms first, saying what the customer is and what goes with it; a
+  // customer with orders is refused with the reason.
+  const { confirmAndDelete } = useCustomerDelete()
   async function remove(customer: CustomerType) {
-    const success = await store.deleteCustomer(customer.id)
-
-    if (success) {
-      await reload()
-    }
+    if (await confirmAndDelete(customer)) await reload()
   }
+
+  // Customers sharing a name, side by side (CustomerDuplicatesDialog).
+  const showDuplicates = ref(false)
+  function openDuplicates() { showDuplicates.value = true }
 
   function profileFor(customerId: number | null | undefined) {
     return discountsStore.profileFor(customerId)
@@ -271,6 +275,8 @@ export function useCustomers() {
     cancelForm,
     submit,
     remove,
+    showDuplicates,
+    openDuplicates,
     init,
   }
 }

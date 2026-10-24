@@ -7,6 +7,7 @@ import FieldValue from '@/components/customers/FieldValue.vue'
 import CustomerDetailPanel from '@/components/customers/CustomerDetailPanel.vue'
 import CustomerCRUDMobile from '@/pages/inhouse/mobile/CustomerCRUDMobile.vue'
 import CustomerFormDialog from '@/pages/inhouse/dialogs/CustomerFormDialog.vue'
+import CustomerDuplicatesDialog from '@/components/customers/CustomerDuplicatesDialog.vue'
 import { label, NOT_SET } from '@/utils/helpers'
 
 const { mobile } = useDisplay()
@@ -31,6 +32,9 @@ const {
   cancelForm,
   submit,
   remove,
+  reload,
+  showDuplicates,
+  openDuplicates,
   init,
 } = useCustomers()
 
@@ -137,6 +141,16 @@ onMounted(init)
             hide-details
             inset
           />
+
+          <v-btn
+            variant="tonal"
+            size="small"
+            class="text-none"
+            prepend-icon="mdi-account-multiple-outline"
+            @click="openDuplicates"
+          >
+            Duplicates
+          </v-btn>
         </div>
 
         <v-fade-transition>
@@ -382,6 +396,12 @@ onMounted(init)
         @submit="submit"
       />
     </div>
+    <CustomerDuplicatesDialog
+      v-model="showDuplicates"
+      department="inhouse"
+      :profile-for="profileFor"
+      @changed="reload"
+    />
   </v-container>
 </template>
 
