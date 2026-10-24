@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import AcceptReturnDialog from '../dialogs/AcceptReturnDialog.vue'
 import IssueReplacementDialog from '../dialogs/IssueReplacementDialog.vue'
+import ApplyReturnCreditDialog from '../dialogs/ApplyReturnCreditDialog.vue'
 import { useSalesReturns } from '../composables/useSalesReturns'
 
 const {
@@ -9,6 +10,7 @@ const {
   settlementLabel, settlementColor,
   showAcceptDialog, openAcceptDialog, onReturnCreated,
   showReplacementDialog, replacementTarget, openReplacementDialog, onReplacementIssued,
+  showApplyDialog, applyTarget, openApplyDialog, onCreditApplied, canReplace, canApply,
   formatCurrency, formatDate,
 } = useSalesReturns()
 </script>
@@ -39,9 +41,9 @@ const {
 
       <v-card-text class="pa-3 pa-sm-5">
         <p class="text-body-2 text-medium-emphasis mb-4">
-          Returned goods are exchanged for other goods, never refunded as money. Items in
-          good condition go back to their original batch; expired or broken items are
-          written off and never re-enter stock.
+          Returned goods are never refunded as money. Their value is exchanged for other goods,
+          taken off what the customer owes by credit memo, or both. Items in good condition go back to their
+          original batch; expired or broken items are written off and never re-enter stock.
         </p>
 
         <v-data-table
@@ -78,17 +80,37 @@ const {
             <div v-if="writeOffValue(item) > 0" class="text-caption text-warning">
               {{ formatCurrency(writeOffValue(item)) }} written off
             </div>
+            <div v-if="item.credit_remaining == null" class="text-caption text-error">Credit left: unknown</div>
+            <div v-else-if="item.credit_replaced > 0 || item.credit_applied > 0 || item.credit_pending > 0" class="text-caption text-medium-emphasis">
+              {{ formatCurrency(item.credit_remaining) }} left
+              <template v-if="item.credit_pending > 0"> · {{ formatCurrency(item.credit_pending) }} awaiting approval</template>
+            </div>
           </template>
 
           <template #[`item.actions`]="{ item }">
-            <v-btn
-              size="small"
-              variant="tonal"
-              prepend-icon="mdi-swap-horizontal"
-              @click="openReplacementDialog(item)"
-            >
-              Issue Replacement
-            </v-btn>
+            <div class="d-flex flex-wrap justify-end ga-1 py-1">
+              <v-btn
+                size="small"
+                variant="tonal"
+                class="text-none"
+                prepend-icon="mdi-swap-horizontal"
+                :disabled="!canReplace(item)"
+                @click="openReplacementDialog(item)"
+              >
+                Issue Replacement
+              </v-btn>
+              <v-btn
+                size="small"
+                variant="tonal"
+                color="primary"
+                class="text-none"
+                prepend-icon="mdi-file-document-minus-outline"
+                :disabled="!canApply(item)"
+                @click="openApplyDialog(item)"
+              >
+                Issue Credit Memo
+              </v-btn>
+            </div>
           </template>
 
           <template #no-data>
@@ -114,6 +136,11 @@ const {
       v-model="showReplacementDialog"
       :return-row="replacementTarget"
       @issued="onReplacementIssued"
+    />
+    <ApplyReturnCreditDialog
+      v-model="showApplyDialog"
+      :return-row="applyTarget"
+      @applied="onCreditApplied"
     />
   </v-container>
 </template>

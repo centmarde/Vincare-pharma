@@ -10,6 +10,7 @@ import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { useTermsApprovalStore, isWithdrawn } from '@/stores/termsApprovalData'
 import type { TermsRequest } from '@/stores/termsApprovalData'
 import { formatCurrency } from '@/utils/helpers'
+import { chequeFor, chequeLabel, chequeProblem, collectionMethodLabel } from '@/utils/paymentMethods'
 
 const toast = useToast()
 const { confirmDialog, inputValue: confirmInput } = useConfirmDialog()
@@ -27,9 +28,13 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
 
   const loading = ref(false)
   const collectionAmount = ref(0)
-  const collectionMethod = ref('')
+  const collectionMethod = ref('cash')
   const collectionReference = ref('')
   const collectionRemarks = ref('')
+  // A cheque's details — required when the method is Cheque.
+  const collectionChequeBank = ref('')
+  const collectionChequeNo = ref('')
+  const collectionChequeDate = ref('')
   // Where the money is deposited. A collection has to land in a real account or
   // cash_accounts.balance never reflects the payment.
   const collectionCashAccountId = ref<number | null>(null)
@@ -188,14 +193,19 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
     if (collectionAmount.value <= 0) { toast.warning('Amount must be positive'); return }
     if (collectionAmount.value > balance.value) { toast.warning('Amount exceeds balance'); return }
     if (collectionCashAccountId.value === null) { toast.warning('Choose which cash account received this payment'); return }
+    const chequeInput = { bank: collectionChequeBank.value, number: collectionChequeNo.value, date: collectionChequeDate.value }
+    const chequeMissing = chequeProblem(collectionMethod.value, chequeInput)
+    if (chequeMissing) { toast.warning(`Enter ${chequeMissing} for this cheque`); return }
+    const cheque = chequeFor(collectionMethod.value, chequeInput)
 
     const willFullyPay = collectionAmount.value >= balance.value
     const summary = [
       `Amount: ${formatCurrency(collectionAmount.value)}`,
-      collectionMethod.value ? `Method: ${collectionMethod.value}` : '',
+      `Method: ${collectionMethodLabel(collectionMethod.value)}`,
+      cheque ? `Cheque: ${chequeLabel({ cheque_bank: cheque.bank, cheque_no: cheque.number, cheque_date: cheque.date })}` : '',
       `Reference / OR #: ${collectionReference.value || '—'}`,
       `Deposited to: ${cashAccountName(collectionCashAccountId.value)}`,
-      `Remarks: ${collectionRemarks.value || '—'}`,
+      `Note: ${collectionRemarks.value || '—'}`,
       `Remaining balance after this: ${formatCurrency(Math.max(0, balance.value - collectionAmount.value))}`,
       willFullyPay ? 'This will mark the order as PAID IN FULL.' : '',
     ].filter(Boolean).join('\n')
@@ -210,14 +220,18 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
       reference: collectionReference.value || undefined,
       remarks: collectionRemarks.value || undefined,
       cashAccountId: collectionCashAccountId.value,
+      cheque,
     })
     loading.value = false
     if (result.success) {
       collectionAmount.value = 0
-      collectionMethod.value = ''
+      collectionMethod.value = 'cash'
       collectionReference.value = ''
       collectionRemarks.value = ''
       collectionCashAccountId.value = null
+      collectionChequeBank.value = ''
+      collectionChequeNo.value = ''
+      collectionChequeDate.value = ''
     }
   }
 
@@ -253,6 +267,9 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
     collectionReference,
     collectionRemarks,
     collectionCashAccountId,
+    collectionChequeBank,
+    collectionChequeNo,
+    collectionChequeDate,
     cashAccountOptions,
     receivedBy,
     issuedReceipt,

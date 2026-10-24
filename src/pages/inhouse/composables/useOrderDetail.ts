@@ -14,6 +14,7 @@ import { useFinanceDataStore } from '@/stores/financeData'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { formatCurrency } from '@/utils/helpers'
+import { chequeFor, chequeLabel, chequeProblem, collectionMethodLabel } from '@/utils/paymentMethods'
 import type { CollectionType } from '@/stores/ethicalData'
 import type { DraftPrintDocument } from '@/components/orderPrint/useDraftOrderPrint'
 
@@ -103,9 +104,14 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   // set after a successful delivery so the parent can pop the printable DR
   const issuedReceipt = ref<DeliveryReceiptType | null>(null)
   // payment panel: government POs are often paid in tranches, not lump-sum
-  const payAmount = ref<number | null>(null)
+  const payAmount = ref(0)
+  const payMethod = ref('cash')
   const payReference = ref('')
   const payRemarks = ref('')
+  // A cheque's details — required when the method is Cheque.
+  const payChequeBank = ref('')
+  const payChequeNo = ref('')
+  const payChequeDate = ref('')
   // Where the money is deposited. Without it nothing ever credited
   // cash_accounts.balance, which only ever decreased.
   const payCashAccountId = ref<number | null>(null)
@@ -197,7 +203,11 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     offerNote.value = ''
     payReference.value = ''
     payRemarks.value = ''
-    payAmount.value = null
+    payAmount.value = 0
+    payMethod.value = 'cash'
+    payChequeBank.value = ''
+    payChequeNo.value = ''
+    payChequeDate.value = ''
     payCashAccountId.value = null
     requestedAt.value = null
     shortDatedBatches.value = []
@@ -461,15 +471,21 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   }
 
   async function recordPayment() {
-    const o = order(); if (!o || payAmount.value == null || payAmount.value <= 0) return
+    const o = order(); if (!o || !(payAmount.value > 0)) return
     if (payCashAccountId.value === null) { toast.warning('Choose which cash account received this payment'); return }
+    const chequeInput = { bank: payChequeBank.value, number: payChequeNo.value, date: payChequeDate.value }
+    const chequeMissing = chequeProblem(payMethod.value, chequeInput)
+    if (chequeMissing) { toast.warning(`Enter ${chequeMissing} for this cheque`); return }
+    const cheque = chequeFor(payMethod.value, chequeInput)
 
     const willFullyPay = payAmount.value >= balance.value
     const summary = [
       `Amount: ${formatCurrency(payAmount.value)}`,
+      `Method: ${collectionMethodLabel(payMethod.value)}`,
+      cheque ? `Cheque: ${chequeLabel({ cheque_bank: cheque.bank, cheque_no: cheque.number, cheque_date: cheque.date })}` : '',
       `Reference / OR #: ${payReference.value || '—'}`,
       `Deposited to: ${cashAccountName(payCashAccountId.value)}`,
-      `Remarks: ${payRemarks.value || '—'}`,
+      `Note: ${payRemarks.value || '—'}`,
       `Remaining balance after this: ${formatCurrency(Math.max(0, balance.value - payAmount.value))}`,
       willFullyPay ? 'This will mark the order as PAID IN FULL.' : '',
     ].filter(Boolean).join('\n')
@@ -480,15 +496,21 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     const result = await store.recordPayment({
       orderId:   o.id,
       amount:    payAmount.value,
+      method:    payMethod.value,
       reference: payReference.value || undefined,
       remarks:   payRemarks.value || undefined,
       cashAccountId: payCashAccountId.value,
+      cheque,
     })
     loading.value = false
     if (result.success) {
       payReference.value = ''
       payRemarks.value = ''
       payCashAccountId.value = null
+      payMethod.value = 'cash'
+      payChequeBank.value = ''
+      payChequeNo.value = ''
+      payChequeDate.value = ''
       await loadPayments(o.id)
       onChanged()
     }
@@ -532,7 +554,8 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     lineBatchNos, lineExpiryDates, offerNote, deliverQtys,
     lineQtyEdits, newLines, hasUnsavedLineChanges, isRemoved, removeItem, restoreItem, addNewLine, removeNewLine, applyPickedProductToNewLine,
     receivedBy, issuedReceipt,
-    payAmount, payReference, payRemarks, payCashAccountId, cashAccountOptions,
+    payAmount, payMethod, payReference, payRemarks, payCashAccountId, cashAccountOptions,
+    payChequeBank, payChequeNo, payChequeDate,
     requestedAt, requestNote,
     shortDatedBatches, shortDatedRequest, shortDatedNote,
     loadShortDated, requestShortDatedApproval,

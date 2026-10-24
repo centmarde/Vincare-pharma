@@ -1,10 +1,15 @@
 <script setup lang="ts">
+import { computed, watch } from 'vue'
 import { formatCurrency, formatDate } from '@/utils/helpers'
-import type { ARReceivableDetail } from '@/stores/financeData'
+import { chequeLabel, collectionMethodLabel, collectionPaymentMethodOptions } from '@/utils/paymentMethods'
+import type { ARReceivableDetail, ARReceivablePayment } from '@/stores/financeData'
 import { financePageSizes, financeDefaultPageSize } from '../../composables/financeTable'
 import { arSourceDocument } from '../../composables/useAccountsReceivable'
+import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
+import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
+import { useChangeRequestsDataStore } from '@/stores/changeRequestsData'
 
-defineProps<{
+const props = defineProps<{
   modelValue: boolean
   loading: boolean
   detail: ARReceivableDetail | null
@@ -14,7 +19,51 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
   /** A POS charge: its payments are recorded here, at the office. */
   (e: 'recordPayment'): void
+  /** A change request was filed — the receivable's status moved. */
+  (e: 'changed'): void
+  /** Ask for a credit memo (an allowance) on this bill. */
+  (e: 'issueCreditMemo'): void
 }>()
+
+// A payment on a POS charge is corrected or voided through an executive-
+// approved change request, the same as an Ethical or In-House payment. The
+// Ethical and In-House ones are filed from their order screens; a POS charge
+// has no order screen, so here.
+const { showDialog: crDialog, config: crConfig, isPending: crPending, loadPending: crLoad, open: crOpen, submit: crSubmit, submitting: crSubmitting } =
+  useChangeRequestFiling(useChangeRequestsDataStore())
+const isCharge = computed(() => props.detail?.source === 'sale')
+watch(() => props.detail?.id, () => { if (isCharge.value) void crLoad() }, { immediate: true })
+// While a request is pending the sale is gated, so no further payment either.
+const changePending = computed(() => props.detail?.status === 'change_request')
+
+function requestPaymentChange(p: ARReceivablePayment) {
+  const d = props.detail
+  if (!d) return
+  crOpen({
+    // The SALE's id — change_requests.transaction_id is FK'd to transactions;
+    // which payment it is travels in meta (__collection_id).
+    id: d.id,
+    ref: d.reference_no ?? null,
+    fields: [
+      { key: 'amount', label: 'Amount', value: p.amount, type: 'number' },
+      { key: 'payment_method', label: 'Payment Method', value: p.payment_method, type: 'select', items: collectionPaymentMethodOptions },
+      { key: 'reference_no', label: 'Reference / OR #', value: p.reference_no, type: 'text' },
+      { key: 'cheque_bank', label: 'Cheque bank', value: p.cheque_bank, type: 'text' },
+      { key: 'cheque_no', label: 'Cheque no.', value: p.cheque_no, type: 'text' },
+      { key: 'cheque_date', label: 'Cheque date', value: p.cheque_date, type: 'date' },
+      { key: 'remarks', label: 'Payment note', value: p.remarks, type: 'text' },
+    ],
+    voidSummary: `Void this ${formatCurrency(p.amount)} payment on ${d.reference_no ?? 'the sale'} — reverses it in the ledger and puts it back on what the customer owes.`,
+    allowEdit: true,
+    allowVoid: true,
+    meta: { __collection_id: { from: p.id, to: p.id } },
+  })
+}
+
+async function submitChange(payload: Parameters<typeof crSubmit>[0]) {
+  await crSubmit(payload)
+  if (!crDialog.value) emit('changed')
+}
 
 const lineHeaders = [
   { title: 'PRODUCT', key: 'product_name', sortable: false, align: 'start' as const },
@@ -23,12 +72,15 @@ const lineHeaders = [
   { title: 'LINE TOTAL', key: 'line_total', sortable: false, align: 'end' as const },
 ]
 
-const paymentHeaders = [
+const basePaymentHeaders = [
   { title: 'DATE', key: 'date', sortable: false, align: 'start' as const },
   { title: 'METHOD', key: 'payment_method', sortable: false, align: 'center' as const },
   { title: 'REFERENCE #', key: 'reference_no', sortable: false, align: 'center' as const },
   { title: 'AMOUNT', key: 'amount', sortable: false, align: 'end' as const },
 ]
+const paymentHeaders = computed(() => isCharge.value
+  ? [...basePaymentHeaders, { title: '', key: 'actions', sortable: false, align: 'end' as const }]
+  : basePaymentHeaders)
 </script>
 
 <template>
@@ -121,7 +173,26 @@ const paymentHeaders = [
             class="mb-4 bordered-table"
           >
             <template #item.date="{ item }">{{ formatDate(item.date) }}</template>
-            <template #item.payment_method="{ item }">{{ item.payment_method ?? '—' }}</template>
+            <template #item.payment_method="{ item }">
+              {{ collectionMethodLabel(item.payment_method) }}
+              <div v-if="chequeLabel(item)" class="text-caption text-medium-emphasis">{{ chequeLabel(item) }}</div>
+              <div v-if="item.remarks" class="text-caption text-medium-emphasis">{{ item.remarks }}</div>
+            </template>
+            <template #item.actions="{ item }">
+              <v-chip v-if="crPending(item.id)" size="x-small" color="warning" variant="tonal" label>change pending</v-chip>
+              <v-btn
+                v-else
+                size="small"
+                variant="tonal"
+                color="primary"
+                class="text-none"
+                prepend-icon="mdi-pencil-box-outline"
+                title="Request a correction or void of this payment (needs executive approval)"
+                @click="requestPaymentChange(item)"
+              >
+                Request Change
+              </v-btn>
+            </template>
             <template #item.reference_no="{ item }">{{ item.reference_no ?? '—' }}</template>
             <template #item.amount="{ item }">{{ formatCurrency(item.amount) }}</template>
             <template #no-data>
@@ -150,17 +221,42 @@ const paymentHeaders = [
       <v-card-actions class="px-5 pb-5 pt-3 d-flex justify-end ga-2">
         <v-btn variant="outlined" class="text-none" @click="emit('update:modelValue', false)">Close</v-btn>
         <v-btn
+          v-if="detail && detail.balance > 0.01 && !changePending"
+          variant="tonal"
+          class="text-none"
+          prepend-icon="mdi-file-document-minus-outline"
+          @click="emit('issueCreditMemo')"
+        >
+          Issue Credit Memo
+        </v-btn>
+        <span v-if="isCharge && changePending" class="text-caption text-warning mr-auto">
+          A change request is pending — payments resume once it is decided.
+        </span>
+        <v-btn
           v-if="detail?.source === 'sale' && detail.balance > 0.01"
           color="primary"
           variant="flat"
           class="text-none font-weight-bold"
           prepend-icon="mdi-cash-plus"
+          :disabled="changePending"
           @click="emit('recordPayment')"
         >
           Record payment
         </v-btn>
       </v-card-actions>
     </v-card>
+
+    <ChangeRequestDialog
+      v-if="crConfig"
+      v-model="crDialog"
+      :target-ref="crConfig.ref"
+      :fields="crConfig.fields"
+      :allow-edit="crConfig.allowEdit"
+      :allow-void="crConfig.allowVoid"
+      :void-summary="crConfig.voidSummary"
+      :loading="crSubmitting"
+      @submit="submitChange"
+    />
   </v-dialog>
 </template>
 

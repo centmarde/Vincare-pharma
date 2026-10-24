@@ -8,6 +8,7 @@ import { useLogsDataStore } from '@/stores/logsData'
 import { useStockSourcingStore } from '@/stores/stockSourcingData'
 import type { StockLocationId } from '@/stores/stockSourcingData'
 import { generateNextNumber, insertWithDocRetry, getErrorMessage, formatCurrency } from '@/utils/helpers'
+import { fetchAllRows } from '@/stores/shared/paging'
 
 // Customer returns. The company never refunds money — goods come back and other
 // goods go out in their place, worth less or more. This store owns the INBOUND
@@ -88,6 +89,23 @@ export type SalesReturnType = {
   remarks: string | null
   created_by: string | null
   lines: SalesReturnLine[]
+  /**
+   * Where the credit went. It can be taken as replacement goods, taken off the
+   * customer's bill by a credit memo, or both — up to the return's value.
+   * credit_applied = issued credit memos; credit_pending = credit memos still
+   * awaiting approval, held back so the same credit cannot be promised twice.
+   * `credit_remaining` is null when that could not be read: nothing may be
+   * drawn against a credit nobody could check.
+   */
+  credit_replaced: number
+  credit_applied: number
+  credit_pending: number
+  credit_remaining: number | null
+}
+
+/** The tag a replacement sale carries in `remarks`, linking it to its return. */
+function settlesTag(row: Pick<SalesReturnType, 'id' | 'return_no'>): string {
+  return `Settles ${row.return_no ?? `return #${row.id}`}`
 }
 
 function mapRowToReturn(row: any): SalesReturnType {
@@ -116,6 +134,10 @@ function mapRowToReturn(row: any): SalesReturnType {
       cost_price: li.cost_price == null ? null : Number(li.cost_price),
       condition: (li.return_condition ?? null) as ReturnCondition | null,
     })),
+    credit_replaced: 0,
+    credit_applied: 0,
+    credit_pending: 0,
+    credit_remaining: Number(row.total_amount ?? 0),
   }
 }
 
@@ -152,6 +174,57 @@ export const useSalesReturnsDataStore = defineStore('salesReturnsData', () => {
     error.value = ''
   }
 
+  /**
+   * Fills in where each return's credit went: the replacement issued against
+   * it (a sale tagged "Settles SR-…") and the credit memos raised from it
+   * (transactions of type credit_memo carrying its id in sales_return_id).
+   * Leaves credit_remaining null on rows it could not read.
+   */
+  async function applyCreditUsage(rows: SalesReturnType[]) {
+    if (!rows.length) return
+    try {
+      const [replacements, memos] = await Promise.all([
+        fetchAllRows<{ id: number; remarks: string | null; total_amount: number | null; status: string | null }>(() => supabase
+          .from('transactions')
+          .select('id, remarks, total_amount, status')
+          .eq('transaction_type', 'sale')
+          .ilike('remarks', 'Settles %')
+          .order('id', { ascending: true })),
+        fetchAllRows<{ id: number; sales_return_id: number | null; total_amount: number | null; status: string | null }>(() => supabase
+          .from('transactions')
+          .select('id, sales_return_id, total_amount, status')
+          .eq('transaction_type', 'credit_memo')
+          .in('sales_return_id', rows.map((r) => r.id))
+          .order('id', { ascending: true })),
+      ])
+      // Exact match on the tag, not a prefix: "Settles SR-2026-100" must not
+      // also count the replacement for SR-2026-1000.
+      const replacedByTag = new Map<string, number>()
+      for (const sale of replacements) {
+        if (sale.status === 'voided') continue
+        const tag = (sale.remarks ?? '').trim()
+        replacedByTag.set(tag, (replacedByTag.get(tag) ?? 0) + Number(sale.total_amount ?? 0))
+      }
+      const issued = new Map<number, number>()
+      const pending = new Map<number, number>()
+      for (const m of memos) {
+        if (m.sales_return_id == null) continue
+        const into = m.status === 'issued' ? issued : m.status === 'pending_approval' ? pending : null
+        if (into) into.set(m.sales_return_id, (into.get(m.sales_return_id) ?? 0) + Number(m.total_amount ?? 0))
+      }
+      for (const row of rows) {
+        row.credit_replaced = replacedByTag.get(settlesTag(row)) ?? 0
+        row.credit_applied = issued.get(row.id) ?? 0
+        row.credit_pending = pending.get(row.id) ?? 0
+        row.credit_remaining = Math.max(0, Math.round(
+          (row.total_amount - row.credit_replaced - row.credit_applied - row.credit_pending) * 100) / 100)
+      }
+    } catch (err) {
+      console.error('applyCreditUsage:', err)
+      for (const row of rows) row.credit_remaining = null
+    }
+  }
+
   async function fetchReturns(options: { warehouseId?: number | null } = {}) {
     loading.value = true
     clearError()
@@ -168,7 +241,9 @@ export const useSalesReturnsDataStore = defineStore('salesReturnsData', () => {
 
       const { data, error: fetchError } = await query
       if (fetchError) throw fetchError
-      returns.value = (data ?? []).map(mapRowToReturn)
+      const rows = (data ?? []).map(mapRowToReturn)
+      await applyCreditUsage(rows)
+      returns.value = rows
       return returns.value
     } catch (err) {
       handleError(err, 'Failed to load returns')
@@ -189,7 +264,9 @@ export const useSalesReturnsDataStore = defineStore('salesReturnsData', () => {
         .eq('id', id)
         .maybeSingle()
       if (fetchError) throw fetchError
-      currentReturn.value = data ? mapRowToReturn(data) : undefined
+      const row = data ? mapRowToReturn(data) : undefined
+      if (row) await applyCreditUsage([row])
+      currentReturn.value = row
       return currentReturn.value
     } catch (err) {
       handleError(err, `Failed to load return ${id}`)
@@ -401,7 +478,7 @@ export const useSalesReturnsDataStore = defineStore('salesReturnsData', () => {
       return { success: false }
     }
 
-    const settlesTag = `Settles ${source.return_no ?? `return #${returnId}`}`
+    const tag = settlesTag(source)
 
     try {
       // One replacement per return. Checked against the tag this function
@@ -409,24 +486,31 @@ export const useSalesReturnsDataStore = defineStore('salesReturnsData', () => {
       // cannot draw stock twice against the same credit.
       const { data: existing, error: existingError } = await supabase
         .from('transactions')
-        .select('id')
+        .select('id, remarks, status')
         .eq('transaction_type', 'sale')
-        .ilike('remarks', `${settlesTag}%`)
-        .limit(1)
+        .ilike('remarks', tag)
       if (existingError) throw existingError
-      if (existing?.length) {
+      // Exact tag, and a voided replacement does not count.
+      if ((existing ?? []).some((sale) => (sale.remarks ?? '').trim() === tag && sale.status !== 'voided')) {
         toast.warning('A replacement has already been issued against this return.')
         loading.value = false
         return { success: false }
       }
 
       const total = validLines.reduce((sum, l) => sum + l.qty * Number(l.unit_price ?? 0), 0)
+      // What is left after anything already taken off their bill.
+      const available = source.credit_remaining
+      if (available == null) {
+        toast.error('Could not check how much of this credit is left. Try again.')
+        loading.value = false
+        return { success: false }
+      }
       // Refused rather than split: taking MORE than the credit means the
       // customer owes the difference, and there is no payment path here — the
       // company does not take money on a return. The rest is an ordinary sale.
-      if (total > source.total_amount + 0.009) {
+      if (total > available + 0.009) {
         toast.error(
-          `Replacement (${formatCurrency(total)}) exceeds the credit on this return (${formatCurrency(source.total_amount)}). Reduce it, or ring the rest up as a normal sale.`,
+          `Replacement (${formatCurrency(total)}) exceeds the credit left on this return (${formatCurrency(available)}). Reduce it, or ring the rest up as a normal sale.`,
         )
         loading.value = false
         return { success: false }
@@ -450,7 +534,7 @@ export const useSalesReturnsDataStore = defineStore('salesReturnsData', () => {
               // The link back to the return. Remarks rather than a new column,
               // following the change-request reissue precedent ("Replaces
               // EXP-2026-004"), and it is what the duplicate guard above reads.
-              remarks: settlesTag,
+              remarks: tag,
               created_by: user.id,
             })
             .select('id')
@@ -499,7 +583,7 @@ export const useSalesReturnsDataStore = defineStore('salesReturnsData', () => {
       try {
         await logsStore.createLog({
           action: 'sales_return_replacement',
-          description: `${saleNo} issued against ${source.return_no ?? `return #${returnId}`} — ${formatCurrency(total)} of ${formatCurrency(source.total_amount)} credit used`,
+          description: `${saleNo} issued against ${source.return_no ?? `return #${returnId}`} — ${formatCurrency(total)} of ${formatCurrency(available)} credit used`,
           module: 'sales',
           transaction_id: created.id,
         })
@@ -512,7 +596,7 @@ export const useSalesReturnsDataStore = defineStore('salesReturnsData', () => {
           `${saleNo} recorded, but ${failed.length} line(s) could not be drawn from stock. Check warehouse stock.`,
         )
       } else {
-        const left = source.total_amount - total
+        const left = available - total
         toast.success(
           left > 0.009
             ? `${saleNo} issued. ${formatCurrency(left)} credit remains on account.`

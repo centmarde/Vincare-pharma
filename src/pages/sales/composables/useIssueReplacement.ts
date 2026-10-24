@@ -27,8 +27,11 @@ export function useIssueReplacement(onIssued: () => void) {
   const source = ref<SalesReturnType | null>(null)
   const lines = ref<ReplacementLine[]>([])
 
-  /** The credit this return created — the ceiling on what may be issued. */
-  const creditAvailable = computed(() => source.value?.total_amount ?? 0)
+  /**
+   * What is left of the credit this return created — the ceiling on what may
+   * be issued. Part of it may already have been taken off the customer's bill.
+   */
+  const creditAvailable = computed(() => source.value?.credit_remaining ?? 0)
 
   const validLines = computed(() =>
     lines.value.filter((l) => l.product_id != null && l.qty > 0),

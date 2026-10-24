@@ -27,6 +27,14 @@ const ACTION_REJECT = 'change_rejected'
 
 const MODULE_TYPES = ['sale', 'remittance']
 
+/**
+ * A request about a PAYMENT on a sale charged to account (it carries the
+ * payment's id). Those are filed and approved through the shared queue
+ * (changeRequestsData) — here one would be read as voiding the whole sale.
+ */
+const isPaymentRequest = (proposedChanges: unknown) =>
+  '__collection_id' in parseProposedChanges(proposedChanges)
+
 // Reserved proposed_changes key: the transaction's status right before the
 // 'change_request' gate was set, stashed at propose time so a REJECT can
 // restore it instead of stranding the document on 'change_request'.
@@ -121,7 +129,7 @@ export const useSalesChangeRequestStore = defineStore('salesChangeRequest', () =
       if (fetchError) throw fetchError
 
       if (!authStore.users.length) await authStore.getAllUsers()
-      requests.value = (data || []).map((row) => ({
+      requests.value = (data || []).filter((row) => !isPaymentRequest(row.proposed_changes)).map((row) => ({
         ...mapRequestRow(row),
         created_by_email: authStore.users.find((u: any) => u.id === row.created_by)?.email ?? null,
       }))
@@ -158,14 +166,14 @@ export const useSalesChangeRequestStore = defineStore('salesChangeRequest', () =
   async function fetchPendingTargetIds(): Promise<number[]> {
     const { data, error: e } = await supabase
       .from('change_requests')
-      .select('transaction_id, transactions!inner(transaction_type)')
+      .select('transaction_id, proposed_changes, transactions!inner(transaction_type)')
       .eq('status', 'pending')
       .in('transactions.transaction_type', MODULE_TYPES)
     if (e) {
       handleError(e, 'Failed to fetch pending change requests')
       return []
     }
-    return (data || []).map((r: any) => r.transaction_id as number)
+    return (data || []).filter((r: any) => !isPaymentRequest(r.proposed_changes)).map((r: any) => r.transaction_id as number)
   }
 
   // Transactions carrying an APPLIED edit — drives the "Edited" chip.
@@ -402,6 +410,9 @@ export const useSalesChangeRequestStore = defineStore('salesChangeRequest', () =
     const txnType = await resolveTransactionType(request.transaction_id)
     if (!txnType) return { success: false, error: 'Transaction not found.' }
 
+    if (isPaymentRequest(request.proposed_changes)) {
+      return { success: false, error: 'This is a payment correction — approve it from the payments queue.' }
+    }
     switch (txnType) {
       case 'sale':
         return applySaleChange(request)

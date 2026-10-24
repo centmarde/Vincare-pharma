@@ -9,6 +9,8 @@ import { useExecutiveApproveDisposal } from '../composables/useExecutiveApproveD
 import { useExecutiveApproveShortDated } from '../composables/useExecutiveApproveShortDated'
 import { useExecutiveApproveTerms } from '../composables/useExecutiveApproveTerms'
 import TermsDecisionPanel from '../components/TermsDecisionPanel.vue'
+import CreditMemoDecisionPanel from '../components/CreditMemoDecisionPanel.vue'
+import { useExecutiveApproveCreditMemos } from '../composables/useExecutiveApproveCreditMemos'
 import type { PRItem } from '@/stores/purchaseRequisitionData'
 import { usePurchaseBreakdown } from '@/pages/purchasing/composables/usePurchaseBreakdown'
 import PurchaseChargeLines from '@/pages/purchasing/components/PurchaseChargeLines.vue'
@@ -25,6 +27,7 @@ const { approve: approvePR, reject: rejectPR } = useExecutiveApprovePR()
 const { approve: approveDisposal, reject: rejectDisposal } = useExecutiveApproveDisposal()
 const { approve: approveShortDated, reject: rejectShortDated } = useExecutiveApproveShortDated()
 const { approve: approveTerms, reject: rejectTerms } = useExecutiveApproveTerms()
+const { approve: approveCreditMemo, reject: rejectCreditMemo } = useExecutiveApproveCreditMemos()
 const prStore = usePurchaseRequisitionStore()
 
 // A change request must be approved through the store that owns it — each one
@@ -42,7 +45,7 @@ const selected = defineModel<boolean>('modelValue', { default: false })
 const props = defineProps<{ request?: any }>()
 
 const request = computed(() => props.request)
-const kind = computed(() => request.value?.kind as 'undo' | 'pr_approval' | 'disposal' | 'short_dated' | 'terms' | undefined)
+const kind = computed(() => request.value?.kind as 'undo' | 'pr_approval' | 'disposal' | 'short_dated' | 'terms' | 'credit_memo' | undefined)
 const raw = computed(() => request.value?.raw)
 
 
@@ -150,6 +153,7 @@ async function runApprove() {
   // through to a PR approval.
   if (kind.value === 'short_dated') return approveShortDated(raw.value.id)
   if (kind.value === 'terms') return approveTerms(raw.value.id)
+  if (kind.value === 'credit_memo') return approveCreditMemo(raw.value.id)
   if (kind.value === 'pr_approval') return approvePR(raw.value.id)
   toast.error('This request type is not recognised — nothing was approved.')
   return { success: false }
@@ -160,6 +164,7 @@ async function runReject(reason: string) {
   if (kind.value === 'disposal') return rejectDisposal(raw.value.id, reason)
   if (kind.value === 'short_dated') return rejectShortDated(raw.value.id, reason)
   if (kind.value === 'terms') return rejectTerms(raw.value.id, reason)
+  if (kind.value === 'credit_memo') return rejectCreditMemo(raw.value.id, reason)
   if (kind.value === 'pr_approval') return rejectPR(raw.value.id, reason)
   toast.error('This request type is not recognised — nothing was rejected.')
   return { success: false }
@@ -510,6 +515,11 @@ function formatMoney(value: number | string | undefined) {
              turns on — deal figures, ratio, PR, stock — lives in the panel. -->
         <template v-else-if="kind === 'terms'">
           <TermsDecisionPanel :request="raw" />
+        </template>
+
+        <!-- ═══ CREDIT MEMO BRANCH ═══ Take an amount off a customer's bill. -->
+        <template v-else-if="kind === 'credit_memo'">
+          <CreditMemoDecisionPanel :request="raw" />
         </template>
 
         <!-- ═══ UNDO REQUEST BRANCH ═══ -->

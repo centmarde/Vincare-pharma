@@ -42,6 +42,11 @@ export type CollectionType = {
   // read it without a type change.
   voided_at?: string | null
   void_reason?: string | null
+  /** A cheque payment's details (20261023); null for cash. Optional so rows read before the columns existed still type. */
+  cheque_bank?: string | null
+  cheque_no?: string | null
+  cheque_date?: string | null
+  cash_account_id?: number | null
 }
 
 export type RebateStatus = 'pending_approval' | 'approved' | 'paid' | 'rejected'

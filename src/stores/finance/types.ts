@@ -303,7 +303,23 @@ export type ARAgingRow = {
   balance: number
   due_date: string | null
   days_overdue: number | null
+  /**
+   * 'no-term' for a consignment receivable: it has no due date, so it is
+   * never overdue and never counted in an overdue bucket. Its age since
+   * delivery is in `age_term` instead.
+   */
   term: ARAgingTerm
+  /** The customer's terms say consignment (isConsignmentTerm). */
+  consignment: boolean
+  /** When the goods went out: invoice date (Ethical), last DR (In-House), sale date (POS). */
+  delivered_at: string | null
+  days_since_delivery: number | null
+  /** The aging bucket by days since delivery — what a consignment row is aged by. */
+  age_term: ARAgingTerm
+  /** Latest non-voided payment on it, if any. */
+  last_payment_at: string | null
+  /** The customer's own wording for their terms ('Consignment', '60 Days'). */
+  term_text: string | null
 }
 
 // A single receivable, drilled down for the AR jacket detail dialog. Read-only:
@@ -324,6 +340,10 @@ export type ARReceivablePayment = {
   amount: number
   payment_method: string | null
   reference_no: string | null
+  remarks: string | null
+  cheque_bank: string | null
+  cheque_no: string | null
+  cheque_date: string | null
 }
 
 export type ARReceivableDetail = {
@@ -363,6 +383,8 @@ export type SOAEntry = {
 
 export type StatementOfAccount = {
   customer_id: number
+  /** Every customer record the statement covers — several copies of one customer are stated together. */
+  customer_ids: number[]
   customer_name: string | null
   customer_address: string | null
   customer_contact: string | null
