@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthUserStore } from '@/stores/authUser'
@@ -7,6 +7,7 @@ import { useUserPermissions } from '@/composables/useUserPermissions'
 import { isNavigationItem, flattenNavigationItems } from '@/utils/navigation'
 import type { NavigationChild, NavigationItem } from '@/utils/navigation'
 import { useExecutiveStore } from '@/stores/executiveData'
+import { useVersionLogsDataStore } from '@/stores/versionLogsData'
 const props = defineProps<{
   version?: string
 }>()
@@ -21,6 +22,18 @@ const route = useRoute()
 // Auth store
 const authStore = useAuthUserStore()
 const executiveStore = useExecutiveStore()
+const versionLogsStore = useVersionLogsDataStore()
+
+// Fetch ang pinaka-latest nga version log direkta sa version_logs DB
+// pagka-mount sa sidebar. Basig na-remount ang sidebar kada navigation,
+// busa i-guard nato: kung naa nay logs sa store, dili na mag-usab-usab og fetch.
+const fetchLatestVersion = async () => {
+  if (versionLogsStore.logs.length === 0) {
+    await versionLogsStore.fetchLogs()
+  }
+}
+
+onMounted(fetchLatestVersion)
 
 // User permissions composable
 const { getFilteredNavigationGroups, userRoleId, isLoading } = useUserPermissions()
@@ -55,7 +68,12 @@ const showSidebar = computed(
 )
 
 const footerVersionText = computed(() => {
-  const version = props.version?.trim()
+  // I-prioritize ang pinaka-latest nga version nga nakuha sa version_logs DB
+  // (ang logs sorted descending by created_at, busa ang logs[0] mao ang latest).
+  // Kung walay makita sa DB (e.g. wala pa na-fetch o walay data), i-fallback
+  // sa prop nga `version` nga naggikan sa landing data.
+  const dbVersion = versionLogsStore.logs[0]?.version?.trim()
+  const version = (dbVersion || props.version)?.trim()
   return version ? `version ${version}` : 'Version not available'
 })
 
