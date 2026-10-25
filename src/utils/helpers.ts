@@ -551,6 +551,15 @@ export function parseTermDays(value: string | number | null | undefined): number
 }
 
 /**
+ * A customer's name for matching copies of the same customer: case and spacing
+ * ignored ("ADVENTIS MEDICAL CENTER " = "Adventis Medical Center"). The live
+ * book holds several records for many customers, so anything that groups by
+ * customer — the duplicates view, AR envelopes — matches on this.
+ */
+export const customerNameKey = (name: string | null | undefined) =>
+  (name ?? '').trim().replace(/\s+/g, ' ').toUpperCase()
+
+/**
  * Whether `customers.term_days` describes a consignment arrangement:
  * 'Consignment', 'CONSIGNMENT / 60 Days', '30 - 60 Days Consignment', ...
  *
@@ -560,15 +569,6 @@ export function parseTermDays(value: string | number | null | undefined): number
  * to be overdue against, so they are aged by days since delivery instead —
  * whatever day count the wording also carries.
  */
-/**
- * A customer's name for matching copies of the same customer: case and spacing
- * ignored ("ADVENTIS MEDICAL CENTER " = "Adventis Medical Center"). The live
- * book holds several records for many customers, so anything that groups by
- * customer — the duplicates view, AR envelopes — matches on this.
- */
-export const customerNameKey = (name: string | null | undefined) =>
-  (name ?? '').trim().replace(/\s+/g, ' ').toUpperCase()
-
 export function isConsignmentTerm(value: string | number | null | undefined): boolean {
   return typeof value === 'string' && /consign/i.test(value)
 }

@@ -17,6 +17,7 @@ import {
   reissueRemarks,
 } from './helpers'
 import { reverseProjectedEntry } from './ledger'
+import { chequeFor, chequeProblem } from '@/utils/paymentMethods'
 
 // ── In-house payment / Ethical collection (both are `collections` rows) ─────
 // request.transaction_id is the ORDER's transaction id (it has to be — the
@@ -34,6 +35,7 @@ export type CollectionKind = 'inhouse' | 'ethical' | 'pos'
 
 /** Payment fields an approved edit may change in place (no money moves). */
 const memoKeys = ['payment_method', 'reference_no', 'remarks', 'cheque_bank', 'cheque_no', 'cheque_date']
+const chequeKeys = ['cheque_bank', 'cheque_no', 'cheque_date']
 
 // Reverse the collection's GL entry, soft-void it, then roll the order back.
 export async function voidCollection(
@@ -191,10 +193,23 @@ export async function applyCollectionChange(
   const stale = firstStaleField(changes, current)
   if (stale) return staleError(stale)
 
+  // The payment as it would stand after the edit. A cheque needs its bank,
+  // number and date — the forms insist, and so does this, since an approved
+  // request is the last point a blank cheque can be stopped.
+  const method = ((toVal(changes, 'payment_method') ?? cur.payment_method) as string | undefined) || undefined
+  const chequeVal = (key: string) => String(toVal(changes, key) ?? cur[key] ?? '')
+  const chequeInput = { bank: chequeVal('cheque_bank'), number: chequeVal('cheque_no'), date: chequeVal('cheque_date') }
+  const chequeMissing = chequeProblem(method, chequeInput)
+
   // Memo-only (method/reference/note/cheque details) → in place. This path never sets a
   // status of its own (unlike void/reissue), so the 'change_request' gate
   // set at propose time must be cleared explicitly here.
   if (!('amount' in changes)) {
+    // Only when the edit touches the method or the cheque: a note fixed on an
+    // older cheque payment recorded without details still goes through.
+    const touchesCheque = 'payment_method' in changes || chequeKeys.some((k) => k in changes)
+    if (touchesCheque && chequeMissing)
+      return { success: false, error: `This payment would be a cheque without ${chequeMissing}. Re-file the request with the cheque details.` }
     const colUpdate: Record<string, unknown> = {}
     for (const [key, diff] of Object.entries(changes)) {
       if (memoKeys.includes(key)) colUpdate[key] = (diff as Diff).to
@@ -211,8 +226,9 @@ export async function applyCollectionChange(
   }
 
   // Amount edit → reverse the collection + re-record the corrected one.
-  const method = ((toVal(changes, 'payment_method') ?? cur.payment_method) as string | undefined) || undefined
-  const chequeVal = (key: string) => String(toVal(changes, key) ?? cur[key] ?? '')
+  // Checked before anything is voided (see below).
+  if (chequeMissing)
+    return { success: false, error: `This payment would be a cheque without ${chequeMissing}. Re-file the request with the cheque details.` }
   const payload = {
     orderId: Number(cur.transaction_id),
     amount: Number(toVal(changes, 'amount') ?? cur.amount ?? 0),
@@ -226,9 +242,7 @@ export async function applyCollectionChange(
     // missing account rather than silently crediting a default.
     cashAccountId: Number(cur.cash_account_id),
     // The cheque comes along (with any corrected details); none for cash.
-    cheque: method === 'cheque'
-      ? { bank: chequeVal('cheque_bank'), number: chequeVal('cheque_no'), date: chequeVal('cheque_date') }
-      : null,
+    cheque: chequeFor(method, chequeInput),
   }
   // Everything the re-record would refuse is checked BEFORE the original is
   // voided. A refusal after the void left the payment voided with no

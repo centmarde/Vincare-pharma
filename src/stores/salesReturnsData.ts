@@ -8,7 +8,7 @@ import { useLogsDataStore } from '@/stores/logsData'
 import { useStockSourcingStore } from '@/stores/stockSourcingData'
 import type { StockLocationId } from '@/stores/stockSourcingData'
 import { generateNextNumber, insertWithDocRetry, getErrorMessage, formatCurrency } from '@/utils/helpers'
-import { fetchAllRows } from '@/stores/shared/paging'
+import { fetchAllRows, fetchAllRowsForIds } from '@/stores/shared/paging'
 
 // Customer returns. The company never refunds money — goods come back and other
 // goods go out in their place, worth less or more. This store owns the INBOUND
@@ -190,12 +190,15 @@ export const useSalesReturnsDataStore = defineStore('salesReturnsData', () => {
           .eq('transaction_type', 'sale')
           .ilike('remarks', 'Settles %')
           .order('id', { ascending: true })),
-        fetchAllRows<{ id: number; sales_return_id: number | null; total_amount: number | null; status: string | null }>(() => supabase
-          .from('transactions')
-          .select('id, sales_return_id, total_amount, status')
-          .eq('transaction_type', 'credit_memo')
-          .in('sales_return_id', rows.map((r) => r.id))
-          .order('id', { ascending: true })),
+        // Batched: every return's id in one filter can outgrow the request URL.
+        fetchAllRowsForIds<{ id: number; sales_return_id: number | null; total_amount: number | null; status: string | null }>(
+          rows.map((r) => r.id),
+          (batch) => supabase
+            .from('transactions')
+            .select('id, sales_return_id, total_amount, status')
+            .eq('transaction_type', 'credit_memo')
+            .in('sales_return_id', batch)
+            .order('id', { ascending: true })),
       ])
       // Exact match on the tag, not a prefix: "Settles SR-2026-100" must not
       // also count the replacement for SR-2026-1000.

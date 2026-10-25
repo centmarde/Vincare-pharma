@@ -11,7 +11,7 @@ const {
   transfers, loading,
   showDialog, fromAccountId, toAccountId, amount, fee, transferDate, confirmationNo, remarks,
   sourceOptions, destinationOptions, available, leaving, remaining, exceedsAvailable,
-  blockers, canSubmit, statusMeta,
+  blockers, canSubmit, statusMeta, submitting,
   init, openDialog, closeDialog, setFromAccount, submit, clearTransfer,
 } = useAccountTransfers()
 
@@ -147,7 +147,7 @@ onMounted(init)
         <span v-if="blockers.length" class="text-caption text-medium-emphasis">Still needed: {{ blockers.join(', ') }}</span>
         <v-spacer />
         <v-btn variant="text" class="text-none" @click="closeDialog">Cancel</v-btn>
-        <v-btn color="primary" variant="flat" class="text-none font-weight-bold" :disabled="!canSubmit" :loading="loading" @click="submit">
+        <v-btn color="primary" variant="flat" class="text-none font-weight-bold" :disabled="!canSubmit || submitting" :loading="loading || submitting" @click="submit">
           Record Transfer
         </v-btn>
       </v-card-actions>

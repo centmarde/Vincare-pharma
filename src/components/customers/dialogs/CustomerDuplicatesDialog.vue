@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { watch } from 'vue'
 import { useDisplay } from 'vuetify'
-import CustomerTermsChips from './CustomerTermsChips.vue'
+import CustomerTermsChips from '../CustomerTermsChips.vue'
 import { useCustomerDuplicates } from '@/composables/useCustomerDuplicates'
 import type { DiscountProfile } from '@/stores/discountsData'
 

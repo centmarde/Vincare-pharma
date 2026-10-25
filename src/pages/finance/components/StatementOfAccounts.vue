@@ -82,7 +82,7 @@ const TOTAL_KEYS: Record<string, keyof typeof totals.value> = {
           <v-card rounded="lg" elevation="1" class="pa-4">
             <div class="text-caption text-medium-emphasis">Past Due</div>
             <div class="text-h5 font-weight-bold text-error">{{ formatCurrency(agedTotal) }}</div>
-            <div class="text-caption text-medium-emphasis">1–30 through over 6 months</div>
+            <div class="text-caption text-medium-emphasis">1–30 through over 6 months · consignment not counted</div>
           </v-card>
         </v-col>
         <v-col cols="12" sm="6" md="3">
@@ -304,6 +304,7 @@ const TOTAL_KEYS: Record<string, keyof typeof totals.value> = {
                 <td class="text-right">{{ formatCurrency(totals.dr_amount) }}</td>
                 <td v-if="compactHeaders.some((h) => h.key === 'discount')" class="text-right">{{ formatCurrency(totals.discount) }}</td>
                 <td class="text-right">{{ formatCurrency(totals.or_amount) }}</td>
+                <td v-if="compactHeaders.some((h) => h.key === 'credit')" class="text-right">{{ formatCurrency(totals.credit) }}</td>
                 <td class="text-right">{{ formatCurrency(totals.accounts_receivable) }}</td>
                 <td />
                 <td />
@@ -387,9 +388,10 @@ const TOTAL_KEYS: Record<string, keyof typeof totals.value> = {
           applied to that order's delivery receipts oldest-first — per-DR figures are a derived
           allocation, not a recorded fact. Order-level totals always tie out exactly.
           <template v-if="fullSheet">
-            <strong>Credit</strong> and <strong>PDC</strong> are layout placeholders: neither credit
-            memos nor post-dated cheques are tracked in the system, so those columns stay blank rather
-            than showing a number that isn't real.
+            <strong>Credit</strong> is the approved credit memos applied to each receipt, allocated
+            oldest-first like the ORs. <strong>PDC</strong> is a layout placeholder: post-dated cheques
+            are not tracked in the system, so that column stays blank rather than showing a number
+            that isn't real.
           </template>
         </div>
       </v-card>

@@ -98,18 +98,28 @@ export function useAccountTransfers() {
     if (id !== null && toAccountId.value === id) toAccountId.value = null
   }
 
+  // One transfer per press: set before the first await, so a second press (or
+  // Enter on the focused button) while it saves is turned away instead of
+  // recording the same transfer twice.
+  const submitting = ref(false)
+
   async function submit() {
-    if (!canSubmit.value || fromAccountId.value === null || toAccountId.value === null) return
-    const result = await store.recordTransfer({
-      fromAccountId: fromAccountId.value,
-      toAccountId: toAccountId.value,
-      amount: amount.value,
-      fee: fee.value || 0,
-      transferDate: transferDate.value,
-      confirmationNo: confirmationNo.value.trim() || undefined,
-      remarks: remarks.value.trim() || undefined,
-    })
-    if (result.success) closeDialog()
+    if (submitting.value || !canSubmit.value || fromAccountId.value === null || toAccountId.value === null) return
+    submitting.value = true
+    try {
+      const result = await store.recordTransfer({
+        fromAccountId: fromAccountId.value,
+        toAccountId: toAccountId.value,
+        amount: amount.value,
+        fee: fee.value || 0,
+        transferDate: transferDate.value,
+        confirmationNo: confirmationNo.value.trim() || undefined,
+        remarks: remarks.value.trim() || undefined,
+      })
+      if (result.success) closeDialog()
+    } finally {
+      submitting.value = false
+    }
   }
 
   async function clearTransfer(id: number) {
@@ -124,7 +134,7 @@ export function useAccountTransfers() {
     transfers, loading,
     showDialog, fromAccountId, toAccountId, amount, fee, transferDate, confirmationNo, remarks,
     sourceOptions, destinationOptions, available, leaving, remaining, exceedsAvailable,
-    blockers, canSubmit, statusMeta,
+    blockers, canSubmit, statusMeta, submitting,
     init, openDialog, closeDialog, setFromAccount, submit, clearTransfer,
   }
 }

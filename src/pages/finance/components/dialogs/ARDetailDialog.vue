@@ -5,7 +5,7 @@ import { chequeLabel, collectionMethodLabel, collectionPaymentMethodOptions } fr
 import type { ARReceivableDetail, ARReceivablePayment } from '@/stores/financeData'
 import { financePageSizes, financeDefaultPageSize } from '../../composables/financeTable'
 import { arSourceDocument } from '../../composables/useAccountsReceivable'
-import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
+import ChangeRequestDialog from '@/components/changeRequests/dialogs/ChangeRequestDialog.vue'
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
 import { useChangeRequestsDataStore } from '@/stores/changeRequestsData'
 

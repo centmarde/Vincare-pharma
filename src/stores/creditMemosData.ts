@@ -298,10 +298,20 @@ export const useCreditMemosStore = defineStore('creditMemos', () => {
       if (claimError) throw claimError
       if (!claimed?.length) { toast.warning('That credit memo has already been decided.'); return { success: false } }
 
-      const release = async () => {
-        await supabase.from('transactions')
+      // Puts the claim back. Says whether that worked: if it did not, the memo
+      // reads as issued with nothing applied, and the approver must be told
+      // rather than shown "back to pending".
+      const stuck = 'The credit memo could not be put back to pending either — it shows as issued without being applied. Check it in Credit memos before trying again.'
+      const release = async (): Promise<boolean> => {
+        const { error: releaseError } = await supabase.from('transactions')
           .update({ status: 'pending_approval', approved_by: null, approved_at: null, credit_memo_no: null, reference_no: null })
           .eq('id', id)
+        if (releaseError) {
+          console.error('approveCreditMemo: could not reset to pending:', releaseError.message)
+          toast.error(stuck)
+          return false
+        }
+        return true
       }
 
       // The number, retried past a collision with a concurrent approval.
@@ -325,8 +335,7 @@ export const useCreditMemosStore = defineStore('creditMemos', () => {
           ? await useInhouseDataStore().recordPayment({ orderId: target, amount: memo.amount, method, reference: cmNo, remarks, cashAccountId: null })
           : await useSalesChargesStore().recordPayment({ saleId: target, amount: memo.amount, method, reference: cmNo, remarks, cashAccountId: null })
       if (!applied.success) {
-        await release()
-        toast.error('The credit could not be applied to the bill, so the credit memo was not issued. It is back to pending.')
+        if (await release()) toast.error('The credit could not be applied to the bill, so the credit memo was not issued. It is back to pending.')
         return { success: false }
       }
 

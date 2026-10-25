@@ -9,7 +9,7 @@ import type {
 import { termFor } from './helpers'
 import { arAging, loading, handleError, clearError } from './state'
 import { fetchAllRows, fetchAllRowsForIds } from '@/stores/shared/paging'
-import { chargeToAccount, chequeLabel, collectionMethodLabel, returnCredit } from '@/utils/paymentMethods'
+import { chargeToAccount, chequeLabel, collectionMethodLabel, isCreditSettlement, returnCredit } from '@/utils/paymentMethods'
 import { isConsignmentTerm, parseTermDays, toLocalISODate } from '@/utils/helpers'
 
 // ─── POS sales charged to a customer account ───────────────────────────────
@@ -19,17 +19,22 @@ import { isConsignmentTerm, parseTermDays, toLocalISODate } from '@/utils/helper
 /** A charge still counts while a void request on it is pending. */
 const openChargeStatuses = ['completed', 'change_request']
 
-/** Non-voided payments per document: the total, and the latest date. THROWS if unreadable. */
+/**
+ * Non-voided payments per document: the total, and the latest date. THROWS if
+ * unreadable. A credit (credit memo, returned goods) counts toward what is
+ * paid — it reduces the balance — but is not a payment, so it never moves the
+ * last-payment date the collector list goes by.
+ */
 async function paymentsByDocument(ids: number[]): Promise<Map<number, { paid: number; last: string | null }>> {
-  const rows = await fetchAllRowsForIds<{ transaction_id: number; amount: number | null; created_at: string }>(ids, (batch) =>
-    supabase.from('collections').select('id, transaction_id, amount, created_at')
+  const rows = await fetchAllRowsForIds<{ transaction_id: number; amount: number | null; created_at: string; payment_method: string | null }>(ids, (batch) =>
+    supabase.from('collections').select('id, transaction_id, amount, created_at, payment_method')
       .in('transaction_id', batch).is('voided_at', null).order('id', { ascending: true }))
   const byDoc = new Map<number, { paid: number; last: string | null }>()
   for (const r of rows) {
     const id = Number(r.transaction_id)
     const cur = byDoc.get(id) ?? { paid: 0, last: null }
     cur.paid += Number(r.amount ?? 0)
-    if (!cur.last || r.created_at > cur.last) cur.last = r.created_at
+    if (!isCreditSettlement(r.payment_method) && (!cur.last || r.created_at > cur.last)) cur.last = r.created_at
     byDoc.set(id, cur)
   }
   return byDoc

@@ -199,7 +199,7 @@ export function useExpenses() {
 
   /**
    * Narrows the register as you type: expense no. (EXP-2026-406, or just 406),
-   * paid to, account, department, OR/SI no., description, paying account,
+   * the voucher it came from (as the VOUCHER column shows it), paid to, account, department, OR/SI no., description, paying account,
    * status — or an amount, with or without commas (the voucher page's rule).
    * Null after the field's clear button.
    */
@@ -211,7 +211,7 @@ export function useExpenses() {
     return expenses.value.filter((e) => {
       if (amountQuery && amountMatches(e.amount, amountQuery)) return true
       return [
-        e.reference_no, e.paid_to, e.department, e.or_si_no, e.remarks, e.cash_account_name, e.status,
+        e.reference_no, voucherFor(e.id), e.paid_to, e.department, e.or_si_no, e.remarks, e.cash_account_name, e.status,
         expenseAccountLabel(e.category),
       ].some((v) => (v ?? '').toLowerCase().includes(query))
     })

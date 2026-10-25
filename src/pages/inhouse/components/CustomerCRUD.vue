@@ -7,7 +7,7 @@ import FieldValue from '@/components/customers/FieldValue.vue'
 import CustomerDetailPanel from '@/components/customers/CustomerDetailPanel.vue'
 import CustomerCRUDMobile from '@/pages/inhouse/mobile/CustomerCRUDMobile.vue'
 import CustomerFormDialog from '@/pages/inhouse/dialogs/CustomerFormDialog.vue'
-import CustomerDuplicatesDialog from '@/components/customers/CustomerDuplicatesDialog.vue'
+import CustomerDuplicatesDialog from '@/components/customers/dialogs/CustomerDuplicatesDialog.vue'
 import { label, NOT_SET } from '@/utils/helpers'
 
 const { mobile } = useDisplay()

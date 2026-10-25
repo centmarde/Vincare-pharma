@@ -7,7 +7,7 @@ import CustomerDetailPanel from '@/components/customers/CustomerDetailPanel.vue'
 import { useEthicalCustomers } from '../composables/useEthicalCustomers'
 import CustomerForm from './CustomerForm.vue'
 import EthicalCustCRUDMobile from '../mobile/EthicalCustCRUDMobile.vue'
-import CustomerDuplicatesDialog from '@/components/customers/CustomerDuplicatesDialog.vue'
+import CustomerDuplicatesDialog from '@/components/customers/dialogs/CustomerDuplicatesDialog.vue'
 
 const { mobile } = useDisplay()
 

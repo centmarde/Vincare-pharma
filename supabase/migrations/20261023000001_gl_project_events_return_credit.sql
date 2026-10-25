@@ -1,31 +1,33 @@
--- gl_project_events: an issued CREDIT MEMO for an allowance books
--- DR 4020 Sales Returns & Allowances / CR 1030 Accounts Receivable.
+-- gl_project_events: a customer return's credit taken off their bill books
+-- against 2065 Customer Credits, not cash.
 --
--- ⚠️ BUILT FROM 20261023_gl_project_events_return_credit.sql — run THAT first,
--- then this. Before applying, confirm the live definition matches it:
+-- ⚠️ BUILT FROM 20261023000000_gl_project_events_expense_any_account.sql (applied to
+-- prod 2026-10-23), NOT from a fresh dump. Before applying, confirm the live
+-- definition still matches that file:
 --     select md5(prosrc), length(prosrc) from pg_proc where proname = 'gl_project_events';
--- expected: 68169508f4dbd7a752815f4f8bce7e3d | 19462
---      (or e93bd13a645d321a1cb99a8676dc66f4 | 19090 if it went in with LF endings)
--- and after applying this: 8bba3e12c430a0986914b6729b340732 | 19694
---      (LF: e957bad0e9b483bc288dc69cef463997 | 19316)
+-- expected: 8c45248bf502ffb62470738f660d34f0 | 19114
+-- and after applying it: 68169508f4dbd7a752815f4f8bce7e3d | 19462
+-- (that is with this file's CRLF line endings, as the last one went in; with
+-- LF endings it reads e93bd13a645d321a1cb99a8676dc66f4 | 19090)
 -- Everything below is that function with ONE change, marked CHANGED
--- (20261024 credit memo): the collections loop's debit account. Nothing else
+-- (20261023 return credit): the collections loop's debit account. Nothing else
 -- moves.
 --
 -- WHY
--- A credit memo (CM-YYYY-###, approved by an executive) reduces what a customer
--- owes. Its effect on the bill is a `collections` row with payment_method
--- 'credit_memo' and no cash account (src/utils/paymentMethods.ts, creditMemo),
--- so balances, statements and aging move as for a payment. In the ledger it is
--- an allowance, not money: DR 4020 / CR 1030. Without this the loop would fall
--- to the legacy guess and debit 1020 Cash in Bank.
+-- A return's value can now settle part of the customer's bill instead of (or
+-- as well as) buying replacement goods — consignment customers return their
+-- expired stock and it comes off what they owe. It is recorded as a
+-- `collections` row with payment_method 'return_credit' and no cash account
+-- (src/utils/paymentMethods.ts, returnCredit), so order balances, statements
+-- and the collection-basis income statement treat it like any payment.
 --
--- A credit memo for RETURNED goods uses payment_method 'return_credit' instead
--- (DR 2065 / CR 1030, previous migration) — the return itself already booked
--- DR 4020 / CR 2065, so booking 4020 again would double it.
+-- The return itself already booked DR 4020 / CR 2065 (the goods_return loop);
+-- this settles that credit against the receivable: DR 2065 / CR 1030. Without
+-- it the loop would fall to the legacy guess and debit 1020 Cash in Bank — a
+-- deposit that never happened — while 2065 kept the credit as still owed.
 --
 -- Apply BEFORE the app change reaches users. Nothing already booked changes:
--- no collection has payment_method 'credit_memo' until then.
+-- no collection has payment_method 'return_credit' until then.
 
 create or replace function public.gl_project_events(
   p_from date default null,
@@ -191,11 +193,8 @@ begin
       -- CHANGED (20261012): the account's own GL link, via gl_cash_account_code.
       -- CHANGED (20261023 return credit): returned goods settling the bill are
       -- not money — they use up the credit the return put in 2065.
-      -- CHANGED (20261024 credit memo): an allowance credit memo reduces
-      -- revenue, not cash.
       v_cash := case
         when r.payment_method = 'return_credit' then '2065'
-        when r.payment_method = 'credit_memo' then '4020'
         else coalesce(
           gl_cash_account_code(r.cash_account_id),
           case when r.payment_method in ('cash','petty_cash') then '1010' else '1020' end
@@ -206,10 +205,7 @@ begin
         jsonb_build_object('account_code', '1030', 'debit', 0, 'credit', coalesce(r.amount,0))
       );
       perform gl_post_entry(r.created_at::date, 'collection', r.id,
-        case r.payment_method
-          when 'return_credit' then 'Returned goods credit'
-          when 'credit_memo' then 'Credit memo'
-          else 'Collection received' end,
+        case when r.payment_method = 'return_credit' then 'Returned goods credit' else 'Collection received' end,
         v_lines, null);
       v_posted := v_posted + 1;
     exception when others then

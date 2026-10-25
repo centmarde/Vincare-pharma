@@ -2,7 +2,7 @@
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useExpenses, headers } from '../composables/useExpenses'
-import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
+import ChangeRequestDialog from '@/components/changeRequests/dialogs/ChangeRequestDialog.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import { financePageSizes } from '../composables/financeTable'
 

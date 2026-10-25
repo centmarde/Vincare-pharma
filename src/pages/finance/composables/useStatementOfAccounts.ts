@@ -142,9 +142,13 @@ export function useStatementOfAccounts() {
       .filter((b) => b.term !== 'no-term' || b.amount > 0)
   })
 
+  // Past due: consignment rows sit in the buckets by days since delivery, but
+  // they are never overdue (they pay as they sell), so they stay out of it —
+  // the same rule as Accounts Receivable's term totals.
   const agedTotal = computed(() =>
-    totals.value.bucket_1_30 + totals.value.bucket_31_60 + totals.value.bucket_61_90 +
-    totals.value.bucket_91_180 + totals.value.bucket_180_plus,
+    register.value
+      .filter((r) => !r.consignment)
+      .reduce((sum, r) => sum + r.bucket_1_30 + r.bucket_31_60 + r.bucket_61_90 + r.bucket_91_180 + r.bucket_180_plus, 0),
   )
 
   // A receipt with no due date cannot land in any bucket. In-House orders have

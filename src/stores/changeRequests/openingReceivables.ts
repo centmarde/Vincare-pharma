@@ -42,6 +42,8 @@ const addDays = (iso: string, days: number) => new Date(new Date(iso).getTime() 
 
 const numOrNull = (v: unknown): number | null => (v === null || v === undefined || v === '' ? null : Number(v))
 
+const isValidDate = (iso: string) => /^\d{4}-\d{2}-\d{2}/.test(iso) && !Number.isNaN(new Date(iso).getTime())
+
 export async function applyOpeningReceivableChange(request: ChangeRequestType, userId: string): Promise<ApplyResult> {
   const store = useOpeningReceivablesStore()
   const rows = await store.fetchOpeningReceivables()
@@ -72,8 +74,19 @@ export async function applyOpeningReceivableChange(request: ChangeRequestType, u
   const termLabel = String(next('term_label') ?? '')
   const notes = String(next('notes') ?? '')
 
+  // Both the re-record and the aging edit date from these: a bad date or term
+  // would throw halfway through (after the void, on the re-record path), so
+  // they are refused here, before anything is written.
+  const touchesLedger = ledgerKeys.some((k) => k in changes)
+  if (touchesLedger || agingKeys.some((k) => k in changes)) {
+    if (!isValidDate(invoiceDate)) return { success: false, error: 'The invoice date is not a valid date.' }
+    if (termDays !== null && !(Number.isInteger(termDays) && termDays >= 0)) {
+      return { success: false, error: 'The credit term must be a whole number of days (or left blank).' }
+    }
+  }
+
   // ── The amount changed: reverse and record again ──
-  if (ledgerKeys.some((k) => k in changes)) {
+  if (touchesLedger) {
     const originalAmount = Number(next('original_amount') ?? 0)
     const paidBeforeCutover = Number(next('paid_before_cutover') ?? 0)
     // Everything the re-record would refuse is checked BEFORE the void, so a
@@ -81,8 +94,8 @@ export async function applyOpeningReceivableChange(request: ChangeRequestType, u
     if (cur.collectedSince > 0.005) {
       return { success: false, error: 'Payments were collected against this receivable — its amount cannot be changed. Void those payments first.' }
     }
-    if (!(originalAmount > 0)) return { success: false, error: 'The corrected invoice amount must be greater than zero.' }
-    if (paidBeforeCutover < 0) return { success: false, error: 'The amount paid before cutover cannot be negative.' }
+    if (!Number.isFinite(originalAmount) || !(originalAmount > 0)) return { success: false, error: 'The corrected invoice amount must be greater than zero.' }
+    if (!Number.isFinite(paidBeforeCutover) || paidBeforeCutover < 0) return { success: false, error: 'The amount paid before cutover cannot be negative.' }
     if (originalAmount - paidBeforeCutover <= 0.005) {
       return { success: false, error: 'With these amounts nothing is outstanding — void the receivable instead.' }
     }
