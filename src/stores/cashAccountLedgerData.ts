@@ -165,12 +165,12 @@ export const useCashAccountLedgerStore = defineStore('cashAccountLedger', () => 
         fetchAllRows(() => supabase.from('transactions')
           .select('id, transaction_type, status, total_amount, created_at, paid_at, approved_at, reference_no, expense_no, remittance_no, remarks, finance_details(paid_to, category), remittance_details(actual_amount)')
           .eq('cash_account_id', id)
-          .in('transaction_type', ['expense', 'supplier_payment', 'remittance', 'bank_deposit', 'petty_cash_replenishment'])
+          .in('transaction_type', ['expense', 'supplier_payment', 'remittance', 'bank_deposit', 'fund_transfer', 'petty_cash_replenishment'])
           .order('id', { ascending: true })),
         fetchAllRows(() => supabase.from('transactions')
           .select('id, transaction_type, status, total_amount, created_at, paid_at, approved_at, reference_no, remarks')
           .eq('funding_account_id', id)
-          .in('transaction_type', ['bank_deposit', 'petty_cash_replenishment'])
+          .in('transaction_type', ['bank_deposit', 'fund_transfer', 'petty_cash_replenishment'])
           .order('id', { ascending: true })),
         fetchAllRows(() => supabase.from('collections')
           .select('id, created_at, amount, reference_no, payment_method, voided_at')
@@ -230,6 +230,12 @@ export const useCashAccountLedgerStore = defineStore('cashAccountLedger', () => 
             source: 'Deposit in', reference: t.reference_no, description: t.remarks || 'Bank deposit',
             moneyIn: money(t.total_amount), moneyOut: 0, voided,
           })
+        } else if (t.transaction_type === 'fund_transfer') {
+          push({
+            key: `tx-${t.id}`, date: dateOf(t.paid_at ?? t.created_at), recordedAt: t.created_at,
+            source: 'Transfer in', reference: t.reference_no, description: t.remarks || 'Transfer from another account',
+            moneyIn: money(t.total_amount), moneyOut: 0, voided,
+          })
         } else if (t.transaction_type === 'petty_cash_replenishment' && t.status === 'approved') {
           // Pending and rejected requests never moved any money.
           push({
@@ -243,13 +249,14 @@ export const useCashAccountLedgerStore = defineStore('cashAccountLedger', () => 
       for (const t of funding) {
         if (t.transaction_type === 'petty_cash_replenishment' && t.status !== 'approved') continue
         const isDeposit = t.transaction_type === 'bank_deposit'
+        const isTransfer = t.transaction_type === 'fund_transfer'
         push({
           key: `fund-${t.id}`,
-          date: dateOf(isDeposit ? (t.paid_at ?? t.created_at) : (t.approved_at ?? t.created_at)),
+          date: dateOf(isDeposit || isTransfer ? (t.paid_at ?? t.created_at) : (t.approved_at ?? t.created_at)),
           recordedAt: t.created_at,
-          source: isDeposit ? 'Deposit out' : 'Funded replenishment',
+          source: isTransfer ? 'Transfer out' : isDeposit ? 'Deposit out' : 'Funded replenishment',
           reference: t.reference_no,
-          description: t.remarks || (isDeposit ? 'Moved to another account' : 'Replenished a petty cash fund'),
+          description: t.remarks || (isDeposit || isTransfer ? 'Moved to another account' : 'Replenished a petty cash fund'),
           moneyIn: 0, moneyOut: money(t.total_amount), voided: t.status === 'voided',
         })
       }

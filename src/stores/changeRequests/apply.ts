@@ -3,6 +3,8 @@
 
 import { supabase } from '@/lib/supabase'
 import type { ApplyResult, ChangeRequestType } from './types'
+import { collectionIdKey, openingReceivableKey } from './types'
+import { applyOpeningReceivableChange } from './openingReceivables'
 import { applyExpenseChange, applySupplierPaymentChange } from './finance'
 import { applySaleChange, applyRemittanceChange } from './sales'
 import { applyCollectionChange } from './collections'
@@ -15,6 +17,18 @@ import { applyPRChange } from './purchasing'
 export async function applyChange(request: ChangeRequestType, userId: string): Promise<ApplyResult> {
   const txnType = await resolveTransactionType(request.transaction_id)
   if (!txnType) return { success: false, error: 'Transaction not found.' }
+
+  // A request carrying a payment id is about that PAYMENT. On a sale charged
+  // to account it must never reach applySaleChange, which voids the sale.
+  if (txnType === 'sale' && collectionIdKey in (request.proposed_changes ?? {})) {
+    return applyCollectionChange(request, userId, 'pos')
+  }
+  // An opening receivable is an in-house/ethical order too; without this its
+  // request would be read as a payment correction.
+  if ((txnType === 'inhouse_order' || txnType === 'ethical_order')
+    && openingReceivableKey in (request.proposed_changes ?? {})) {
+    return applyOpeningReceivableChange(request, userId)
+  }
 
   switch (txnType) {
     case 'expense':

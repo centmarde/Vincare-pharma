@@ -49,21 +49,21 @@ export function amountMatches(value: number | null | undefined, query: { amount:
 }
 
 // In Manila time, the zone the DATE column shows (formatDatePR_ISO), so a
-// voucher always sits in the month its date reads, whatever zone the browser
-// is in. Not the first 7 characters of the value: paid_at is a timestamp,
+// voucher always sits on the day its date reads, whatever zone the browser
+// is in. Not the first 10 characters of the value: paid_at is a timestamp,
 // stored in UTC.
-const manilaMonth = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit' })
+const manilaDay = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' })
 
-/** "2026-08" for a voucher, from its own date (falling back to when it was made). */
-function voucherMonth(voucher: VoucherType): string {
+/** "2026-08-14" for a voucher, from its own date (falling back to when it was made). */
+function voucherDay(voucher: VoucherType): string {
   const raw = voucher.voucher_date ?? voucher.created_at
   if (!raw) return ''
   const date = new Date(raw)
   if (isNaN(date.getTime())) return ''
-  const parts = manilaMonth.formatToParts(date)
-  const year = parts.find((p) => p.type === 'year')?.value
-  const month = parts.find((p) => p.type === 'month')?.value
-  return year && month ? `${year}-${month}` : ''
+  const parts = manilaDay.formatToParts(date)
+  const part = (type: string) => parts.find((p) => p.type === type)?.value
+  const [year, month, day] = [part('year'), part('month'), part('day')]
+  return year && month && day ? `${year}-${month}-${day}` : ''
 }
 
 const voucherStatusMeta: Record<string, { color: string; label: string; hint: string }> = {
@@ -127,36 +127,26 @@ export function useDisbursementVouchers() {
   }
 
   const search = ref('')
-  // A month RANGE, "2026-08" to "2026-10", either end open (null): From alone
-  // is that month onward, To alone is up to that month, both null is every
-  // month, and the same month in both is that one month.
-  const monthFrom = ref<string | null>(null)
-  const monthTo = ref<string | null>(null)
+  // A DATE range, both ends inclusive, either end open (empty): From alone is
+  // that day onward, To alone is up to and including that day, the same day in
+  // both is that one day. Was a month picker — too coarse to find one voucher.
+  // Strings ("2026-08-14") from the date fields; null after their clear button.
+  const dateFrom = ref<string | null>(null)
+  const dateTo = ref<string | null>(null)
   /** An account code, cashAdvancesFilter for all Cash Advances, or null for every account. */
   const accountFilter = ref<string | null>(null)
 
   const isFiltering = computed(() =>
-    !!search.value?.trim() || !!monthFrom.value || !!monthTo.value || !!accountFilter.value)
+    !!search.value?.trim() || !!dateFrom.value || !!dateTo.value || !!accountFilter.value)
 
-  /** Months that have vouchers, newest first. */
-  const voucherMonths = computed(() =>
-    [...new Set(vouchers.value.map(voucherMonth).filter(Boolean))].sort().reverse())
+  /** From after To matches nothing — said in the field rather than an empty list. */
+  const dateRangeError = computed(() =>
+    dateFrom.value && dateTo.value && dateFrom.value > dateTo.value ? 'From is after To' : '')
 
-  const monthOption = (month: string) => {
-    const [year, mm] = month.split('-').map(Number)
-    return { title: new Date(year, mm - 1, 1).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' }), value: month as string | null }
+  function clearDates() {
+    dateFrom.value = null
+    dateTo.value = null
   }
-
-  // Each end only offers months that fit the other, so From can never be
-  // picked after To.
-  const monthFromOptions = computed(() => [
-    { title: 'Earliest', value: null as string | null },
-    ...voucherMonths.value.filter((m) => !monthTo.value || m <= monthTo.value).map(monthOption),
-  ])
-  const monthToOptions = computed(() => [
-    { title: 'Latest', value: null as string | null },
-    ...voucherMonths.value.filter((m) => !monthFrom.value || m >= monthFrom.value).map(monthOption),
-  ])
 
   /** Accounts the vouchers actually charge, after "All accounts" and the Cash Advances group. */
   const accountOptions = computed(() => {
@@ -219,9 +209,9 @@ export function useDisbursementVouchers() {
     // as well as any text containing those digits (a voucher number, say).
     const amountQuery = query ? parseAmountQuery(query) : null
     return vouchers.value.filter((voucher) => {
-      const month = voucherMonth(voucher)
-      if (monthFrom.value && month < monthFrom.value) return false
-      if (monthTo.value && month > monthTo.value) return false
+      const day = voucherDay(voucher)
+      if (dateFrom.value && day < dateFrom.value) return false
+      if (dateTo.value && day > dateTo.value) return false
       if (accountFilter.value && !voucher.items.some((line) => lineMatchesAccount(line.category))) return false
       if (!query) return true
       if (amountQuery && (amountMatches(voucher.total_amount, amountQuery)
@@ -379,7 +369,7 @@ export function useDisbursementVouchers() {
     showStampDialog, stampTarget, openStamp, closeStampDialog,
     showCancelDialog, cancelTarget, cancelReason,
     statusMeta, canEdit, canPrint, canRecord, canCancel, recordBlockedReason, particularsSummary,
-    search, monthFrom, monthTo, monthFromOptions, monthToOptions, accountFilter, accountOptions, isFiltering,
+    search, dateFrom, dateTo, dateRangeError, clearDates, accountFilter, accountOptions, isFiltering,
     matchedAmount, isPartialMatch, tableHeaders, filteredVouchers, searchTotals,
     init, openCreateDialog, openEditDialog, closeFormDialog, handleSubmit,
     openPrint, closePrintDialog, handleRecord,

@@ -14,6 +14,13 @@ import type { ProposedChange } from '@/utils/changeRequests'
 // sales change-request stores).
 export const prevStatusKey = '__prev_status'
 export const collectionIdKey = '__collection_id'
+/**
+ * Marks a request about an OPENING RECEIVABLE (a pre-cutover invoice recorded
+ * on the Opening Receivables page). It sits on an in-house/ethical order row
+ * like a payment request does, so without this marker it would be read as a
+ * payment correction.
+ */
+export const openingReceivableKey = '__opening_receivable'
 
 // NOTE: the old `ChangeRequestTargetType` union was removed — it was a leftover
 // from the v1 polymorphic schema (`target_type`/`target_id`, dropped when
@@ -55,6 +62,8 @@ export type ChangeRequestType = {
   resolution_note: string | null
   from_transaction_no: string | null // Original transaction ref
   to_transaction_no: string | null // Replacement transaction ref after a ledger edit
+  /** The document's transaction_type, when the fetch embedded it (type-scoped fetches do). */
+  transaction_type?: string | null
 }
 
 export type ProposeChangePayload = {

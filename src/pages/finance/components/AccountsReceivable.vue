@@ -1,10 +1,15 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useAccountsReceivable, arHeaders, arSourceLabel } from '../composables/useAccountsReceivable'
 import type { ARAgingRow } from '@/stores/financeData'
 import { formatCurrency } from '@/utils/helpers'
 import ARDetailDialog from './dialogs/ARDetailDialog.vue'
 import RecordChargePaymentDialog from './dialogs/RecordChargePaymentDialog.vue'
 import SOADialog from './dialogs/SOADialog.vue'
+import ConsignmentDialog from './dialogs/ConsignmentDialog.vue'
+import CreditMemoRequestDialog from './dialogs/CreditMemoRequestDialog.vue'
+import CreditMemosDialog from './dialogs/CreditMemosDialog.vue'
+import type { CreditMemoTarget } from '../composables/useCreditMemos'
 import { financePageSizes, financeDefaultPageSize } from '../composables/financeTable'
 
 const {
@@ -13,12 +18,18 @@ const {
   termTotals,
   overdueReceivable,
   customerJackets,
+  consignmentReceivable,
+  consignmentCollectors,
+  showConsignment,
+  openConsignment,
   detailOpen,
   detailLoading,
   selectedDetail,
   openDetail,
+  refreshDetail,
   paymentOpen, payAmount, payMethod, payReference, payRemarks, payCashAccountId, paying,
-  cashAccountOptions, paymentMethodOptions, canRecordPayment, openPayment, confirmPayment,
+  payChequeBank, payChequeNo, payChequeDate,
+  cashAccountOptions, canRecordPayment, openPayment, confirmPayment,
   soaOpen,
   soaLoading,
   soaData,
@@ -40,8 +51,32 @@ function onRowClick(_event: unknown, { item }: { item: ARAgingRow }) {
   openDetail(item)
 }
 
+/** A consignment customer's statement, opened from the collector list. */
+function openConsignmentSOA(customerIds: number[]) {
+  const jacket = customerJackets.value.find((j) => j.customerIds.some((id) => customerIds.includes(id)))
+  openSOA(customerIds, jacket ? jacketSource(jacket.rows) : undefined)
+}
+
+// Credit memos: asking for one on the open bill, and the register.
+const showCreditMemoRequest = ref(false)
+const creditMemoTarget = ref<CreditMemoTarget | null>(null)
+const showCreditMemos = ref(false)
+
+function openCreditMemoRequest() {
+  const d = selectedDetail.value
+  if (!d) return
+  creditMemoTarget.value = { source: d.source, id: d.id, reference_no: d.reference_no, customer_name: d.customer_name, balance: d.balance }
+  showCreditMemoRequest.value = true
+}
+
+function deliveredAgo(days: number | null): string {
+  if (days == null) return 'Consignment'
+  return `Consignment · ${days} day${days === 1 ? '' : 's'} out`
+}
+
 const termColor: Record<string, string> = {
-  current: 'success',
+  // Explicit green: the theme's 'success' is a shade of the brand red.
+  current: 'green-darken-1',
   'no-term': 'grey',
   '1-30': 'warning',
   '31-60': 'warning',
@@ -92,6 +127,10 @@ const termLabels: Record<string, string> = {
                 <div class="text-caption text-medium-emphasis">{{ termLabels[t.term] }}</div>
                 <div class="text-body-1 font-weight-bold">{{ formatCurrency(t.total) }}</div>
               </div>
+              <div>
+                <div class="text-caption text-medium-emphasis">Consignment</div>
+                <div class="text-body-1 font-weight-bold text-blue-grey">{{ formatCurrency(consignmentReceivable) }}</div>
+              </div>
             </div>
           </v-card>
         </v-col>
@@ -99,9 +138,28 @@ const termLabels: Record<string, string> = {
 
       <!-- AR ledger, grouped into per-customer jackets -->
       <v-card rounded="lg" elevation="1">
-        <v-card-title class="pa-4 pa-sm-5 text-h6 font-weight-bold"
-          >Accounts Receivable</v-card-title
-        >
+        <v-card-title class="pa-4 pa-sm-5 d-flex flex-wrap align-center ga-2">
+          <span class="text-h6 font-weight-bold">Accounts Receivable</span>
+          <v-spacer />
+          <v-btn
+            variant="tonal"
+            size="small"
+            class="text-none"
+            prepend-icon="mdi-file-document-minus-outline"
+            @click="showCreditMemos = true"
+          >
+            Credit memos
+          </v-btn>
+          <v-btn
+            variant="tonal"
+            size="small"
+            class="text-none"
+            prepend-icon="mdi-truck-delivery-outline"
+            @click="openConsignment"
+          >
+            Consignment ({{ consignmentCollectors.length }})
+          </v-btn>
+        </v-card-title>
         <v-divider />
 
         <div v-if="loading" class="pa-6 text-center text-caption text-medium-emphasis">
@@ -122,19 +180,30 @@ const termLabels: Record<string, string> = {
                 <v-chip size="small" variant="tonal"
                   >{{ jacket.docCount }} open doc{{ jacket.docCount === 1 ? '' : 's' }}</v-chip
                 >
+                <v-tooltip
+                  v-if="jacket.customerIds.length > 1"
+                  :text="`Filed together: this customer has ${jacket.customerIds.length} records in the customer list (duplicates). The statement covers all of them.`"
+                >
+                  <template #activator="{ props: tip }">
+                    <v-chip v-bind="tip" size="small" variant="outlined" prepend-icon="mdi-account-multiple-outline">
+                      {{ jacket.customerIds.length }} records
+                    </v-chip>
+                  </template>
+                </v-tooltip>
                 <v-btn
-                  v-if="jacket.customerId != null"
+                  v-if="jacket.customerIds.length"
                   size="small"
                   variant="text"
                   color="primary"
                   class="text-none"
                   prepend-icon="mdi-file-document-outline"
-                  @click.stop="openSOA(jacket.customerId, jacketSource(jacket.rows))"
+                  @click.stop="openSOA(jacket.customerIds, jacketSource(jacket.rows))"
                 >
                   View SOA
                 </v-btn>
                 <v-spacer />
-                <v-chip size="small" variant="tonal" :color="termColor[jacket.worstTerm]">
+                <v-chip v-if="jacket.consignment" size="small" variant="tonal" color="blue-grey">Consignment</v-chip>
+                <v-chip v-else size="small" variant="tonal" :color="termColor[jacket.worstTerm]">
                   {{ termLabels[jacket.worstTerm] }}
                 </v-chip>
                 <span class="font-weight-bold">{{ formatCurrency(jacket.totalBalance) }}</span>
@@ -171,7 +240,10 @@ const termLabels: Record<string, string> = {
                 </template>
 
                 <template #item.term="{ item }">
-                  <v-chip size="small" variant="tonal" :color="termColor[item.term]">
+                  <v-chip v-if="item.consignment" size="small" variant="tonal" color="blue-grey">
+                    {{ deliveredAgo(item.days_since_delivery) }}
+                  </v-chip>
+                  <v-chip v-else size="small" variant="tonal" :color="termColor[item.term]">
                     {{ termLabels[item.term] }}
                   </v-chip>
                 </template>
@@ -181,7 +253,17 @@ const termLabels: Record<string, string> = {
         </v-expansion-panels>
       </v-card>
 
-      <ARDetailDialog v-model="detailOpen" :loading="detailLoading" :detail="selectedDetail" @record-payment="openPayment" />
+      <ARDetailDialog
+        v-model="detailOpen"
+        :loading="detailLoading"
+        :detail="selectedDetail"
+        @record-payment="openPayment"
+        @changed="refreshDetail"
+        @issue-credit-memo="openCreditMemoRequest"
+      />
+
+      <CreditMemoRequestDialog v-model="showCreditMemoRequest" :target="creditMemoTarget" @sent="showCreditMemos = true" />
+      <CreditMemosDialog v-model="showCreditMemos" />
 
       <RecordChargePaymentDialog
         v-model="paymentOpen"
@@ -190,17 +272,25 @@ const termLabels: Record<string, string> = {
         v-model:reference="payReference"
         v-model:remarks="payRemarks"
         v-model:cash-account-id="payCashAccountId"
+        v-model:cheque-bank="payChequeBank"
+        v-model:cheque-no="payChequeNo"
+        v-model:cheque-date="payChequeDate"
         :sale-no="selectedDetail?.reference_no ?? null"
         :customer-name="selectedDetail?.customer_name ?? null"
         :balance="selectedDetail?.balance ?? 0"
         :cash-account-options="cashAccountOptions"
-        :method-options="paymentMethodOptions"
         :can-confirm="canRecordPayment"
         :loading="paying"
         @confirm="confirmPayment"
       />
 
       <SOADialog v-model="soaOpen" :loading="soaLoading" :soa="soaData" />
+
+      <ConsignmentDialog
+        v-model="showConsignment"
+        :collectors="consignmentCollectors"
+        @view-soa="openConsignmentSOA"
+      />
     </div>
   </v-container>
 </template>

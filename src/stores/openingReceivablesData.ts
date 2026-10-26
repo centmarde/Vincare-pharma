@@ -7,6 +7,7 @@ import { useAuthUserStore } from '@/stores/authUser'
 import { useGLDataStore, openingBalanceEquityCode } from '@/stores/glData'
 import { useCustomersDataStore } from '@/stores/customersData'
 import { generateNextNumber, insertWithDocRetry, getErrorMessage, formatCurrency } from '@/utils/helpers'
+import { fetchAllRows, fetchAllRowsForIds } from '@/stores/shared/paging'
 
 // Opening receivables — invoices raised BEFORE the cutover to this system that
 // the customer has not finished paying.
@@ -57,6 +58,52 @@ export type OpeningReceivableInput = {
   remarks?: string
 }
 
+/** Every opening receivable's remarks start with this — it is how they are told apart from real orders. */
+export const openingRemarksPrefix = 'Opening receivable — original invoice '
+
+/** The remarks an opening receivable carries: provenance first, then any notes. */
+export function openingRemarks(parts: { originalNo: string; termLabel: string; notes?: string | null }): string {
+  const provenance = `${openingRemarksPrefix}${parts.originalNo || '(unnumbered)'}`
+    + (parts.termLabel ? ` · terms ${parts.termLabel}` : '')
+  return parts.notes?.trim() ? `${provenance} · ${parts.notes.trim()}` : provenance
+}
+
+/** Reads back what openingRemarks wrote. */
+export function parseOpeningRemarks(remarks: string | null | undefined): { originalNo: string; termLabel: string; notes: string } {
+  const text = (remarks ?? '').startsWith(openingRemarksPrefix) ? (remarks ?? '').slice(openingRemarksPrefix.length) : ''
+  const [first = '', ...rest] = text.split(' · ')
+  let termLabel = ''
+  if (rest[0]?.startsWith('terms ')) termLabel = rest.shift()!.slice('terms '.length)
+  return { originalNo: first === '(unnumbered)' ? '' : first, termLabel, notes: rest.join(' · ') }
+}
+
+/** A recorded opening receivable, as the page lists it and a change request edits it. */
+export type OpeningReceivableRow = {
+  id: number
+  docNo: string | null
+  department: 'inhouse' | 'ethical'
+  status: string | null
+  customerId: number | null
+  customerName: string | null
+  originalNo: string
+  termLabel: string
+  notes: string
+  invoiceDate: string
+  termDays: number | null
+  dueDate: string | null
+  originalAmount: number
+  /** Paid before cutover — what was netted off when it was recorded. */
+  paidBeforeCutover: number
+  /** Collected through this system since. */
+  collectedSince: number
+  outstanding: number
+  /** The date its ledger entry carries. */
+  cutoverDate: string | null
+}
+
+const dayMs = 86400000
+const isoDay = (value: string | null | undefined) => (value ? String(value).slice(0, 10) : '')
+
 export const useOpeningReceivablesStore = defineStore('openingReceivables', () => {
   const toast = useToast()
   const authStore = useAuthUserStore()
@@ -68,6 +115,78 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
 
   function handleError(err: unknown, msg: string) {
     error.value = err instanceof Error ? err.message : msg
+  }
+
+  const recorded: Ref<OpeningReceivableRow[]> = ref([])
+  const recordedLoading = ref(false)
+
+  /**
+   * Every opening receivable still standing (not voided), newest first. Paid
+   * before cutover is what amount_paid held beyond the payments collected here.
+   */
+  async function fetchOpeningReceivables(): Promise<OpeningReceivableRow[]> {
+    recordedLoading.value = true
+    try {
+      const rows = (await fetchAllRows<any>(() => supabase
+        .from('transactions')
+        .select('id, transaction_type, status, created_at, total_amount, remarks, inhouse_no, ethical_no, customer_id, '
+          + 'customer:customer_id(name), inhouse_details(amount_paid, due_date), ethical_details(amount_paid, due_date, terms_days)')
+        .in('transaction_type', ['inhouse_order', 'ethical_order'])
+        .ilike('remarks', `${openingRemarksPrefix}%`)
+        .neq('status', 'cancelled')
+        .order('id', { ascending: false })))
+        .filter((r) => String(r.remarks ?? '').startsWith(openingRemarksPrefix) && r.status !== 'cancelled')
+      const ids = rows.map((r) => Number(r.id))
+      const [collections, entries] = await Promise.all([
+        fetchAllRowsForIds<any>(ids, (batch) => supabase.from('collections')
+          .select('id, transaction_id, amount').in('transaction_id', batch).is('voided_at', null).order('id', { ascending: true })),
+        fetchAllRowsForIds<any>(ids, (batch) => supabase.from('journal_entries')
+          .select('id, reference_id, entry_date, status, reverses_entry')
+          .eq('reference_type', 'sales_invoice').in('reference_id', batch).order('id', { ascending: true })),
+      ])
+      const collected = new Map<number, number>()
+      for (const c of collections) collected.set(Number(c.transaction_id), (collected.get(Number(c.transaction_id)) ?? 0) + Number(c.amount ?? 0))
+      const cutover = new Map<number, string>()
+      for (const e of entries) if (e.status === 'posted' && e.reverses_entry == null) cutover.set(Number(e.reference_id), e.entry_date)
+
+      recorded.value = rows.map((r) => {
+        const isInhouse = r.transaction_type === 'inhouse_order'
+        const details = (isInhouse ? r.inhouse_details : r.ethical_details) ?? {}
+        const parsed = parseOpeningRemarks(r.remarks)
+        const invoiceDate = isoDay(r.created_at)
+        const dueDate = details.due_date ? isoDay(details.due_date) : null
+        const termDays = details.terms_days ?? (dueDate
+          ? Math.round((new Date(dueDate).getTime() - new Date(invoiceDate).getTime()) / dayMs)
+          : null)
+        const total = Number(r.total_amount ?? 0)
+        const paid = Number(details.amount_paid ?? 0)
+        const since = collected.get(Number(r.id)) ?? 0
+        return {
+          id: r.id,
+          docNo: (isInhouse ? r.inhouse_no : r.ethical_no) ?? null,
+          department: isInhouse ? 'inhouse' : 'ethical',
+          status: r.status ?? null,
+          customerId: r.customer_id ?? null,
+          customerName: r.customer?.name ?? null,
+          ...parsed,
+          invoiceDate,
+          termDays,
+          dueDate,
+          originalAmount: total,
+          paidBeforeCutover: Math.max(0, Math.round((paid - since) * 100) / 100),
+          collectedSince: since,
+          outstanding: Math.max(0, total - paid),
+          cutoverDate: cutover.get(Number(r.id)) ?? null,
+        } as OpeningReceivableRow
+      })
+      return recorded.value
+    } catch (err) {
+      console.error('fetchOpeningReceivables:', err)
+      toast.error('Could not load the recorded opening receivables.')
+      return []
+    } finally {
+      recordedLoading.value = false
+    }
   }
 
   /** Undo a partially-written receivable so a retry cannot double-record it. */
@@ -130,11 +249,7 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
     // doc-number generators scan that series for the next free slot, and a
     // legacy number in a different format either collides or leaves a hole they
     // later trip over.
-    const provenance = `Opening receivable — original invoice ${payload.originalNo || '(unnumbered)'}`
-      + (payload.termLabel ? ` · terms ${payload.termLabel}` : '')
-    const remarks = payload.remarks?.trim()
-      ? `${provenance} · ${payload.remarks.trim()}`
-      : provenance
+    const remarks = openingRemarks({ originalNo: payload.originalNo, termLabel: payload.termLabel, notes: payload.remarks })
 
     const { data: created, docNo, error: insertError } = await insertWithDocRetry<{ id: number }>(
       () => generateNextNumber(numberColumn, `${prefix}${year}-`),
@@ -271,9 +386,11 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
       }
     }
 
+    // The reason goes in front; what it was (their invoice no., terms) stays.
+    const { data: doc } = await supabase.from('transactions').select('remarks').eq('id', transactionId).maybeSingle()
     const { error: statusError } = await supabase
       .from('transactions')
-      .update({ status: 'cancelled', remarks: `Voided: ${reason}` })
+      .update({ status: 'cancelled', remarks: [`Voided: ${reason}`, doc?.remarks].filter(Boolean).join(' | ') })
       .eq('id', transactionId)
     if (statusError) {
       handleError(statusError, 'Ledger entry reversed but the document could not be cancelled.')
@@ -295,5 +412,8 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
     return { success: true as const }
   }
 
-  return { loading, error, addOpeningReceivable, voidOpeningReceivable }
+  return {
+    loading, error, recorded, recordedLoading,
+    addOpeningReceivable, voidOpeningReceivable, fetchOpeningReceivables,
+  }
 })

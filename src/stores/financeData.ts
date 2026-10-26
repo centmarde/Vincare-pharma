@@ -57,7 +57,7 @@ import {
   fetchSupplierAP,
   fetchAPAging,
 } from './finance/payables'
-import { fetchARAging, fetchReceivableDetail, fetchStatementOfAccount } from './finance/receivables'
+import { fetchARAging, fetchCustomerReceivables, fetchReceivableDetail, fetchStatementOfAccount } from './finance/receivables'
 import {
   fetchRemittanceDiscrepancies,
   fetchCommissionLiability,
@@ -173,6 +173,7 @@ export const useFinanceDataStore = defineStore('financeData', () => {
     // Receivables
     fetchARAging,
     fetchReceivableDetail,
+    fetchCustomerReceivables,
     fetchStatementOfAccount,
 
     // Discrepancies

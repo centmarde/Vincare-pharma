@@ -10,6 +10,7 @@ import { useFinanceChangeRequestStore } from '../stores/financeChangeRequest'
 import { useDisbursementVouchersStore } from '@/stores/disbursementVouchersData'
 import type { ChangeRequestField, ProposedChange, AppliedEdit } from '@/stores/changeRequestsData'
 import { formatCurrency } from '@/utils/helpers'
+import { parseAmountQuery, amountMatches } from './useDisbursementVouchers'
 import { useExpenseAccounts } from './useExpenseAccounts'
 import type { AddExpensePayload } from '@/utils/cashAccountTypes'
 
@@ -196,8 +197,28 @@ export function useExpenses() {
     }
   }
 
+  /**
+   * Narrows the register as you type: expense no. (EXP-2026-406, or just 406),
+   * the voucher it came from (as the VOUCHER column shows it), paid to, account, department, OR/SI no., description, paying account,
+   * status — or an amount, with or without commas (the voucher page's rule).
+   * Null after the field's clear button.
+   */
+  const search = ref<string | null>('')
+  const filteredExpenses = computed(() => {
+    const query = (search.value ?? '').trim().toLowerCase()
+    if (!query) return expenses.value
+    const amountQuery = parseAmountQuery(query)
+    return expenses.value.filter((e) => {
+      if (amountQuery && amountMatches(e.amount, amountQuery)) return true
+      return [
+        e.reference_no, voucherFor(e.id), e.paid_to, e.department, e.or_si_no, e.remarks, e.cash_account_name, e.status,
+        expenseAccountLabel(e.category),
+      ].some((v) => (v ?? '').toLowerCase().includes(query))
+    })
+  })
+
   return {
-    expenses, cashAccounts, loading,
+    expenses, cashAccounts, loading, search, filteredExpenses,
     showFormDialog,
     showChangeDialog, changeTarget, changeFields, voidSummary, isPending, isEdited, editTooltip,
     voucherFor, expenseAccountLabel,

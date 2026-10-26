@@ -4,7 +4,7 @@ import {
   useSupplierPayments, apHeaders, agingHeaders, paymentHistoryHeaders, bucketColor,
 } from '../composables/useSupplierPayments'
 import { apAgeBuckets } from '@/stores/financeData'
-import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
+import ChangeRequestDialog from '@/components/changeRequests/dialogs/ChangeRequestDialog.vue'
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
 import { useFinanceChangeRequestStore } from '../stores/financeChangeRequest'
 import { expensePaymentMethods, type SupplierPaymentType } from '@/stores/financeData'

@@ -63,6 +63,77 @@ export const posPaymentMethods: PosPaymentMethodMeta[] = [
   { value: chargeToAccount, title: 'Charge to account', icon: 'mdi-account-clock-outline', takesTendered: false, referenceLabel: null },
 ]
 
+/**
+ * How a customer pays a receivable at the office — the AR collection forms
+ * (Ethical, In-House, POS charges) offer exactly these two, as the staff who
+ * collect asked. Values are the shared ones above, so the GL reads them the
+ * same way.
+ */
+export const collectionPaymentMethods: PaymentMethodMeta[] = paymentMethods.filter(
+  (m) => m.value === 'cash' || m.value === 'cheque',
+)
+export const collectionPaymentMethodOptions = collectionPaymentMethods.map((m) => ({ title: m.title, value: m.value }))
+
+/** A cheque as received: the issuing bank, its number, and the date written on it. */
+export type ChequeDetails = { bank: string; number: string; date: string }
+
+/**
+ * What a cheque payment is still missing, as a phrase for "Needs …", or null
+ * when complete (or the payment is not a cheque).
+ */
+export function chequeProblem(method: string | null | undefined, cheque: ChequeDetails): string | null {
+  if (method !== 'cheque') return null
+  const missing = [
+    !cheque.bank.trim() && 'the bank',
+    !cheque.number.trim() && 'the cheque no.',
+    !cheque.date && 'the cheque date',
+  ].filter(Boolean)
+  return missing.length ? missing.join(', ') : null
+}
+
+/** The cheque details to save, or null when the payment is not a cheque. */
+export function chequeFor(method: string | null | undefined, cheque: ChequeDetails): ChequeDetails | null {
+  if (method !== 'cheque') return null
+  return { bank: cheque.bank.trim(), number: cheque.number.trim(), date: cheque.date }
+}
+
+/** "BDO · No. 004512 · dated 2026-10-30" for a payment's cheque, or '' if none. */
+export function chequeLabel(c: { cheque_bank?: string | null; cheque_no?: string | null; cheque_date?: string | null }): string {
+  return [c.cheque_bank, c.cheque_no && `No. ${c.cheque_no}`, c.cheque_date && `dated ${c.cheque_date}`]
+    .filter(Boolean).join(' · ')
+}
+
+/**
+ * A `collections` row settled by returned goods, not money: the credit a
+ * customer return created (2065 Customer Credits) taken off what the customer
+ * owes. No cash account is involved, and gl_project_events books it DR 2065 /
+ * CR 1030 instead of debiting cash. Its reference_no is the return's SR number.
+ * Not in `paymentMethods` — nobody chooses it as a way to pay.
+ */
+export const returnCredit = 'return_credit'
+
+/**
+ * A `collections` row recording an issued CREDIT MEMO for an allowance (price
+ * correction, short or damaged delivery, agreed allowance) — not money and not
+ * returned goods. gl_project_events books it DR 4020 Sales Returns & Allowances
+ * / CR 1030. Its reference_no is the CM number. A credit memo for RETURNED
+ * goods uses returnCredit instead, since the return already booked 4020.
+ */
+export const creditMemo = 'credit_memo'
+
+/** Settled by a credit, not money: no cash account, no commission. */
+export function isCreditSettlement(method: string | null | undefined): boolean {
+  return method === returnCredit || method === creditMemo
+}
+
+/** How a payment on a receivable reads: 'Bank Transfer', 'Returned goods', ... */
+export function collectionMethodLabel(value: string | null | undefined): string {
+  if (!value) return '—'
+  if (value === returnCredit) return 'Returned goods'
+  if (value === creditMemo) return 'Credit memo'
+  return paymentMethods.find((m) => m.value === value)?.title ?? value
+}
+
 /** Like paymentMethodMeta, but knows a charge — so a charge sale never reads as "Cash". */
 export function posPaymentMethodMeta(value: PosPaymentMethod | string | null): PosPaymentMethodMeta {
   return posPaymentMethods.find((m) => m.value === value) ?? paymentMethods[0]

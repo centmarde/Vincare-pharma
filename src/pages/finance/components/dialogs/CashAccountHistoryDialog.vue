@@ -55,13 +55,13 @@ const meta = computed(() => (props.account ? classificationMeta(props.account.cl
         <template v-else-if="history">
           <div class="d-flex flex-wrap ga-6 mb-3 text-body-2">
             <div>
-              <div class="text-caption text-medium-emphasis text-uppercase">Money in</div>
+              <div class="text-caption text-medium-emphasis text-uppercase">Cash in</div>
               <!-- Fixed green, not text-success: this app's theme derives
                    "success" from the brand red. -->
               <div class="font-weight-bold text-green-darken-2">{{ formatCurrency(history.totalIn) }}</div>
             </div>
             <div>
-              <div class="text-caption text-medium-emphasis text-uppercase">Money out</div>
+              <div class="text-caption text-medium-emphasis text-uppercase">Cash out</div>
               <div class="font-weight-bold text-error">{{ formatCurrency(history.totalOut) }}</div>
             </div>
           </div>

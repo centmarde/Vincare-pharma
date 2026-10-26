@@ -4,13 +4,13 @@
 
 import { parseProposedChanges } from '@/utils/changeRequests'
 import type { ProposedChange } from '@/utils/changeRequests'
-import { prevStatusKey, collectionIdKey } from './types'
+import { prevStatusKey, collectionIdKey, openingReceivableKey } from './types'
 import type { ChangeRequestType, Diff } from './types'
 
 export function stripReservedKeys(changes: ProposedChange): ProposedChange {
   const out: ProposedChange = {}
   for (const [k, v] of Object.entries(changes)) {
-    if (k !== prevStatusKey && k !== collectionIdKey) out[k] = v
+    if (k !== prevStatusKey && k !== collectionIdKey && k !== openingReceivableKey) out[k] = v
   }
   return out
 }
@@ -31,6 +31,7 @@ export function mapRequestRow(row: any): ChangeRequestType {
     resolution_note: row.resolution_note ?? null,
     from_transaction_no: row.from_transaction_no ?? null,
     to_transaction_no: row.to_transaction_no ?? null,
+    transaction_type: row.transactions?.transaction_type ?? null,
     // module: row.module ?? null,
   }
 }

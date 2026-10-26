@@ -1,9 +1,12 @@
 import { ref, computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useOpeningReceivablesStore } from '@/stores/openingReceivablesData'
+import type { OpeningReceivableRow } from '@/stores/openingReceivablesData'
+import type { ChangeRequestConfig } from '@/composables/useChangeRequestFiling'
+import { openingReceivableKey } from '@/stores/changeRequests/types'
 import { useFinanceDataStore } from '@/stores/financeData'
 import { useCustomerPicker } from '@/composables/useCustomerPicker'
-import { toLocalISODate } from '@/utils/helpers'
+import { formatCurrency, toLocalISODate } from '@/utils/helpers'
 
 // Form state for the opening-receivables migration screen. See the store for
 // why these are recorded as documents and why the ledger entry is written
@@ -41,7 +44,7 @@ export const termPresets = [
 export function useOpeningReceivables() {
   const store = useOpeningReceivablesStore()
   const financeStore = useFinanceDataStore()
-  const { loading } = storeToRefs(store)
+  const { loading, recorded, recordedLoading } = storeToRefs(store)
 
   const department = ref<'inhouse' | 'ethical'>('inhouse')
   const customerId = ref<number | null>(null)
@@ -49,8 +52,8 @@ export function useOpeningReceivables() {
   const invoiceDate = ref(todayISO())
   const termDays = ref<number | null>(30)
   const termLabel = ref('30 Days')
-  const originalAmount = ref<number | null>(null)
-  const alreadyPaid = ref<number | null>(null)
+  const originalAmount = ref(0)
+  const alreadyPaid = ref(0)
   const cutoverDate = ref(todayISO())
   const remarks = ref('')
 
@@ -145,8 +148,8 @@ export function useOpeningReceivables() {
     originalNo.value = ''
     invoiceDate.value = todayISO()
     applyTermPreset(30)
-    originalAmount.value = null
-    alreadyPaid.value = null
+    originalAmount.value = 0
+    alreadyPaid.value = 0
     remarks.value = ''
   }
 
@@ -168,13 +171,64 @@ export function useOpeningReceivables() {
       // Cutover date and department persist — a migration session enters many
       // in a row, all dated the same and usually for one department.
       resetForm()
-      await financeStore.fetchARAging()
+      await Promise.all([financeStore.fetchARAging(), store.fetchOpeningReceivables()])
     }
     return result
   }
 
   async function load() {
-    await Promise.all([initCustomerPicker(), financeStore.fetchARAging()])
+    await Promise.all([initCustomerPicker(), financeStore.fetchARAging(), store.fetchOpeningReceivables()])
+  }
+
+  async function reloadRecorded() {
+    await store.fetchOpeningReceivables()
+  }
+
+  /**
+   * Narrows the recorded list as you type: our number, customer, their
+   * invoice number, terms or notes — or an amount, typed with or without
+   * commas ("23683", "23,683.00").
+   */
+  // null after the field's clear button.
+  const recordedSearch = ref<string | null>('')
+  const recordedFiltered = computed(() => {
+    const q = (recordedSearch.value ?? '').trim().toLowerCase()
+    if (!q) return recorded.value
+    const digits = q.replace(/[₱,\s]/g, '')
+    const isAmount = /^\d+(\.\d+)?$/.test(digits)
+    return recorded.value.filter((r) => {
+      const text = [r.docNo, r.customerName, r.originalNo, r.termLabel, r.notes]
+        .some((v) => (v ?? '').toLowerCase().includes(q))
+      if (text) return true
+      if (!isAmount) return false
+      return [r.originalAmount, r.outstanding].some((a) => a.toFixed(2).includes(digits))
+    })
+  })
+
+  /**
+   * A change request on a recorded opening receivable — the way to correct or
+   * back out one entered wrongly, approved by an executive. Field keys are what
+   * the applier (changeRequests/openingReceivables.ts) reads; the values are
+   * the row's, so the request can tell if the record moved since.
+   */
+  function changeConfigFor(row: OpeningReceivableRow): ChangeRequestConfig {
+    return {
+      id: row.id,
+      ref: row.docNo,
+      fields: [
+        { key: 'original_amount', label: 'Original invoice amount', value: row.originalAmount, type: 'number' },
+        { key: 'paid_before_cutover', label: 'Collected before cutover', value: row.paidBeforeCutover, type: 'number' },
+        { key: 'invoice_date', label: 'Invoice date', value: row.invoiceDate, type: 'date' },
+        { key: 'term_days', label: 'Credit term (days)', value: row.termDays, type: 'number' },
+        { key: 'original_no', label: 'Their invoice number', value: row.originalNo, type: 'text' },
+        { key: 'term_label', label: 'Term as they word it', value: row.termLabel, type: 'text' },
+        { key: 'notes', label: 'Notes', value: row.notes, type: 'text' },
+      ],
+      voidSummary: `Void ${row.docNo ?? 'this opening receivable'} (${formatCurrency(row.outstanding)} outstanding) — reverses its DR Accounts Receivable / CR Opening Balance Equity entry and cancels it. Refused if payments were collected against it.`,
+      allowEdit: true,
+      allowVoid: true,
+      meta: { [openingReceivableKey]: { from: true, to: true } },
+    }
   }
 
   onMounted(load)
@@ -186,5 +240,6 @@ export function useOpeningReceivables() {
     customerSearch, customerOptions, outstanding, dueDate, daysElapsed, daysRemaining, isOverdue, termSummary,
     blockers, canSubmit,
     setDaysElapsed, applyTermPreset, clearTerm, resetForm, submit, load,
+    recorded, recordedLoading, reloadRecorded, changeConfigFor, recordedSearch, recordedFiltered,
   }
 }

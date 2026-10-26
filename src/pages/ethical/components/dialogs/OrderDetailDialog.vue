@@ -5,11 +5,12 @@ import { useEthicalDataStore } from '@/stores/ethicalData'
 import type { CollectionType } from '@/stores/ethicalData'
 import EthicalInvoiceDialog from './EthicalInvoiceDialog.vue'
 import DeliveryReceiptDialog from '@/components/deliveryReceipts/DeliveryReceiptDialog.vue'
-import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
+import ChangeRequestDialog from '@/components/changeRequests/dialogs/ChangeRequestDialog.vue'
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
 import { useChangeRequestsDataStore } from '@/stores/changeRequestsData'
-import { expensePaymentMethods } from '@/stores/financeData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import { chequeLabel, collectionMethodLabel, collectionPaymentMethodOptions } from '@/utils/paymentMethods'
+import CollectionPaymentFields from '@/components/collections/CollectionPaymentFields.vue'
 import { useDisplay } from 'vuetify'
 
 const { mobile } = useDisplay()
@@ -28,7 +29,8 @@ const ethical = useEthicalDataStore()
 const order = computed(() => ethical.currentOrder)
 
 const {
-  loading, collectionAmount, collectionMethod, collectionReference,
+  loading, collectionAmount, collectionMethod, collectionReference, collectionRemarks,
+  collectionChequeBank, collectionChequeNo, collectionChequeDate,
   receivedBy, issuedReceipt, canIssueDR,
   requestedAt, requestNote,
   isInvoiced, isPartial, isPaid, isAwaitingStock, isCancellable, isOverdue, balance, shortfall, collections,
@@ -55,8 +57,12 @@ function requestUndoCollection(c: CollectionType) {
     ref: order.value.order_no ?? null,
     fields: [
       { key: 'amount', label: 'Amount', value: c.amount ?? 0, type: 'number' },
-      { key: 'payment_method', label: 'Payment Method', value: c.payment_method, type: 'select', items: expensePaymentMethods.map((m) => ({ title: m.title, value: m.value })) },
+      { key: 'payment_method', label: 'Payment Method', value: c.payment_method, type: 'select', items: collectionPaymentMethodOptions },
       { key: 'reference_no', label: 'Reference / OR #', value: c.reference_no, type: 'text' },
+      { key: 'cheque_bank', label: 'Cheque bank', value: c.cheque_bank ?? null, type: 'text' },
+      { key: 'cheque_no', label: 'Cheque no.', value: c.cheque_no ?? null, type: 'text' },
+      { key: 'cheque_date', label: 'Cheque date', value: c.cheque_date ?? null, type: 'date' },
+      { key: 'remarks', label: 'Payment note', value: c.remarks, type: 'text' },
     ],
     voidSummary: `Void this ${formatCurrency(c.amount ?? 0)} collection on ${order.value.order_no ?? 'the order'} — reverses it in the ledger (DR AR / CR cash) and rolls the order's paid amount + status back.`,
     allowEdit: true,
@@ -273,33 +279,22 @@ watch(
         <v-divider class="my-4" />
 
         <h4 class="mb-2">Record Collection</h4>
+        <!-- Deposited to is required: without it the payment never reaches
+             cash_accounts.balance. -->
+        <CollectionPaymentFields
+          v-model:amount="collectionAmount"
+          v-model:method="collectionMethod"
+          v-model:reference="collectionReference"
+          v-model:cash-account-id="collectionCashAccountId"
+          v-model:cheque-bank="collectionChequeBank"
+          v-model:cheque-no="collectionChequeNo"
+          v-model:cheque-date="collectionChequeDate"
+          v-model:remarks="collectionRemarks"
+          :balance="balance"
+          :cash-account-options="cashAccountOptions"
+          :disabled="isPaid"
+        />
         <v-row dense>
-          <v-col cols="12" sm="6" md="4">
-            <v-text-field
-              v-model.number="collectionAmount"
-              label="Amount"
-              type="number"
-              :max="balance"
-              :disabled="isPaid"
-            />
-          </v-col>
-          <v-col cols="12" sm="6" md="4">
-            <v-text-field v-model="collectionMethod" label="Payment Method" :disabled="isPaid" />
-          </v-col>
-          <v-col cols="12" sm="6" md="4">
-            <v-text-field v-model="collectionReference" label="Ref No" :disabled="isPaid" />
-          </v-col>
-          <!-- Where the money landed. Required: without it the payment never
-               reaches cash_accounts.balance. -->
-          <v-col cols="12" sm="6" md="4">
-            <v-select
-              v-model="collectionCashAccountId"
-              :items="cashAccountOptions"
-              label="Deposit To *"
-              placeholder="Account that received it"
-              :disabled="isPaid"
-            />
-          </v-col>
           <v-col cols="12" class="d-flex align-center mt-1">
             <v-btn
               color="success"
@@ -339,8 +334,13 @@ watch(
               </div>
               <div class="d-flex justify-space-between mb-1">
                 <span>Method</span>
-                <span>{{ c.payment_method || '—' }}</span>
+                <span>{{ collectionMethodLabel(c.payment_method) }}</span>
               </div>
+              <div v-if="chequeLabel(c)" class="d-flex justify-space-between mb-1">
+                <span>Cheque</span>
+                <span>{{ chequeLabel(c) }}</span>
+              </div>
+              <div v-if="c.remarks" class="mb-1">Note: {{ c.remarks }}</div>
               <div class="d-flex justify-space-between">
                 <span>Commission</span>
                 <span class="font-weight-medium">{{ formatCurrency(c.commission_amount ?? 0) }}</span>
@@ -383,7 +383,11 @@ watch(
             <tr v-for="c in collections" :key="c.id">
               <td>{{ c.created_at ? new Date(c.created_at).toLocaleDateString() : '—' }}</td>
               <td class="text-right">{{ formatCurrency(c.amount ?? 0) }}</td>
-              <td>{{ c.payment_method || '—' }}</td>
+              <td>
+                {{ collectionMethodLabel(c.payment_method) }}
+                <div v-if="chequeLabel(c)" class="text-caption text-medium-emphasis">{{ chequeLabel(c) }}</div>
+                <div v-if="c.remarks" class="text-caption text-medium-emphasis">{{ c.remarks }}</div>
+              </td>
               <td class="text-right">{{ formatCurrency(c.commission_amount ?? 0) }}</td>
               <td>
                 <v-chip size="x-small" :color="c.commission_status === 'paid' ? 'success' : 'warning'">

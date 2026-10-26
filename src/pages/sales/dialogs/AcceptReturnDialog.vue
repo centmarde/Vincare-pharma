@@ -14,6 +14,7 @@ const {
   loading,
   customerId, locationId, settlement, remarks, lines,
   locationOptions, customerOptions, returnConditions,
+  customerSearching, searchCustomer,
   totalAmount, restockLines, writeOffLines, writeOffValue,
   blockers, canSubmit,
   addLine, applyPickedProduct, removeLine, batchLabel, lineTotal,
@@ -82,12 +83,16 @@ watch(() => props.modelValue, (open) => { if (open) void init() }, { immediate: 
             <v-autocomplete
               v-model="customerId"
               :items="customerOptions"
+              :loading="customerSearching"
               label="Customer (optional)"
-              hint="Required only to leave the value as credit"
+              placeholder="Type at least 2 letters"
+              hint="Required to leave the value as credit or take it off their bill"
               persistent-hint
               variant="outlined"
               density="compact"
+              no-filter
               clearable
+              @update:search="searchCustomer"
             />
           </v-col>
           <v-col cols="12" sm="6">
@@ -260,6 +265,7 @@ watch(() => props.modelValue, (open) => { if (open) void init() }, { immediate: 
       v-model="showProductPicker"
       mode="batch"
       :location-id="locationId"
+      allow-expired
       @select="onProductSelected"
     />
   </v-dialog>

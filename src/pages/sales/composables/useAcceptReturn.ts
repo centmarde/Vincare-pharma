@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import { useSalesReturnsDataStore } from '@/stores/salesReturnsData'
@@ -6,6 +6,7 @@ import type { ReturnCondition, ReturnSettlement } from '@/stores/salesReturnsDat
 import { useStockSourcingStore } from '@/stores/stockSourcingData'
 import type { StockLocationId } from '@/stores/stockSourcingData'
 import { useCustomersDataStore } from '@/stores/customersData'
+import type { CustomerType } from '@/stores/customersData'
 import type { ProductPickerResult } from '@/stores/productsData'
 import { useFormDraft } from '@/composables/useFormDraft'
 import { formatCurrency, formatExpiryLabel } from '@/utils/helpers'
@@ -50,11 +51,12 @@ export function useAcceptReturn(onCreated: () => void) {
   const customersStore = useCustomersDataStore()
 
   const { locations } = storeToRefs(sourcingStore)
-  const { customers } = storeToRefs(customersStore)
 
   // ─── State ────────────────────────────────────────────────────────
   const loading = ref(false)
   const customerId = ref<number | null>(null)
+  /** Kept with the id so a restored draft still shows who it was. */
+  const customerName = ref('')
   const locationId = ref<StockLocationId>(null)
   const settlement = ref<ReturnSettlement>('swapped')
   const remarks = ref('')
@@ -64,11 +66,11 @@ export function useAcceptReturn(onCreated: () => void) {
   // a half-recorded return with the customer standing at the counter.
   const draft = useFormDraft({
     key: 'accept-return',
-    version: 1,
-    refs: { customerId, locationId, settlement, remarks, lines },
+    version: 2,
+    refs: { customerId, customerName, locationId, settlement, remarks, lines },
     // Every ref that persists is checked here too: a form filled in with only
     // one of them must not be judged empty and silently discarded.
-    isEmpty: () => customerId.value == null && locationId.value == null
+    isEmpty: () => customerId.value == null && !customerName.value && locationId.value == null
       && !remarks.value && settlement.value === 'swapped'
       && !lines.value.some((l) => l.product_id != null),
   })
@@ -78,9 +80,47 @@ export function useAcceptReturn(onCreated: () => void) {
     locations.value.map((l) => ({ title: l.name, value: l.id })),
   )
 
-  const customerOptions = computed(() =>
-    customers.value.map((c) => ({ title: c.name, value: c.id })),
-  )
+  // ─── Customer lookup ──────────────────────────────────────────────
+  // Searched server-side as the user types. The full list cannot be loaded:
+  // a read stops at 1,000 rows, which cut the old list off at "PERCY'S
+  // PHARMACY" — nobody alphabetically after it could return anything.
+  const customerSuggestions = ref<CustomerType[]>([])
+  const customerSearching = ref(false)
+  let customerSearchTimer: ReturnType<typeof setTimeout> | null = null
+  // A lookup that resolves late must not overwrite a newer one's results.
+  let customerSearchId = 0
+
+  function searchCustomer(term: string | null) {
+    if (customerSearchTimer) clearTimeout(customerSearchTimer)
+    const requestId = ++customerSearchId
+    const s = (term ?? '').trim()
+    // Typing into the box shows the chosen name; that is not a new search.
+    if (s.length < 2 || s === customerName.value) { customerSearching.value = false; return }
+    customerSearchTimer = setTimeout(async () => {
+      customerSearching.value = true
+      const results = await customersStore.searchCustomers(s, 20)
+      if (requestId !== customerSearchId) return
+      customerSuggestions.value = results
+      customerSearching.value = false
+    }, 300)
+  }
+
+  // The chosen customer stays in the list after the suggestions move on.
+  const customerOptions = computed(() => {
+    const options = customerSuggestions.value
+      .filter((c) => c.name?.trim())
+      .map((c) => ({ title: c.name as string, value: c.id, subtitle: c.address ?? c.area ?? undefined }))
+    if (customerId.value != null && !options.some((o) => o.value === customerId.value)) {
+      options.unshift({ title: customerName.value || `Customer #${customerId.value}`, value: customerId.value, subtitle: undefined })
+    }
+    return options
+  })
+
+  watch(customerId, (id) => {
+    if (id == null) { customerName.value = ''; return }
+    const picked = customerSuggestions.value.find((c) => c.id === id)
+    if (picked) customerName.value = picked.name ?? ''
+  })
 
   // ─── Derived ──────────────────────────────────────────────────────
   const validLines = computed(() =>
@@ -165,6 +205,8 @@ export function useAcceptReturn(onCreated: () => void) {
   // ─── Submit ───────────────────────────────────────────────────────
   function reset() {
     customerId.value = null
+    customerName.value = ''
+    customerSuggestions.value = []
     locationId.value = null
     settlement.value = 'swapped'
     remarks.value = ''
@@ -203,13 +245,7 @@ export function useAcceptReturn(onCreated: () => void) {
   }
 
   async function init() {
-    // Unconditional fetches: `customers` is one shared list across modules, so
-    // guarding on length lets whichever module loaded first decide what this
-    // form can see.
-    await Promise.all([
-      sourcingStore.fetchLocations(),
-      customersStore.fetchCustomers({ activeOnly: true }),
-    ])
+    await sourcingStore.fetchLocations()
     draft.restore()
     if (!lines.value.length) addLine()
   }
@@ -218,6 +254,7 @@ export function useAcceptReturn(onCreated: () => void) {
     loading,
     customerId, locationId, settlement, remarks, lines,
     locationOptions, customerOptions, returnConditions,
+    customerSearching, searchCustomer,
     validLines, totalAmount, restockLines, writeOffLines, writeOffValue,
     blockers, canSubmit,
     addLine, applyPickedProduct, removeLine, batchLabel, lineTotal,

@@ -76,7 +76,7 @@ watch(
       <v-card-text class="pa-4 pa-sm-5">
         <v-alert type="info" variant="tonal" density="compact" class="mb-4">
           Settling <strong>{{ source?.return_no }}</strong> —
-          credit of <strong>{{ formatCurrency(creditAvailable) }}</strong>
+          <strong>{{ formatCurrency(creditAvailable) }}</strong> of credit left
           <span v-if="source?.customer_name"> for {{ source.customer_name }}</span>
           <span v-else> (walk-in)</span>.
           Goods are issued against this credit; no money changes hands.

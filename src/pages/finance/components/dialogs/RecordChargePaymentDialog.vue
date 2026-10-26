@@ -1,43 +1,38 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import MoneyField from '@/components/inputs/MoneyField.vue'
+import CollectionPaymentFields from '@/components/collections/CollectionPaymentFields.vue'
 import { formatCurrency } from '@/utils/helpers'
-import type { PaymentMethod } from '@/utils/paymentMethods'
 
 // A payment on a POS sale charged to a customer account, received at the
-// office. Form state lives in useAccountsReceivable.
+// office. Form state lives in useAccountsReceivable; the fields are the same
+// ones Ethical and In-House collect with.
 const props = defineProps<{
-  modelValue: boolean
   saleNo: string | null
   customerName: string | null
   balance: number
-  amount: number
-  method: PaymentMethod
-  reference: string
-  remarks: string
-  cashAccountId: number | null
   cashAccountOptions: { value: number; title: string }[]
-  methodOptions: { value: PaymentMethod; title: string }[]
   canConfirm: boolean
   loading: boolean
 }>()
 
+const open = defineModel<boolean>({ required: true })
+const amount = defineModel<number>('amount', { required: true })
+const method = defineModel<string>('method', { required: true })
+const reference = defineModel<string>('reference', { required: true })
+const remarks = defineModel<string>('remarks', { required: true })
+const cashAccountId = defineModel<number | null>('cashAccountId', { required: true })
+const chequeBank = defineModel<string>('chequeBank', { required: true })
+const chequeNo = defineModel<string>('chequeNo', { required: true })
+const chequeDate = defineModel<string>('chequeDate', { required: true })
+
 const emit = defineEmits<{
-  (e: 'update:modelValue', value: boolean): void
-  (e: 'update:amount', value: number): void
-  (e: 'update:method', value: PaymentMethod): void
-  (e: 'update:reference', value: string): void
-  (e: 'update:remarks', value: string): void
-  (e: 'update:cashAccountId', value: number | null): void
   (e: 'confirm'): void
 }>()
 
-const remaining = computed(() => Math.max(0, props.balance - (props.amount || 0)))
-const overpaid = computed(() => (props.amount || 0) > props.balance + 0.005)
+const remaining = () => Math.max(0, props.balance - (amount.value || 0))
 </script>
 
 <template>
-  <v-dialog :model-value="modelValue" max-width="460" persistent @update:model-value="emit('update:modelValue', $event)">
+  <v-dialog v-model="open" max-width="520" persistent>
     <v-card rounded="lg">
       <v-card-title class="pa-4 pa-sm-5 pb-3">
         <div class="text-h6 font-weight-bold">Record payment</div>
@@ -53,70 +48,29 @@ const overpaid = computed(() => (props.amount || 0) > props.balance + 0.005)
           <span class="text-h6 font-weight-bold">{{ formatCurrency(balance) }}</span>
         </div>
 
-        <label class="field-label">Amount <span class="text-error">*</span></label>
-        <MoneyField
-          :model-value="amount"
-          variant="outlined"
-          density="compact"
-          :error-messages="overpaid ? 'More than what is owed' : undefined"
-          :hide-details="!overpaid"
-          class="mb-3"
-          @update:model-value="emit('update:amount', $event)"
+        <CollectionPaymentFields
+          v-model:amount="amount"
+          v-model:method="method"
+          v-model:reference="reference"
+          v-model:cash-account-id="cashAccountId"
+          v-model:cheque-bank="chequeBank"
+          v-model:cheque-no="chequeNo"
+          v-model:cheque-date="chequeDate"
+          v-model:remarks="remarks"
+          :balance="balance"
+          :cash-account-options="cashAccountOptions"
+          narrow
         />
 
-        <label class="field-label">Paid by</label>
-        <v-select
-          :model-value="method"
-          :items="methodOptions"
-          variant="outlined"
-          density="compact"
-          hide-details
-          class="mb-3"
-          @update:model-value="emit('update:method', $event)"
-        />
-
-        <label class="field-label">Reference / OR #</label>
-        <v-text-field
-          :model-value="reference"
-          placeholder="OR no., cheque no. or transfer reference"
-          variant="outlined"
-          density="compact"
-          hide-details
-          class="mb-3"
-          @update:model-value="emit('update:reference', $event)"
-        />
-
-        <label class="field-label">Deposited to <span class="text-error">*</span></label>
-        <v-select
-          :model-value="cashAccountId"
-          :items="cashAccountOptions"
-          placeholder="Which of our accounts received it"
-          variant="outlined"
-          density="compact"
-          hide-details
-          class="mb-3"
-          @update:model-value="emit('update:cashAccountId', $event)"
-        />
-
-        <label class="field-label">Remarks</label>
-        <v-text-field
-          :model-value="remarks"
-          variant="outlined"
-          density="compact"
-          hide-details
-          class="mb-4"
-          @update:model-value="emit('update:remarks', $event)"
-        />
-
-        <div class="d-flex justify-space-between text-body-2">
+        <div class="d-flex justify-space-between text-body-2 mt-4">
           <span class="text-medium-emphasis">Still owed after this</span>
-          <span class="font-weight-bold">{{ formatCurrency(remaining) }}</span>
+          <span class="font-weight-bold">{{ formatCurrency(remaining()) }}</span>
         </div>
       </v-card-text>
 
       <v-divider />
       <v-card-actions class="px-4 px-sm-5 pb-4 pb-sm-5 pt-3 d-flex justify-end ga-2">
-        <v-btn variant="outlined" class="text-none" :disabled="loading" @click="emit('update:modelValue', false)">Cancel</v-btn>
+        <v-btn variant="outlined" class="text-none" :disabled="loading" @click="open = false">Cancel</v-btn>
         <v-btn
           color="primary"
           variant="flat"
@@ -131,12 +85,3 @@ const overpaid = computed(() => (props.amount || 0) > props.balance + 0.005)
     </v-card>
   </v-dialog>
 </template>
-
-<style scoped>
-.field-label {
-  display: block;
-  font-size: 0.8rem;
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-</style>
