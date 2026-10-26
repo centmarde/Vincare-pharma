@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { prIdFromCoverage, isPRCoverageLive, type Shortfall } from '@/utils/canvassTypes'
 import { govtShelfLife } from '@/utils/qualification'
+import { shortDatedRequestType } from '@/pages/inhouse/stores/shortDatedApproval'
 
 const toast = useToast()
 
@@ -190,16 +191,25 @@ export const useProcurementDataStore = defineStore('procurementData', () => {
         candidates.flatMap((c) => c.items.map((i) => prIdFromCoverage(i.supplier_quotes)).filter((id): id is number => id != null)),
       ))
 
-      const [productsRes, prsRes] = await Promise.all([
+      // In-House orders an executive has cleared to ship short-dated stock:
+      // that stock counts for them, as it does in inhouseData's own shortfall.
+      const inhouseIds = candidates.filter((c) => c.order_type === 'inhouse_order').map((c) => c.id)
+      const [productsRes, prsRes, approvalsRes] = await Promise.all([
         productIds.length
           ? supabase.from('products').select('id, current_stock, expiry_date').in('id', productIds)
           : Promise.resolve({ data: [], error: null }),
         coveringPRIds.length
           ? supabase.from('transactions').select('id, status').in('id', coveringPRIds)
           : Promise.resolve({ data: [], error: null }),
+        inhouseIds.length
+          ? supabase.from('change_requests').select('transaction_id')
+            .eq('request_type', shortDatedRequestType).eq('status', 'approved').in('transaction_id', inhouseIds)
+          : Promise.resolve({ data: [], error: null }),
       ])
       if (productsRes.error) throw productsRes.error
       if (prsRes.error) throw prsRes.error
+      if (approvalsRes.error) throw approvalsRes.error
+      const shortDatedApproved = new Set(((approvalsRes.data ?? []) as any[]).map((r) => r.transaction_id as number))
 
       const onHand = new Map<number, { qty: number; expiry: string | null }>()
       for (const p of (productsRes.data ?? []) as any[]) {
@@ -232,8 +242,10 @@ export const useProcurementDataStore = defineStore('procurementData', () => {
           // shortfall than the order dialog that raised the request — or none
           // at all, so a notified order would show up here with nothing to buy.
           const shelf = govtShelfLife(row?.expiry ?? null)
+          // An approved In-House order may ship its short-dated stock.
           const usable =
-            shelf.ok || (c.order_type !== 'inhouse_order' && shelf.reason === 'short_dated')
+            shelf.ok || (shelf.reason === 'short_dated'
+              && (c.order_type !== 'inhouse_order' || shortDatedApproved.has(c.id)))
               ? physical
               : 0
           const needed = Math.max(0, remaining - usable)

@@ -8,6 +8,11 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 const supabaseServiceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY
 
+// Global Supabase Storage base URL (public buckets).
+// Gamita ni dire sa tibuok app para ma-reuse sa tanang image buckets
+// (e.g. announcements) imbes nga i-hardcode ang storage URL sa tagsa-tagsa nga page.
+export const SUPABASE_STORAGE_URL = import.meta.env.VITE_SUPABASE_STORAGE_URL
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 // Service role client for admin operations

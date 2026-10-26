@@ -12,10 +12,10 @@ import { filterExpenseAccount } from '../composables/useExpenseAccounts'
 const {
   vouchers,
   search,
-  monthFrom,
-  monthTo,
-  monthFromOptions,
-  monthToOptions,
+  dateFrom,
+  dateTo,
+  dateRangeError,
+  clearDates,
   accountFilter,
   accountOptions,
   isFiltering,
@@ -100,28 +100,41 @@ onMounted(async () => {
           clearable
           style="max-width: 440px; min-width: 260px"
         />
-        <!-- A range: the same month in both is one month; leave either end
-             open for "from this month on" / "up to this month". -->
-        <v-select
-          v-model="monthFrom"
-          :items="monthFromOptions"
+        <!-- A date range, both days included: the same day in both is that
+             one day; leave either end empty for "from this day on" / "up to
+             this day". -->
+        <v-text-field
+          v-model="dateFrom"
+          type="date"
           label="From"
-          prepend-inner-icon="mdi-calendar-month-outline"
+          :max="dateTo || undefined"
           density="compact"
           variant="outlined"
-          hide-details
-          style="max-width: 210px; min-width: 175px"
+          :error-messages="dateRangeError || undefined"
+          :hide-details="!dateRangeError"
+          clearable
+          style="max-width: 200px; min-width: 170px"
         />
-        <v-select
-          v-model="monthTo"
-          :items="monthToOptions"
+        <v-text-field
+          v-model="dateTo"
+          type="date"
           label="To"
-          prepend-inner-icon="mdi-calendar-month-outline"
+          :min="dateFrom || undefined"
           density="compact"
           variant="outlined"
           hide-details
-          style="max-width: 210px; min-width: 175px"
+          clearable
+          style="max-width: 200px; min-width: 170px"
         />
+        <v-btn
+          v-if="dateFrom || dateTo"
+          variant="text"
+          size="small"
+          class="text-none"
+          @click="clearDates"
+        >
+          All dates
+        </v-btn>
         <!-- Typing filters the list; an accountant can type the code too. -->
         <v-autocomplete
           v-model="accountFilter"

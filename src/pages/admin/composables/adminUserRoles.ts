@@ -8,11 +8,13 @@ import {
 import { useUserPagesStore } from '@/stores/pages'
 import { navigationConfig, flattenNavigationItems } from '@/utils/navigation'
 import { useToast } from 'vue-toastification'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
 export function useAdminUserRoles() {
   const userRolesStore = useUserRolesStore()
   const userPagesStore = useUserPagesStore()
   const toast = useToast()
+  const { confirmDialog } = useConfirmDialog()
 
   // Local state for UI
   const isDialogOpen = ref(false)
@@ -67,23 +69,8 @@ export function useAdminUserRoles() {
     userRolesStore.clearError()
   }
 
-  // A second Update while one is still saving used to run the whole delete +
-  // re-create twice at once — both deletes finished, then both inserts did, so
-  // every page landed twice. That is how roles ended up with each page saved
-  // 5x or 17x. One save at a time.
-  let saving = false
-
   const handleSubmit = async (selectedPermissions: string[] = []) => {
-    if (!isFormValid.value || saving) return
-    saving = true
-    try {
-      await submitRole(selectedPermissions)
-    } finally {
-      saving = false
-    }
-  }
-
-  const submitRole = async (selectedPermissions: string[]) => {
+    if (!isFormValid.value) return
 
     let success = false
     let targetRoleId: number | null = null
@@ -123,9 +110,7 @@ export function useAdminUserRoles() {
           })
         })
 
-        // Each route once: duplicates here were written straight back as
-        // duplicate rows. Saving a role also clears any it already had.
-        const routes = [...new Set(selectedPermissions
+        const routes = selectedPermissions
           .map((permission) => {
             // If it's already a route, return it directly
             if (routeSet.has(permission)) {
@@ -134,7 +119,7 @@ export function useAdminUserRoles() {
             // Otherwise, map permission to route
             return permissionToRouteMap[permission]
           })
-          .filter(Boolean) as string[])]
+          .filter(Boolean) as string[]
 
         // For editing, first delete existing role pages (silent mode)
         if (isEditing.value) {
@@ -191,6 +176,23 @@ export function useAdminUserRoles() {
     await userRolesStore.fetchRoles()
   }
 
+  // Toggle sa can_add_product permission gamit ang shared ConfirmDialog
+  // (gibutang sa App.vue). Una i-confirm sa user, dayon i-update sa store.
+  const toggleCanAddProductPermission = async (role: Role, newValue: boolean) => {
+    const confirmed = await confirmDialog(
+      `Are you sure you want to ${newValue ? 'allow' : 'disallow'} the role "${role.title || 'Untitled Role'}" to add products?\n\nThis will update the can_add_product permission for this role.`,
+      {
+        title: 'Confirm Permission Change',
+        confirmText: 'Confirm',
+        cancelText: 'Cancel',
+      },
+    )
+
+    if (!confirmed) return
+
+    await userRolesStore.toggleCanAddProduct(role.id, newValue)
+  }
+
   // Initialize data on mount
   onMounted(() => {
     refreshRoles()
@@ -222,6 +224,8 @@ export function useAdminUserRoles() {
     handleSubmit,
     handleDelete,
     refreshRoles,
+    toggleCanAddProductPermission,
+
     clearError: userRolesStore.clearError,
   }
 }

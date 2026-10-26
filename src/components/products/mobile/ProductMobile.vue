@@ -95,7 +95,8 @@ function nextPage() {
             {{ product.product_name }}
           </v-card-title>
           <v-card-subtitle class="text-caption pa-0">
-            SKU: {{ product.sku || '—' }} · Batch: {{ product.batch_no || '—' }}
+            SKU: {{ product.sku || '—' }} · Brand: {{ isBlank(product.brand) ? 'No brand' : product.brand }}
+            · Batch: {{ product.batch_no || '—' }}
           </v-card-subtitle>
 
           <template #append>

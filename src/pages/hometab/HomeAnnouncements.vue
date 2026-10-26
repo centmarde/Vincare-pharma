@@ -39,7 +39,7 @@
     <div v-else class="announcements-carousel">
       <v-carousel
         v-model="currentSlide"
-        height="400"
+        height="640"
         hide-delimiter-background
         show-arrows="hover"
         cycle
@@ -61,7 +61,7 @@
               v-if="announcement.image_url"
               class="slide-background"
               :style="{
-                backgroundImage: `url(${announcement.image_url})`,
+                backgroundImage: `url(${getAnnouncementImageUrl(announcement.image_url)})`,
               }"
             >
               <div class="slide-overlay" />
@@ -156,38 +156,45 @@
           </v-toolbar>
         </v-card-title>
 
-        <!-- Image -->
-        <div v-if="selectedAnnouncement.image_url" class="detail-image-section">
-          <v-img :src="selectedAnnouncement.image_url" max-height="300" cover class="detail-image">
-            <template v-slot:error>
-              <div class="d-flex align-center justify-center fill-height bg-grey-lighten-3">
-                <v-icon icon="mdi-image-broken-variant" size="48" color="grey-lighten-1" />
-              </div>
-            </template>
-          </v-img>
-        </div>
-
-        <!-- Content -->
-        <v-card-text class="pa-6">
-          <h3 class="text-h5 font-weight-bold mb-4">
-            {{ selectedAnnouncement.title }}
-          </h3>
-
-          <div class="announcement-description mb-4">
-            <p class="text-body-1 line-height-1-6">
-              {{ selectedAnnouncement.description }}
-            </p>
+        <!-- Scrollable content (image ug text mag-uban ni-scroll) -->
+        <v-card-text class="pa-0">
+          <!-- Image (Full view - makita ang tibuok image nga walay crop) -->
+          <div v-if="selectedAnnouncement.image_url" class="detail-image-section">
+            <v-img
+              :src="getAnnouncementImageUrl(selectedAnnouncement.image_url)"
+              contain
+              class="detail-image bg-grey-lighten-3"
+            >
+              <template v-slot:error>
+                <div class="d-flex align-center justify-center fill-height bg-grey-lighten-3">
+                  <v-icon icon="mdi-image-broken-variant" size="48" color="grey-lighten-1" />
+                </div>
+              </template>
+            </v-img>
           </div>
 
-          <!-- Metadata -->
-          <v-divider class="my-4" />
-          <div class="metadata-row">
-            <div class="d-flex align-center">
-              <v-icon icon="mdi-calendar" size="20" color="primary" class="me-2" />
-              <div>
-                <div class="text-caption text-medium-emphasis">Published</div>
-                <div class="text-body-2 font-weight-medium">
-                  {{ formatDetailDate(selectedAnnouncement.created_at) }}
+          <!-- Content -->
+          <div class="pa-6">
+            <h3 class="text-h5 font-weight-bold mb-4">
+              {{ selectedAnnouncement.title }}
+            </h3>
+
+            <div class="announcement-description mb-4">
+              <p class="text-body-1 line-height-1-6">
+                {{ selectedAnnouncement.description }}
+              </p>
+            </div>
+
+            <!-- Metadata -->
+            <v-divider class="my-4" />
+            <div class="metadata-row">
+              <div class="d-flex align-center">
+                <v-icon icon="mdi-calendar" size="20" color="primary" class="me-2" />
+                <div>
+                  <div class="text-caption text-medium-emphasis">Published</div>
+                  <div class="text-body-2 font-weight-medium">
+                    {{ formatDetailDate(selectedAnnouncement.created_at) }}
+                  </div>
                 </div>
               </div>
             </div>
@@ -208,6 +215,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useAnnouncementsDataStore } from '@/stores/announcementsData'
 import type { AnnouncementType } from '@/stores/announcementsData'
+import { SUPABASE_STORAGE_URL } from '@/lib/supabase'
 
 // Store
 const announcementsStore = useAnnouncementsDataStore()
@@ -226,6 +234,22 @@ const announcements = computed(() => {
 const announcementsWithImages = computed(() => {
   return announcements.value.filter((a) => a.image_url).length
 })
+
+// Build sa full public storage URL para sa announcements bucket.
+// Rebuild kanunay gamit ang bag-ong SUPABASE_STORAGE_URL aron dili ma-broken ang
+// daan nga full URL nga na-save sa DB (e.g. vfpjlkskicwfemhgelij.supabase.co).
+// Kung full URL na ang image_url (naa nay /storage/v1/object/public/announcements/),
+// i-extract ra ang filename, dayon i-prepend ang bag-ong storage URL + /announcements/.
+const getAnnouncementImageUrl = (imageUrl: string) => {
+  if (!imageUrl) return ''
+  const marker = '/storage/v1/object/public/announcements/'
+  const markerIndex = imageUrl.indexOf(marker)
+  if (markerIndex !== -1) {
+    const fileName = imageUrl.slice(markerIndex + marker.length)
+    return `${SUPABASE_STORAGE_URL}/announcements/${fileName}`
+  }
+  return `${SUPABASE_STORAGE_URL}/announcements/${imageUrl}`
+}
 
 // Methods
 const formatDate = (dateString: string) => {

@@ -11,6 +11,7 @@ import { useExecutiveApprovePR } from '../composables/useExecutiveApprovePR'
 import { useExecutiveApproveDisposal } from '../composables/useExecutiveApproveDisposal'
 import { useExecutiveApproveShortDated } from '../composables/useExecutiveApproveShortDated'
 import { useExecutiveApproveTerms } from '../composables/useExecutiveApproveTerms'
+import { useExecutiveApproveCreditMemos } from '../composables/useExecutiveApproveCreditMemos'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import { useRequestHistory } from '../composables/useRequestHistory'
 
@@ -54,6 +55,11 @@ const {
   loading: termsLoading,
   refresh: refreshTerms,
 } = useExecutiveApproveTerms()
+const {
+  requests: pendingCreditMemos,
+  loading: creditMemosLoading,
+  refresh: refreshCreditMemos,
+} = useExecutiveApproveCreditMemos()
 const { mobile } = useDisplay()
 
 type MergedActionItem =
@@ -62,6 +68,7 @@ type MergedActionItem =
   | { kind: 'disposal'; id: number; created_at: string; raw: any }
   | { kind: 'short_dated'; id: number; created_at: string; raw: any }
   | { kind: 'terms'; id: number; created_at: string; raw: any }
+  | { kind: 'credit_memo'; id: number; created_at: string; raw: any }
 
 type ChangeRequestSource = 'pr' | 'finance' | 'sales' | 'shared'
 
@@ -104,7 +111,13 @@ const mergedItems = computed<MergedActionItem[]>(() => {
     created_at: t.created_at,
     raw: t,
   }))
-  return [...undoItems, ...prItems, ...disposalItems, ...shortDatedItems, ...termsItems].sort(
+  const creditMemoItems: MergedActionItem[] = (pendingCreditMemos.value || []).map((m: any) => ({
+    kind: 'credit_memo',
+    id: m.id,
+    created_at: m.created_at,
+    raw: m,
+  }))
+  return [...undoItems, ...prItems, ...disposalItems, ...shortDatedItems, ...termsItems, ...creditMemoItems].sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   )
 })
@@ -118,7 +131,8 @@ const loading = computed(
     prLoading.value ||
     disposalLoading.value ||
     shortDatedLoading.value ||
-    termsLoading.value,
+    termsLoading.value ||
+    creditMemosLoading.value,
 )
 
 const refreshing = ref(false)
@@ -135,6 +149,7 @@ async function refreshAll() {
       refreshDisposals(),
       refreshShortDated(),
       refreshTerms(),
+      refreshCreditMemos(),
     ])
   } finally {
     refreshing.value = false
@@ -171,6 +186,7 @@ function itemColor(kind: MergedActionItem['kind']): string {
   if (kind === 'disposal') return 'error'
   if (kind === 'short_dated') return 'warning'
   if (kind === 'terms') return 'indigo'
+  if (kind === 'credit_memo') return 'deep-purple'
   return 'green'
 }
 
@@ -179,6 +195,7 @@ function itemIcon(kind: MergedActionItem['kind']): string {
   if (kind === 'disposal') return 'mdi-delete-alert-outline'
   if (kind === 'short_dated') return 'mdi-clock-alert-outline'
   if (kind === 'terms') return 'mdi-handshake-outline'
+  if (kind === 'credit_memo') return 'mdi-file-document-minus-outline'
   return 'mdi-file-document-check-outline'
 }
 
@@ -346,6 +363,36 @@ watch(historyDialog, (val) => {
                 {{ item.raw.order_type === 'ethical_order' ? 'Ethical' : 'In-House' }}
                 <span v-if="item.raw.customer_name"> — {{ item.raw.customer_name }}</span>
                 <span v-if="item.raw.total != null"> · {{ formatCurrency(item.raw.total) }}</span>
+                <span v-if="item.raw.reason"> · {{ item.raw.reason }}</span>
+              </v-list-item-subtitle>
+            </template>
+
+            <!-- Credit memo row: an amount off a customer's bill. -->
+            <template v-else-if="item.kind === 'credit_memo'">
+              <v-list-item-title
+                :class="
+                  mobile
+                    ? 'd-flex flex-column align-start ga-1 mb-1'
+                    : 'd-flex align-center ga-2 mb-1'
+                "
+              >
+                <div class="d-flex align-center ga-2 w-100">
+                  <v-chip size="x-small" color="deep-purple" variant="tonal" label>Credit memo</v-chip>
+                  <span class="text-body-2 font-weight-medium action-item-number">
+                    {{ item.raw.customer_name ?? `#${item.raw.id}` }}
+                  </span>
+                </div>
+                <span class="text-caption text-medium-emphasis">
+                  {{ formatDatePR_ISO(item.raw.created_at) }}
+                </span>
+              </v-list-item-title>
+
+              <v-list-item-subtitle
+                class="text-caption text-medium-emphasis"
+                :class="mobile ? 'reason-clamp' : ''"
+                style="white-space: normal; line-height: 1.4"
+              >
+                {{ formatCurrency(item.raw.amount) }} off {{ item.raw.applies_to_no ?? 'a bill' }}
                 <span v-if="item.raw.reason"> · {{ item.raw.reason }}</span>
               </v-list-item-subtitle>
             </template>

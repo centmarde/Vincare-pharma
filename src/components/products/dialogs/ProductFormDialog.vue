@@ -5,7 +5,9 @@ import { parseMonthYear, formatMonthYear, maskMonthYearInput } from '@/utils/hel
 import { computeSellingPrice } from '@/utils/computationHelpers'
 import { generateSku } from '@/utils/generativeHelpers'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
+import { categoryOptions, unitOptions } from '../composables/useProductCreateForm'
 import type { CreateProductData, UpdateProductData } from '@/stores/productsData'
+import { supabase } from '@/lib/supabase'
 
 const props = defineProps<{
   modelValue: boolean
@@ -61,6 +63,49 @@ watch(
       suppliersStore.fetchSuppliers({ activeOnly: true })
     }
   },
+)
+
+// Box-brand dropdown — kanunay gipakita ang Brand field, pero ang get_box_brands
+// RPC lang ang i-trigger kung ang unit == 'box'. Ang lista sa brands kay gi-load
+// sa loading state samtang ga-fetch pa sa RPC.
+const boxBrands = ref<string[]>([])
+const boxBrandsLoading = ref(false)
+const isBoxUnit = computed(
+  () => String(props.productForm.unit ?? '').trim().toLowerCase() === 'box',
+)
+
+async function fetchBoxBrands() {
+  boxBrandsLoading.value = true
+  // Gamita ang Supabase built-in { data, error } handling — walay try/catch.
+  // Ang RPC usa ka `returns table (brand text)`, mao nga ang data kay array of
+  // objects ({ brand: '...' }) — i-map ngadto sa flat string array aron dili
+  // mo-display ug '[object Object]' sa dropdown.
+  const { data, error } = await supabase.rpc('get_box_brands')
+  boxBrandsLoading.value = false
+  if (error) {
+    // Ayaw i-throw — ibilin lang nga walay brands aron makapadayon ang user.
+    console.error('[ProductFormDialog] Failed to fetch box brands:', error)
+    boxBrands.value = []
+    return
+  }
+  boxBrands.value = ((data ?? []) as { brand: string }[])
+    .map((row) => row.brand)
+    .filter(Boolean)
+}
+
+watch(
+  () => props.productForm.unit,
+  (unit) => {
+    // RPC lang ang i-trigger kung 'box' ang unit; kung dili box, limpyohi ang
+    // daan nga box-brand list aron dili magpakita ug stale brands sa dropdown.
+    if (String(unit ?? '').trim().toLowerCase() === 'box') {
+      fetchBoxBrands()
+    } else {
+      boxBrands.value = []
+      boxBrandsLoading.value = false
+    }
+  },
+  { immediate: true },
 )
 
 // Stepper state
@@ -226,19 +271,49 @@ watch(() => props.modelValue, (val) => {
                 <div class="pa-4">
                   <v-row>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model="productForm.product_name" label="Product Name" prepend-inner-icon="mdi-package-variant" variant="outlined" density="comfortable" :rules="[rules.required]" required :disabled="isFieldDisabled"></v-text-field>
+                      <v-text-field v-model="productForm.product_name" label="Product Name" prepend-inner-icon="mdi-package-variant" variant="outlined" density="comfortable" :rules="[rules.required]" required :disabled="isFieldDisabled" autocomplete="off"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
                       <v-text-field v-model="productForm.barcode" label="Barcode" prepend-inner-icon="mdi-barcode" variant="outlined" density="comfortable" :disabled="isFieldDisabled"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model="productForm.sku" label="SKU" prepend-inner-icon="mdi-tag" variant="outlined" density="comfortable" :rules="[rules.required]" required :disabled="isFieldDisabled" :append-inner-icon="productForm.sku ? '' : 'mdi-dice-multiple'" :title="productForm.sku ? '' : 'Generate SKU'" @click:append-inner="generateSkuValue"></v-text-field>
+                      <v-text-field v-model="productForm.sku" label="SKU" prepend-inner-icon="mdi-tag" variant="outlined" density="comfortable" :rules="[rules.required]" required :disabled="isFieldDisabled" :append-inner-icon="productForm.sku ? '' : 'mdi-dice-multiple'" :title="productForm.sku ? '' : 'Generate SKU'" @click:append-inner="generateSkuValue" autocomplete="off"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model="productForm.category" label="Category" prepend-inner-icon="mdi-shape" variant="outlined" density="comfortable" :disabled="isFieldDisabled"></v-text-field>
+                    <v-select
+                      v-model="productForm.category" label="Category" prepend-inner-icon="mdi-shape" variant="outlined"
+                      density="comfortable" :items="categoryOptions" clearable :disabled="isFieldDisabled"
+                    ></v-select>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-text-field v-model="productForm.status" label="Status" prepend-inner-icon="mdi-information" variant="outlined" density="comfortable" :disabled="isFieldDisabled"></v-text-field>
+                      <v-select
+                        v-model="productForm.unit"
+                        label="Unit"
+                        prepend-inner-icon="mdi-counter"
+                        variant="outlined"
+                        density="comfortable"
+                        :items="unitOptions"
+                        clearable
+                        :disabled="isFieldDisabled"
+                      ></v-select>
+                    </v-col>
+                    <v-col cols="12" :sm="mobile ? 12 : 6">
+                      <v-select
+                        v-model="productForm.brand"
+                        :items="boxBrands"
+                        label="Brand"
+                        prepend-inner-icon="mdi-tag-multiple"
+                        variant="outlined"
+                        density="comfortable"
+                        clearable
+                        :loading="boxBrandsLoading"
+                        :disabled="isFieldDisabled"
+                        :no-data-text="
+                          isBoxUnit
+                            ? 'No brands found for box products'
+                            : 'Select Box as unit to load brands'
+                        "
+                      ></v-select>
                     </v-col>
                   </v-row>
                 </div>
@@ -293,7 +368,7 @@ watch(() => props.modelValue, (val) => {
                       <v-text-field :model-value="expiryText" label="Expiry Date" placeholder="MM/YYYY" maxlength="7" inputmode="numeric" prepend-inner-icon="mdi-calendar-clock" variant="outlined" density="comfortable" :disabled="isFieldDisabled" @update:model-value="onExpiryInput" @blur="onExpiryBlur"></v-text-field>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-select v-model="productForm.unit" label="Unit" prepend-inner-icon="mdi-counter" variant="outlined" density="comfortable" :items="['Box', 'Pcs', 'Set', 'Unit', 'Kg', 'M']" clearable :disabled="isFieldDisabled"></v-select>
+                      <v-text-field v-model="productForm.status" label="Status" prepend-inner-icon="mdi-information" variant="outlined" density="comfortable" :disabled="isFieldDisabled"></v-text-field>
                     </v-col>
                   </v-row>
                 </div>

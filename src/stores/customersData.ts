@@ -4,8 +4,18 @@ import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
+import { useAuthUserStore } from '@/stores/authUser'
+import { fetchAllRows, fetchAllRowsForIds } from '@/stores/shared/paging'
 
 const toast = useToast()
+
+/**
+ * What points at a customer. Documents (orders, sales, delivery receipts) BLOCK
+ * a delete — the database refuses it, and the history must keep its customer.
+ * Imported terms rows (`discounts`) have no foreign key and go with the
+ * customer, or they would be left pointing at nothing.
+ */
+export type CustomerUsage = { documents: number; deliveryReceipts: number; terms: number }
 
 export type BusinessStructure = 'corporation' | 'sole_proprietorship' | 'partnership' | 'other'
 export type RebatePaymentMode = 'cash' | 'gcash' | 'bank' | 'other'
@@ -374,18 +384,79 @@ export const useCustomersDataStore = defineStore('customersData', () => {
     }
   }
 
+  /** Usage per customer (see CustomerUsage). THROWS if any read fails, so a
+   *  failed check is never mistaken for "nothing uses it". */
+  async function fetchCustomerUsage(ids: number[]): Promise<Map<number, CustomerUsage>> {
+    const usage = new Map<number, CustomerUsage>(ids.map((id) => [id, { documents: 0, deliveryReceipts: 0, terms: 0 }]))
+    const count = (rows: { customer_id: number | null }[], key: keyof CustomerUsage) => {
+      for (const r of rows) {
+        const u = r.customer_id == null ? undefined : usage.get(Number(r.customer_id))
+        if (u) u[key] += 1
+      }
+    }
+    const [documents, receipts, terms] = await Promise.all([
+      fetchAllRowsForIds<{ customer_id: number | null }>(ids, (batch) =>
+        supabase.from('transactions').select('id, customer_id').in('customer_id', batch).order('id', { ascending: true })),
+      fetchAllRowsForIds<{ customer_id: number | null }>(ids, (batch) =>
+        supabase.from('delivery_receipts').select('id, customer_id').in('customer_id', batch).order('id', { ascending: true })),
+      fetchAllRowsForIds<{ customer_id: number | null }>(ids, (batch) =>
+        supabase.from('discounts').select('id, customer_id').in('customer_id', batch).order('id', { ascending: true })),
+    ])
+    count(documents, 'documents')
+    count(receipts, 'deliveryReceipts')
+    count(terms, 'terms')
+    return usage
+  }
+
+  /** Every NAMED customer, for finding copies that share a name. Nameless
+   *  import rows are left out: they are not duplicates of anything by name. */
+  async function fetchNamedCustomers(): Promise<CustomerType[]> {
+    return fetchAllRows<CustomerType>(() => supabase
+      .from('customers').select('*').not('name', 'is', null).neq('name', '').order('id', { ascending: true }))
+  }
+
+  /**
+   * Deletes a customer that nothing depends on. One with documents is refused
+   * with the reason (the database would refuse it anyway, with only a generic
+   * error). Its imported terms rows go with it, and the deletion is logged.
+   */
   const deleteCustomer = async (id: number) => {
     loading.value = true
     clearError()
     try {
+      const usage = (await fetchCustomerUsage([id])).get(id)!
+      if (usage.documents || usage.deliveryReceipts) {
+        const parts = [
+          usage.documents ? `${usage.documents} order(s)/sale(s)` : '',
+          usage.deliveryReceipts ? `${usage.deliveryReceipts} delivery receipt(s)` : '',
+        ].filter(Boolean).join(' and ')
+        toast.error(`This customer has ${parts}, so it cannot be deleted. Keep this copy and delete the other one instead.`, { timeout: 10000 })
+        return false
+      }
+      const { data: customer } = await supabase.from('customers').select('name, department, address').eq('id', id).maybeSingle()
+
+      // The customer first: if that fails, its terms must still be there.
       const { error: deleteError } = await supabase.from('customers').delete().eq('id', id)
       if (deleteError) throw deleteError
+      if (usage.terms) {
+        const { error: termsError } = await supabase.from('discounts').delete().eq('customer_id', id)
+        if (termsError) console.warn('deleteCustomer: terms rows not removed:', termsError.message)
+      }
+
+      const { user } = await useAuthUserStore().getCurrentUser()
+      const { error: logError } = await supabase.from('logs').insert({
+        created_by: user?.id ?? null, action: 'customer_deleted', module: 'customers', transaction_id: null,
+        description: `Deleted customer #${id} ${customer?.name ?? ''} (${customer?.department ?? 'unassigned'})${customer?.address ? ` — ${customer.address}` : ''}${usage.terms ? ` with ${usage.terms} terms row(s)` : ''}`,
+      })
+      if (logError) console.warn('deleteCustomer: activity log insert failed:', logError.message)
+
       removeLocal(id)
       toast.success('Customer deleted.')
       return true
     } catch (err) {
       handleError(err, 'Failed to delete customer')
-      toast.error('Failed to delete customer.')
+      // The database's own reason when there is one, without repeating the fallback.
+      toast.error(error.value && error.value !== 'Failed to delete customer' ? `Failed to delete customer: ${error.value}` : 'Failed to delete customer.')
       return false
     } finally {
       loading.value = false
@@ -404,7 +475,7 @@ export const useCustomersDataStore = defineStore('customersData', () => {
     isLoading, hasError,
     pagedCustomers, pagedTotalCount, pagedLoading,
     fetchCustomers, searchCustomers, stampDepartmentIfBlank, fetchCustomersRPC,
-    createCustomer, updateCustomer, deleteCustomer,
+    createCustomer, updateCustomer, deleteCustomer, fetchCustomerUsage, fetchNamedCustomers,
     startRealtime, stopRealtime, clearError, resetStore,
   }
 })

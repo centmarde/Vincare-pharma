@@ -110,7 +110,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { supabase } from '@/lib/supabase'
+import { supabase, SUPABASE_STORAGE_URL } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import type { AnnouncementType } from '@/stores/announcementsData'
 
@@ -349,7 +349,7 @@ const uploadToSupabase = async (file: File) => {
     uploading.value = false
 
     // Get the public URL
-    const publicUrl = `https://vfpjlkskicwfemhgelij.supabase.co/storage/v1/object/public/announcements/${data.path}`
+    const publicUrl = `${SUPABASE_STORAGE_URL}/announcements/${data.path}`
 
     // Store the public URL in form data
     formData.value.image_url = publicUrl

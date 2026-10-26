@@ -15,6 +15,8 @@ import type { CustomerType } from '@/stores/customersData'
 import type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult } from '@/utils/canvassTypes'
 import { govtShelfLife, QUALIFICATION_MONTHS } from '@/utils/qualification'
 import { describeProduct } from '@/utils/helpers'
+import { isCreditSettlement } from '@/utils/paymentMethods'
+import type { ChequeDetails } from '@/utils/paymentMethods'
 import { issueRow, useIssueList } from '@/composables/useIssueList'
 import { hasPendingTermsRequest, isApprovedLockRequest, unlockBlocker } from '@/stores/shared/termsApprovalGuards'
 import type { IssueRow } from '@/composables/useIssueList'
@@ -438,9 +440,16 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
    * Measured as of TODAY. The real test is the shelf life on the delivery day,
    * which nobody knows yet at agreement time, so this is a preview and
    * deliver() re-checks authoritatively.
+   *
+   * `allowShortDated`: the order has an executive's approval to ship
+   * short-dated stock, so that stock counts — the same rule deliver() applies.
+   * Without this an approved order stayed `awaiting_stock` for ever: the stock
+   * never counted, so it never became ready, so it could never be delivered.
+   * EXPIRED stock never counts, approval or not.
    */
   async function shortfallForLines(
     lines: { product_id: number; qty: number }[],
+    options: { allowShortDated?: boolean } = {},
   ): Promise<Shortfall[]> {
     const shortfall: Shortfall[] = []
     for (const line of lines) {
@@ -451,14 +460,15 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
         .maybeSingle()
       const physical = product?.current_stock ?? 0
       const shelf = govtShelfLife(product?.expiry_date as string | null)
-      const onHand = shelf.ok ? physical : 0
+      const usable = shelf.ok || (options.allowShortDated === true && shelf.reason === 'short_dated')
+      const onHand = usable ? physical : 0
       if (onHand < line.qty) {
         shortfall.push({
           product_id: line.product_id,
           ordered: line.qty,
           on_hand: onHand,
           needed: line.qty - onHand,
-          ...(shelf.ok ? {} : { blocked_reason: shelf.reason, physical_on_hand: physical }),
+          ...(usable || shelf.ok ? {} : { blocked_reason: shelf.reason, physical_on_hand: physical }),
         })
       }
     }
@@ -501,7 +511,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const lines = ((order.transaction_items ?? []) as unknown as { product_id: number; qty_stock_out: number | null }[])
       .map(li => ({ product_id: li.product_id, qty: li.qty_stock_out ?? 0 }))
-    const shortfall = await shortfallForLines(lines)
+    const shortfall = await shortfallForLines(lines, { allowShortDated: await shortDatedStore.hasApproval(orderId) })
 
     // Agreement is the PO stage — but only when the order can actually be
     // fulfilled from stock. Minting the company PO number (from the SHARED
@@ -594,7 +604,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const lines = ((order.transaction_items ?? []) as unknown as { product_id: number; qty_stock_out: number | null }[])
       .map(li => ({ product_id: li.product_id, qty: li.qty_stock_out ?? 0 }))
-    const shortfall = await shortfallForLines(lines)
+    const shortfall = await shortfallForLines(lines, { allowShortDated: await shortDatedStore.hasApproval(orderId) })
     return shortfall
   }
 
@@ -926,8 +936,18 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     remarks?: string
     // Which of our accounts received the money. Without it nothing ever
     // credited cash_accounts.balance, which only ever decreased.
-    cashAccountId: number
+    // Null only for a return credit (method 'return_credit'): returned goods
+    // settling the bill, so no money lands anywhere.
+    cashAccountId: number | null
+    /**
+     * The cheque, when the payment was one. Written to collections.cheque_bank /
+     * cheque_no / cheque_date — only when present, so a cash payment never
+     * touches those columns.
+     */
+    cheque?: ChequeDetails | null
   }) => {
+    // A return credit or a credit memo: settled by a credit, so no money moves.
+    const isReturnCredit = isCreditSettlement(payload.method)
     loading.value = true
     clearError()
     const { user, error: authError } = await authStore.getCurrentUser()
@@ -958,12 +978,18 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     }
 
     // Resolve the receiving account before writing anything — a payment
-    // pointing at a missing account would record money as landing nowhere.
-    const { data: account, error: accountError } = await supabase
-      .from('cash_accounts').select('id, name, balance').eq('id', payload.cashAccountId).maybeSingle()
-    if (accountError || !account) {
-      toast.error('Select a valid cash account to deposit this payment into.')
-      loading.value = false; return { success: false }
+    // pointing at a missing account would record money as landing nowhere. A
+    // return credit is the one payment with no account: no money moves.
+    let account: { id: number; name: string; balance: number | null } | null = null
+    if (!isReturnCredit) {
+      const { data, error: accountError } = payload.cashAccountId == null
+        ? { data: null, error: null }
+        : await supabase.from('cash_accounts').select('id, name, balance').eq('id', payload.cashAccountId).maybeSingle()
+      if (accountError || !data) {
+        toast.error('Select a valid cash account to deposit this payment into.')
+        loading.value = false; return { success: false }
+      }
+      account = data
     }
 
     const { data: payment, error: paymentError } = await supabase
@@ -972,7 +998,10 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
         transaction_id: payload.orderId, amount: payload.amount,
         payment_method: payload.method || null, reference_no: payload.reference || null,
         collected_by: user.id, remarks: payload.remarks || null,
-        cash_account_id: payload.cashAccountId,
+        cash_account_id: isReturnCredit ? null : payload.cashAccountId,
+        ...(payload.cheque
+          ? { cheque_bank: payload.cheque.bank, cheque_no: payload.cheque.number, cheque_date: payload.cheque.date }
+          : {}),
       })
       .select('id')
       .single()
@@ -1003,23 +1032,27 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     // The money lands in the chosen account. Best-effort like every other
     // balance write in the app (JS-over-RPC convention) — surfaced, not rolled
     // back, since the collections row is the record of record.
-    const { error: balanceError } = await supabase
-      .from('cash_accounts')
-      .update({ balance: (account.balance ?? 0) + payload.amount })
-      .eq('id', payload.cashAccountId)
-    if (balanceError) {
-      console.warn('recordPayment: cash account balance update failed:', balanceError.message)
-      toast.warning(`Payment recorded, but ${account.name}'s balance was not updated. Verify it manually.`)
+    if (account) {
+      const { error: balanceError } = await supabase
+        .from('cash_accounts')
+        .update({ balance: (account.balance ?? 0) + payload.amount })
+        .eq('id', account.id)
+      if (balanceError) {
+        console.warn('recordPayment: cash account balance update failed:', balanceError.message)
+        toast.warning(`Payment recorded, but ${account.name}'s balance was not updated. Verify it manually.`)
+      }
     }
 
     const { error: logError } = await supabase.from('logs').insert({
       created_by: user.id, action: 'payment',
-      description: `Payment of ${payload.amount} into ${account.name} (${newPaid}/${total})`,
+      description: account
+        ? `Payment of ${payload.amount} into ${account.name} (${newPaid}/${total})`
+        : `Returned goods credit of ${payload.amount} (${payload.reference ?? 'return'}) (${newPaid}/${total})`,
       module: 'inhouse', transaction_id: payload.orderId,
     })
     if (logError) console.warn('recordPayment: activity log insert failed:', logError.message)
 
-    toast.success('Payment recorded.')
+    toast.success(isReturnCredit ? 'Credit taken off the bill.' : 'Payment recorded.')
     await fetchOrders()
     loading.value = false
     return { success: true, paymentId: payment.id }

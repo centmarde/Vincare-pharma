@@ -440,6 +440,11 @@ function stockColor(item: any, stock: number) {
             {{ item.category || 'N/A' }}
           </v-chip>
         </template>
+        <template #[`item.brand`]="{ item }">
+          <!-- Kung null/blank ang brand sa product, ipakita ang 'No brand' -->
+          <span v-if="!isBlank(item.brand)">{{ item.brand }}</span>
+          <span v-else class="text-medium-emphasis font-italic">No brand</span>
+        </template>
         <template #[`item.unit`]="{ item }">
           <span>{{ item.unit || 'N/A' }}</span>
         </template>

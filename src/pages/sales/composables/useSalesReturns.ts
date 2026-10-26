@@ -22,6 +22,8 @@ export function useSalesReturns() {
   const showAcceptDialog = ref(false)
   const showReplacementDialog = ref(false)
   const replacementTarget = ref<SalesReturnType | null>(null)
+  const showApplyDialog = ref(false)
+  const applyTarget = ref<SalesReturnType | null>(null)
 
   const headers = [
     { title: 'Return No.', key: 'return_no', sortable: true },
@@ -93,6 +95,29 @@ export function useSalesReturns() {
     await refresh()
   }
 
+  /**
+   * One replacement per return (issueReplacement enforces it); any credit it
+   * leaves can still be taken off the customer's bill.
+   */
+  function canReplace(row: SalesReturnType): boolean {
+    return row.credit_replaced <= 0 && (row.credit_remaining ?? 0) > 0.005
+  }
+
+  /** A walk-in return has no bill to take it off. */
+  function canApply(row: SalesReturnType): boolean {
+    return row.customer_id != null && (row.credit_remaining ?? 0) > 0.005
+  }
+
+  function openApplyDialog(row: SalesReturnType) {
+    applyTarget.value = row
+    showApplyDialog.value = true
+  }
+
+  async function onCreditApplied() {
+    applyTarget.value = null
+    await refresh()
+  }
+
   function openAcceptDialog() {
     showAcceptDialog.value = true
   }
@@ -109,6 +134,7 @@ export function useSalesReturns() {
     settlementLabel, settlementColor,
     showAcceptDialog, openAcceptDialog, onReturnCreated,
     showReplacementDialog, replacementTarget, openReplacementDialog, onReplacementIssued,
+    showApplyDialog, applyTarget, openApplyDialog, onCreditApplied, canReplace, canApply,
     refresh,
     formatCurrency, formatDate,
   }

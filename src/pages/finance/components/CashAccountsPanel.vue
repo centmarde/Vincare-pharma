@@ -3,6 +3,7 @@ import { onMounted } from 'vue'
 import { useCashAccounts, requestHeaders } from '../composables/useCashAccounts'
 import { useBankDeposits, depositHeaders } from '../composables/useBankDeposits'
 import CashAccountsManager from './CashAccountsManager.vue'
+import AccountTransfers from './AccountTransfers.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import { financePageSizes } from '../composables/financeTable'
 
@@ -273,6 +274,9 @@ onMounted(initDeposits)
           </template>
         </v-data-table>
       </v-card>
+
+      <!-- Any account to any other: bank to bank, bank to cash, time deposits. -->
+      <AccountTransfers />
     </div>
 
     <!-- Request replenishment dialog -->

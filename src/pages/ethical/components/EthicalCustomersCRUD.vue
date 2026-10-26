@@ -7,19 +7,19 @@ import CustomerDetailPanel from '@/components/customers/CustomerDetailPanel.vue'
 import { useEthicalCustomers } from '../composables/useEthicalCustomers'
 import CustomerForm from './CustomerForm.vue'
 import EthicalCustCRUDMobile from '../mobile/EthicalCustCRUDMobile.vue'
+import CustomerDuplicatesDialog from '@/components/customers/dialogs/CustomerDuplicatesDialog.vue'
 
 const { mobile } = useDisplay()
 
 const {
   customers, loading, totalCount, page, pageSize, searchText, showAll, profileFor, showCreateDialog, showEditDialog, editingCustomer, headers,
   agentOptions, businessStructureOptions, createCustomer, updateCustomer, deleteCustomer,
-  openCreateDialog, cancelCreate, openEdit, cancelEdit, init,
+  openCreateDialog, cancelCreate, openEdit, cancelEdit, init, reload, showDuplicates, openDuplicates,
 } = useEthicalCustomers()
 
 onMounted(() => init())
 
 const editCustomer = (item: any) => openEdit(item.id)
-const removeCustomer = (item: any) => deleteCustomer(item.id)
 
 const notSet = (label: string) => `No ${label} set`
 </script>
@@ -94,6 +94,16 @@ const notSet = (label: string) => `No ${label} set`
             hide-details
             inset
           />
+
+          <v-btn
+            variant="tonal"
+            size="small"
+            class="text-none"
+            prepend-icon="mdi-account-multiple-outline"
+            @click="openDuplicates"
+          >
+            Duplicates
+          </v-btn>
         </div>
 
         <v-divider />
@@ -212,7 +222,7 @@ const notSet = (label: string) => `No ${label} set`
           <template #item.actions="{ item }">
           <div class="d-flex align-center justify-end ga-1">
             <v-btn size="small" variant="text" color="primary" icon="mdi-pencil-outline" @click="openEdit(item.id)" />
-            <v-btn size="small" variant="text" color="error" icon="mdi-delete-outline" @click="deleteCustomer(item.id)" />
+            <v-btn size="small" variant="text" color="error" icon="mdi-delete-outline" @click="deleteCustomer(item)" />
           </div>
         </template>
         </v-data-table-server>
@@ -260,6 +270,12 @@ const notSet = (label: string) => `No ${label} set`
         </v-card>
       </v-dialog>
     </div>
+    <CustomerDuplicatesDialog
+      v-model="showDuplicates"
+      department="ethical"
+      :profile-for="profileFor"
+      @changed="reload"
+    />
   </v-container>
 </template>
 

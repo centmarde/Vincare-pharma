@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import ChangeRequestDialog from '@/components/changeRequests/ChangeRequestDialog.vue'
+import ChangeRequestDialog from '@/components/changeRequests/dialogs/ChangeRequestDialog.vue'
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
 import { useSalesHistory, headers } from '../composables/useSalesHistory'
 import { useSalesChangeRequestStore } from '../stores/salesChangeRequest'

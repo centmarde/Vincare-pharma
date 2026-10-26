@@ -550,6 +550,29 @@ export function parseTermDays(value: string | number | null | undefined): number
   return Number.isFinite(days) ? days : null
 }
 
+/**
+ * A customer's name for matching copies of the same customer: case and spacing
+ * ignored ("ADVENTIS MEDICAL CENTER " = "Adventis Medical Center"). The live
+ * book holds several records for many customers, so anything that groups by
+ * customer — the duplicates view, AR envelopes — matches on this.
+ */
+export const customerNameKey = (name: string | null | undefined) =>
+  (name ?? '').trim().replace(/\s+/g, ' ').toUpperCase()
+
+/**
+ * Whether `customers.term_days` describes a consignment arrangement:
+ * 'Consignment', 'CONSIGNMENT / 60 Days', '30 - 60 Days Consignment', ...
+ *
+ * Consignment here is pay-as-you-sell CREDIT, not stock we still own: the
+ * goods are the customer's (sale + receivable at delivery), they pay when they
+ * sell, and they return only expired goods. Its receivables have no due date
+ * to be overdue against, so they are aged by days since delivery instead —
+ * whatever day count the wording also carries.
+ */
+export function isConsignmentTerm(value: string | number | null | undefined): boolean {
+  return typeof value === 'string' && /consign/i.test(value)
+}
+
 // ── Generative / document-number helpers ────────────────────────────────────
 // These were extracted to a dedicated module so stores don't duplicate logic.
 // Re-export everything for backward compatibility.
