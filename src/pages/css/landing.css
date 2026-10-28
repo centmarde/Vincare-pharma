@@ -351,7 +351,9 @@
 /* A wide, cover-ratio photograph placed beneath the Group section head, mirroring
    the .hero-panel pattern (object-fit cover + a light lower-left wash so the
    caption reads). Square corners and a soft surface shadow keep it flush with the
-   section that follows. */
+   section that follows. NOTE: ang naka-post nga asset (clinic-pharmacy.png) kay
+   square (1024×1024), dili 16:5 sama sa daan nga SVG — busa gikinahanglan ang
+   mobile fallback sa ubos para dili ma-crop/ma-overlap ang photo sa x-axis. */
 .landing .group-cover {
   position: relative;
   margin: 0 auto;
@@ -380,6 +382,17 @@
   font-weight: 500;
   letter-spacing: 0.03em;
   color: rgba(var(--v-theme-on-surface), 0.65);
+}
+
+/* Mobile: ang source photo kay square, busa ang 16:5 strip mo-crop sa photo ug
+   mo-overlap sa x-axis. Sa phone, i-square ang frame (1:1) aron kompleto ang
+   photo — walay crop, walay overlap — samtang ang desktop magpabilin sa wide
+   cover strip. Ang min-height gi-zero aron dili kini mobalik sa strip ratio. */
+@media (max-width: 599px) {
+  .landing .group-cover {
+    aspect-ratio: 1 / 1;
+    min-height: 0;
+  }
 }
 
 
