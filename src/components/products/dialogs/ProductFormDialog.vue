@@ -65,9 +65,10 @@ watch(
   },
 )
 
-// Box-brand dropdown — kanunay gipakita ang Brand field, pero ang get_box_brands
-// RPC lang ang i-trigger kung ang unit == 'box'. Ang lista sa brands kay gi-load
-// sa loading state samtang ga-fetch pa sa RPC.
+// Box-brand suggestions — kanunay gipakita ang Brand field isip typeable input
+// (combobox) nga nagpakita ug suggestions samtang nag-type, pero ang
+// get_box_brands RPC lang ang i-trigger kung ang unit == 'box'. Ang lista sa
+// brands kay gi-load sa loading state samtang ga-fetch pa sa RPC.
 const boxBrands = ref<string[]>([])
 const boxBrandsLoading = ref(false)
 const isBoxUnit = computed(
@@ -79,7 +80,7 @@ async function fetchBoxBrands() {
   // Gamita ang Supabase built-in { data, error } handling — walay try/catch.
   // Ang RPC usa ka `returns table (brand text)`, mao nga ang data kay array of
   // objects ({ brand: '...' }) — i-map ngadto sa flat string array aron dili
-  // mo-display ug '[object Object]' sa dropdown.
+  // mo-display ug '[object Object]' sa combobox suggestions.
   const { data, error } = await supabase.rpc('get_box_brands')
   boxBrandsLoading.value = false
   if (error) {
@@ -97,7 +98,7 @@ watch(
   () => props.productForm.unit,
   (unit) => {
     // RPC lang ang i-trigger kung 'box' ang unit; kung dili box, limpyohi ang
-    // daan nga box-brand list aron dili magpakita ug stale brands sa dropdown.
+    // daan nga box-brand list aron dili magpakita ug stale brands sa combobox.
     if (String(unit ?? '').trim().toLowerCase() === 'box') {
       fetchBoxBrands()
     } else {
@@ -298,7 +299,12 @@ watch(() => props.modelValue, (val) => {
                       ></v-select>
                     </v-col>
                     <v-col cols="12" :sm="mobile ? 12 : 6">
-                      <v-select
+                      <!-- Combobox (typeable input) aron maka-type ang user ug
+                           bag-ong brand, samtang mugawas ang existing brand
+                           suggestions samtang nag-type. Ang v-combobox kay
+                           strings ang items, mao nga diretso nga string ang
+                           i-bind sa productForm.brand. -->
+                      <v-combobox
                         v-model="productForm.brand"
                         :items="boxBrands"
                         label="Brand"
@@ -308,12 +314,13 @@ watch(() => props.modelValue, (val) => {
                         clearable
                         :loading="boxBrandsLoading"
                         :disabled="isFieldDisabled"
+                        autocomplete="off"
                         :no-data-text="
                           isBoxUnit
                             ? 'No brands found for box products'
-                            : 'Select Box as unit to load brands'
+                            : 'No matching brands — type to add a new one'
                         "
-                      ></v-select>
+                      ></v-combobox>
                     </v-col>
                   </v-row>
                 </div>
