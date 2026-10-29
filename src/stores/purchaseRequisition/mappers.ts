@@ -21,6 +21,7 @@ export function mapTransactionItems(transactionItems: any[]): PRItem[] {
     // Line snapshot wins over the product master, per gl_sum_cost's convention.
     cost_per_unit: ti.cost_price ?? ti.unit_price ?? ti.products?.cost_price ?? 0,
     product_id: ti.product_id,
+    brand: ti.products?.brand ?? null,
     sku: ti.products?.sku ?? null,
     supplier_name: ti.products?.suppliers?.name ?? '—',
     supplier_id: ti.products?.supplier_id != null ? String(ti.products.supplier_id) : null,

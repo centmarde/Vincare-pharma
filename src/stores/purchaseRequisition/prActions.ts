@@ -155,7 +155,7 @@ export async function updatePR(payload: {
   const { data: existingItems, error: fetchItemsError } = await supabase
     .from('transaction_items')
     .select(
-      'id, product_id, products ( product_name, unit, supplier_id, expiry_date, sku )',
+      'id, product_id, products ( product_name, brand, unit, supplier_id, expiry_date, sku )',
     )
     .eq('transaction_id', payload.prId)
 
@@ -203,6 +203,7 @@ export async function updatePR(payload: {
     const supplierId = item.supplier_id ? Number(item.supplier_id) : null
     return (
       product.product_name !== item.product_name ||
+      (product.brand ?? null) !== (item.brand ?? null) ||
       product.unit !== item.unit ||
       (product.supplier_id ?? null) !== supplierId ||
       (product.expiry_date ?? null) !== (item.expiry_date ?? null)
@@ -259,6 +260,7 @@ export async function updatePR(payload: {
 
     const findExactMatch = (
       name: string,
+      brand: string | null,
       supplierId: number | null,
       unit: string,
       expiryDate: string | null,
@@ -267,6 +269,7 @@ export async function updatePR(payload: {
       allCandidates.find(
         (p) =>
           p.product_name === name &&
+          (p.brand ?? null) === (brand ?? null) &&
           (p.supplier_id ?? null) === (supplierId ?? null) &&
           p.unit === unit &&
           sameExpiry(p.expiry_date, expiryDate) &&
@@ -290,14 +293,20 @@ export async function updatePR(payload: {
           const exactCosmetic =
             picked.unit === item.unit &&
             picked.product_name === item.product_name &&
+            (picked.brand ?? null) === (item.brand ?? null) &&
             (picked.supplier_id ?? null) === supplierId
 
           if (exactCosmetic) {
             // Tier 1 — exact match on every field, including expiry.
             resolvedId = picked.id
-          } else if (picked.sku && (picked.supplier_id ?? null) === supplierId) {
+          } else if (
+            picked.sku &&
+            (picked.brand ?? null) === (item.brand ?? null) &&
+            (picked.supplier_id ?? null) === supplierId
+          ) {
             // Tier 2 — same batch (expiry matches), only a cosmetic
-            // field (name typo/unit) differs, and it's already
+            // field (name typo/unit) differs, and its brand is unchanged.
+            // It is already
             // tracked stock. Reuse it, just warn.
             resolvedId = picked.id
             skuMismatchWarnings.push({
@@ -318,6 +327,7 @@ export async function updatePR(payload: {
       if (resolvedId === null) {
         const skuMatch = findExactMatch(
           item.product_name,
+          item.brand ?? null,
           supplierId,
           item.unit,
           item.expiry_date ?? null,
@@ -331,6 +341,7 @@ export async function updatePR(payload: {
       if (resolvedId === null) {
         const match = findExactMatch(
           item.product_name,
+          item.brand ?? null,
           supplierId,
           item.unit,
           item.expiry_date ?? null,
@@ -377,6 +388,7 @@ export async function updatePR(payload: {
           cost_price: item.cost_per_unit,
           selling_price: computeSellingPrice(item.cost_per_unit),
           ...carriedProductFields(source),
+          brand: item.brand ?? source?.brand ?? null,
         }
       })
 
@@ -496,7 +508,7 @@ export async function savePurchaseRequisition(
     return { success: false }
   }
 
-  // ─── Check for existing products (matched by product_name + supplier_id) ──
+  // ─── Check for existing products by the full product batch identity ──
   const names = [...new Set(items.value.map((i) => i.product_name))]
   const { data: existingProducts, error: existingError } = await supabase
     .from('products')
@@ -512,6 +524,7 @@ export async function savePurchaseRequisition(
 
   const findExisting = (
     name: string,
+    brand: string | null,
     supplierId: number | null,
     unit: string,
     expiryDate: string | null,
@@ -519,6 +532,7 @@ export async function savePurchaseRequisition(
     (existingProducts || []).find(
       (p) =>
         p.product_name === name &&
+        (p.brand ?? null) === (brand ?? null) &&
         (p.supplier_id ?? null) === (supplierId ?? null) &&
         p.unit === unit &&
         (p.expiry_date ?? null) === (expiryDate ?? null),
@@ -537,6 +551,7 @@ export async function savePurchaseRequisition(
         pickedProduct &&
         pickedProduct.unit === item.unit &&
         pickedProduct.product_name === item.product_name &&
+        (pickedProduct.brand ?? null) === (item.brand ?? null) &&
         (pickedProduct.supplier_id ?? null) === supplierId &&
         (pickedProduct.expiry_date ?? null) === (item.expiry_date ?? null)
       ) {
@@ -546,6 +561,7 @@ export async function savePurchaseRequisition(
 
     const match = findExisting(
       item.product_name,
+      item.brand ?? null,
       supplierId,
       item.unit,
       item.expiry_date ?? null,
@@ -578,6 +594,7 @@ export async function savePurchaseRequisition(
           cost_price: item.cost_per_unit,
           selling_price: computeSellingPrice(item.cost_per_unit),
           ...carriedProductFields(source),
+          brand: item.brand ?? source?.brand ?? null,
         }
       })
 
@@ -726,7 +743,7 @@ export async function fetchPurchaseRequisition() {
         *,
         transaction_items!transaction_items_transaction_id_fkey (
           id, product_id, qty_stock_in, actual_count_stock_in, unit_price, cost_price, batch_no,
-          products ( id, product_name, unit, cost_price, sku, supplier_id, expiry_date, suppliers ( name ) )
+          products ( id, product_name, unit, cost_price, sku, supplier_id, expiry_date, brand, suppliers ( name ) )
         )
       `,
     )
@@ -760,7 +777,7 @@ export async function fetchPRByRequisitionId(requisitionId: number): Promise<PR 
         *,
         transaction_items!transaction_items_transaction_id_fkey (
           id, product_id, qty_stock_in, actual_count_stock_in, unit_price, cost_price, batch_no,
-          products ( id, product_name, unit, cost_price, sku, supplier_id, expiry_date, suppliers ( name ) )
+          products ( id, product_name, unit, cost_price, sku, supplier_id, expiry_date, brand, suppliers ( name ) )
         )
       `,
     )
