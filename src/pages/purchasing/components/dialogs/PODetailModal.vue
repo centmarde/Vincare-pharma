@@ -149,6 +149,7 @@ const { breakdown } = usePurchaseBreakdown(() => props.po)
               <tr style="background-color: #1565c0;">
                 <th style="color:#fff; font-weight:600; padding: 10px 12px;">ITEM #</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px;">DESCRIPTION</th>
+                <th style="color:#fff; font-weight:600; padding: 10px 12px;">BRAND</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">QTY</th>
                 <th v-if="showActualQty" style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">ACTUAL QTY</th>
                 <th style="color:#fff; font-weight:600; padding: 10px 12px; text-align:right;">SUPPLIER</th>
@@ -162,6 +163,7 @@ const { breakdown } = usePurchaseBreakdown(() => props.po)
               <tr v-for="item in pr?.items" :key="item.id">
                 <td>{{ item.no }}</td>
                 <td>{{ item.product_name }}</td>
+                <td>{{ item.brand || '—' }}</td>
                 <td class="text-right">{{ item.qty }}</td>
                 <td v-if="showActualQty" class="text-right">{{ item.actual_count_stock_in ?? '—' }}</td>
                 <td class="text-right">{{ item.supplier_name }}</td>
@@ -171,17 +173,17 @@ const { breakdown } = usePurchaseBreakdown(() => props.po)
                 <td class="text-right">{{ formatCurrency(item.qty * item.cost_per_unit) }}</td>
               </tr>
               <tr v-for="n in emptyRows" :key="`empty-${n}`" class="empty-row">
-                <td :colspan="showActualQty ? 9 : 8">&nbsp;</td>
+                <td :colspan="showActualQty ? 10 : 9">&nbsp;</td>
               </tr>
             </tbody>
             <tfoot>
               <PurchaseChargeRows
                 v-if="breakdown"
                 :breakdown="breakdown"
-                :label-colspan="showActualQty ? 8 : 7"
+                :label-colspan="showActualQty ? 9 : 8"
               />
               <tr class="bg-grey-lighten-3">
-                <td :colspan="showActualQty ? 8 : 7" class="text-black font-weight-bold" style="text-align:right;">TOTAL</td>
+                <td :colspan="showActualQty ? 9 : 8" class="text-black font-weight-bold" style="text-align:right;">TOTAL</td>
                 <td style="text-align:right; font-weight:700; padding: 10px 12px; color: #000;">
                   {{ formatCurrency(po?.total_amount ?? 0) }}
                 </td>
@@ -223,6 +225,7 @@ const { breakdown } = usePurchaseBreakdown(() => props.po)
                 </div>
                 <v-divider class="my-1" />
                 <div class="d-flex flex-wrap ga-3 text-caption">
+                  <div><span class="text-medium-emphasis">Brand: </span>{{ item.brand || '—' }}</div>
                   <div><span class="text-medium-emphasis">Qty: </span>{{ item.qty }}</div>
                   <div v-if="showActualQty"><span class="text-medium-emphasis">Actual: </span>{{ item.actual_count_stock_in ?? '—' }}</div>
                   <div><span class="text-medium-emphasis">Supplier: </span>{{ item.supplier_name }}</div>

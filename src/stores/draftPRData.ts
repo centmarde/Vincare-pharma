@@ -22,6 +22,7 @@ export type DraftPRItemType = {
   draft_pr_id: number
   product_id: number | null
   product_name?: string | null
+  brand?: string | null
   unit?: string | null
   qty: number
   shortfall_qty: number | null
@@ -75,6 +76,7 @@ export type DraftLineInput = {
 export type ManualDraftLineInput = {
   product_id: number | null
   product_name: string
+  brand?: string | null
   unit: string
   supplier_id: number | null
   qty: number
@@ -200,6 +202,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       draft_pr_id: row.draft_pr_id,
       product_id: row.product_id,
       product_name: row.product_name ?? row.product?.product_name ?? null,
+      brand: row.brand ?? null,
       unit: row.unit ?? null,
       qty: row.qty,
       shortfall_qty: row.shortfall_qty ?? null,
@@ -668,6 +671,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
           draft_pr_id: draftId,
           product_id: line.product_id,
           product_name: line.product_name,
+          brand: line.brand ?? null,
           unit: line.unit,
           supplier_id: line.supplier_id,
           qty: line.qty,

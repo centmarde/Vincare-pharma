@@ -26,6 +26,7 @@ const { mobile } = useDisplay()
       <v-col cols="auto" style="width: 36px" class="text-center">NO.</v-col>
       <v-col cols="auto" style="width: 160px" class="pl-2">UNIT</v-col>
       <v-col class="pl-2">PRODUCT</v-col>
+      <v-col cols="auto" style="width: 140px" class="pl-2">BRAND</v-col>
       <v-col cols="auto" style="width: 180px" class="pl-2">SUPPLIER</v-col>
       <v-col cols="auto" style="width: 160px" class="pl-2">BATCH NO.</v-col>
       <v-col cols="auto" style="width: 115px" class="pl-2">EXPIRY</v-col>
@@ -58,7 +59,7 @@ const { mobile } = useDisplay()
       <v-col class="pl-2">
         <v-text-field
           v-model="item.product_name"
-          placeholder="Item description"
+          placeholder="Product Name"
           autocomplete="off"
           variant="outlined"
           density="compact"
@@ -66,6 +67,17 @@ const { mobile } = useDisplay()
           append-inner-icon="mdi-database-search-outline"
           @update:model-value="emit('unlink-product', item)"
           @click:append-inner="emit('pick-product', index)"
+        />
+      </v-col>
+
+      <v-col cols="auto" style="width: 140px" class="pl-2">
+        <v-text-field
+          v-model="item.brand"
+          placeholder="Brand"
+          autocomplete="off"
+          variant="outlined"
+          density="compact"
+          hide-details
         />
       </v-col>
 
@@ -173,6 +185,18 @@ const { mobile } = useDisplay()
           append-inner-icon="mdi-database-search-outline"
           @update:model-value="emit('unlink-product', item)"
           @click:append-inner="emit('pick-product', index)"
+        />
+      </div>
+
+      <div class="mb-2">
+        <div class="field-label">Brand</div>
+        <v-text-field
+          v-model="item.brand"
+          placeholder="Brand"
+          autocomplete="off"
+          variant="outlined"
+          density="compact"
+          hide-details
         />
       </div>
 
