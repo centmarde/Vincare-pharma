@@ -10,7 +10,8 @@
 //   their invoice no., term wording, notes   -> remarks, in place
 //   invoice date, credit term                -> aging only, in place (the
 //                                               ledger entry is dated at cutover)
-//   original amount, paid before cutover     -> the ledger amount: the record is
+//   original amount, paid before cutover,
+//   the pre-cutover credit memo              -> the ledger amount: the record is
 //                                               voided (entry reversed) and
 //                                               recorded again — the accountant's
 //                                               reverse + reissue rule — keeping
@@ -27,6 +28,9 @@ import { restorePrevStatus } from './collections'
 export const openingReceivableFields = {
   original_amount: 'originalAmount',
   paid_before_cutover: 'paidBeforeCutover',
+  credit_memo_amount: 'creditBeforeCutover',
+  credit_memo_no: 'creditMemoNo',
+  credit_memo_date: 'creditMemoDate',
   invoice_date: 'invoiceDate',
   term_days: 'termDays',
   original_no: 'originalNo',
@@ -34,7 +38,9 @@ export const openingReceivableFields = {
   notes: 'notes',
 } as const satisfies Record<string, keyof OpeningReceivableRow>
 
-const ledgerKeys = ['original_amount', 'paid_before_cutover']
+// The credit memo's number and date are on its own ledger-backed record, so any
+// change to it goes the reverse + record-again way too.
+const ledgerKeys = ['original_amount', 'paid_before_cutover', 'credit_memo_amount', 'credit_memo_no', 'credit_memo_date']
 const agingKeys = ['invoice_date', 'term_days']
 
 const dayMs = 86400000
@@ -89,6 +95,9 @@ export async function applyOpeningReceivableChange(request: ChangeRequestType, u
   if (touchesLedger) {
     const originalAmount = Number(next('original_amount') ?? 0)
     const paidBeforeCutover = Number(next('paid_before_cutover') ?? 0)
+    const creditAmount = Number(next('credit_memo_amount') ?? 0)
+    const creditNo = String(next('credit_memo_no') ?? '')
+    const creditDate = next('credit_memo_date') ? String(next('credit_memo_date')) : (cur.cutoverDate ?? '')
     // Everything the re-record would refuse is checked BEFORE the void, so a
     // refusal never leaves the receivable voided with nothing in its place.
     if (cur.collectedSince > 0.005) {
@@ -96,7 +105,11 @@ export async function applyOpeningReceivableChange(request: ChangeRequestType, u
     }
     if (!Number.isFinite(originalAmount) || !(originalAmount > 0)) return { success: false, error: 'The corrected invoice amount must be greater than zero.' }
     if (!Number.isFinite(paidBeforeCutover) || paidBeforeCutover < 0) return { success: false, error: 'The amount paid before cutover cannot be negative.' }
-    if (originalAmount - paidBeforeCutover <= 0.005) {
+    if (!Number.isFinite(creditAmount) || creditAmount < 0) return { success: false, error: 'The credit memo amount cannot be negative.' }
+    if (creditAmount > 0 && (!isValidDate(creditDate) || (cur.cutoverDate && creditDate > cur.cutoverDate))) {
+      return { success: false, error: 'The credit memo must be dated on or before the cutover date.' }
+    }
+    if (originalAmount - paidBeforeCutover - creditAmount <= 0.005) {
       return { success: false, error: 'With these amounts nothing is outstanding — void the receivable instead.' }
     }
     if (cur.customerId == null) return { success: false, error: 'This receivable has no customer on record.' }
@@ -114,6 +127,7 @@ export async function applyOpeningReceivableChange(request: ChangeRequestType, u
       termLabel,
       originalAmount,
       alreadyPaid: paidBeforeCutover,
+      creditMemo: creditAmount > 0 ? { number: creditNo, date: creditDate, amount: creditAmount, reason: cur.creditMemoReason } : null,
       // An opening balance stays an opening balance: same date as before.
       cutoverDate: cur.cutoverDate,
       remarks: [backlink, notes].filter(Boolean).join(' · '),
