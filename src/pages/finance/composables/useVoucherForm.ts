@@ -3,8 +3,9 @@ import { storeToRefs } from 'pinia'
 import { expenseDepartments } from '@/stores/financeData'
 import { useExpenseAccounts } from './useExpenseAccounts'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
+import { useCustomersDataStore } from '@/stores/customersData'
 import type { ExpenseCategory, ExpenseDepartment } from '@/stores/financeData'
-import { emptySignatories } from '@/stores/disbursementVouchersData'
+import { emptySignatories, isRebateAccount } from '@/stores/disbursementVouchersData'
 import type { VoucherType, VoucherInput, VoucherSignatoryField } from '@/stores/disbursementVouchersData'
 import { cashClassifications, classificationMeta } from '@/utils/cashAccountTypes'
 import type { CashClassificationMeta, ClassifiedCashAccount } from '@/utils/cashAccountTypes'
@@ -24,9 +25,10 @@ const todayISO = () => new Date().toISOString().slice(0, 10)
 
 // A line while it's being typed. Two differences from VoucherItemInput (the
 // store payload):
-//   - amount may be null: starting it at 0 rendered a "0" in the field, which
-//     looks filled but isn't a valid amount, so the submit button stayed
-//     disabled with the form looking complete.
+//   - amount starts at 0, which the amount field (MoneyField) shows as blank
+//     with its placeholder. It used to be null, because a plain number input
+//     rendered 0 as a "0" that looked filled but wasn't a valid amount. A
+//     draft saved back then can still hold null; every read coerces it.
 //   - no per-line free text. The voucher carries ONE `particulars` on the
 //     header, fanned out to every line on save (the database column is
 //     per-line). The printed box is split: PARTICULARS on the left, ACCOUNT
@@ -34,7 +36,7 @@ const todayISO = () => new Date().toISOString().slice(0, 10)
 type VoucherFormLine = {
   /** A GL account code from the chart of accounts; '' until one is picked. */
   category: ExpenseCategory
-  amount: number | null
+  amount: number
 }
 
 /**
@@ -64,13 +66,27 @@ export const standardVoucherRows = 5
  */
 export const maxParticularsLines = 7
 
+/**
+ * What a new voucher starts with when it is raised from Supplier Payments:
+ * the supplier, the balance being paid and which invoices it covers. Only a
+ * starting point — every field stays editable before the voucher is saved.
+ */
+export type VoucherPrefill = {
+  supplierId: number
+  supplierName: string | null
+  amount: number
+  particulars: string
+  /** Not printed — the PO numbers, so the voucher can be found by them. */
+  remarks: string
+}
+
 // No default account. The old default was 'other', which the GL projector's
 // else-branch booked to 7080 Office Supplies — so a line left untouched was
 // charged somewhere real without anyone choosing it. Blank forces a choice and
 // is caught by `blockers` below.
 const emptyItem = (): VoucherFormLine => ({
   category: '',
-  amount: null,
+  amount: 0,
 })
 
 export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
@@ -104,6 +120,9 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
   // column the database has and where the generated expense reads its remark.
   const particulars = ref('')
   const remarks = ref('')
+  // The customer a rebate is for. Only asked when a line is charged to a rebate
+  // account; it is how the rebate reaches that customer on Rebate Payouts.
+  const rebateCustomerId = ref<number | null>(null)
   // Typed names for the four signature blocks — printed above the rule so only
   // the signature itself is handwritten.
   const signatories = ref(emptySignatories())
@@ -120,10 +139,14 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
     // rather than restoring a voucher with part of its shape silently missing.
     // v6: payeeType + supplierId joined the shape. Bumping discards older
     // drafts rather than restoring one with the pay-to half missing.
-    version: 6,
-    refs: { payeeType, supplierId, payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, department, particulars, remarks, signatories, items },
+    // v7: rebateCustomerId joined the shape.
+    version: 7,
+    // Never while editing: the draft holds the NEW voucher someone was typing,
+    // and an edit loaded into the same fields would overwrite it.
+    enabled: () => editingId.value === null,
+    refs: { payeeType, supplierId, payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, department, particulars, remarks, rebateCustomerId, signatories, items },
     isEmpty: () => !payee.value && !payeeAddress.value && !payeeTin.value && cashAccountId.value == null
-      && supplierId.value == null
+      && supplierId.value == null && rebateCustomerId.value == null
       && !checkNo.value && !orSiNo.value && !particulars.value.trim() && !remarks.value
       && !hasAnySignatory()
       && items.value.every((line) => !line.amount),
@@ -205,6 +228,24 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
       payee.value = ''
     }
   })
+  const customersStore = useCustomersDataStore()
+  const { rebateCustomers } = storeToRefs(customersStore)
+
+  /** In-House and Ethical customers, labelled with their department. */
+  const rebateCustomerOptions = computed(() =>
+    rebateCustomers.value.map((customer) => ({
+      value: customer.id,
+      title: customer.name ?? `Customer ${customer.id}`,
+      subtitle: customer.department === 'inhouse' ? 'In-House' : 'Ethical',
+    })),
+  )
+
+  /** Load the customers once, for the rebate picker. */
+  async function ensureRebateCustomersLoaded() {
+    if (rebateCustomers.value.length) return
+    await customersStore.fetchRebateCustomers()
+  }
+
   const categoryOptions = expenseAccountOptions
   const departmentOptions = expenseDepartments
 
@@ -246,6 +287,10 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
 
   /** The account a supplier voucher's lines are charged to. */
   const accountsPayableCode = '2010'
+
+  /** Whether any line pays a rebate — the only time the customer is asked. */
+  const hasRebateLine = computed(() =>
+    !isSupplierVoucher.value && items.value.some((line) => isRebateAccount(line.category)))
 
   const validItems = computed(() =>
     items.value.filter((line) =>
@@ -291,7 +336,8 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
 
   const isEditing = computed(() => editingId.value !== null)
 
-  function resetForm() {
+  /** Blank every field, leaving any saved draft where it is. */
+  function clearFields() {
     editingId.value = null
     payeeType.value = 'other'
     supplierId.value = null
@@ -305,9 +351,31 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
     department.value = null
     particulars.value = ''
     remarks.value = ''
+    rebateCustomerId.value = null
     signatories.value = emptySignatories()
     items.value = [emptyItem()]
+  }
+
+  /** Blank the form AND discard the saved draft — the voucher is done with. */
+  function resetForm() {
+    clearFields()
     draft.clear()
+  }
+
+  /** Start a supplier payment from what Supplier Payments passed over. */
+  function applyPrefill(prefill: VoucherPrefill) {
+    payeeType.value = 'supplier'
+    supplierId.value = prefill.supplierId
+    // Filled here as well as by the supplierId watcher: that watcher does not
+    // fire when the same supplier was picked last time, and it cannot find a
+    // supplier missing from the active-only list.
+    const supplier = suppliers.value.find((s) => s.id === prefill.supplierId)
+    payee.value = supplier?.name ?? prefill.supplierName ?? ''
+    payeeAddress.value = supplier?.address ?? ''
+    payeeTin.value = supplier?.tin_no ?? ''
+    particulars.value = prefill.particulars
+    remarks.value = prefill.remarks
+    items.value = [{ category: '', amount: prefill.amount }]
   }
 
   // Prefill from an existing DRAFT voucher. Printed vouchers are immutable, so
@@ -338,6 +406,7 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
       (line) => line.particular.trim() && line.particular !== expenseAccountLabel(line.category),
     )?.particular ?? ''
     remarks.value = voucher.remarks ?? ''
+    rebateCustomerId.value = voucher.customer_id
     signatories.value = { ...emptySignatories(), ...voucher.signatories }
     items.value = voucher.items.length
       ? voucher.items.map((line) => ({
@@ -367,6 +436,9 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
       // null keeps this an ordinary expense voucher; set makes recording it
       // produce supplier_payment rows against Accounts Payable instead.
       supplier_id: payeeType.value === 'supplier' ? supplierId.value : null,
+      // Dropped when no line is a rebate any more, so a voucher re-pointed to
+      // fuel does not stay listed under a customer's rebates.
+      customer_id: hasRebateLine.value ? rebateCustomerId.value : null,
       check_no: checkNo.value.trim(),
       or_si_no: orSiNo.value.trim(),
       remarks: remarks.value.trim(),
@@ -397,8 +469,9 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
     voucherTotal, insufficientFunds, canSubmit, blockers,
     particularsLines, particularsTooTall, linesMissingAccount,
     payeeType, supplierId, isSupplierVoucher, supplierOptions, ensureSuppliersLoaded,
+    rebateCustomerId, rebateCustomerOptions, hasRebateLine, ensureRebateCustomersLoaded,
     expenseAccountLabel, ensureAccountsLoaded,
-    resetForm, loadFrom, addItem, removeItem, buildPayload, setSignatory, applyCachedSignatories,
+    clearFields, resetForm, loadFrom, applyPrefill, addItem, removeItem, buildPayload, setSignatory, applyCachedSignatories,
     restoreDraft: draft.restore,
     clearDraft: draft.clear,
   }

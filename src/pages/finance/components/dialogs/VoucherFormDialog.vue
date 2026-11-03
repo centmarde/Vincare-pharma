@@ -2,11 +2,13 @@
 import { watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import { maxParticularsLines, useVoucherForm } from '../../composables/useVoucherForm'
+import type { VoucherPrefill } from '../../composables/useVoucherForm'
 import { filterExpenseAccount } from '../../composables/useExpenseAccounts'
 import { voucherSignatories } from '@/stores/disbursementVouchersData'
 import type { VoucherType, VoucherInput } from '@/stores/disbursementVouchersData'
 import type { ClassifiedCashAccount } from '@/utils/cashAccountTypes'
 import { formatCurrency } from '@/utils/helpers'
+import MoneyField from '@/components/inputs/MoneyField.vue'
 
 const props = defineProps<{
   modelValue: boolean
@@ -14,6 +16,8 @@ const props = defineProps<{
   accounts: ClassifiedCashAccount[]
   /** Set only when editing an existing DRAFT voucher; null when creating. */
   editing: VoucherType | null
+  /** A supplier payment raised from Supplier Payments; ignored when editing. */
+  prefill?: VoucherPrefill | null
 }>()
 
 const emit = defineEmits<{
@@ -22,14 +26,14 @@ const emit = defineEmits<{
 }>()
 
 const {
-  isEditing,
   payee, payeeAddress, payeeTin, voucherDate, cashAccountId, checkNo, orSiNo, department, particulars, remarks, items,
   categoryOptions, departmentOptions, accountOptions, metaForAccount, selectedAccount,
   voucherTotal, insufficientFunds, canSubmit, blockers, signatories,
   particularsLines, particularsTooTall,
-  resetForm, loadFrom, addItem, removeItem, buildPayload, restoreDraft,
+  isEditing, clearFields, resetForm, loadFrom, applyPrefill, addItem, removeItem, buildPayload, restoreDraft,
   setSignatory, applyCachedSignatories, ensureAccountsLoaded,
   payeeType, supplierId, isSupplierVoucher, supplierOptions, ensureSuppliersLoaded,
+  rebateCustomerId, rebateCustomerOptions, hasRebateLine, ensureRebateCustomersLoaded,
 } = useVoucherForm(() => props.accounts)
 
 // The form deliberately mirrors the printed voucher cell-for-cell, so what the
@@ -51,10 +55,17 @@ function signatoryBorder(index: number) {
   return classes
 }
 
-// Prefill on open: an existing draft loads its own values, a new voucher picks
-// up any autosaved draft instead.
+// Prefill on open: an existing voucher loads its own values, one raised from
+// Supplier Payments starts from that bill, and any other new voucher picks up
+// the autosaved draft.
 watch(() => props.modelValue, async (open) => {
-  if (!open) return
+  if (!open) {
+    // Closing a NEW voucher (saved or cancelled) is the end of that draft.
+    // Closing an edit leaves the draft alone — it belongs to a different,
+    // unsaved voucher.
+    if (!isEditing.value) resetForm()
+    return
+  }
   // AWAITED, not fire-and-forget: loadFrom decides whether a stored particular
   // is a real description or a legacy copy of the account's own title, and it
   // decides by comparing against that title. With the chart still empty every
@@ -63,13 +74,19 @@ watch(() => props.modelValue, async (open) => {
   // was harmless; this is not.
   // Suppliers load alongside the chart: the pay-to picker needs them, and
   // loadFrom resolves a saved supplier_id against this list.
-  await Promise.all([ensureAccountsLoaded(), ensureSuppliersLoaded()])
+  // Customers too, for the rebate picker and so a saved link shows its name.
+  await Promise.all([ensureAccountsLoaded(), ensureSuppliersLoaded(), ensureRebateCustomersLoaded()])
   // The dialog can be dismissed while the chart loads. Populating it now would
   // fill a form the user has already closed, and leave that state behind for
   // the next open.
   if (!props.modelValue) return
-  resetForm()
+  // clearFields, not resetForm: resetForm discards the saved draft, so calling
+  // it here meant restoreDraft below never found one — a voucher half-typed
+  // before a reload was always lost. Kept synchronous with the branch below,
+  // so the draft watcher only ever sees the finished result.
+  clearFields()
   if (props.editing) loadFrom(props.editing)
+  else if (props.prefill) applyPrefill(props.prefill)
   else restoreDraft()
   // Prefill any signature block still blank with the last names used. Runs for
   // edits too — an older voucher saved before this field existed has none.
@@ -386,9 +403,9 @@ function handleSubmit() {
               </v-row>
             </v-col>
             <v-col cols="12" sm="4" class="pa-2 d-flex align-start ga-1">
-              <v-text-field
-                v-model.number="line.amount"
-                type="number"
+              <!-- Shows thousands separators while typing ("20,772"). -->
+              <MoneyField
+                v-model="line.amount"
                 placeholder="0.00"
                 variant="plain"
                 density="compact"
@@ -423,6 +440,35 @@ function handleSubmit() {
               </v-btn>
             </v-col>
             <v-col cols="12" sm="4" class="pa-2" />
+          </v-row>
+
+          <!-- Only for a rebate (6030 / 1060 / 1070). Not printed: the payee
+               is typed freely, so this is the one place that says which
+               customer the rebate belongs to, for Rebate Payouts. -->
+          <v-row v-if="hasRebateLine" no-gutters class="border-b">
+            <v-col cols="12" class="pa-2">
+              <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis">
+                Rebate for customer
+              </div>
+              <v-autocomplete
+                v-model="rebateCustomerId"
+                :items="rebateCustomerOptions"
+                item-title="title"
+                item-value="value"
+                placeholder="Which In-House or Ethical customer this rebate is for"
+                variant="plain"
+                density="compact"
+                clearable
+                hide-details
+              >
+                <template #item="{ props: itemProps, item }">
+                  <v-list-item v-bind="itemProps" :subtitle="item.raw.subtitle" />
+                </template>
+              </v-autocomplete>
+              <div class="text-caption text-medium-emphasis">
+                Not printed. Shows this rebate under the customer on Rebate Payouts.
+              </div>
+            </v-col>
           </v-row>
 
           <v-row no-gutters class="border-b bg-surface-light">

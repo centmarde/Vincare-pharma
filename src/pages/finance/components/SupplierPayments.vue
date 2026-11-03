@@ -14,7 +14,8 @@ import { financePageSizes } from '../composables/financeTable'
 const {
   supplierAP, apAging, supplierPayments, loading,
   bucketTotals, totalOutstanding, oldestDays,
-  init, goToVouchers,
+  selectedInvoiceIds, selectedInvoices, selectedTotal, selectionProblem,
+  init, goToVouchers, payInvoices, paySupplier, openInvoicesOf, paySelected, clearSelection,
 } = useSupplierPayments()
 
 // Edit/undo requests on a recorded supplier payment (executive-approved).
@@ -61,8 +62,9 @@ onMounted(async () => { await init(); await loadPending() })
         <v-card-text>
           <p class="text-body-2 text-medium-emphasis mb-3">
             This page monitors what is owed. Payments are recorded as disbursement
-            vouchers — set <strong>Paying: A supplier</strong> on the voucher and
-            recording it settles the balance here.
+            vouchers — press <strong>Pay</strong> on an invoice (or tick several from
+            one supplier) and the voucher opens already filled in. Recording it
+            settles the balance here.
           </p>
 
           <!-- Bucket strip -->
@@ -82,12 +84,43 @@ onMounted(async () => { await init(); await loadPending() })
             </v-sheet>
           </div>
 
+          <!-- Several invoices on one voucher: tick them, then pay together. -->
+          <v-sheet
+            v-if="selectedInvoices.length"
+            rounded="lg"
+            border
+            class="pa-3 mb-3 d-flex align-center flex-wrap ga-3"
+          >
+            <span class="text-body-2">
+              {{ selectedInvoices.length }}
+              {{ selectedInvoices.length === 1 ? 'invoice' : 'invoices' }} selected —
+              <strong>{{ formatCurrency(selectedTotal) }}</strong>
+            </span>
+            <span v-if="selectionProblem" class="text-caption text-error">{{ selectionProblem }}</span>
+            <v-spacer />
+            <v-btn size="small" variant="text" class="text-none" @click="clearSelection">Clear</v-btn>
+            <v-btn
+              size="small"
+              color="primary"
+              variant="flat"
+              class="text-none font-weight-bold"
+              prepend-icon="mdi-file-document-plus-outline"
+              :disabled="!!selectionProblem"
+              @click="paySelected"
+            >
+              Pay selected
+            </v-btn>
+          </v-sheet>
+
           <v-data-table
+            v-model="selectedInvoiceIds"
             :items-per-page-options="financePageSizes"
             mobile-breakpoint="md"
             :headers="agingHeaders"
             :items="apAging"
             :loading="loading"
+            item-value="transaction_id"
+            show-select
             density="compact"
             items-per-page="10"
           >
@@ -105,6 +138,18 @@ onMounted(async () => { await init(); await loadPending() })
               <v-chip :color="bucketColor[item.bucket]" size="small" label>
                 {{ item.days_outstanding }}d · {{ item.bucket }}
               </v-chip>
+            </template>
+            <template #item.pay="{ item }">
+              <v-btn
+                size="small"
+                variant="tonal"
+                color="primary"
+                class="text-none"
+                title="Open a voucher already filled in for this invoice"
+                @click="payInvoices([item])"
+              >
+                Pay
+              </v-btn>
             </template>
             <template #no-data>
               <div class="text-center text-caption text-medium-emphasis py-6">
@@ -162,6 +207,19 @@ onMounted(async () => { await init(); await loadPending() })
             <span v-else class="text-medium-emphasis">—</span>
           </template>
 
+          <template #item.pay="{ item }">
+            <v-btn
+              size="small"
+              variant="tonal"
+              color="primary"
+              class="text-none"
+              :disabled="!openInvoicesOf(item.supplier_id).length"
+              title="Open a voucher for everything owed to this supplier"
+              @click="paySupplier(item)"
+            >
+              Pay all
+            </v-btn>
+          </template>
         </v-data-table>
       </v-card>
 

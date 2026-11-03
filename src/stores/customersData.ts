@@ -151,6 +151,9 @@ export const useCustomersDataStore = defineStore('customersData', () => {
   const customers: Ref<CustomerType[]> = ref([])
   // Kept apart from `customers` on purpose — see searchCustomers().
   const searchResults: Ref<CustomerType[]> = ref([])
+  // In-House and Ethical customers together — the ones a rebate can be paid to.
+  // Kept apart from `customers`, which holds one department at a time.
+  const rebateCustomers: Ref<CustomerType[]> = ref([])
   const currentCustomer: Ref<CustomerType | undefined> = ref(undefined)
   const pagedCustomers: Ref<CustomerType[]> = ref([])
   const pagedTotalCount: Ref<number> = ref(0)
@@ -408,6 +411,21 @@ export const useCustomersDataStore = defineStore('customersData', () => {
     return usage
   }
 
+  /** Every In-House and Ethical customer, for linking a rebate voucher to one. */
+  async function fetchRebateCustomers() {
+    clearError()
+    try {
+      rebateCustomers.value = await fetchAllRows<CustomerType>(() => supabase
+        .from('customers').select('*')
+        .in('department', ['inhouse', 'ethical'])
+        .order('name', { ascending: true }).order('id', { ascending: true }))
+      return rebateCustomers.value
+    } catch (err) {
+      handleError(err, 'Failed to fetch customers')
+      return []
+    }
+  }
+
   /** Every NAMED customer, for finding copies that share a name. Nameless
    *  import rows are left out: they are not duplicates of anything by name. */
   async function fetchNamedCustomers(): Promise<CustomerType[]> {
@@ -471,11 +489,11 @@ export const useCustomersDataStore = defineStore('customersData', () => {
   }
 
   return {
-    customers, searchResults, currentCustomer, loading, error,
+    customers, searchResults, rebateCustomers, currentCustomer, loading, error,
     isLoading, hasError,
     pagedCustomers, pagedTotalCount, pagedLoading,
     fetchCustomers, searchCustomers, stampDepartmentIfBlank, fetchCustomersRPC,
-    createCustomer, updateCustomer, deleteCustomer, fetchCustomerUsage, fetchNamedCustomers,
+    createCustomer, updateCustomer, deleteCustomer, fetchCustomerUsage, fetchNamedCustomers, fetchRebateCustomers,
     startRealtime, stopRealtime, clearError, resetStore,
   }
 })

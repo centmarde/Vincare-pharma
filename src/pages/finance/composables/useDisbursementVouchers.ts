@@ -1,10 +1,12 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
+import type { LocationQuery } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useFinanceDataStore } from '@/stores/financeData'
 import { useDisbursementVouchersStore } from '@/stores/disbursementVouchersData'
 import type { VoucherType, VoucherInput } from '@/stores/disbursementVouchersData'
 import { isCashAdvanceAccount } from '@/utils/cashAccountTypes'
 import { useExpenseAccounts } from './useExpenseAccounts'
+import type { VoucherPrefill } from './useVoucherForm'
 
 // List + lifecycle actions for the Disbursement Vouchers page. Form state lives
 // in useVoucherForm (called inside the dialog) — see the note there on why the
@@ -17,7 +19,8 @@ export const headers = [
   // The check number first, the account it's drawn on beneath it — staff look
   // for which check paid which voucher without opening each one.
   { title: 'CHECK DETAILS', key: 'cash_account_name', sortable: false, align: 'center' as const },
-  { title: 'PARTICULARS', key: 'particulars',       sortable: false, align: 'center' as const },
+  // Left-aligned: it wraps to two lines, and centred wrapped text is hard to read.
+  { title: 'PARTICULARS', key: 'particulars',       sortable: false, align: 'start' as const },
   { title: 'AMOUNT',      key: 'total_amount',      sortable: true,  align: 'center' as const },
   { title: 'STATUS',      key: 'status',            sortable: true,  align: 'center' as const },
   { title: 'ACTIONS',     key: 'actions',           sortable: false, align: 'center' as const },
@@ -25,6 +28,95 @@ export const headers = [
 
 /** The account filter's value for every Cash Advances account (1060–1090) at once. */
 export const cashAdvancesFilter = '@cash-advances'
+
+/** Whether a line's account is one of `filters` (codes, or cashAdvancesFilter). */
+export function accountInFilters(category: string | null | undefined, filters: readonly string[]): boolean {
+  return filters.some((filter) =>
+    filter === cashAdvancesFilter ? isCashAdvanceAccount(category) : category === filter)
+}
+
+// Which columns this viewer has switched on. Kept in the browser: it is a
+// viewing preference, not data, and it should outlast a logout.
+const columnsStorageKey = 'vincare:dv-columns'
+
+function loadVisibleColumns(): string[] {
+  const all = headers.map((header) => header.key as string)
+  try {
+    const saved = JSON.parse(localStorage.getItem(columnsStorageKey) ?? 'null')
+    if (!Array.isArray(saved)) return all
+    // Drop keys from an older column set; never come back with nothing shown.
+    const known = all.filter((key) => saved.includes(key))
+    return known.length ? known : all
+  } catch {
+    return all
+  }
+}
+
+/** One invoice being paid: our receipt (SI) and PO numbers, and the supplier's own. */
+export type PaidInvoice = { si: string; po: string | null; docs: string[] }
+
+/**
+ * The prefill a Supplier Payments link carries:
+ * `?new&supplier=12&supplierName=AHMM&amount=190000&invoices=[{"si":…,"po":…,"docs":[…]}]`.
+ * Null when the link is a plain "new voucher" or the values do not parse.
+ */
+export function prefillFromQuery(query: LocationQuery): VoucherPrefill | null {
+  const first = (value: LocationQuery[string]) => (Array.isArray(value) ? value[0] : value) ?? ''
+  const supplierId = Number(first(query.supplier))
+  const amount = Math.round(Number(first(query.amount)) * 100) / 100
+  if (!Number.isInteger(supplierId) || supplierId <= 0 || !(amount > 0)) return null
+  const invoices = parseInvoices(first(query.invoices))
+  return {
+    supplierId,
+    supplierName: first(query.supplierName) || null,
+    amount,
+    particulars: invoicesParticulars(invoices),
+    remarks: [...new Set(invoices.map((invoice) => invoice.po).filter(Boolean))].join(', '),
+  }
+}
+
+/** The invoices from a link; tolerates a hand-edited or truncated one. */
+function parseInvoices(raw: string): PaidInvoice[] {
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((item) => item && typeof item.si === 'string')
+      .map((item) => ({
+        si: item.si,
+        po: typeof item.po === 'string' ? item.po : null,
+        docs: Array.isArray(item.docs) ? item.docs.filter((doc: unknown) => typeof doc === 'string') : [],
+      }))
+  } catch {
+    return []
+  }
+}
+
+/** "DO NO. 2026-557 (SI-2026-044)" — theirs first, ours in brackets. */
+function invoiceLabel(invoice: PaidInvoice): string {
+  return invoice.docs.length ? `${invoice.docs.join(' / ')} (${invoice.si})` : invoice.si
+}
+
+/** Invoices listed one per line before the rest are summed up as "AND n MORE". */
+const invoicesListed = 5
+
+/**
+ * The printed particulars for a supplier payment, upper case like the rest of
+ * theirs: the supplier's own DO / DR / SI number, which is what ties the cheque
+ * to their paper, with our receipt number beside it.
+ *
+ * One invoice is one line. Several are one per line under "PAYMENT FOR:", and
+ * past five the rest are counted, so the text never runs past the seven lines
+ * the printed box holds (maxParticularsLines). PO numbers go in the remarks,
+ * which are not printed, to keep each line short enough not to wrap.
+ */
+export function invoicesParticulars(invoices: readonly PaidInvoice[]): string {
+  if (!invoices.length) return 'PAYMENT TO SUPPLIER'
+  if (invoices.length === 1) return `PAYMENT FOR ${invoiceLabel(invoices[0])}`
+  const shown = invoices.slice(0, invoicesListed).map(invoiceLabel)
+  const rest = invoices.length - shown.length
+  return ['PAYMENT FOR:', ...shown, ...(rest > 0 ? [`AND ${rest} MORE`] : [])].join('\n')
+}
 
 /**
  * An amount typed into the search box: "3776", "3,776", "₱3,776.50". Null
@@ -55,7 +147,7 @@ export function amountMatches(value: number | null | undefined, query: { amount:
 const manilaDay = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' })
 
 /** "2026-08-14" for a voucher, from its own date (falling back to when it was made). */
-function voucherDay(voucher: VoucherType): string {
+export function voucherDay(voucher: VoucherType): string {
   const raw = voucher.voucher_date ?? voucher.created_at
   if (!raw) return ''
   const date = new Date(raw)
@@ -82,6 +174,11 @@ export function useDisbursementVouchers() {
 
   const showFormDialog = ref(false)
   const editTarget = ref<VoucherType | null>(null)
+  /** Set when the new voucher was raised from Supplier Payments. */
+  const createPrefill = ref<VoucherPrefill | null>(null)
+
+  // The printable register: a list of vouchers with its total.
+  const showRegisterPrint = ref(false)
 
   const showPrintDialog = ref(false)
   const printTarget = ref<VoucherType | null>(null)
@@ -160,9 +257,7 @@ export function useDisbursementVouchers() {
   })
 
   function lineMatchesAccount(category: string | null | undefined): boolean {
-    if (!accountFilter.value) return true
-    if (accountFilter.value === cashAdvancesFilter) return isCashAdvanceAccount(category)
-    return category === accountFilter.value
+    return !accountFilter.value || accountInFilters(category, [accountFilter.value])
   }
 
   /**
@@ -182,12 +277,54 @@ export function useDisbursementVouchers() {
     return !!accountFilter.value && Math.abs(matchedAmount(voucher) - (voucher.total_amount ?? 0)) > 0.005
   }
 
+  // The column chooser. Staff pick which columns the table shows; the choice
+  // is remembered in this browser.
+  const visibleColumns = ref<string[]>(loadVisibleColumns())
+  watch(visibleColumns, (keys) => {
+    try {
+      localStorage.setItem(columnsStorageKey, JSON.stringify(keys))
+    } catch {
+      // Private browsing or storage full: the choice just won't be remembered.
+    }
+  })
+
+  const columnOptions = headers.map((header) => ({ key: header.key as string, title: header.title }))
+
+  function isColumnVisible(key: string) {
+    return visibleColumns.value.includes(key)
+  }
+
+  /** Show or hide a column. The last one showing cannot be hidden. */
+  function toggleColumn(key: string) {
+    if (!isColumnVisible(key)) {
+      // Kept in the table's own order, whatever order they were ticked in.
+      visibleColumns.value = columnOptions.map((c) => c.key).filter((k) => k === key || isColumnVisible(k))
+    } else if (visibleColumns.value.length > 1) {
+      visibleColumns.value = visibleColumns.value.filter((k) => k !== key)
+    }
+  }
+
+  function showAllColumns() {
+    visibleColumns.value = columnOptions.map((c) => c.key)
+  }
+
   // AMOUNT shows matchedAmount, so it sorts on it too: under the account
   // filter a "₱50 of ₱1,000" row sorts as ₱50. With no filter it is the total.
-  const tableHeaders = headers.map((header) =>
-    header.key === 'total_amount'
-      ? { ...header, sortRaw: (a: VoucherType, b: VoucherType) => matchedAmount(a) - matchedAmount(b) }
-      : header)
+  // The expand toggle comes first and is not in the column chooser: it is how a
+  // voucher is read in full without opening Edit, so it is always there.
+  const tableHeaders = computed(() => [
+    { title: '', key: 'data-table-expand', sortable: false, width: 40 },
+    ...headers
+      .filter((header) => isColumnVisible(header.key))
+      .map((header) =>
+        header.key === 'total_amount'
+          ? { ...header, sortRaw: (a: VoucherType, b: VoucherType) => matchedAmount(a) - matchedAmount(b) }
+          : header),
+  ])
+
+  /** Vouchers opened up in the list to read in full. Vuetify types this as
+   *  string[]; it holds the item-value (the voucher id) as given. */
+  const expanded = ref<string[]>([])
 
   /**
    * Vouchers matching the search box.
@@ -225,6 +362,8 @@ export function useDisbursementVouchers() {
         voucher.status,
         voucher.remarks,
         ...voucher.items.map((line) => line.particular),
+        // The account names shown under the particulars, so "utilities" finds them.
+        accountsSummary(voucher),
       ]
       return haystack.some((field) => (field ?? '').toLowerCase().includes(query))
     })
@@ -254,11 +393,25 @@ export function useDisbursementVouchers() {
     }
   })
 
-  function particularsSummary(voucher: VoucherType): string {
-    if (!voucher.items.length) return '—'
-    const [first] = voucher.items
-    const rest = voucher.items.length - 1
-    return rest > 0 ? `${first.particular} (+${rest} more)` : first.particular
+  /**
+   * The voucher's particulars, in full.
+   *
+   * There is ONE per voucher, copied onto every line — the list used to add
+   * "(+1 more)" for each extra line, which only counted account lines repeating
+   * the same sentence. Read with the same rule as the form and the printout:
+   * the first line holding a real description, not a copy of its account's
+   * own name (what vouchers from the per-line era stored as a fallback).
+   */
+  function particularsOf(voucher: VoucherType): string {
+    const real = voucher.items.find(
+      (line) => line.particular?.trim() && line.particular !== expenseAccountLabel(line.category),
+    )
+    return (real ?? voucher.items.find((line) => line.particular?.trim()))?.particular ?? ''
+  }
+
+  /** The accounts a voucher is charged to, by name — what "+1 more" was hiding. */
+  function accountsSummary(voucher: VoucherType): string {
+    return [...new Set(voucher.items.map((line) => expenseAccountLabel(line.category)))].join(' · ')
   }
 
   async function init() {
@@ -266,9 +419,14 @@ export function useDisbursementVouchers() {
     await Promise.all([voucherStore.fetchVouchers(), financeStore.fetchCashAccounts(), ensureAccountsLoaded()])
   }
 
-  function openCreateDialog() {
+  function openCreateDialog(prefill: VoucherPrefill | null = null) {
     editTarget.value = null
+    createPrefill.value = prefill
     showFormDialog.value = true
+  }
+
+  function openRegisterPrint() {
+    showRegisterPrint.value = true
   }
 
   function openEditDialog(voucher: VoucherType) {
@@ -280,6 +438,7 @@ export function useDisbursementVouchers() {
   function closeFormDialog() {
     showFormDialog.value = false
     editTarget.value = null
+    createPrefill.value = null
   }
 
   async function handleSubmit(payload: VoucherInput) {
@@ -364,11 +523,13 @@ export function useDisbursementVouchers() {
 
   return {
     vouchers, cashAccounts, loading,
-    showFormDialog, editTarget,
+    showFormDialog, editTarget, createPrefill,
+    showRegisterPrint, openRegisterPrint,
+    visibleColumns, columnOptions, isColumnVisible, toggleColumn, showAllColumns,
     showPrintDialog, printTarget, printCopyNo, stampPrint,
     showStampDialog, stampTarget, openStamp, closeStampDialog,
     showCancelDialog, cancelTarget, cancelReason,
-    statusMeta, canEdit, canPrint, canRecord, canCancel, recordBlockedReason, particularsSummary,
+    statusMeta, canEdit, canPrint, canRecord, canCancel, recordBlockedReason, particularsOf, accountsSummary, expanded,
     search, dateFrom, dateTo, dateRangeError, clearDates, accountFilter, accountOptions, isFiltering,
     matchedAmount, isPartialMatch, tableHeaders, filteredVouchers, searchTotals,
     init, openCreateDialog, openEditDialog, closeFormDialog, handleSubmit,
