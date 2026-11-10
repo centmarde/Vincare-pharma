@@ -18,6 +18,8 @@ const {
   termTotals,
   overdueReceivable,
   customerJackets,
+  search,
+  visibleJackets,
   consignmentReceivable,
   consignmentCollectors,
   showConsignment,
@@ -141,6 +143,17 @@ const termLabels: Record<string, string> = {
         <v-card-title class="pa-4 pa-sm-5 d-flex flex-wrap align-center ga-2">
           <span class="text-h6 font-weight-bold">Accounts Receivable</span>
           <v-spacer />
+          <v-text-field
+            v-model="search"
+            placeholder="Search customer, reference no., amount…"
+            prepend-inner-icon="mdi-magnify"
+            variant="outlined"
+            density="compact"
+            hide-details
+            clearable
+            style="min-width: 240px; max-width: 360px"
+            class="flex-grow-1"
+          />
           <v-btn
             variant="tonal"
             size="small"
@@ -171,9 +184,15 @@ const termLabels: Record<string, string> = {
         >
           No outstanding receivables.
         </div>
+        <div
+          v-else-if="!visibleJackets.length"
+          class="pa-6 text-center text-caption text-medium-emphasis"
+        >
+          No receivable matches that search.
+        </div>
 
         <v-expansion-panels v-else variant="accordion" multiple>
-          <v-expansion-panel v-for="jacket in customerJackets" :key="jacket.key">
+          <v-expansion-panel v-for="jacket in visibleJackets" :key="jacket.key">
             <v-expansion-panel-title>
               <div class="d-flex align-center ga-3 flex-grow-1 pr-3">
                 <span class="font-weight-medium">{{ jacket.customerName }}</span>

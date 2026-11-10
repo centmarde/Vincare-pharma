@@ -5,6 +5,7 @@ import type { ARAgingTerm, ARAgingRow, ARReceivableDetail, ARSource, StatementOf
 import { useSalesChargesStore } from '@/stores/salesChargesData'
 import { customerNameKey, formatCurrency } from '@/utils/helpers'
 import { chequeFor, chequeProblem } from '@/utils/paymentMethods'
+import { amountMatches, parseAmountQuery } from './useDisbursementVouchers'
 
 /** Where a receivable comes from, as the AR table names it. */
 export const arSourceLabel: Record<ARSource, string> = {
@@ -319,11 +320,37 @@ export function useAccountsReceivable() {
     return [...groups.values()].sort((a, b) => b.totalBalance - a.totalBalance)
   })
 
+  /**
+   * The search box above the jackets. A customer's name keeps their whole
+   * jacket; a document number, the source (Ethical / In-House / POS), their
+   * terms wording or an amount ("23683", "₱23,683.00") keeps just the
+   * documents that match, inside their jacket. The totals above stay the
+   * whole book — they are not a search result.
+   */
+  // null after the field's clear button.
+  const search = ref<string | null>('')
+
+  const visibleJackets = computed<ARCustomerJacket[]>(() => {
+    const query = (search.value ?? '').trim().toLowerCase()
+    if (!query) return customerJackets.value
+    const amount = parseAmountQuery(query)
+    const rowMatches = (row: ARAgingRow) =>
+      [row.reference_no, arSourceLabel[row.source], row.term_text].some((v) => (v ?? '').toLowerCase().includes(query))
+      || (!!amount && [row.balance, row.total_amount].some((v) => amountMatches(v, amount)))
+    return customerJackets.value.flatMap((jacket) => {
+      if (jacket.customerName.toLowerCase().includes(query)) return [jacket]
+      const rows = jacket.rows.filter(rowMatches)
+      // The header keeps the customer's whole balance and count; only the
+      // table inside narrows to the documents that match.
+      return rows.length ? [{ ...jacket, rows }] : []
+    })
+  })
+
   onMounted(init)
 
   return {
     arAging, loading,
-    totalReceivable, termTotals, overdueReceivable, customerJackets,
+    totalReceivable, termTotals, overdueReceivable, customerJackets, search, visibleJackets,
     consignmentReceivable, consignmentCollectors, showConsignment, openConsignment,
     detailOpen, detailLoading, selectedDetail, openDetail, closeDetail, refreshDetail,
     paymentOpen, payAmount, payMethod, payReference, payRemarks, payCashAccountId, paying,
