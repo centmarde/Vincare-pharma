@@ -265,7 +265,7 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
    */
   async function recordPreCutoverCredit(
     transactionId: number, docNo: string | null, credit: PreCutoverCreditMemo, cutoverDate: string, userId: string,
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<{ success: boolean; error?: string; strandedCollectionId?: number }> {
     const reason = credit.reason?.trim()
     const { data: row, error: insertError } = await supabase
       .from('collections')
@@ -300,8 +300,16 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
     )
     if (!posted.success) {
       // Never leave the credit without its entry: the projector would book it
-      // to Sales Returns on its next run.
-      await supabase.from('collections').delete().eq('id', row.id)
+      // to Sales Returns on its next run. If even the cleanup fails, say which
+      // row is left so it can be removed by hand.
+      const { error: deleteError } = await supabase.from('collections').delete().eq('id', row.id)
+      if (deleteError) {
+        return {
+          success: false,
+          error: `its ledger entry could not be posted, and credit #${row.id} could not be removed — it needs manual cleanup`,
+          strandedCollectionId: row.id,
+        }
+      }
       return { success: false, error: posted.error || 'its ledger entry could not be posted' }
     }
     return { success: true }
@@ -465,10 +473,25 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
         // Back the whole thing out rather than leave a receivable that looks
         // right but owes the credit memo's amount more than it should. The
         // opening entry is reversed, not deleted — posted entries stay.
-        if (glResult.entryId) await glStore.reverseJournalEntry(glResult.entryId, user.id)
-        await rollback(created.id)
+        const reversed = glResult.entryId
+          ? await glStore.reverseJournalEntry(glResult.entryId, user.id)
+          : { success: true }
         handleError(recordedCredit.error, 'Failed to record the credit memo.')
-        toast.error(`Could not record the credit memo: ${recordedCredit.error}. Nothing was recorded.`)
+        if (reversed.success && !recordedCredit.strandedCollectionId) {
+          await rollback(created.id)
+          toast.error(`Could not record the credit memo: ${recordedCredit.error}. Nothing was recorded.`)
+        } else {
+          // Something could not be undone. Keep the document, cancelled, so
+          // what is left behind points at a record instead of at nothing.
+          await supabase.from('transactions')
+            .update({ status: 'cancelled', remarks: `Recording failed — needs checking | ${remarks}` })
+            .eq('id', created.id)
+          const leftovers = [
+            !reversed.success && `reverse the opening entry for ${docNo ?? 'this receivable'} in General Journal`,
+            recordedCredit.strandedCollectionId && `remove credit #${recordedCredit.strandedCollectionId}`,
+          ].filter(Boolean).join(' and ')
+          toast.error(`Could not record the credit memo, and it could not be fully backed out — ${leftovers}.`)
+        }
         loading.value = false
         return { success: false as const }
       }
@@ -539,6 +562,9 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
       const { data: creditEntry } = await supabase
         .from('journal_entries').select('id')
         .eq('reference_type', 'collection').eq('reference_id', c.id).eq('status', 'posted')
+        // The original only: a reversal carries the same reference and is also
+        // 'posted', and reversing it would revive the credit's entry on a retry.
+        .is('reverses_entry', null)
         .maybeSingle()
       if (creditEntry) {
         const reversed = await glStore.reverseJournalEntry(creditEntry.id, user.id)
@@ -565,6 +591,7 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
       .eq('reference_type', 'sales_invoice')
       .eq('reference_id', transactionId)
       .eq('status', 'posted')
+      .is('reverses_entry', null)
       .maybeSingle()
     if (entry) {
       const reversed = await glStore.reverseJournalEntry(entry.id, user.id)

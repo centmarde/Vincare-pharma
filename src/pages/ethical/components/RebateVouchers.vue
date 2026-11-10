@@ -38,19 +38,25 @@ const statusColor: Record<string, string> = { draft: 'grey', printed: 'info', re
     <v-row dense class="mb-4">
       <v-col cols="12" sm="4" class="d-flex">
         <v-card variant="tonal" color="primary" rounded="lg" class="pa-4 flex-grow-1">
-          <div class="text-body-2 font-weight-medium mb-1">In-House customers</div>
+          <div class="text-body-2 font-weight-medium mb-1">In-House customers — paid</div>
           <div class="text-h6 font-weight-bold">{{ formatCurrency(inhouseTotals.total) }}</div>
           <div class="text-caption text-medium-emphasis">
             {{ inhouseTotals.count }} vouchers · advances {{ formatCurrency(inhouseTotals.advance) }}
+          </div>
+          <div v-if="inhouseTotals.pending" class="text-caption text-medium-emphasis">
+            + {{ formatCurrency(inhouseTotals.pending) }} not yet recorded
           </div>
         </v-card>
       </v-col>
       <v-col cols="12" sm="4" class="d-flex">
         <v-card variant="tonal" color="info" rounded="lg" class="pa-4 flex-grow-1">
-          <div class="text-body-2 font-weight-medium mb-1">Ethical customers</div>
+          <div class="text-body-2 font-weight-medium mb-1">Ethical customers — paid</div>
           <div class="text-h6 font-weight-bold">{{ formatCurrency(ethicalTotals.total) }}</div>
           <div class="text-caption text-medium-emphasis">
             {{ ethicalTotals.count }} vouchers · advances {{ formatCurrency(ethicalTotals.advance) }}
+          </div>
+          <div v-if="ethicalTotals.pending" class="text-caption text-medium-emphasis">
+            + {{ formatCurrency(ethicalTotals.pending) }} not yet recorded
           </div>
         </v-card>
       </v-col>
@@ -64,6 +70,9 @@ const statusColor: Record<string, string> = { draft: 'grey', printed: 'info', re
           <div class="text-h6 font-weight-bold">{{ formatCurrency(unlinkedTotals.total) }}</div>
           <div class="text-caption text-medium-emphasis">
             {{ unlinkedTotals.count }} vouchers to link · click to show them
+          </div>
+          <div v-if="unlinkedTotals.pending" class="text-caption text-medium-emphasis">
+            + {{ formatCurrency(unlinkedTotals.pending) }} not yet recorded
           </div>
         </v-card>
       </v-col>
@@ -134,6 +143,9 @@ const statusColor: Record<string, string> = { draft: 'grey', printed: 'info', re
         <template #item.total="{ item }">
           <span class="font-weight-bold">{{ formatCurrency(item.total) }}</span>
         </template>
+        <template #item.pending="{ item }">
+          <span class="text-medium-emphasis">{{ item.pending ? formatCurrency(item.pending) : '—' }}</span>
+        </template>
       </v-data-table>
     </div>
 
@@ -149,7 +161,10 @@ const statusColor: Record<string, string> = { draft: 'grey', printed: 'info', re
       <v-spacer />
       <span class="text-body-2">
         {{ listTotals.count }} {{ listTotals.count === 1 ? 'voucher' : 'vouchers' }} —
-        <strong>{{ formatCurrency(listTotals.total) }}</strong>
+        <strong>{{ formatCurrency(listTotals.total) }}</strong> paid
+        <span v-if="listTotals.pending" class="text-medium-emphasis">
+          · {{ formatCurrency(listTotals.pending) }} not yet recorded
+        </span>
       </span>
     </div>
 

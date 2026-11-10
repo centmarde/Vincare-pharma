@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useDisbursementVouchersStore, advanceRebateCodes, isRebateAccount } from '@/stores/disbursementVouchersData'
 import type { VoucherStatus, VoucherType } from '@/stores/disbursementVouchersData'
@@ -35,10 +35,16 @@ export type RebateCustomerRow = {
   customer_name: string
   department: 'inhouse' | 'ethical' | null
   vouchers: number
+  /** Paid — recorded vouchers only. */
   advance: number
   earned: number
   total: number
+  /** Draft or printed: raised, but no money has left yet. */
+  pending: number
 }
+
+/** Only a recorded voucher has paid anything; draft and printed are still paper. */
+const isPaid = (row: RebateVoucherRow) => row.status === 'recorded'
 
 export const departmentLabels: Record<'inhouse' | 'ethical', string> = {
   inhouse: 'In-House',
@@ -73,9 +79,10 @@ export const customerHeaders = [
   { title: 'Customer', key: 'customer_name' },
   { title: 'Department', key: 'department' },
   { title: 'Vouchers', key: 'vouchers', align: 'end' as const },
-  { title: 'Advances', key: 'advance', align: 'end' as const },
-  { title: 'Earned', key: 'earned', align: 'end' as const },
-  { title: 'Total', key: 'total', align: 'end' as const },
+  { title: 'Advances paid', key: 'advance', align: 'end' as const },
+  { title: 'Earned paid', key: 'earned', align: 'end' as const },
+  { title: 'Total paid', key: 'total', align: 'end' as const },
+  { title: 'Not yet recorded', key: 'pending', align: 'end' as const },
 ]
 
 function asDepartment(value: string | null): 'inhouse' | 'ethical' | null {
@@ -157,23 +164,38 @@ export function useRebateVouchers() {
         customer_id: row.customer_id,
         customer_name: row.customer_name ?? `Customer ${row.customer_id}`,
         department: row.department,
-        vouchers: 0, advance: 0, earned: 0, total: 0,
+        vouchers: 0, advance: 0, earned: 0, total: 0, pending: 0,
       }
       group.vouchers += 1
-      group.advance += row.advance
-      group.earned += row.earned
-      group.total += row.total
+      if (isPaid(row)) {
+        group.advance += row.advance
+        group.earned += row.earned
+        group.total += row.total
+      } else {
+        group.pending += row.total
+      }
       groups.set(row.customer_id, group)
     }
-    return [...groups.values()].sort((a, b) => b.total - a.total)
+    return [...groups.values()].sort((a, b) => b.total - a.total || b.pending - a.pending)
   })
 
+  /**
+   * What a set of vouchers paid, and what is raised but not paid yet. Drafts
+   * stay listed (most rebate vouchers sit as drafts a while) but are never
+   * counted as paid — no money leaves until a voucher is recorded.
+   */
   function totalsOf(list: RebateVoucherRow[]) {
+    const paid = list.filter(isPaid)
+    const unpaid = list.filter((row) => !isPaid(row))
+    const sum = (rows: RebateVoucherRow[], key: 'advance' | 'earned' | 'total') =>
+      rows.reduce((total, row) => total + row[key], 0)
     return {
       count: list.length,
-      advance: list.reduce((sum, row) => sum + row.advance, 0),
-      earned: list.reduce((sum, row) => sum + row.earned, 0),
-      total: list.reduce((sum, row) => sum + row.total, 0),
+      advance: sum(paid, 'advance'),
+      earned: sum(paid, 'earned'),
+      total: sum(paid, 'total'),
+      pending: sum(unpaid, 'total'),
+      pendingCount: unpaid.length,
     }
   }
 
@@ -202,6 +224,12 @@ export function useRebateVouchers() {
   function showCustomer(customerId: number | null) {
     customerFilter.value = customerFilter.value === customerId ? null : customerId
   }
+
+  // Unlinked vouchers have no customer, so a customer picked before would
+  // leave the list empty while the card says there are vouchers to link.
+  watch(departmentFilter, (filter) => {
+    if (filter === 'unlinked') customerFilter.value = null
+  })
 
   const customerOptions = computed(() =>
     rebateCustomers.value.map((customer) => ({
