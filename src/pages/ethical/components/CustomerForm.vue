@@ -1,13 +1,21 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { reactive, ref } from 'vue'
+import { productPreferenceOptions } from '@/stores/customersData'
 import type { CreateCustomerData } from '@/stores/customersData'
-import type { AgentType } from '@/stores/agentsData'
+import type { CustomerTerms } from '@/stores/discountsData'
 import CustomerTermsCard from '@/components/customers/CustomerTermsCard.vue'
+import CustomerTermsEditor from '@/components/customers/CustomerTermsEditor.vue'
 
 interface Props {
   customer?: any
   /** Parsed rates for this customer, so the card can show them beside the narrative. */
   profile?: any
+  /** Markup, discount and each person's rebate / ads share (useCustomerTerms). */
+  terms: CustomerTerms
+  /** Why the terms block a save, if they do. */
+  termsBlocker?: string
+  /** The terms could not be read; the editor is shown read-only. */
+  termsLoadFailed?: boolean
   agentOptions?: any[]
   businessStructureOptions?: any[]
 }
@@ -75,37 +83,12 @@ const form = reactive<CreateCustomerData>({
   purchaser_name: props.customer?.purchaser_name ?? null,
   purchaser_contact_no: props.customer?.purchaser_contact_no ?? null,
   target_sales: props.customer?.target_sales ?? null,
-  discount_rate: props.customer?.discount_rate ?? null,
-  rebate_rate: props.customer?.rebate_rate ?? null,
-  markup_percent: props.customer?.markup_percent ?? null,
-  rebate_ratio_distribution: props.customer?.rebate_ratio_distribution ?? null,
+  // Left undefined when it was never loaded, so it is not sent — saving still
+  // works before the column exists (schema 20261111).
+  product_preference: props.customer?.product_preference,
 })
-
-// PRICE = SYSTEM PRICE / DIVISOR, DIVISOR = (100 - MARKUP)% — e.g. 20% markup
-// -> divisor 80% -> price = system price / 0.80. Shown live as the user types
-// so it's clear what the stored number actually drives (Ethical order line
-// pricing in useCreateOrder.ts), not just a label.
-const markupDivisorLabel = computed(() => {
-  const markup = form.markup_percent
-  if (markup == null || markup === '' as any) return null
-  return `System Price / ${100 - Number(markup)}%`
-})
-
-// The markup is the budget that funds the discount + rebate: what we actually
-// realize is system_price * (1-(discount+rebate)/100) / (1-markup/100), which
-// lands exactly ON the system price when (discount + rebate) == markup. Past
-// that the customer's terms erode system price on every order they place, so
-// warn at config time rather than letting it surface one order at a time.
-const giveawayRate = computed(() =>
-  Number(form.discount_rate ?? 0) + Number(form.rebate_rate ?? 0))
-
-const giveawayExceedsMarkup = computed(() => {
-  if (giveawayRate.value <= 0) return false
-  const markup = form.markup_percent
-  // No markup -> the price IS the system price, so any giveaway erodes it.
-  if (markup == null || markup === '' as any) return true
-  return giveawayRate.value > Number(markup)
-})
+// Markup / discount / rebate / ads live in `terms` (the editor below), not on
+// `form`: the module composable saves them to the rows orders price from.
 
 const formRef = ref()
 
@@ -222,6 +205,14 @@ async function submit() {
       </v-col>
     </v-row>
 
+    <v-select
+      v-model="form.product_preference"
+      :items="productPreferenceOptions"
+      label="Buys branded or generics"
+      clearable
+      class="mb-2"
+    />
+
     <v-textarea
       v-model="form.product_sales_list"
       label="Product Sales List"
@@ -232,46 +223,16 @@ async function submit() {
       class="mb-2"
     />
 
-    <v-text-field
-      v-model.number="form.markup_percent"
-      label="Markup %"
-      type="number"
-      min="0"
-      max="99.99"
-      :hint="markupDivisorLabel ?? 'e.g. 20 → Price = System Price / 80%'"
-      persistent-hint
-      class="mb-2"
-    />
-
-    <v-row dense>
-      <v-col cols="12" sm="6">
-        <v-text-field v-model.number="form.discount_rate" label="Discount Rate (%)" type="number" min="0" max="100" />
-      </v-col>
-      <v-col cols="12" sm="6">
-        <v-text-field v-model.number="form.rebate_rate" label="Rebate Rate (%)" type="number" min="0" max="100" />
-      </v-col>
-    </v-row>
-
-    <v-alert
-      v-if="giveawayExceedsMarkup"
-      type="warning"
-      variant="tonal"
-      density="compact"
-      class="mb-3"
-    >
-      Discount + rebate ({{ giveawayRate }}%) exceed the markup
-      <span v-if="form.markup_percent">({{ form.markup_percent }}%)</span>
-      <span v-else>(none set)</span> — every order for this customer will net below system price.
-      The markup should normally cover the discount and rebate.
+    <!-- What orders price from: markup, discount, and each person's rebate /
+         ads share by name. Saved as entered — a loss is allowed. -->
+    <div class="text-subtitle-2 font-weight-bold mt-2 mb-2">Terms</div>
+    <v-alert v-if="termsLoadFailed" type="error" variant="tonal" density="compact" class="mb-3 text-caption">
+      This customer's terms could not be loaded, so they can't be changed right now. Close and reopen the customer.
     </v-alert>
-
-    <v-text-field
-      v-model="form.rebate_ratio_distribution"
-      label="Rebate Ratio Distribution"
-      hint="e.g. PMR 40% / Owner 60%"
-      persistent-hint
-      class="mb-2"
-    />
+    <fieldset :disabled="termsLoadFailed" class="terms-fieldset">
+      <CustomerTermsEditor :terms="terms" />
+    </fieldset>
+    <div v-if="termsBlocker" class="text-caption text-error mb-2">{{ termsBlocker }}</div>
 
     <v-select
       v-model="form.rebate_payment_mode"
@@ -296,3 +257,13 @@ async function submit() {
     </div>
   </v-form>
 </template>
+
+<style scoped>
+/* Only there to disable the terms inputs when they could not be loaded. */
+.terms-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+</style>

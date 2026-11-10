@@ -6,6 +6,7 @@ import { useAgentsDataStore } from '@/stores/agentsData'
 import { useDiscountsDataStore } from '@/stores/discountsData'
 import type { CreateCustomerData, CustomerType } from '@/stores/customersData'
 import { useCustomerDelete } from '@/composables/useCustomerDelete'
+import { useCustomerTerms } from '@/composables/useCustomerTerms'
 
 const toast = useToast()
 
@@ -19,6 +20,9 @@ export function useEthicalCustomers() {
   const discountsStore = useDiscountsDataStore()
   const { pagedCustomers, pagedTotalCount, pagedLoading } = storeToRefs(customersStore)
   const { agents } = storeToRefs(agentsStore)
+  // Markup, discount and each person's rebate / ads share — saved to the rows
+  // orders price from, after the customer itself.
+  const customerTerms = useCustomerTerms()
 
   const searchText = ref('')
   const page = ref(1)
@@ -122,11 +126,14 @@ export function useEthicalCustomers() {
   }
 
   async function createCustomer(data: CreateCustomerData) {
+    if (customerTerms.blocker.value) { toast.warning(customerTerms.blocker.value); return }
     const result = await customersStore.createCustomer({
       ...data,
+      ...customerTerms.customerColumns(),
       department: 'ethical',
     })
     if (result) {
+      await customerTerms.saveFor(result)
       showCreateDialog.value = false
       toast.success('Customer created.')
       await reload()
@@ -135,11 +142,14 @@ export function useEthicalCustomers() {
 
   async function updateCustomer(data: CreateCustomerData) {
     if (editingId.value === null) return
+    if (customerTerms.blocker.value) { toast.warning(customerTerms.blocker.value); return }
     const result = await customersStore.updateCustomer(editingId.value, {
       ...data,
+      ...customerTerms.customerColumns(),
       department: 'ethical',
     })
     if (result) {
+      await customerTerms.saveFor(result)
       showEditDialog.value = false
       editingId.value = null
       toast.success('Customer updated.')
@@ -168,6 +178,7 @@ export function useEthicalCustomers() {
   function openDuplicates() { showDuplicates.value = true }
 
   function openCreateDialog() {
+    void customerTerms.load(null)
     showCreateDialog.value = true
   }
 
@@ -177,6 +188,8 @@ export function useEthicalCustomers() {
 
   function openEdit(id: number) {
     editingId.value = id
+    const customer = customers.value.find((c) => c.id === id) ?? null
+    void customerTerms.load(customer)
     showEditDialog.value = true
   }
 
@@ -208,6 +221,9 @@ export function useEthicalCustomers() {
     deleteCustomer,
     showDuplicates,
     openDuplicates,
+    terms: customerTerms.terms,
+    termsBlocker: customerTerms.blocker,
+    termsLoadFailed: customerTerms.loadFailed,
     openCreateDialog,
     cancelCreate,
     openEdit,

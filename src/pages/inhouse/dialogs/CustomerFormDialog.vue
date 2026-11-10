@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import type { CreateCustomerData, CustomerType } from '@/stores/customersData'
-import type { DiscountProfile } from '@/stores/discountsData'
+import type { CustomerTerms, DiscountProfile } from '@/stores/discountsData'
 import { agencyTypes, businessStructures } from '../composables/useCustomers'
 import CustomerTermsCard from '@/components/customers/CustomerTermsCard.vue'
 import CustomerTradeProfileFields from '@/components/customers/CustomerTradeProfileFields.vue'
@@ -11,6 +11,9 @@ interface Props {
   mobile: boolean
   editingId: number | null
   form: CreateCustomerData
+  /** Markup, discount and each person's rebate / ads share (useCustomerTerms). */
+  terms: CustomerTerms
+  termsBlocker?: string
   rules: Record<string, (value: unknown) => boolean | string>
   loading: boolean
   editingCustomer: CustomerType | null
@@ -197,7 +200,7 @@ async function onSubmit() {
           <div class="text-subtitle-2 font-weight-bold mt-2 mb-1">Trade / Rebate Profile</div>
           <v-divider class="mb-3" />
 
-          <CustomerTradeProfileFields :form="form" />
+          <CustomerTradeProfileFields :form="form" :terms="terms" :terms-blocker="termsBlocker" />
 
           <v-switch
             v-model="form.is_active"

@@ -155,6 +155,105 @@ export function buildDiscountProfile(rows: DiscountType[]): DiscountProfile {
   }
 }
 
+// ─── Editing a customer's terms ─────────────────────────────────────────────
+// The customer profile edits THESE rows, so what staff enter is what an order
+// prices from. Before this the profile's single discount/rebate/markup fields
+// were only read when a customer had no rows here — and most do, from the
+// import — so edits made on the profile were silently ignored at order time.
+//
+// Each person sharing a rebate (or an ads give) is their own row, the person's
+// name in `description` — the column the import left empty. The agreed total is
+// written as the sum of the parts, so a profile saved here always reconciles.
+
+/** One person sharing a rebate or an ads give, and their share in % of sales. */
+export type TermsRecipient = { name: string; rate: number | null }
+
+/** An imported component the app cannot price (tie-up, cash advance, …). */
+export type OtherTerm = { label: string | null; name: string | null; rate: number | null }
+
+export type CustomerTerms = {
+  markupPercent: number | null
+  discountRate: number | null
+  rebates: TermsRecipient[]
+  ads: TermsRecipient[]
+  /**
+   * Kept exactly as imported unless staff remove them. While any remain the
+   * profile does not reconcile, so orders do not price from it.
+   */
+  others: OtherTerm[]
+}
+
+export const emptyCustomerTerms = (): CustomerTerms =>
+  ({ markupPercent: null, discountRate: null, rebates: [], ads: [], others: [] })
+
+const round2 = (n: number) => Math.round(n * 100) / 100
+
+/** The older single-value columns, used when a customer has no rows yet. */
+export type LegacyTermsColumns = {
+  markup_percent?: number | null
+  discount_rate?: number | null
+  rebate_rate?: number | null
+}
+
+/** A customer's rows (or, with none, their legacy columns) as editable terms. */
+export function termsFromRows(rows: DiscountType[], legacy?: LegacyTermsColumns | null): CustomerTerms {
+  const terms = emptyCustomerTerms()
+  if (!rows.length) {
+    terms.markupPercent = legacy?.markup_percent ?? null
+    terms.discountRate = legacy?.discount_rate ?? null
+    if (legacy?.rebate_rate) terms.rebates.push({ name: '', rate: legacy.rebate_rate })
+    return terms
+  }
+  for (const row of rows) {
+    const rate = row.discount_rate == null ? null : Number(row.discount_rate)
+    const name = row.description?.trim() ?? ''
+    switch (normalizeDiscountKind(row.discount_name)) {
+      case 'markup': terms.markupPercent = round2((terms.markupPercent ?? 0) + (rate ?? 0)); break
+      case 'discount': terms.discountRate = round2((terms.discountRate ?? 0) + (rate ?? 0)); break
+      case 'rebate': terms.rebates.push({ name, rate }); break
+      case 'ads': terms.ads.push({ name, rate }); break
+      default: terms.others.push({ label: row.discount_name, name: row.description, rate }); break
+    }
+  }
+  return terms
+}
+
+/** People with a share but no name — the profile cannot be saved until named. */
+const unnamed = (list: TermsRecipient[]) => list.filter((r) => Number(r.rate) > 0 && !r.name.trim()).length
+
+/** What a set of terms adds up to, for the editor and for saving. */
+export function summarizeTerms(terms: CustomerTerms) {
+  const sum = (list: TermsRecipient[]) => round2(list.reduce((s, r) => s + (Number(r.rate) || 0), 0))
+  const rebateTotal = sum(terms.rebates)
+  const adsTotal = sum(terms.ads)
+  const discount = Number(terms.discountRate) || 0
+  const giveaway = round2(discount + rebateTotal + adsTotal)
+  const markup = terms.markupPercent == null || (terms.markupPercent as unknown) === '' ? null : Number(terms.markupPercent)
+  // Allowed — a loss can be a deliberate marketing call — but said plainly.
+  const exceedsMarkup = giveaway > 0 && (markup == null || giveaway > markup)
+  const shares = (list: TermsRecipient[]) => list
+    .filter((r) => Number(r.rate) > 0)
+    .map((r) => `${r.name.trim() || 'Unnamed'} ${Number(r.rate)}%`)
+  return {
+    rebateTotal, adsTotal, discount, giveaway, markup, exceedsMarkup,
+    missingNames: unnamed(terms.rebates) + unnamed(terms.ads),
+    /** "Juan 5% / Maria 5%" — kept on customers.rebate_ratio_distribution for older readers. */
+    distribution: shares(terms.rebates).join(' / ') || null,
+  }
+}
+
+/** Whether two sets of terms differ in anything that would be saved. */
+export function termsDiffer(a: CustomerTerms, b: CustomerTerms): boolean {
+  const norm = (t: CustomerTerms) => JSON.stringify({
+    m: t.markupPercent ?? null,
+    d: Number(t.discountRate) || 0,
+    r: t.rebates.filter((x) => Number(x.rate) > 0).map((x) => [x.name.trim(), Number(x.rate)]),
+    a: t.ads.filter((x) => Number(x.rate) > 0).map((x) => [x.name.trim(), Number(x.rate)]),
+    o: t.others.map((x) => [x.label, x.name, x.rate]),
+  })
+  return norm(a) !== norm(b)
+}
+
 export const useDiscountsDataStore = defineStore('discountsData', () => {
   const loading = ref(false)
   const error: Ref<string> = ref('')
@@ -240,9 +339,74 @@ export const useDiscountsDataStore = defineStore('discountsData', () => {
     return profilesByCustomer.value.get(customerId) ?? null
   }
 
+  /**
+   * Replace a customer's terms with what the profile editor holds.
+   *
+   * The new rows are written FIRST and the old ones removed after, so a
+   * failure part-way never leaves the customer with no terms: at worst the
+   * insert fails and the old terms stand. If removing the old rows fails, the
+   * new ones are taken back out — two sets at once would double every rate.
+   * Not atomic (JS-over-RPC convention), and said so here.
+   */
+  async function saveCustomerTerms(customerId: number, customerName: string | null, terms: CustomerTerms) {
+    error.value = ''
+    const summary = summarizeTerms(terms)
+    if (summary.missingNames) {
+      return { success: false as const, error: 'Enter the name of every person getting a rebate or ads share.' }
+    }
+    // The agreed total is the sum of what is priced, so the profile reconciles.
+    const totalOffered = summary.giveaway > 0 ? `${summary.giveaway}%` : null
+    const base = { customer_id: customerId, name: customerName, total_rebate_offered: totalOffered }
+    const rows: Record<string, unknown>[] = []
+    if (summary.markup != null) rows.push({ ...base, discount_name: 'markup', description: null, discount_rate: summary.markup })
+    if (summary.discount > 0) rows.push({ ...base, discount_name: 'discount', description: null, discount_rate: summary.discount })
+    for (const r of terms.rebates) {
+      if (Number(r.rate) > 0) rows.push({ ...base, discount_name: 'rebate', description: r.name.trim(), discount_rate: Number(r.rate) })
+    }
+    for (const r of terms.ads) {
+      if (Number(r.rate) > 0) rows.push({ ...base, discount_name: 'ads', description: r.name.trim(), discount_rate: Number(r.rate) })
+    }
+    for (const o of terms.others) {
+      rows.push({ ...base, discount_name: o.label, description: o.name, discount_rate: o.rate })
+    }
+
+    try {
+      const { data: before, error: readError } = await supabase
+        .from('discounts').select('id').eq('customer_id', customerId)
+      if (readError) throw readError
+      const oldIds = (before ?? []).map((r: { id: number }) => r.id)
+
+      let newIds: number[] = []
+      if (rows.length) {
+        const { data: inserted, error: insertError } = await supabase.from('discounts').insert(rows).select('id')
+        if (insertError) throw insertError
+        newIds = (inserted ?? []).map((r: { id: number }) => r.id)
+      }
+      if (oldIds.length) {
+        const { error: deleteError } = await supabase.from('discounts').delete().in('id', oldIds)
+        if (deleteError) {
+          if (newIds.length) await supabase.from('discounts').delete().in('id', newIds)
+          throw deleteError
+        }
+      }
+
+      // Refresh this customer's cached profile so lists and orders see it now.
+      const fresh = await fetchForCustomer(customerId)
+      const next = new Map(profilesByCustomer.value)
+      next.set(customerId, buildDiscountProfile(fresh))
+      profilesByCustomer.value = next
+      return { success: true as const }
+    } catch (err) {
+      error.value = getErrorMessage(err)
+      console.error('saveCustomerTerms failed:', err)
+      return { success: false as const, error: error.value || 'Could not save the terms.' }
+    }
+  }
+
   return {
     loading, error,
     fetchForCustomer, fetchProfile,
     profilesByCustomer, ensureProfilesLoaded, profileFor,
+    saveCustomerTerms,
   }
 })

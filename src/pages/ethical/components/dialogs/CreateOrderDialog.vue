@@ -156,7 +156,7 @@ watch(
           color="primary"
           class="text-none mr-2"
           :loading="loading"
-          :disabled="hasBelowCostLine || draftPending"
+          :disabled="draftPending"
           @click="submit"
         >
           Submit
@@ -272,21 +272,21 @@ watch(
           customer, not per order.
         </v-alert>
 
+        <!-- A warning, not a block: selling below cost is sometimes a deliberate
+             marketing call. Names the lines but NOT the company cost or the
+             realized net — the cost behind it is not selling staff's to see. -->
         <v-alert
           v-if="hasBelowCostLine"
-          type="error"
+          type="warning"
           variant="tonal"
           density="compact"
           class="mb-4"
         >
-          <div class="font-weight-bold mb-1">Price too low — cannot create this order</div>
+          <div class="font-weight-bold mb-1">Selling below cost</div>
 
-          <!-- Names the offending lines but NOT the company cost or the realized
-               net. Selling staff need to know which line to re-price; the cost
-               behind that judgement is not theirs to see. -->
           <div class="text-caption">
-            After {{ giveawayRate }}% discount + rebate, these lines fall below the minimum
-            price allowed. Raise the unit price or reduce the giveaway:
+            After {{ giveawayRate }}% discount + rebate + ads, these lines sell below what they cost.
+            The order can still go through if that is intended:
           </div>
 
           <ul class="text-caption mt-1">
@@ -335,14 +335,14 @@ watch(
               rounded="lg"
               class="mb-2 pa-3"
               :class="{
-                'bg-red-lighten-5': lineBelowCost(i),
+                'bg-orange-lighten-5': lineBelowCost(i),
               }"
             >
               <div class="d-flex align-center justify-space-between ga-2 mb-2">
                 <span class="font-weight-medium text-body-2"> Item {{ i + 1 }} </span>
 
                 <div class="d-flex align-center" style="gap: 4px">
-                  <v-icon v-if="lineBelowCost(i)" icon="mdi-alert" color="error" size="16" />
+                  <v-icon v-if="lineBelowCost(i)" icon="mdi-alert" color="warning" size="16" />
 
                   <v-btn
                     size="x-small"
@@ -416,7 +416,7 @@ watch(
                 v-for="(line, i) in lines"
                 :key="i"
                 :class="{
-                  'bg-red-lighten-5': lineBelowCost(i),
+                  'bg-orange-lighten-5': lineBelowCost(i),
                 }"
               >
                 <td>
@@ -461,7 +461,7 @@ watch(
                   <v-icon
                     v-if="lineBelowCost(i)"
                     icon="mdi-alert"
-                    color="error"
+                    color="warning"
                     size="16"
                     class="ml-1"
                   />
@@ -627,7 +627,7 @@ watch(
 
           <!-- Locking the terms is an executive's call: this saves the draft and
                sends it to them. They invoice it (EO number, stock drawn). -->
-          <v-btn color="primary" class="text-none" :loading="loading" :disabled="hasBelowCostLine || draftPending" @click="submit">
+          <v-btn color="primary" class="text-none" :loading="loading" :disabled="draftPending" @click="submit">
             Submit for Approval
           </v-btn>
         </v-card-actions>

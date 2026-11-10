@@ -1,7 +1,7 @@
 import { computed, ref, watch, onUnmounted } from 'vue'
 import type { Ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useCustomersDataStore } from '@/stores/customersData'
+import { useCustomersDataStore, productPreferenceLabel } from '@/stores/customersData'
 import type { CustomerType } from '@/stores/customersData'
 import { useDiscountsDataStore, buildDiscountProfile, EMPTY_DISCOUNT_PROFILE } from '@/stores/discountsData'
 import type { DiscountProfile } from '@/stores/discountsData'
@@ -53,7 +53,7 @@ export function useCustomerPicker(customerId: Ref<number | null>) {
   function describe(c: CustomerType): string {
     // Context that helps staff pick the right row out of thousands of
     // similarly-named pharmacies — several share a name outright.
-    return [c.category, c.area, c.department ? c.department.toUpperCase() : 'Unassigned']
+    return [c.category, productPreferenceLabel(c.product_preference), c.area, c.department ? c.department.toUpperCase() : 'Unassigned']
       .filter(Boolean).join(' · ')
   }
 

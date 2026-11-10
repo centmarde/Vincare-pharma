@@ -1,21 +1,29 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { productPreferenceOptions } from '@/stores/customersData'
 import type { CreateCustomerData } from '@/stores/customersData'
+import type { CustomerTerms } from '@/stores/discountsData'
+import CustomerTermsEditor from './CustomerTermsEditor.vue'
 
-// The trade / rebate profile block, shared by every module's customer form
-// (Ethical, In-House, Sales/POS). Extracted rather than copied three times:
-// the markup-vs-giveaway rule below is real pricing logic, and three copies of
-// it would drift.
+// The trade / rebate profile block, shared by the In-House and Sales/POS
+// customer forms (Ethical lays out the same fields itself).
 //
-// `form` is mutated in place — the same contract the module forms already use
-// with their own `form` prop. Area and payment terms are deliberately NOT here:
-// every form already places those itself, in module-specific positions.
+// `form` and `terms` are mutated in place — the same contract the module forms
+// already use with their own `form` prop. Area and payment terms are
+// deliberately NOT here: every form already places those itself. Markup,
+// discount, rebates and ads are in `terms`, saved to the rows orders price
+// from (useCustomerTerms) — not on `form`.
 
-const props = defineProps<{
+// withDefaults, not a bare optional: Vue reads an omitted boolean prop as
+// false, so In-House (which doesn't pass it) had its rebate payout settings
+// hidden. Rebates show unless a form opts out (POS passes false).
+withDefaults(defineProps<{
   form: CreateCustomerData
-  /** Hide the rebate payout settings where rebates don't apply (e.g. POS). */
+  terms: CustomerTerms
+  /** Why the terms block a save, if they do. */
+  termsBlocker?: string
+  /** Hide the rebate lists and payout settings where rebates don't apply (e.g. POS). */
   showRebatePayout?: boolean
-}>()
+}>(), { showRebatePayout: true })
 
 const schemeOptions = [
   { title: 'Pushing', value: 'pushing' },
@@ -32,30 +40,6 @@ const rebatePaymentModeOptions = [
   { title: 'Other', value: 'other' },
 ]
 
-// PRICE = SYSTEM PRICE / DIVISOR, DIVISOR = (100 - MARKUP)% — e.g. 20% markup
-// -> divisor 80% -> price = system price / 0.80. Shown live as the user types
-// so it's clear what the stored number actually drives, not just a label.
-const markupDivisorLabel = computed(() => {
-  const markup = props.form.markup_percent
-  if (markup == null || markup === ('' as unknown)) return null
-  return `System Price / ${100 - Number(markup)}%`
-})
-
-// The markup is the budget that funds the discount + rebate: what we actually
-// realize is system_price * (1-(discount+rebate)/100) / (1-markup/100), which
-// lands exactly ON the system price when (discount + rebate) == markup. Past
-// that the customer's terms erode system price on every order they place, so
-// warn at config time rather than letting it surface one order at a time.
-const giveawayRate = computed(() =>
-  Number(props.form.discount_rate ?? 0) + Number(props.form.rebate_rate ?? 0))
-
-const giveawayExceedsMarkup = computed(() => {
-  if (giveawayRate.value <= 0) return false
-  const markup = props.form.markup_percent
-  // No markup -> the price IS the system price, so any giveaway erodes it.
-  if (markup == null || markup === ('' as unknown)) return true
-  return giveawayRate.value > Number(markup)
-})
 </script>
 
 <template>
@@ -101,6 +85,17 @@ const giveawayExceedsMarkup = computed(() => {
     class="mb-3"
   />
 
+  <v-select
+    v-model="form.product_preference"
+    :items="productPreferenceOptions"
+    label="Buys branded or generics"
+    clearable
+    variant="outlined"
+    density="compact"
+    hide-details
+    class="mb-3"
+  />
+
   <v-textarea
     v-model="form.product_sales_list"
     label="Product Sales List"
@@ -113,72 +108,12 @@ const giveawayExceedsMarkup = computed(() => {
     class="mb-3"
   />
 
-  <v-text-field
-    v-model.number="form.markup_percent"
-    label="Markup %"
-    type="number"
-    min="0"
-    max="99.99"
-    :hint="markupDivisorLabel ?? 'e.g. 20 → Price = System Price / 80%'"
-    persistent-hint
-    variant="outlined"
-    density="compact"
-    class="mb-3"
-  />
-
-  <v-row dense>
-    <v-col cols="12" sm="6">
-      <v-text-field
-        v-model.number="form.discount_rate"
-        label="Discount Rate (%)"
-        type="number"
-        min="0"
-        max="100"
-        variant="outlined"
-        density="compact"
-        hide-details
-        class="mb-3"
-      />
-    </v-col>
-    <v-col cols="12" sm="6">
-      <v-text-field
-        v-model.number="form.rebate_rate"
-        label="Rebate Rate (%)"
-        type="number"
-        min="0"
-        max="100"
-        variant="outlined"
-        density="compact"
-        hide-details
-        class="mb-3"
-      />
-    </v-col>
-  </v-row>
-
-  <v-alert
-    v-if="giveawayExceedsMarkup"
-    type="warning"
-    variant="tonal"
-    density="compact"
-    class="mb-3"
-  >
-    Discount + rebate ({{ giveawayRate }}%) exceed the markup
-    <span v-if="form.markup_percent">({{ form.markup_percent }}%)</span>
-    <span v-else>(none set)</span> — every order for this customer will net below system price.
-    The markup should normally cover the discount and rebate.
-  </v-alert>
+  <!-- What orders price from: markup, discount, and each person's rebate /
+       ads share by name. Saved as entered — a loss is allowed. -->
+  <CustomerTermsEditor :terms="terms" :show-rebates="showRebatePayout !== false" />
+  <div v-if="termsBlocker" class="text-caption text-error mb-3">{{ termsBlocker }}</div>
 
   <template v-if="showRebatePayout !== false">
-    <v-text-field
-      v-model="form.rebate_ratio_distribution"
-      label="Rebate Ratio Distribution"
-      hint="e.g. PMR 40% / Owner 60%"
-      persistent-hint
-      variant="outlined"
-      density="compact"
-      class="mb-3"
-    />
-
     <v-select
       v-model="form.rebate_payment_mode"
       :items="rebatePaymentModeOptions"
