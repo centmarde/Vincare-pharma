@@ -111,6 +111,13 @@ export interface BackgroundImage {
   }
 }
 
+// Toggler sa external-page.json para sa Out of Service mode.
+// Kung ang enabled kay true, ang app mag-show ra sa OutOfServices screen
+// ug ma-detach ang tanang components (router, dialogs, layouts).
+export interface OutOfServiceConfig {
+  enabled: boolean
+}
+
 export interface LandingData {
   title: string
   description: string
@@ -122,6 +129,7 @@ export interface LandingData {
   lastUpdated: string
   theme: ThemeConfig
   ui: UIConfig
+  outOfService?: OutOfServiceConfig
 }
 
 export interface LandingController {
