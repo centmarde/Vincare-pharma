@@ -43,6 +43,7 @@ export type PRFormItem = {
   no: number
   unit: string
   product_name: string
+  brand?: string | null
   supplier_id: number | null
   qty: number
   cost_per_unit: number
@@ -229,6 +230,7 @@ export function usePurchaseRequisition() {
       no:               items.value.length + 1,
       unit:             'Box',
       product_name: '',
+      brand:           null,
       qty:              0,
       cost_per_unit:    0,
       supplier_id:      null,
@@ -245,6 +247,7 @@ export function usePurchaseRequisition() {
   // Once the line is a different item, a leftover link would copy the old product's SKU/category and settle its reorder request.
   function unlinkPickedProduct(item: PRFormItem) {
     item.product_id = null
+    item.brand = null
     item.reorder_request_id = null
     item.reorder_reason = null
   }
@@ -264,6 +267,7 @@ export function usePurchaseRequisition() {
         no:                 items.value.length + 1,
         unit:               entry.unit || 'Box',
         product_name:   entry.product_name,
+        brand:          null,
         qty:                0,
         cost_per_unit:      entry.cost_per_unit,
         supplier_id:        entry.supplier_id,
@@ -379,6 +383,7 @@ export function usePurchaseRequisition() {
       no:               i.no,
       unit:             i.unit,
       product_name: i.product_name,
+      brand:            i.brand ?? null,
       qty:              i.qty,
       cost_per_unit:    i.cost_per_unit,
       supplier_id:      i.supplier_id != null ? String(i.supplier_id) : null,
@@ -480,6 +485,7 @@ export function usePurchaseRequisition() {
       .map((i) => ({
         product_id:         i.product_id ?? null,
         product_name:       i.product_name,
+        brand:              i.brand ?? null,
         unit:               i.unit,
         supplier_id:        i.supplier_id,
         qty:                i.qty,
@@ -619,6 +625,7 @@ export function usePurchaseRequisition() {
       no:               index + 1,
       unit:             item.unit ?? 'Box',
       product_name:     item.product_name ?? '',
+      brand:            item.brand ?? null,
       supplier_id:      item.supplier_id ?? null,
       qty:              item.qty ?? 0,
       cost_per_unit:    item.unit_price ?? 0,

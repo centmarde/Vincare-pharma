@@ -7,6 +7,7 @@ export type PRItem = {
   no: number
   unit: string
   product_name: string
+  brand?: string | null
   qty: number
   cost_per_unit: number
   product_id?: number
@@ -23,6 +24,7 @@ export type RequisitionItemType = {
   no: number
   unit: string
   product_name: string
+  brand?: string | null
   qty: number
   cost_per_unit: number
   supplier_id: string | null

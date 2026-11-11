@@ -79,7 +79,7 @@ async function onUnapprove() {
 </script>
 
 <template>
-  <v-dialog v-model="model" :max-width="mobile ? '95%' : '900'" scrollable>
+  <v-dialog v-model="model" :max-width="mobile ? '95%' : '1180'" scrollable>
     <v-card rounded="lg">
       <v-card-text :class="mobile ? 'pa-3 pb-2' : 'pa-6 pb-2'">
         <!-- Close button -->
@@ -136,6 +136,7 @@ async function onUnapprove() {
               <th class="table-header text-caption">#</th>
               <th class="table-header text-caption">UNIT</th>
               <th class="table-header text-caption">PRODUCT NAME</th>
+              <th class="table-header text-caption">BRAND</th>
               <th class="table-header text-caption">QTY</th>
               <th class="table-header text-caption">SUPPLIER</th>
               <th class="table-header text-caption">BATCH NO.</th>
@@ -149,6 +150,7 @@ async function onUnapprove() {
               <td class="text-body-2">{{ item.no ?? 0 }}</td>
               <td class="text-body-2">{{ item.unit }}</td>
               <td class="text-body-2">{{ item.product_name }}</td>
+              <td class="text-body-2">{{ item.brand || '—' }}</td>
               <td class="text-body-2">{{ item.qty.toLocaleString() }}</td>
               <td class="text-body-2">{{ item.supplier_name ?? '—' }}</td>
               <td class="text-body-2">{{ item.batch_no || '—' }}</td>
@@ -183,6 +185,7 @@ async function onUnapprove() {
               <v-divider class="my-1" />
               <div class="d-flex flex-wrap ga-3 text-caption">
                 <div><span class="text-medium-emphasis">Unit: </span>{{ item.unit }}</div>
+                <div><span class="text-medium-emphasis">Brand: </span>{{ item.brand || '—' }}</div>
                 <div>
                   <span class="text-medium-emphasis">Qty: </span>{{ item.qty.toLocaleString() }}
                 </div>

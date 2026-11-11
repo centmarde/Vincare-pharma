@@ -66,6 +66,7 @@ function onProductSelected(product: ProductPickerResult) {
   const item = items.value[index]
   if (item.product_id !== product.id) unlinkPickedProduct(item)
   item.product_name = product.product_name || item.product_name
+   item.brand = product.brand ?? item.brand
   if (product.unit) item.unit = product.unit
   item.cost_per_unit = product.cost_price ?? item.cost_per_unit
   if (product.supplier_id != null) item.supplier_id = product.supplier_id

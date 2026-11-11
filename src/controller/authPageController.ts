@@ -40,12 +40,20 @@ export interface AuthPageConfig {
   }
 }
 
+// Toggler sa external-page.json para sa Out of Service mode.
+// Kung ang enabled kay true, ang app mag-show ra sa OutOfServices screen
+// ug ma-detach ang tanang components (router, dialogs, layouts).
+export interface OutOfServiceConfig {
+  enabled: boolean
+}
+
 export interface ExternalPageData {
   title: string
   description: string
   subtitle: string
   // ... other existing properties from external-page.json
   authPage?: AuthPageConfig
+  outOfService?: OutOfServiceConfig
 }
 
 export interface AuthPageController {

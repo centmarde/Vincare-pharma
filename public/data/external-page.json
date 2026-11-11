@@ -30,6 +30,9 @@
   ],
   "author": "Vincare Pharma",
   "lastUpdated": "2026-06-02",
+  "outOfService": {
+    "enabled": true
+  },
   "theme": {
     "primaryColor": "#9d0f0f",
     "secondaryColor": "#840000"
