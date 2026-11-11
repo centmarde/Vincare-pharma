@@ -37,6 +37,7 @@ declare module 'vue' {
     OuterNavbar2: typeof import('./components/common/outerNavbars/OuterNavbar2.vue')['default']
     OuterNavbar3: typeof import('./components/common/outerNavbars/OuterNavbar3.vue')['default']
     OuterNavbar4: typeof import('./components/common/outerNavbars/OuterNavbar4.vue')['default']
+    OutOfServices: typeof import('./components/common/OutOfServices.vue')['default']
     ProductDeleteDialog: typeof import('./components/products/dialogs/ProductDeleteDialog.vue')['default']
     ProductFormDialog: typeof import('./components/products/dialogs/ProductFormDialog.vue')['default']
     ProductMobile: typeof import('./components/products/mobile/ProductMobile.vue')['default']
