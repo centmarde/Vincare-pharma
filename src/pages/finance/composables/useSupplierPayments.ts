@@ -3,7 +3,10 @@ import { storeToRefs } from 'pinia'
 import { useFinanceDataStore, apAgeBuckets } from '@/stores/financeData'
 import type { APAgeBucket, APAgingRow, SupplierAPRow } from '@/stores/financeData'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
+import { useDisbursementVouchersStore } from '@/stores/disbursementVouchersData'
+import type { SupplierPaymentType } from '@/stores/financeData'
 import { useRouter } from 'vue-router'
+import { amountMatches, manilaDayOf, parseAmountQuery } from './useDisbursementVouchers'
 
 // Supplier Payments is a MONITORING page — it shows what is owed, how old it
 // is, and what has been paid. It does not record payments.
@@ -25,6 +28,7 @@ export const apHeaders = [
 
 export const agingHeaders = [
   { title: 'INVOICE #', key: 'reference_no',     sortable: true,  align: 'center' as const },
+  { title: 'PO NO.',    key: 'po_no',            sortable: true,  align: 'center' as const },
   { title: 'SUPPLIER',  key: 'supplier_name',    sortable: true,  align: 'center' as const },
   { title: 'DATE',      key: 'invoice_date',     sortable: true,  align: 'center' as const },
   { title: 'AMOUNT',    key: 'total_amount',     sortable: false, align: 'center' as const },
@@ -36,6 +40,10 @@ export const agingHeaders = [
 
 export const paymentHistoryHeaders = [
   { title: 'REFERENCE #', key: 'reference_no',    sortable: true,  align: 'center' as const },
+  // The voucher that paid it, and the POs it was for (from the voucher's
+  // reference — see poNumbersOf).
+  { title: 'DV NO.',      key: 'dv_no',            sortable: false, align: 'center' as const },
+  { title: 'PO NO.',      key: 'po_no',            sortable: false, align: 'center' as const },
   { title: 'DATE',        key: 'paid_at',          sortable: true,  align: 'center' as const },
   { title: 'SUPPLIER',    key: 'supplier_name',    sortable: false, align: 'center' as const },
   { title: 'AMOUNT',      key: 'amount',           sortable: false, align: 'center' as const },
@@ -58,6 +66,14 @@ export function useSupplierPayments() {
   const { supplierAP, apAging, supplierPayments, loading } = storeToRefs(financeStore)
   const { suppliers } = storeToRefs(suppliersStore)
   const router = useRouter()
+  const voucherStore = useDisbursementVouchersStore()
+
+  /** Payment id -> the DV number of the voucher that recorded it. */
+  const dvRefs = ref<Map<number, string>>(new Map())
+
+  async function loadVoucherRefs() {
+    dvRefs.value = await voucherStore.fetchVoucherRefsForExpenses(supplierPayments.value.map((p) => p.id))
+  }
 
   async function init() {
     await Promise.all([
@@ -66,7 +82,77 @@ export function useSupplierPayments() {
       financeStore.fetchSupplierPayments(),
       suppliersStore.fetchSuppliers(),
     ])
+    await loadVoucherRefs()
   }
+
+  function dvNoOf(payment: SupplierPaymentType): string | null {
+    return dvRefs.value.get(payment.id) ?? null
+  }
+
+  /**
+   * The POs a payment was for. A payment is not tied to particular invoices
+   * (they are settled oldest first), so this is read from what the voucher
+   * said: Pay from this page writes the PO numbers into the voucher's
+   * reference, which every payment it records carries in its remarks. A
+   * payment raised by hand without them shows none.
+   */
+  function poNumbersOf(payment: SupplierPaymentType): string | null {
+    const found = (payment.remarks ?? '').match(/PO-\d{4}-\d+/g)
+    return found ? [...new Set(found)].join(', ') : null
+  }
+
+  // ── Filters: the same search and date range as Disbursement Vouchers ──
+  const search = ref<string | null>('')
+  const dateFrom = ref<string | null>(null)
+  const dateTo = ref<string | null>(null)
+
+  const dateRangeError = computed(() =>
+    dateFrom.value && dateTo.value && dateFrom.value > dateTo.value ? 'From is after To' : '')
+  const isFiltering = computed(() => !!search.value?.trim() || !!dateFrom.value || !!dateTo.value)
+
+  function clearDates() {
+    dateFrom.value = null
+    dateTo.value = null
+  }
+
+  /** A date-range check on a row's Manila day; open ends pass. */
+  function inRange(raw: string | null | undefined) {
+    const day = manilaDayOf(raw)
+    if (dateFrom.value && (!day || day < dateFrom.value)) return false
+    if (dateTo.value && (!day || day > dateTo.value)) return false
+    return true
+  }
+
+  /** Text, or an amount typed as "20772" / "₱20,772.00" matching any of `amounts`. */
+  function matches(texts: (string | null | undefined)[], amounts: (number | null | undefined)[]) {
+    const query = (search.value ?? '').trim().toLowerCase()
+    if (!query) return true
+    const amount = parseAmountQuery(query)
+    if (amount && amounts.some((v) => amountMatches(v, amount))) return true
+    return texts.some((t) => (t ?? '').toLowerCase().includes(query))
+  }
+
+  const filteredAging = computed(() => apAging.value.filter((row) =>
+    inRange(row.invoice_date)
+    && matches([row.reference_no, row.po_no, row.supplier_name, ...row.supplier_docs], [row.total_amount, row.balance])))
+
+  // Balances, not documents — no date to filter by, so the search only.
+  const filteredAP = computed(() => supplierAP.value.filter((row) =>
+    matches([row.supplier_name], [row.outstanding, row.total_received, row.total_paid])))
+
+  const filteredPayments = computed(() => supplierPayments.value.filter((p) =>
+    inRange(p.paid_at ?? p.created_at)
+    && matches([p.reference_no, dvNoOf(p), poNumbersOf(p), p.supplier_name, p.payment_method, p.remarks], [p.amount])))
+
+  /** What the matches add up to. Voided payments are listed but not added. */
+  const agingMatched = computed(() => ({
+    count: filteredAging.value.length,
+    total: filteredAging.value.reduce((sum, row) => sum + row.balance, 0),
+  }))
+  const paymentsMatched = computed(() => {
+    const live = filteredPayments.value.filter((p) => p.status !== 'voided')
+    return { count: filteredPayments.value.length, total: live.reduce((sum, p) => sum + (p.amount ?? 0), 0) }
+  })
 
   /** Totals per age bucket, for the summary strip above the table. */
   const bucketTotals = computed(() => {
@@ -158,6 +244,9 @@ export function useSupplierPayments() {
     supplierAP, apAging, supplierPayments, suppliers, loading,
     bucketTotals, totalOutstanding, oldestDays,
     selectedInvoiceIds, selectedInvoices, selectedTotal, selectionProblem,
+    search, dateFrom, dateTo, dateRangeError, isFiltering, clearDates,
+    filteredAging, filteredAP, filteredPayments, agingMatched, paymentsMatched,
+    dvNoOf, poNumbersOf, loadVoucherRefs,
     init, goToVouchers, payInvoices, paySupplier, openInvoicesOf, paySelected, clearSelection,
   }
 }

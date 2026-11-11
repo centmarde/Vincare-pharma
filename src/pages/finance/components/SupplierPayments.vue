@@ -12,9 +12,12 @@ import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import { financePageSizes } from '../composables/financeTable'
 
 const {
-  supplierAP, apAging, supplierPayments, loading,
+  loading,
   bucketTotals, totalOutstanding, oldestDays,
   selectedInvoiceIds, selectedInvoices, selectedTotal, selectionProblem,
+  search, dateFrom, dateTo, dateRangeError, isFiltering, clearDates,
+  filteredAging, filteredAP, filteredPayments, agingMatched, paymentsMatched,
+  dvNoOf, poNumbersOf,
   init, goToVouchers, payInvoices, paySupplier, openInvoicesOf, paySelected, clearSelection,
 } = useSupplierPayments()
 
@@ -43,6 +46,51 @@ onMounted(async () => { await init(); await loadPending() })
 <template>
   <v-container fluid class="pa-2 fill-height align-start">
     <div class="mx-auto w-100">
+
+      <!-- One search and date range for the whole page, the same as
+           Disbursement Vouchers. Dates are each invoice's / payment's own;
+           the AP-by-supplier balances have no date, so only the search
+           narrows them. -->
+      <v-card rounded="lg" elevation="1" class="mb-3">
+        <div class="px-4 px-sm-5 py-3 d-flex align-center ga-3 flex-wrap">
+          <v-text-field
+            v-model="search"
+            placeholder="Search invoice, PO, DV no., supplier, amount…"
+            prepend-inner-icon="mdi-magnify"
+            density="compact"
+            variant="outlined"
+            hide-details
+            clearable
+            style="max-width: 440px; min-width: 260px"
+          />
+          <v-text-field
+            v-model="dateFrom"
+            type="date"
+            label="From"
+            :max="dateTo || undefined"
+            density="compact"
+            variant="outlined"
+            :error-messages="dateRangeError || undefined"
+            :hide-details="!dateRangeError"
+            clearable
+            style="max-width: 200px; min-width: 170px"
+          />
+          <v-text-field
+            v-model="dateTo"
+            type="date"
+            label="To"
+            :min="dateFrom || undefined"
+            density="compact"
+            variant="outlined"
+            hide-details
+            clearable
+            style="max-width: 200px; min-width: 170px"
+          />
+          <v-btn v-if="dateFrom || dateTo" variant="text" size="small" class="text-none" @click="clearDates">
+            All dates
+          </v-btn>
+        </div>
+      </v-card>
 
       <!-- Payments are raised as disbursement vouchers, so the page says where
            to go rather than leaving the reader hunting for a missing button. -->
@@ -112,18 +160,32 @@ onMounted(async () => { await init(); await loadPending() })
             </v-btn>
           </v-sheet>
 
+          <div v-if="isFiltering" class="mb-2">
+            <v-sheet rounded="lg" border class="d-inline-block px-4 py-2">
+              <span class="text-caption text-medium-emphasis">
+                {{ agingMatched.count }} {{ agingMatched.count === 1 ? 'invoice' : 'invoices' }} matched —
+              </span>
+              <span class="text-subtitle-1 font-weight-bold ml-1">{{ formatCurrency(agingMatched.total) }}</span>
+              <span class="text-caption text-medium-emphasis ml-1">owed</span>
+            </v-sheet>
+          </div>
+
           <v-data-table
             v-model="selectedInvoiceIds"
             :items-per-page-options="financePageSizes"
             mobile-breakpoint="md"
             :headers="agingHeaders"
-            :items="apAging"
+            :items="filteredAging"
             :loading="loading"
+            :no-data-text="isFiltering ? 'No invoices match these filters.' : 'Nothing outstanding.'"
             item-value="transaction_id"
             show-select
             density="compact"
             items-per-page="10"
           >
+            <template #item.po_no="{ item }">
+              <span class="text-no-wrap">{{ item.po_no || '—' }}</span>
+            </template>
             <template #item.invoice_date="{ item }">
               {{ item.invoice_date ? formatDatePR_ISO(item.invoice_date) : '—' }}
             </template>
@@ -178,7 +240,7 @@ onMounted(async () => { await init(); await loadPending() })
           :items-per-page-options="financePageSizes"
           mobile-breakpoint="md"
           :headers="apHeaders"
-          :items="supplierAP"
+          :items="filteredAP"
           :loading="loading"
           loading-text="Loading accounts payable..."
           no-data-text="No outstanding balances."
@@ -224,19 +286,32 @@ onMounted(async () => { await init(); await loadPending() })
       </v-card>
 
       <v-card rounded="lg" elevation="1">
-        <v-card-title class="pa-4 pa-sm-5 text-h6 font-weight-bold">Payment History</v-card-title>
+        <v-card-title class="pa-4 pa-sm-5 d-flex align-center flex-wrap ga-2">
+          <span class="text-h6 font-weight-bold">Payment History</span>
+          <v-spacer />
+          <span v-if="isFiltering" class="text-body-2">
+            {{ paymentsMatched.count }} {{ paymentsMatched.count === 1 ? 'payment' : 'payments' }} matched —
+            <strong>{{ formatCurrency(paymentsMatched.total) }}</strong>
+          </span>
+        </v-card-title>
         <v-divider />
 
         <v-data-table
           :items-per-page-options="financePageSizes"
           mobile-breakpoint="md"
           :headers="paymentHistoryHeaders"
-          :items="supplierPayments"
+          :items="filteredPayments"
           :loading="loading"
           loading-text="Loading payments..."
-          no-data-text="No supplier payments recorded yet."
+          :no-data-text="isFiltering ? 'No payments match these filters.' : 'No supplier payments recorded yet.'"
           hover
         >
+          <template #item.dv_no="{ item }">
+            <span class="text-no-wrap">{{ dvNoOf(item) ?? '—' }}</span>
+          </template>
+          <template #item.po_no="{ item }">
+            <span class="text-no-wrap">{{ poNumbersOf(item) ?? '—' }}</span>
+          </template>
           <template #item.reference_no="{ item }">
             <span class="font-weight-medium" :class="{ 'text-decoration-line-through text-medium-emphasis': item.status === 'voided' }">
               {{ item.reference_no }}

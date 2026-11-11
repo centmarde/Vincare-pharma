@@ -148,7 +148,14 @@ const manilaDay = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', ye
 
 /** "2026-08-14" for a voucher, from its own date (falling back to when it was made). */
 export function voucherDay(voucher: VoucherType): string {
-  const raw = voucher.voucher_date ?? voucher.created_at
+  return manilaDayOf(voucher.voucher_date ?? voucher.created_at)
+}
+
+/**
+ * "2026-08-14" — the Manila calendar day of a date or timestamp, the day the
+ * DATE columns show. Shared by the pages that filter by a date range.
+ */
+export function manilaDayOf(raw: string | null | undefined): string {
   if (!raw) return ''
   const date = new Date(raw)
   if (isNaN(date.getTime())) return ''
