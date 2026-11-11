@@ -28,6 +28,8 @@ const {
   form,
   terms,
   termsBlocker,
+  termsLoading,
+  termsLoadFailed,
   rules,
   profileFor,
   openCreate,
@@ -394,6 +396,8 @@ onMounted(init)
         :form="form"
         :terms="terms"
         :terms-blocker="termsBlocker"
+        :terms-loading="termsLoading"
+        :terms-load-failed="termsLoadFailed"
         :rules="rules"
         :loading="loading"
         :editing-customer="editingCustomer"

@@ -17,7 +17,11 @@ const props = withDefaults(defineProps<{
   terms: CustomerTerms
   /** Hide the rebate and ads lists where they don't apply (e.g. POS). */
   showRebates?: boolean
-}>(), { showRebates: true })
+  /** The customer's terms are still being read — typing now would be overwritten. */
+  loading?: boolean
+  /** The terms could not be read; shown read-only so nobody edits what they can't see. */
+  loadFailed?: boolean
+}>(), { showRebates: true, loading: false, loadFailed: false })
 
 const summary = computed(() => summarizeTerms(props.terms))
 
@@ -41,7 +45,12 @@ const sections = computed(() => [
 </script>
 
 <template>
-  <div class="terms-editor">
+  <v-alert v-if="loadFailed" type="error" variant="tonal" density="compact" class="mb-3 text-caption">
+    This customer's terms could not be loaded, so they can't be changed right now. Close and reopen the customer.
+  </v-alert>
+  <v-progress-linear v-if="loading" indeterminate color="primary" class="mb-2" />
+  <!-- A fieldset only to disable every input while loading or after a failed load. -->
+  <fieldset :disabled="loading || loadFailed" class="terms-editor">
     <v-row dense>
       <v-col cols="12" sm="6">
         <v-text-field
@@ -140,5 +149,14 @@ const sections = computed(() => [
       ({{ summary.markup ?? 'none set' }}{{ summary.markup != null ? '%' : '' }}), so their orders sell below
       system price. That is allowed — it is saved as entered.
     </v-alert>
-  </div>
+  </fieldset>
 </template>
+
+<style scoped>
+.terms-editor {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+</style>

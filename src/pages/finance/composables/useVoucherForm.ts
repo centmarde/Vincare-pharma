@@ -231,12 +231,12 @@ export function useVoucherForm(accounts: () => ClassifiedCashAccount[]) {
   const customersStore = useCustomersDataStore()
   const { rebateCustomers } = storeToRefs(customersStore)
 
-  /** In-House and Ethical customers, labelled with their department. */
+  /** Customers a rebate can go to (In-House, Ethical, no department), labelled. */
   const rebateCustomerOptions = computed(() =>
     rebateCustomers.value.map((customer) => ({
       value: customer.id,
       title: customer.name ?? `Customer ${customer.id}`,
-      subtitle: customer.department === 'inhouse' ? 'In-House' : 'Ethical',
+      subtitle: customer.department === 'inhouse' ? 'In-House' : customer.department === 'ethical' ? 'Ethical' : 'No department',
     })),
   )
 

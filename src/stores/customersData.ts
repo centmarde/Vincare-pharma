@@ -441,13 +441,16 @@ export const useCustomersDataStore = defineStore('customersData', () => {
     return usage
   }
 
-  /** Every In-House and Ethical customer, for linking a rebate voucher to one. */
+  /**
+   * Every customer a rebate voucher can be linked to: In-House, Ethical, and
+   * those with no home department (they trade through either).
+   */
   async function fetchRebateCustomers() {
     clearError()
     try {
       rebateCustomers.value = await fetchAllRows<CustomerType>(() => supabase
         .from('customers').select('*')
-        .in('department', ['inhouse', 'ethical'])
+        .or('department.in.(inhouse,ethical),department.is.null')
         .order('name', { ascending: true }).order('id', { ascending: true }))
       return rebateCustomers.value
     } catch (err) {

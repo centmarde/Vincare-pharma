@@ -14,6 +14,8 @@ interface Props {
   /** Markup, discount and each person's rebate / ads share (useCustomerTerms). */
   terms: CustomerTerms
   termsBlocker?: string
+  termsLoading?: boolean
+  termsLoadFailed?: boolean
   rules: Record<string, (value: unknown) => boolean | string>
   loading: boolean
   editingCustomer: CustomerType | null
@@ -200,7 +202,7 @@ async function onSubmit() {
           <div class="text-subtitle-2 font-weight-bold mt-2 mb-1">Trade / Rebate Profile</div>
           <v-divider class="mb-3" />
 
-          <CustomerTradeProfileFields :form="form" :terms="terms" :terms-blocker="termsBlocker" />
+          <CustomerTradeProfileFields :form="form" :terms="terms" :terms-blocker="termsBlocker" :terms-loading="termsLoading" :terms-load-failed="termsLoadFailed" />
 
           <v-switch
             v-model="form.is_active"

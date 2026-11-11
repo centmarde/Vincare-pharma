@@ -233,6 +233,8 @@ export function useSalesCustomers() {
     form,
     terms: customerTerms.terms,
     termsBlocker: customerTerms.blocker,
+    termsLoading: customerTerms.loading,
+    termsLoadFailed: customerTerms.loadFailed,
     rules,
     headers,
     openCreate,

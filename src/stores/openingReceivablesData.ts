@@ -558,21 +558,37 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
     // Its own credit memo first: reverse that entry and void the credit. Done
     // before the receivable's entry so a failure stops with the receivable
     // untouched.
+    // Set once the first credit memo is touched: from then on a failure is no
+    // longer "nothing was changed".
+    let creditsChanged = false
+    const stoppedPartWay = 'This receivable\'s credit memo was already voided — please check the receivable before trying again.'
     for (const c of preCredits) {
-      const { data: creditEntry } = await supabase
+      const { data: creditEntry, error: lookupError } = await supabase
         .from('journal_entries').select('id')
         .eq('reference_type', 'collection').eq('reference_id', c.id).eq('status', 'posted')
         // The original only: a reversal carries the same reference and is also
         // 'posted', and reversing it would revive the credit's entry on a retry.
         .is('reverses_entry', null)
         .maybeSingle()
+      // A failed lookup reads as "no entry"; voiding the credit then would
+      // leave its DR 3050 / CR 1030 live with nothing behind it.
+      if (lookupError) {
+        toast.error(creditsChanged
+          ? `Could not check a credit memo's ledger entry. ${stoppedPartWay}`
+          : 'Could not check the credit memo\'s ledger entry. Nothing was changed.')
+        loading.value = false
+        return { success: false as const }
+      }
       if (creditEntry) {
         const reversed = await glStore.reverseJournalEntry(creditEntry.id, user.id)
         if (!reversed.success) {
-          toast.error(reversed.error || 'Could not reverse the credit memo\'s ledger entry. Nothing was changed.')
+          toast.error(creditsChanged
+            ? `${reversed.error || 'Could not reverse a credit memo\'s ledger entry.'} ${stoppedPartWay}`
+            : reversed.error || 'Could not reverse the credit memo\'s ledger entry. Nothing was changed.')
           loading.value = false
           return { success: false as const }
         }
+        creditsChanged = true
       }
       const { error: voidError } = await supabase
         .from('collections')
@@ -583,9 +599,10 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
         loading.value = false
         return { success: false as const }
       }
+      creditsChanged = true
     }
 
-    const { data: entry } = await supabase
+    const { data: entry, error: entryLookupError } = await supabase
       .from('journal_entries')
       .select('id')
       .eq('reference_type', 'sales_invoice')
@@ -593,10 +610,19 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
       .eq('status', 'posted')
       .is('reverses_entry', null)
       .maybeSingle()
+    if (entryLookupError) {
+      toast.error(creditsChanged
+        ? `Could not check the receivable's ledger entry. ${stoppedPartWay}`
+        : 'Could not check the receivable\'s ledger entry. Nothing was changed.')
+      loading.value = false
+      return { success: false as const }
+    }
     if (entry) {
       const reversed = await glStore.reverseJournalEntry(entry.id, user.id)
       if (!reversed.success) {
-        toast.error(reversed.error || 'Could not reverse the ledger entry. Nothing was changed.')
+        toast.error(creditsChanged
+          ? `${reversed.error || 'Could not reverse the receivable\'s ledger entry.'} ${stoppedPartWay}`
+          : reversed.error || 'Could not reverse the ledger entry. Nothing was changed.')
         loading.value = false
         return { success: false as const }
       }

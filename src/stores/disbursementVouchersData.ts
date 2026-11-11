@@ -154,6 +154,9 @@ export type VoucherInput = {
 // disbursement_voucher_items has TWO FKs back to transactions (voucher_id and
 // expense_transaction_id), so a bare `disbursement_voucher_items(*)` embed is
 // ambiguous and PostgREST rejects it with PGRST201. The FK must be named.
+/** A supplier voucher not yet recorded (see fetchOpenSupplierVouchers). */
+export type OpenSupplierVoucher = { id: number; dv_no: string | null; status: 'draft' | 'printed'; amount: number }
+
 const voucherSelect = `
   *,
   cash_account:cash_account_id(name, institution, classification),
@@ -793,6 +796,38 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
   }
 
   /**
+   * Supplier vouchers raised but not yet recorded (draft / printed), by
+   * supplier. They have not reduced the supplier's balance yet, so the aging
+   * still shows those invoices as unpaid — Supplier Payments warns before a
+   * second voucher is raised for the same bill.
+   */
+  async function fetchOpenSupplierVouchers() {
+    const bySupplier = new Map<number, OpenSupplierVoucher[]>()
+    const { data, error: fetchError } = await supabase
+      .from('transactions')
+      .select('id, dv_no, status, supplier_id, total_amount, created_at')
+      .eq('transaction_type', 'disbursement_voucher')
+      .in('status', ['draft', 'printed'])
+      .not('supplier_id', 'is', null)
+      .order('created_at', { ascending: true })
+    if (fetchError) {
+      handleError(fetchError, 'Failed to load open supplier vouchers')
+      return bySupplier
+    }
+    for (const row of (data ?? []) as any[]) {
+      const list = bySupplier.get(row.supplier_id) ?? []
+      list.push({
+        id: row.id,
+        dv_no: row.dv_no ?? null,
+        status: row.status as 'draft' | 'printed',
+        amount: Number(row.total_amount ?? 0),
+      })
+      bySupplier.set(row.supplier_id, list)
+    }
+    return bySupplier
+  }
+
+  /**
    * Say which customer a rebate voucher was for, or clear it — at any status
    * short of cancelled, including recorded ones.
    *
@@ -844,7 +879,7 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
     fetchVouchers, fetchVoucherById,
     createVoucher, updateVoucher,
     markPrinted, recordVoucherExpenses, cancelVoucher, linkCustomer,
-    fetchVoucherRefsForExpenses,
+    fetchVoucherRefsForExpenses, fetchOpenSupplierVouchers,
     clearError,
   }
 })

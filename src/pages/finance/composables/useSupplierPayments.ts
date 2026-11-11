@@ -4,8 +4,10 @@ import { useFinanceDataStore, apAgeBuckets } from '@/stores/financeData'
 import type { APAgeBucket, APAgingRow, SupplierAPRow } from '@/stores/financeData'
 import { useSuppliersDataStore } from '@/stores/suppliersData'
 import { useDisbursementVouchersStore } from '@/stores/disbursementVouchersData'
+import type { OpenSupplierVoucher } from '@/stores/disbursementVouchersData'
 import type { SupplierPaymentType } from '@/stores/financeData'
 import { useRouter } from 'vue-router'
+import { formatCurrency } from '@/utils/helpers'
 import { amountMatches, manilaDayOf, parseAmountQuery } from './useDisbursementVouchers'
 
 // Supplier Payments is a MONITORING page — it shows what is owed, how old it
@@ -75,12 +77,35 @@ export function useSupplierPayments() {
     dvRefs.value = await voucherStore.fetchVoucherRefsForExpenses(supplierPayments.value.map((p) => p.id))
   }
 
+  /**
+   * Supplier id -> their vouchers raised but not yet recorded. Those have not
+   * touched the balance, so the aging still shows the invoices they pay as
+   * unpaid; this is what lets the page warn before a second voucher.
+   */
+  const openVouchers = ref<Map<number, OpenSupplierVoucher[]>>(new Map())
+
+  async function loadOpenVouchers() {
+    openVouchers.value = await voucherStore.fetchOpenSupplierVouchers()
+  }
+
+  function openVouchersOf(supplierId: number | null | undefined): OpenSupplierVoucher[] {
+    return supplierId == null ? [] : openVouchers.value.get(supplierId) ?? []
+  }
+
+  /** "DV-2026-512 (printed)" — for a chip's tooltip or the warning. */
+  function describeOpenVouchers(supplierId: number | null | undefined): string {
+    return openVouchersOf(supplierId)
+      .map((v) => `${v.dv_no ?? `Voucher #${v.id}`} (${v.status}, ${formatCurrency(v.amount)})`)
+      .join(', ')
+  }
+
   async function init() {
     await Promise.all([
       financeStore.fetchSupplierAP(),
       financeStore.fetchAPAging(),
       financeStore.fetchSupplierPayments(),
       suppliersStore.fetchSuppliers(),
+      loadOpenVouchers(),
     ])
     await loadVoucherRefs()
   }
@@ -185,6 +210,33 @@ export function useSupplierPayments() {
   function payInvoices(invoices: APAgingRow[]) {
     const [first] = invoices
     if (!first || invoices.some((row) => row.supplier_id !== first.supplier_id)) return
+    // A voucher already raised for this supplier may pay these same invoices;
+    // ask first rather than let two vouchers both be recorded for one bill.
+    if (openVouchersOf(first.supplier_id).length) {
+      pendingPayment.value = invoices
+      return
+    }
+    openPrefilledVoucher(invoices)
+  }
+
+  /** The invoices waiting on the "already has a voucher" question. */
+  const pendingPayment = ref<APAgingRow[] | null>(null)
+
+  const pendingSupplierName = computed(() => pendingPayment.value?.[0]?.supplier_name ?? 'This supplier')
+  const pendingVouchersText = computed(() => describeOpenVouchers(pendingPayment.value?.[0]?.supplier_id))
+
+  function confirmPendingPayment() {
+    const invoices = pendingPayment.value
+    pendingPayment.value = null
+    if (invoices) openPrefilledVoucher(invoices)
+  }
+
+  function cancelPendingPayment() {
+    pendingPayment.value = null
+  }
+
+  function openPrefilledVoucher(invoices: APAgingRow[]) {
+    const first = invoices[0]
     // Oldest first, matching how payments are applied on this page.
     const ordered = [...invoices].sort((a, b) => b.days_outstanding - a.days_outstanding)
     const amount = ordered.reduce((sum, row) => sum + row.balance, 0)
@@ -247,6 +299,8 @@ export function useSupplierPayments() {
     search, dateFrom, dateTo, dateRangeError, isFiltering, clearDates,
     filteredAging, filteredAP, filteredPayments, agingMatched, paymentsMatched,
     dvNoOf, poNumbersOf, loadVoucherRefs,
+    openVouchersOf, describeOpenVouchers,
+    pendingPayment, pendingSupplierName, pendingVouchersText, confirmPendingPayment, cancelPendingPayment,
     init, goToVouchers, payInvoices, paySupplier, openInvoicesOf, paySelected, clearSelection,
   }
 }

@@ -235,7 +235,7 @@ export function useRebateVouchers() {
     rebateCustomers.value.map((customer) => ({
       value: customer.id,
       title: customer.name ?? `Customer ${customer.id}`,
-      subtitle: customer.department === 'inhouse' ? 'In-House' : 'Ethical',
+      subtitle: customer.department === 'inhouse' ? 'In-House' : customer.department === 'ethical' ? 'Ethical' : 'No department',
     })))
 
   // Linking dialog

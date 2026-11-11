@@ -21,9 +21,12 @@ withDefaults(defineProps<{
   terms: CustomerTerms
   /** Why the terms block a save, if they do. */
   termsBlocker?: string
+  /** The terms are still loading / could not be loaded — the editor locks. */
+  termsLoading?: boolean
+  termsLoadFailed?: boolean
   /** Hide the rebate lists and payout settings where rebates don't apply (e.g. POS). */
   showRebatePayout?: boolean
-}>(), { showRebatePayout: true })
+}>(), { showRebatePayout: true, termsLoading: false, termsLoadFailed: false })
 
 const schemeOptions = [
   { title: 'Pushing', value: 'pushing' },
@@ -110,7 +113,12 @@ const rebatePaymentModeOptions = [
 
   <!-- What orders price from: markup, discount, and each person's rebate /
        ads share by name. Saved as entered — a loss is allowed. -->
-  <CustomerTermsEditor :terms="terms" :show-rebates="showRebatePayout !== false" />
+  <CustomerTermsEditor
+    :terms="terms"
+    :show-rebates="showRebatePayout !== false"
+    :loading="termsLoading"
+    :load-failed="termsLoadFailed"
+  />
   <div v-if="termsBlocker" class="text-caption text-error mb-3">{{ termsBlocker }}</div>
 
   <template v-if="showRebatePayout !== false">

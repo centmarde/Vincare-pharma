@@ -335,6 +335,13 @@ export function useCreateOrder(onCreated: () => void) {
     if (!customerId.value) { toast.warning('Select a customer.'); return false }
     if (!outletId.value) { toast.warning('Select a branch.'); return false }
     if (!validLines.value.length) { toast.warning('Add at least one product with quantity.'); return false }
+    // Below cost is allowed (a marketing call) and ₱0 is a free giveaway, but a
+    // negative price is a typo — other lines could hide it in the total.
+    const negative = validLines.value.find(l => !(Number(l.unit_price) >= 0))
+    if (negative) {
+      toast.warning(`${negative.product_name || 'A line'} has a price below zero. Enter 0 for a free item.`)
+      return false
+    }
     return true
   }
 

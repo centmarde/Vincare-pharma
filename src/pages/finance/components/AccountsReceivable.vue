@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useAccountsReceivable, arHeaders, arSourceLabel } from '../composables/useAccountsReceivable'
+import { useAccountsReceivable, arHeaders, arSourceLabel, arTermLabels } from '../composables/useAccountsReceivable'
 import type { ARAgingRow } from '@/stores/financeData'
 import { formatCurrency } from '@/utils/helpers'
 import ARDetailDialog from './dialogs/ARDetailDialog.vue'
@@ -56,7 +56,7 @@ function onRowClick(_event: unknown, { item }: { item: ARAgingRow }) {
 /** A consignment customer's statement, opened from the collector list. */
 function openConsignmentSOA(customerIds: number[]) {
   const jacket = customerJackets.value.find((j) => j.customerIds.some((id) => customerIds.includes(id)))
-  openSOA(customerIds, jacket ? jacketSource(jacket.rows) : undefined)
+  openSOA(customerIds, jacket ? jacketSource(jacket.allRows) : undefined)
 }
 
 // Credit memos: asking for one on the open bill, and the register.
@@ -87,15 +87,7 @@ const termColor: Record<string, string> = {
   '180+': 'error',
 }
 
-const termLabels: Record<string, string> = {
-  current: 'Current',
-  '1-30': '1–30 days',
-  '31-60': '31–60 days',
-  '61-90': '61–90 days',
-  '91-180': '91–180 days',
-  '180+': 'Over 6 months',
-  'no-term': 'No term',
-}
+const termLabels = arTermLabels
 </script>
 
 <template>
@@ -216,7 +208,7 @@ const termLabels: Record<string, string> = {
                   color="primary"
                   class="text-none"
                   prepend-icon="mdi-file-document-outline"
-                  @click.stop="openSOA(jacket.customerIds, jacketSource(jacket.rows))"
+                  @click.stop="openSOA(jacket.customerIds, jacketSource(jacket.allRows))"
                 >
                   View SOA
                 </v-btn>

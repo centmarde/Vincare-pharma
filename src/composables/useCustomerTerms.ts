@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import { useToast } from 'vue-toastification'
-import { useDiscountsDataStore, emptyCustomerTerms, summarizeTerms, termsDiffer, termsFromRows } from '@/stores/discountsData'
+import { useDiscountsDataStore, emptyCustomerTerms, summarizeTerms, termsDiffer, termsFromRows, termsProblem } from '@/stores/discountsData'
 import type { CustomerTerms } from '@/stores/discountsData'
 import type { CreateCustomerData, CustomerType } from '@/stores/customersData'
 
@@ -30,26 +30,34 @@ export function useCustomerTerms() {
   const blocker = computed(() => {
     if (!changed.value) return ''
     if (loadFailed.value) return 'The customer\'s terms could not be loaded, so they cannot be changed now. Reopen the customer and try again.'
-    return summarizeTerms(terms.value).missingNames ? 'Enter the name of every person getting a rebate or ads share.' : ''
+    return termsProblem(terms.value)
   })
+
+  // Bumped by every load; a read that comes back after a newer one started is
+  // dropped, so customer A's terms can never land in customer B's form.
+  let loadToken = 0
 
   /** Load a customer's terms into the editor (null = a new customer). */
   async function load(customer: Pick<CustomerType, 'id' | 'markup_percent' | 'discount_rate' | 'rebate_rate'> | null) {
+    const token = ++loadToken
     loadFailed.value = false
+    // Cleared at once, so the previous customer's terms never show while this
+    // one's load (the editor is locked until it lands).
+    terms.value = emptyCustomerTerms()
+    baseline.value = emptyCustomerTerms()
     if (!customer) {
-      terms.value = emptyCustomerTerms()
-      baseline.value = emptyCustomerTerms()
+      loading.value = false
       return
     }
     loading.value = true
     try {
-      discountsStore.error = ''
-      const rows = await discountsStore.fetchForCustomer(customer.id)
-      loadFailed.value = !!discountsStore.error
+      const { rows, error } = await discountsStore.readCustomerRows(customer.id)
+      if (token !== loadToken) return
+      loadFailed.value = !!error
       terms.value = termsFromRows(rows, customer)
       baseline.value = clone(terms.value)
     } finally {
-      loading.value = false
+      if (token === loadToken) loading.value = false
     }
   }
 

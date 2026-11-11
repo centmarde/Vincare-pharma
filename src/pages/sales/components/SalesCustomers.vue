@@ -28,6 +28,8 @@ const {
   form,
   terms,
   termsBlocker,
+  termsLoading,
+  termsLoadFailed,
   rules,
   headers,
   openCreate,
@@ -324,6 +326,8 @@ const displayedCustomers = computed(() => customers.value ?? filtered.value)
         v-model:form="form"
         :terms="terms"
         :terms-blocker="termsBlocker"
+        :terms-loading="termsLoading"
+        :terms-load-failed="termsLoadFailed"
         :rules="rules"
         :loading="loading"
         @cancel="cancelForm"

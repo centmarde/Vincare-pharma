@@ -18,6 +18,8 @@ const {
   search, dateFrom, dateTo, dateRangeError, isFiltering, clearDates,
   filteredAging, filteredAP, filteredPayments, agingMatched, paymentsMatched,
   dvNoOf, poNumbersOf,
+  openVouchersOf, describeOpenVouchers,
+  pendingPayment, pendingSupplierName, pendingVouchersText, confirmPendingPayment, cancelPendingPayment,
   init, goToVouchers, payInvoices, paySupplier, openInvoicesOf, paySelected, clearSelection,
 } = useSupplierPayments()
 
@@ -202,6 +204,17 @@ onMounted(async () => { await init(); await loadPending() })
               </v-chip>
             </template>
             <template #item.pay="{ item }">
+              <v-chip
+                v-if="openVouchersOf(item.supplier_id).length"
+                size="x-small"
+                variant="tonal"
+                color="warning"
+                label
+                class="mr-1"
+                :title="`Not yet recorded: ${describeOpenVouchers(item.supplier_id)}`"
+              >
+                Voucher pending
+              </v-chip>
               <v-btn
                 size="small"
                 variant="tonal"
@@ -270,6 +283,17 @@ onMounted(async () => { await init(); await loadPending() })
           </template>
 
           <template #item.pay="{ item }">
+            <v-chip
+              v-if="openVouchersOf(item.supplier_id).length"
+              size="x-small"
+              variant="tonal"
+              color="warning"
+              label
+              class="mr-1"
+              :title="`Not yet recorded: ${describeOpenVouchers(item.supplier_id)}`"
+            >
+              Voucher pending
+            </v-chip>
             <v-btn
               size="small"
               variant="tonal"
@@ -284,6 +308,31 @@ onMounted(async () => { await init(); await loadPending() })
           </template>
         </v-data-table>
       </v-card>
+
+      <!-- A voucher raised but not recorded has not lowered the balance yet, so
+           the invoices it pays still look unpaid. Asked before a second one. -->
+      <v-dialog :model-value="!!pendingPayment" max-width="520" @update:model-value="cancelPendingPayment">
+        <v-card rounded="lg">
+          <v-card-title class="pa-4 text-h6 font-weight-bold">This supplier already has a voucher</v-card-title>
+          <v-card-text class="pt-0 text-body-2">
+            <p class="mb-2">
+              {{ pendingSupplierName }} has a voucher that is not recorded yet:
+              <strong>{{ pendingVouchersText }}</strong>.
+            </p>
+            <p class="mb-0">
+              Until it is recorded, the invoices it pays still show as unpaid here. Check that it
+              is not for these same invoices before raising another one.
+            </p>
+          </v-card-text>
+          <v-card-actions class="pa-4 pt-0">
+            <v-spacer />
+            <v-btn variant="text" class="text-none" @click="cancelPendingPayment">Cancel</v-btn>
+            <v-btn color="primary" variant="flat" class="text-none font-weight-bold" @click="confirmPendingPayment">
+              Raise another voucher
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
 
       <v-card rounded="lg" elevation="1">
         <v-card-title class="pa-4 pa-sm-5 d-flex align-center flex-wrap ga-2">

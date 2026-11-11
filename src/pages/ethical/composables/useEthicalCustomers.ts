@@ -223,6 +223,7 @@ export function useEthicalCustomers() {
     openDuplicates,
     terms: customerTerms.terms,
     termsBlocker: customerTerms.blocker,
+    termsLoading: customerTerms.loading,
     termsLoadFailed: customerTerms.loadFailed,
     openCreateDialog,
     cancelCreate,

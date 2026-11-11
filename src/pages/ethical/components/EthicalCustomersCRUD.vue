@@ -16,7 +16,7 @@ const {
   customers, loading, totalCount, page, pageSize, searchText, showAll, profileFor, showCreateDialog, showEditDialog, editingCustomer, headers,
   agentOptions, businessStructureOptions, createCustomer, updateCustomer, deleteCustomer,
   openCreateDialog, cancelCreate, openEdit, cancelEdit, init, reload, showDuplicates, openDuplicates,
-  terms, termsBlocker, termsLoadFailed,
+  terms, termsBlocker, termsLoadFailed, termsLoading,
 } = useEthicalCustomers()
 
 onMounted(() => init())
@@ -269,6 +269,7 @@ const notSet = (label: string) => `No ${label} set`
               :terms="terms"
               :terms-blocker="termsBlocker"
               :terms-load-failed="termsLoadFailed"
+              :terms-loading="termsLoading"
               :agent-options="agentOptions"
               :business-structure-options="businessStructureOptions"
               @submit="updateCustomer"

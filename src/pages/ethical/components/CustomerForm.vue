@@ -16,6 +16,8 @@ interface Props {
   termsBlocker?: string
   /** The terms could not be read; the editor is shown read-only. */
   termsLoadFailed?: boolean
+  /** The terms are still loading; the editor waits. */
+  termsLoading?: boolean
   agentOptions?: any[]
   businessStructureOptions?: any[]
 }
@@ -226,12 +228,7 @@ async function submit() {
     <!-- What orders price from: markup, discount, and each person's rebate /
          ads share by name. Saved as entered — a loss is allowed. -->
     <div class="text-subtitle-2 font-weight-bold mt-2 mb-2">Terms</div>
-    <v-alert v-if="termsLoadFailed" type="error" variant="tonal" density="compact" class="mb-3 text-caption">
-      This customer's terms could not be loaded, so they can't be changed right now. Close and reopen the customer.
-    </v-alert>
-    <fieldset :disabled="termsLoadFailed" class="terms-fieldset">
-      <CustomerTermsEditor :terms="terms" />
-    </fieldset>
+    <CustomerTermsEditor :terms="terms" :loading="termsLoading" :load-failed="termsLoadFailed" />
     <div v-if="termsBlocker" class="text-caption text-error mb-2">{{ termsBlocker }}</div>
 
     <v-select
@@ -257,13 +254,3 @@ async function submit() {
     </div>
   </v-form>
 </template>
-
-<style scoped>
-/* Only there to disable the terms inputs when they could not be loaded. */
-.terms-fieldset {
-  border: 0;
-  margin: 0;
-  padding: 0;
-  min-width: 0;
-}
-</style>

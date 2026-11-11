@@ -242,10 +242,30 @@ export function summarizeTerms(terms: CustomerTerms) {
   }
 }
 
+/**
+ * What makes a set of terms unsaveable, if anything. The number inputs carry
+ * min/max, but `v-model.number` stores whatever is typed, so it is checked
+ * here. A markup of 100% or more has no meaning (Price = System Price /
+ * (100 - markup)%), and nobody can be given more than the whole price.
+ */
+export function termsProblem(terms: CustomerTerms): string {
+  const summary = summarizeTerms(terms)
+  if (summary.markup != null && (Number.isNaN(summary.markup) || summary.markup < 0 || summary.markup >= 100)) {
+    return 'Markup must be from 0 up to (not including) 100%.'
+  }
+  if (summary.discount < 0 || summary.discount > 100) return 'Discount must be from 0 to 100%.'
+  const shares = [...terms.rebates, ...terms.ads].map((r) => Number(r.rate) || 0)
+  if (shares.some((rate) => rate < 0 || rate > 100)) return 'Each rebate or ads share must be from 0 to 100%.'
+  if (summary.missingNames) return 'Enter the name of every person getting a rebate or ads share.'
+  return ''
+}
+
 /** Whether two sets of terms differ in anything that would be saved. */
 export function termsDiffer(a: CustomerTerms, b: CustomerTerms): boolean {
+  // Markup read the same way summarizeTerms reads it: an emptied number field
+  // gives '' and that is "no markup", not a change.
   const norm = (t: CustomerTerms) => JSON.stringify({
-    m: t.markupPercent ?? null,
+    m: summarizeTerms(t).markup,
     d: Number(t.discountRate) || 0,
     r: t.rebates.filter((x) => Number(x.rate) > 0).map((x) => [x.name.trim(), Number(x.rate)]),
     a: t.ads.filter((x) => Number(x.rate) > 0).map((x) => [x.name.trim(), Number(x.rate)]),
@@ -258,21 +278,31 @@ export const useDiscountsDataStore = defineStore('discountsData', () => {
   const loading = ref(false)
   const error: Ref<string> = ref('')
 
+  /**
+   * One customer's rows with THIS request's error, not the store's shared
+   * `error` — two overlapping reads (switching customers quickly) would
+   * otherwise report each other's failures.
+   */
+  async function readCustomerRows(customerId: number): Promise<{ rows: DiscountType[]; error: string }> {
+    const { data, error: fetchError } = await supabase
+      .from('discounts')
+      .select('id, created_at, name, description, customer_id, discount_rate, discount_name, total_rebate_offered')
+      .eq('customer_id', customerId)
+      .order('id', { ascending: true })
+    if (fetchError) {
+      console.error('readCustomerRows (discounts) failed:', fetchError)
+      return { rows: [], error: getErrorMessage(fetchError) }
+    }
+    return { rows: (data || []) as DiscountType[], error: '' }
+  }
+
   async function fetchForCustomer(customerId: number): Promise<DiscountType[]> {
     loading.value = true
     error.value = ''
     try {
-      const { data, error: fetchError } = await supabase
-        .from('discounts')
-        .select('id, created_at, name, description, customer_id, discount_rate, discount_name, total_rebate_offered')
-        .eq('customer_id', customerId)
-        .order('id', { ascending: true })
-      if (fetchError) throw fetchError
-      return (data || []) as DiscountType[]
-    } catch (err) {
-      error.value = getErrorMessage(err)
-      console.error('fetchForCustomer (discounts) failed:', err)
-      return []
+      const result = await readCustomerRows(customerId)
+      error.value = result.error
+      return result.rows
     } finally {
       loading.value = false
     }
@@ -351,9 +381,8 @@ export const useDiscountsDataStore = defineStore('discountsData', () => {
   async function saveCustomerTerms(customerId: number, customerName: string | null, terms: CustomerTerms) {
     error.value = ''
     const summary = summarizeTerms(terms)
-    if (summary.missingNames) {
-      return { success: false as const, error: 'Enter the name of every person getting a rebate or ads share.' }
-    }
+    const problem = termsProblem(terms)
+    if (problem) return { success: false as const, error: problem }
     // The agreed total is the sum of what is priced, so the profile reconciles.
     const totalOffered = summary.giveaway > 0 ? `${summary.giveaway}%` : null
     const base = { customer_id: customerId, name: customerName, total_rebate_offered: totalOffered }
@@ -385,7 +414,14 @@ export const useDiscountsDataStore = defineStore('discountsData', () => {
       if (oldIds.length) {
         const { error: deleteError } = await supabase.from('discounts').delete().in('id', oldIds)
         if (deleteError) {
-          if (newIds.length) await supabase.from('discounts').delete().in('id', newIds)
+          if (newIds.length) {
+            const { error: rollbackError } = await supabase.from('discounts').delete().in('id', newIds)
+            if (rollbackError) {
+              // Both sets are now on the customer, doubling every rate — say so.
+              console.error('saveCustomerTerms rollback failed:', rollbackError)
+              throw new Error(`${getErrorMessage(deleteError)} — and the new terms could not be taken back out, so this customer now has two sets of terms. Ask an admin to remove the duplicate rows.`)
+            }
+          }
           throw deleteError
         }
       }
@@ -405,7 +441,7 @@ export const useDiscountsDataStore = defineStore('discountsData', () => {
 
   return {
     loading, error,
-    fetchForCustomer, fetchProfile,
+    readCustomerRows, fetchForCustomer, fetchProfile,
     profilesByCustomer, ensureProfilesLoaded, profileFor,
     saveCustomerTerms,
   }

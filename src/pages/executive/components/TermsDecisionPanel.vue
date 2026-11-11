@@ -9,7 +9,8 @@ const props = defineProps<{ request: any }>()
 
 const {
   details, loading, isUnlock, isEthical, lines,
-  grossTotal, costTotal, missingCostLines, belowCostLines, keptRevenue,
+  grossTotal, costTotal, missingCostLines, belowCostLines, belowCostAfterGiveawayLines, keptRevenue,
+  netUnitPrice, lineBelowCost,
   ratioLabel, ratioClass, profitLabel, marginLabel, prComparison,
   lineMargin, qtyLabel, effect,
 } = useTermsDecision(() => props.request)
@@ -108,8 +109,13 @@ function orderLabel(): string {
       </div>
 
       <!-- Things that should give an approver pause -->
-      <v-alert v-if="belowCostLines" type="error" variant="tonal" density="compact" class="mb-2 text-caption">
-        {{ belowCostLines }} line(s) are priced below company cost.
+      <!-- Allowed (a marketing call), but the executive approving it should know. -->
+      <v-alert v-if="belowCostLines" type="warning" variant="tonal" density="compact" class="mb-2 text-caption">
+        <div class="font-weight-bold">Selling below cost on {{ belowCostLines }} line(s).</div>
+        <div v-if="belowCostAfterGiveawayLines">
+          {{ belowCostAfterGiveawayLines }} of them only after the discount, rebate and ads are taken off — the price
+          itself is above cost. See "Net / unit" below.
+        </div>
       </v-alert>
       <v-alert v-if="missingCostLines" type="warning" variant="tonal" density="compact" class="mb-2 text-caption">
         {{ missingCostLines }} of {{ lines.length }} line(s) have no recorded cost, so the cost, ratio and profit above are understated.
@@ -139,13 +145,14 @@ function orderLabel(): string {
               <th class="text-caption">Product</th>
               <th class="text-caption text-right">Qty</th>
               <th class="text-caption text-right">Unit price</th>
+              <th v-if="isEthical" class="text-caption text-right">Net / unit</th>
               <th class="text-caption text-right">Cost / unit</th>
               <th class="text-caption text-right">Line total</th>
               <th class="text-caption text-right">Margin</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(line, i) in lines" :key="i" :class="{ 'below-cost': line.cost_unit != null && line.cost_unit > line.unit_price }">
+            <tr v-for="(line, i) in lines" :key="i" :class="{ 'below-cost': lineBelowCost(line) }">
               <td class="text-caption">
                 <div>{{ line.product_name }}</div>
                 <div v-if="line.batch_no || line.expiry_date" class="text-medium-emphasis">
@@ -154,6 +161,7 @@ function orderLabel(): string {
               </td>
               <td class="text-caption text-right text-no-wrap">{{ qtyLabel(line) }}</td>
               <td class="text-caption text-right">{{ formatCurrency(line.unit_price) }}</td>
+              <td v-if="isEthical" class="text-caption text-right">{{ formatCurrency(netUnitPrice(line)) }}</td>
               <td class="text-caption text-right">{{ line.cost_unit != null ? formatCurrency(line.cost_unit) : '—' }}</td>
               <td class="text-caption text-right">{{ formatCurrency(line.line_total) }}</td>
               <td class="text-caption text-right">{{ lineMargin(line) }}</td>
