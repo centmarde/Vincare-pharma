@@ -20,6 +20,17 @@ export type CustomerUsage = { documents: number; deliveryReceipts: number; terms
 export type BusinessStructure = 'corporation' | 'sole_proprietorship' | 'partnership' | 'other'
 export type RebatePaymentMode = 'cash' | 'gcash' | 'bank' | 'other'
 export type SchemeType = 'pushing' | 'tie_up' | 'dispensing' | 'trade_discount' | 'free_goods'
+/** Whether the customer buys branded products, generics or both. */
+export type ProductPreference = 'branded' | 'generics' | 'both'
+
+export const productPreferenceOptions: { title: string; value: ProductPreference }[] = [
+  { title: 'Branded', value: 'branded' },
+  { title: 'Generics', value: 'generics' },
+  { title: 'Both', value: 'both' },
+]
+
+export const productPreferenceLabel = (value: string | null | undefined): string | null =>
+  productPreferenceOptions.find((o) => o.value === value)?.title ?? null
 
 export type CustomerType = {
   id: number
@@ -58,6 +69,8 @@ export type CustomerType = {
   rebate_rate: number | null
   markup_percent: number | null
   rebate_ratio_distribution: string | null
+  /** Branded / generics / both — schema 20261111_customers_product_preference. */
+  product_preference?: ProductPreference | null
 
   // ── Columns the real-customer import added ────────────────────────────────
   // These carry the same commercial terms as the numeric columns above, but as
@@ -114,6 +127,7 @@ export type CreateCustomerData = {
   rebate_rate?: number | null
   markup_percent?: number | null
   rebate_ratio_distribution?: string | null
+  product_preference?: ProductPreference | null
 }
 
 export type FetchCustomersRPCOptions = {
@@ -151,6 +165,9 @@ export const useCustomersDataStore = defineStore('customersData', () => {
   const customers: Ref<CustomerType[]> = ref([])
   // Kept apart from `customers` on purpose — see searchCustomers().
   const searchResults: Ref<CustomerType[]> = ref([])
+  // In-House and Ethical customers together — the ones a rebate can be paid to.
+  // Kept apart from `customers`, which holds one department at a time.
+  const rebateCustomers: Ref<CustomerType[]> = ref([])
   const currentCustomer: Ref<CustomerType | undefined> = ref(undefined)
   const pagedCustomers: Ref<CustomerType[]> = ref([])
   const pagedTotalCount: Ref<number> = ref(0)
@@ -291,6 +308,21 @@ export const useCustomersDataStore = defineStore('customersData', () => {
     }
   }
 
+  /**
+   * Adds product_preference to rows from fetch_customers_rpc, whose fixed
+   * column list predates it — fetched for just the page's ids rather than
+   * changing the RPC's return type. Left unset if the read fails (for example
+   * before the column exists), so the list still loads.
+   */
+  async function attachProductPreference(rows: CustomerType[]) {
+    if (!rows.length) return
+    const { data, error: prefError } = await supabase
+      .from('customers').select('id, product_preference').in('id', rows.map((r) => r.id))
+    if (prefError) return
+    const byId = new Map((data ?? []).map((r: { id: number; product_preference: ProductPreference | null }) => [r.id, r.product_preference]))
+    for (const row of rows) row.product_preference = byId.get(row.id) ?? null
+  }
+
   async function fetchCustomersRPC(options: FetchCustomersRPCOptions = {}): Promise<CustomersRPCResult> {
     pagedLoading.value = true
     clearError()
@@ -317,6 +349,7 @@ export const useCustomersDataStore = defineStore('customersData', () => {
 
       // Strip total_count before storing as CustomerType
       const cleaned = rows.map(({ total_count, ...rest }) => rest) as CustomerType[]
+      await attachProductPreference(cleaned)
 
       pagedCustomers.value = cleaned
       pagedTotalCount.value = totalCount
@@ -408,6 +441,24 @@ export const useCustomersDataStore = defineStore('customersData', () => {
     return usage
   }
 
+  /**
+   * Every customer a rebate voucher can be linked to: In-House, Ethical, and
+   * those with no home department (they trade through either).
+   */
+  async function fetchRebateCustomers() {
+    clearError()
+    try {
+      rebateCustomers.value = await fetchAllRows<CustomerType>(() => supabase
+        .from('customers').select('*')
+        .or('department.in.(inhouse,ethical),department.is.null')
+        .order('name', { ascending: true }).order('id', { ascending: true }))
+      return rebateCustomers.value
+    } catch (err) {
+      handleError(err, 'Failed to fetch customers')
+      return []
+    }
+  }
+
   /** Every NAMED customer, for finding copies that share a name. Nameless
    *  import rows are left out: they are not duplicates of anything by name. */
   async function fetchNamedCustomers(): Promise<CustomerType[]> {
@@ -471,11 +522,11 @@ export const useCustomersDataStore = defineStore('customersData', () => {
   }
 
   return {
-    customers, searchResults, currentCustomer, loading, error,
+    customers, searchResults, rebateCustomers, currentCustomer, loading, error,
     isLoading, hasError,
     pagedCustomers, pagedTotalCount, pagedLoading,
     fetchCustomers, searchCustomers, stampDepartmentIfBlank, fetchCustomersRPC,
-    createCustomer, updateCustomer, deleteCustomer, fetchCustomerUsage, fetchNamedCustomers,
+    createCustomer, updateCustomer, deleteCustomer, fetchCustomerUsage, fetchNamedCustomers, fetchRebateCustomers,
     startRealtime, stopRealtime, clearError, resetStore,
   }
 })

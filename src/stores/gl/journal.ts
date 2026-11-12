@@ -5,7 +5,8 @@
 import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
-import { nextDocNumber, insertWithDocRetry, toLocalISODate } from '@/utils/helpers'
+import { nextDocNumber, insertWithDocRetry, toLocalISODate, getErrorMessage } from '@/utils/helpers'
+import { fetchAllRows } from '@/stores/shared/paging'
 import type { AccountLedgerLine, GLAccount, JournalEntry, JournalLineInput, ReferenceType } from './types'
 import { mapEntryRow } from './helpers'
 import { journal, loading, handleError, clearError } from './state'
@@ -16,6 +17,34 @@ const toast = useToast()
 // this module is first evaluated can run before Pinia is installed.
 let authStore: ReturnType<typeof useAuthUserStore> | null = null
 const getAuthStore = () => (authStore ??= useAuthUserStore())
+
+type InsertResult = { data: { id: number } | null; error: { code?: string; message: string } | null }
+
+/**
+ * Insert a journal entry under the next free JE-YYYY-##### number.
+ *
+ * Reads EVERY number already used this year, page by page. A single read
+ * returns at most 1000 rows, so once the year passed 1000 entries the highest
+ * numbers were never seen: the same taken number was minted on every retry and
+ * every posting failed with "duplicate key ... journal_entries_entry_no_key".
+ * A failed read comes back as an error rather than a guessed number.
+ */
+async function insertNumberedEntry(insert: (entryNo: string) => PromiseLike<InsertResult>) {
+  const year = new Date().getFullYear().toString()
+  const prefix = `JE-${year}-`
+  try {
+    return await insertWithDocRetry<{ id: number }>(
+      async () => {
+        const rows = await fetchAllRows<{ entry_no: string }>(() => supabase
+          .from('journal_entries').select('entry_no').like('entry_no', `${prefix}%`).order('id', { ascending: true }))
+        return nextDocNumber(rows.map((r) => r.entry_no), prefix, 5)
+      },
+      async (entryNo) => insert(entryNo),
+    )
+  } catch (err) {
+    return { data: null, docNo: null, error: { message: getErrorMessage(err) || 'Could not read the journal entry numbers.' } }
+  }
+}
 
 // Post a balanced journal entry: >=2 lines, each one-sided, sum(debit) =
 // sum(credit), every account_code active — was gl_post_entry. Shared by this
@@ -54,25 +83,15 @@ export async function postJournalEntry(
     return { success: false, error: `Entry not balanced: debits ${sumDebit} <> credits ${sumCredit}` }
   }
 
-  const year = new Date().getFullYear().toString()
   const nowIso = new Date().toISOString()
-  const { data: entry, error: entryError } = await insertWithDocRetry<{ id: number }>(
-    async () => {
-      const { data: existingEntries } = await supabase
-        .from('journal_entries')
-        .select('entry_no')
-        .like('entry_no', `JE-${year}-%`)
-      return nextDocNumber((existingEntries ?? []).map(r => r.entry_no), `JE-${year}-`, 5)
-    },
-    async (docNo) => supabase
-      .from('journal_entries')
-      .insert({
-        entry_no: docNo, entry_date: entryDate, reference_type: referenceType, reference_id: referenceId,
-        description, status: 'posted', posted_at: nowIso, posted_by: userId, created_by: userId,
-      })
-      .select('id')
-      .single(),
-  )
+  const { data: entry, error: entryError } = await insertNumberedEntry((docNo) => supabase
+    .from('journal_entries')
+    .insert({
+      entry_no: docNo, entry_date: entryDate, reference_type: referenceType, reference_id: referenceId,
+      description, status: 'posted', posted_at: nowIso, posted_by: userId, created_by: userId,
+    })
+    .select('id')
+    .single())
   if (entryError || !entry) return { success: false, error: entryError?.message || 'Failed to post journal entry' }
 
   const { error: linesError } = await supabase.from('journal_entry_lines').insert(
@@ -215,24 +234,14 @@ export async function postManualEntry(payload: { entryDate: string; description?
     toast.error(`Entry not balanced: debits ${sumDebit} <> credits ${sumCredit}`); loading.value = false; return { success: false }
   }
 
-  const year = new Date().getFullYear().toString()
-  const { data: entry, error: entryError } = await insertWithDocRetry<{ id: number }>(
-    async () => {
-      const { data: existingEntries } = await supabase
-        .from('journal_entries')
-        .select('entry_no')
-        .like('entry_no', `JE-${year}-%`)
-      return nextDocNumber((existingEntries ?? []).map(r => r.entry_no), `JE-${year}-`, 5)
-    },
-    async (docNo) => supabase
-      .from('journal_entries')
-      .insert({
-        entry_no: docNo, entry_date: payload.entryDate, reference_type: 'manual', reference_id: null,
-        description: payload.description || null, status: 'draft', created_by: user.id,
-      })
-      .select('id')
-      .single(),
-  )
+  const { data: entry, error: entryError } = await insertNumberedEntry((docNo) => supabase
+    .from('journal_entries')
+    .insert({
+      entry_no: docNo, entry_date: payload.entryDate, reference_type: 'manual', reference_id: null,
+      description: payload.description || null, status: 'draft', created_by: user.id,
+    })
+    .select('id')
+    .single())
   if (entryError || !entry) {
     handleError(entryError, 'Failed to post manual entry.')
     toast.error(entryError?.message || 'Failed to post manual entry.')
@@ -330,28 +339,20 @@ export async function reverseJournalEntry(
   const { data: originalLines } = await supabase
     .from('journal_entry_lines').select('account_code, debit, credit, line_memo').eq('journal_entry_id', entryId)
 
-  const year = new Date().getFullYear().toString()
   const nowIso = new Date().toISOString()
-  const { data: reversal, error: reversalError } = await insertWithDocRetry<{ id: number }>(
-    async () => {
-      const { data: existingEntries } = await supabase
-        .from('journal_entries').select('entry_no').like('entry_no', `JE-${year}-%`)
-      return nextDocNumber((existingEntries ?? []).map(r => r.entry_no), `JE-${year}-`, 5)
-    },
-    async (docNo) => supabase
-      .from('journal_entries')
-      .insert({
-        // Local date, not toISOString(): that is the UTC date, so a reversal
-        // made before 08:00 in Manila was dated the previous day.
-        entry_no: docNo, entry_date: toLocalISODate(new Date()),
-        reference_type: overrideReferenceType ?? original.reference_type,
-        reference_id: overrideReferenceId ?? original.reference_id,
-        description: `Reversal of ${original.entry_no}${original.description ? ' — ' + original.description : ''}`,
-        status: 'posted', reverses_entry: entryId, posted_at: nowIso, posted_by: userId, created_by: userId,
-      })
-      .select('id')
-      .single(),
-  )
+  const { data: reversal, error: reversalError } = await insertNumberedEntry((docNo) => supabase
+    .from('journal_entries')
+    .insert({
+      // Local date, not toISOString(): that is the UTC date, so a reversal
+      // made before 08:00 in Manila was dated the previous day.
+      entry_no: docNo, entry_date: toLocalISODate(new Date()),
+      reference_type: overrideReferenceType ?? original.reference_type,
+      reference_id: overrideReferenceId ?? original.reference_id,
+      description: `Reversal of ${original.entry_no}${original.description ? ' — ' + original.description : ''}`,
+      status: 'posted', reverses_entry: entryId, posted_at: nowIso, posted_by: userId, created_by: userId,
+    })
+    .select('id')
+    .single())
   if (reversalError || !reversal) return { success: false, error: reversalError?.message || 'Failed to create reversal entry' }
 
   const { error: linesError } = await supabase.from('journal_entry_lines').insert(

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CreateCustomerData } from '@/stores/customersData'
+import type { CustomerTerms } from '@/stores/discountsData'
 import CustomerTradeProfileFields from '@/components/customers/CustomerTradeProfileFields.vue'
 
 interface Props {
@@ -7,6 +8,11 @@ interface Props {
   mobile: boolean
   editingId: number | null
   form: CreateCustomerData
+  /** Markup and discount (useCustomerTerms); POS has no rebate or ads lists. */
+  terms: CustomerTerms
+  termsBlocker?: string
+  termsLoading?: boolean
+  termsLoadFailed?: boolean
   rules: Record<string, (value: unknown) => boolean | string>
   loading: boolean
 }
@@ -134,7 +140,7 @@ const emit = defineEmits<{
              construct with its own approval + payout workflow, so a walk-in POS
              buyer has no use for a payout mode. The rates themselves stay, since
              a regular POS customer can legitimately have a discount or markup. -->
-        <CustomerTradeProfileFields :form="form" :show-rebate-payout="false" />
+        <CustomerTradeProfileFields :form="form" :terms="terms" :terms-blocker="termsBlocker" :terms-loading="termsLoading" :terms-load-failed="termsLoadFailed" :show-rebate-payout="false" />
 
         <v-switch
           v-model="form.is_active"

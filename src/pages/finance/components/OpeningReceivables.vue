@@ -12,6 +12,7 @@ const {
   loading,
   department, customerId, originalNo, invoiceDate, termDays, termLabel,
   originalAmount, alreadyPaid, cutoverDate, remarks,
+  hasCreditMemo, creditMemoNo, creditMemoDate, creditMemoAmount, creditMemoReason, creditApplied,
   customerSearch, customerOptions, outstanding, termSummary, isOverdue,
   blockers, canSubmit,
   setDaysElapsed, applyTermPreset, clearTerm, submit,
@@ -179,10 +180,58 @@ function onDaysElapsed(value: string) {
             <v-sheet rounded="lg" border class="pa-3 h-100 d-flex flex-column justify-center">
               <div class="text-caption text-medium-emphasis">Still outstanding</div>
               <div class="text-h6 font-weight-bold">{{ formatCurrency(outstanding) }}</div>
-              <div class="text-caption text-medium-emphasis">this is what reaches the ledger</div>
+              <div class="text-caption text-medium-emphasis">
+                {{ creditApplied > 0 ? `after the ${formatCurrency(creditApplied)} credit memo` : 'this is what reaches the ledger' }}
+              </div>
             </v-sheet>
           </v-col>
         </v-row>
+
+        <!-- A credit memo the customer was already given on this invoice
+             before cutover. It shows in the Credit column of their statement
+             with their own CM number. -->
+        <v-switch
+          v-model="hasCreditMemo"
+          color="primary" density="compact" hide-details inset class="mt-3"
+          label="A credit memo was already given on this invoice"
+        />
+        <v-expand-transition>
+          <div v-if="hasCreditMemo">
+            <v-row dense class="mt-1">
+              <v-col cols="12" sm="6" md="3">
+                <v-text-field
+                  v-model="creditMemoNo" label="Their credit memo number"
+                  placeholder="As printed on the memo"
+                  density="compact" variant="outlined" hide-details
+                />
+              </v-col>
+              <v-col cols="12" sm="6" md="3">
+                <v-text-field
+                  v-model="creditMemoDate" type="date" label="Credit memo date" :max="cutoverDate || undefined"
+                  density="compact" variant="outlined" hide-details
+                />
+              </v-col>
+              <v-col cols="12" sm="6" md="3">
+                <MoneyField
+                  v-model="creditMemoAmount" label="Credit memo amount" prefix="₱"
+                  density="compact" variant="outlined" hide-details
+                />
+              </v-col>
+              <v-col cols="12" sm="6" md="3">
+                <v-text-field
+                  v-model="creditMemoReason" label="Reason (optional)"
+                  placeholder="e.g. expired goods returned"
+                  density="compact" variant="outlined" hide-details
+                />
+              </v-col>
+            </v-row>
+            <div class="text-caption text-medium-emphasis mt-2">
+              Booked <strong>DR Opening Balance Equity / CR Accounts Receivable</strong> at the cutover date — like the
+              invoice itself, it happened before these books, so it does not touch this period's sales. A credit memo
+              given <em>after</em> cutover is requested on the receivable instead.
+            </div>
+          </div>
+        </v-expand-transition>
 
         <v-row dense class="mt-2">
           <v-col cols="12" sm="4">
@@ -260,6 +309,9 @@ function onDaysElapsed(value: string) {
           <template #item.originalAmount="{ item }">{{ formatCurrency(item.originalAmount) }}</template>
           <template #item.outstanding="{ item }">
             <span class="font-weight-bold">{{ formatCurrency(item.outstanding) }}</span>
+            <div v-if="item.creditBeforeCutover > 0" class="text-caption text-medium-emphasis">
+              {{ formatCurrency(item.creditBeforeCutover) }} credit memo{{ item.creditMemoNo ? ` ${item.creditMemoNo}` : '' }}
+            </div>
             <div v-if="item.collectedSince > 0" class="text-caption text-medium-emphasis">
               {{ formatCurrency(item.collectedSince) }} collected since
             </div>

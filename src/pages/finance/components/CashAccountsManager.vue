@@ -2,9 +2,10 @@
 import { cashClassifications, classificationMeta } from '@/utils/cashAccountTypes'
 import type { ClassifiedCashAccount, CreateCashAccountPayload } from '@/utils/cashAccountTypes'
 import { formatCurrency } from '@/utils/helpers'
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useCashAccountsManager } from '../composables/useCashAccountsManager'
 import CashAccountHistoryDialog from './dialogs/CashAccountHistoryDialog.vue'
+import ReceiveMoneyDialog from './dialogs/ReceiveMoneyDialog.vue'
 
 const props = defineProps<{
   accounts: ClassifiedCashAccount[]
@@ -52,6 +53,15 @@ const {
 // GL balance, which would show a false alarm on first paint.
 onMounted(loadReconciliation)
 
+// Money paid in by someone who is not a customer (SSS, Pag-IBIG, a refund).
+const showReceive = ref(false)
+const receiveAccountId = ref<number | null>(null)
+
+function openReceive(accountId: number | null) {
+  receiveAccountId.value = accountId
+  showReceive.value = true
+}
+
 const submitNewAccount = () => {
   const payload = buildPayload()
   if (!payload) return
@@ -72,16 +82,27 @@ const submitNewAccount = () => {
           {{ formatCurrency(totalActiveBalance) }} total active balance
         </div>
       </div>
-      <v-btn
-        class="text-none"
-        color="primary"
-        variant="flat"
-        elevation="0"
-        prepend-icon="mdi-plus"
-        @click="openAddDialog"
-      >
-        Add Cash Account
-      </v-btn>
+      <div class="d-flex align-center flex-wrap ga-2">
+        <v-btn
+          class="text-none"
+          color="primary"
+          variant="tonal"
+          prepend-icon="mdi-cash-plus"
+          @click="openReceive(null)"
+        >
+          Receive Money
+        </v-btn>
+        <v-btn
+          class="text-none"
+          color="primary"
+          variant="flat"
+          elevation="0"
+          prepend-icon="mdi-plus"
+          @click="openAddDialog"
+        >
+          Add Cash Account
+        </v-btn>
+      </div>
     </div>
 
     <!-- GL reconciliation. Silent when everything ties, which is the point:
@@ -165,6 +186,13 @@ const submitNewAccount = () => {
                       <v-btn v-bind="menu" icon="mdi-dots-vertical" variant="text" size="small" @click.stop />
                     </template>
                     <v-list density="compact">
+                      <v-list-item
+                        v-if="account.is_active"
+                        prepend-icon="mdi-cash-plus"
+                        title="Receive money"
+                        subtitle="Paid in, not by a customer"
+                        @click="openReceive(account.id)"
+                      />
                       <v-list-item
                         v-if="account.is_active"
                         prepend-icon="mdi-archive-outline"
@@ -357,6 +385,10 @@ const submitNewAccount = () => {
       :error="historyError"
       :variance="historyVariance"
     />
+
+    <!-- Re-reads the trial balance after posting, so the ledger-vs-accounts
+         check above does not flag the new money as a variance. -->
+    <ReceiveMoneyDialog v-model="showReceive" :account-id="receiveAccountId" @received="loadReconciliation" />
   </div>
 </template>
 

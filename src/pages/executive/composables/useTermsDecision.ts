@@ -41,7 +41,38 @@ export function useTermsDecision(request: () => any) {
   const grossTotal = computed(() => lines.value.reduce((s, l) => s + l.line_total, 0))
   const costTotal = computed(() => lines.value.reduce((s, l) => s + (l.cost_unit ?? 0) * l.qty, 0))
   const missingCostLines = computed(() => lines.value.filter((l) => l.cost_unit == null || l.cost_unit <= 0).length)
-  const belowCostLines = computed(() => lines.value.filter((l) => l.cost_unit != null && l.cost_unit > l.unit_price).length)
+
+  /**
+   * The share of each line's price the business keeps. Ethical: what is left
+   * after the discount, rebate and ads, which all scale off the price — the
+   * same "net" the order screen warns on (useCreateOrder's netUnitPrice). So a
+   * ₱110 line costing ₱100 with 20% given away nets ₱88 and is flagged here
+   * too, though its price alone is above cost. In-House: the agreed price is
+   * what is kept.
+   */
+  const keptShare = computed(() => {
+    const d = details.value
+    if (!d || !isEthical.value || grossTotal.value <= 0) return 1
+    return Math.max(0, (grossTotal.value - d.discount - d.rebate - d.ads) / grossTotal.value)
+  })
+
+  /** What one unit really brings in after everything given away. */
+  const netUnitPrice = (line: DecisionLine) => Math.round(line.unit_price * keptShare.value * 100) / 100
+
+  /** Sold at a loss once the discount, rebate and ads are taken off. */
+  function lineBelowCost(line: DecisionLine) {
+    return line.cost_unit != null && line.cost_unit > 0 && netUnitPrice(line) < line.cost_unit
+  }
+
+  /** Below cost on the price itself, before anything is given away. */
+  function linePriceBelowCost(line: DecisionLine) {
+    return line.cost_unit != null && line.cost_unit > 0 && line.unit_price < line.cost_unit
+  }
+
+  const belowCostLines = computed(() => lines.value.filter(lineBelowCost).length)
+  /** Of those, how many are below cost only because of the discount / rebate / ads. */
+  const belowCostAfterGiveawayLines = computed(() =>
+    lines.value.filter((l) => lineBelowCost(l) && !linePriceBelowCost(l)).length)
 
   /**
    * What the business keeps. In-House: the agreed total. Ethical: the invoice
@@ -106,7 +137,8 @@ export function useTermsDecision(request: () => any) {
 
   return {
     details, loading, isUnlock, isEthical, lines,
-    grossTotal, costTotal, missingCostLines, belowCostLines, keptRevenue,
+    grossTotal, costTotal, missingCostLines, belowCostLines, belowCostAfterGiveawayLines, keptRevenue,
+    netUnitPrice, lineBelowCost,
     ratioLabel, ratioClass, profitLabel, marginLabel, prComparison,
     lineMargin, qtyLabel, effect,
   }

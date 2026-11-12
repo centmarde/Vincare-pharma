@@ -229,6 +229,10 @@ export type APAgingRow = {
   reference_no: string | null
   supplier_id: number
   supplier_name: string | null
+  /** Our purchase order for this receipt. */
+  po_no: string | null
+  /** The supplier's own document numbers (DO / DR / SI …), read from the remarks. */
+  supplier_docs: string[]
   invoice_date: string
   total_amount: number
   /** Derived by the oldest-first convention — NOT a recorded allocation. */

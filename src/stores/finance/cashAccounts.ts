@@ -10,6 +10,7 @@ import { getErrorMessage, formatCurrency } from '@/utils/helpers'
 // Value import, but cashAccountTypes only imports TYPES back from the store,
 // and type imports are erased at build -- so this is not a runtime cycle.
 import { isCashGLAccount } from '@/utils/cashAccountTypes'
+import { cashLineMemo } from '@/stores/cashAccountLedgerData'
 import type { CashAccountType, CashClassification } from './types'
 import { glCashCode } from './helpers'
 import { cashAccounts, loading, handleError, clearError } from './state'
@@ -45,21 +46,27 @@ export async function fetchCashAccounts() {
  *
  * Checked across BOTH FK roles on transactions — an account can be the one
  * paid from (cash_account_id) or the one replenishing it
- * (funding_account_id) — plus the three other tables that point at it.
+ * (funding_account_id) — plus the three other tables that point at it, and
+ * Book Entry / Receive Money postings, which have no document and name the
+ * account only in a journal line's memo (cashLineMemo). Without that last
+ * check an account that had only ever received money that way read as unused.
  */
 export async function cashAccountReferences(cashAccountId: number) {
   const head = { count: 'exact' as const, head: true }
-  const [tx, fund, coll, det, rebate] = await Promise.all([
+  const [tx, fund, coll, det, rebate, booked] = await Promise.all([
     supabase.from('transactions').select('id', head).eq('cash_account_id', cashAccountId),
     supabase.from('transactions').select('id', head).eq('funding_account_id', cashAccountId),
     supabase.from('collections').select('id', head).eq('cash_account_id', cashAccountId),
     supabase.from('finance_details').select('id', head).eq('cash_account_id', cashAccountId),
     supabase.from('ethical_details').select('id', head).eq('rebate_cash_account_id', cashAccountId),
+    // The memo is "Cash account #12 — <name>"; matching on the id part keeps a
+    // renamed account found, and the " —" keeps #1 from matching #12.
+    supabase.from('journal_entry_lines').select('id', head).like('line_memo', `${cashLineMemo(cashAccountId, '')}%`),
   ])
-  const failed = [tx, fund, coll, det, rebate].some((r) => r.error)
+  const results = [tx, fund, coll, det, rebate, booked]
   return {
-    failed,
-    total: (tx.count ?? 0) + (fund.count ?? 0) + (coll.count ?? 0) + (det.count ?? 0) + (rebate.count ?? 0),
+    failed: results.some((r) => r.error),
+    total: results.reduce((sum, r) => sum + (r.count ?? 0), 0),
   }
 }
 

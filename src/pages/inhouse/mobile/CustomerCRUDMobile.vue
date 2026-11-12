@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import CustomerTermsChips from '@/components/customers/CustomerTermsChips.vue'
+import ProductPreferenceChip from '@/components/customers/ProductPreferenceChip.vue'
 import { businessStructures } from '../composables/useCustomers'
 import { NOT_SET } from '@/utils/helpers'
 
@@ -55,8 +56,11 @@ const onPageChange = (value: number) => {
 
           <div class="flex-grow-1" style="min-width: 0">
             <div class="d-flex align-center justify-space-between ga-2">
-              <span class="font-weight-medium text-body-2 text-truncate">
-                {{ item.name || notSet('name') }}
+              <span class="d-flex align-center ga-1" style="min-width: 0">
+                <span class="font-weight-medium text-body-2 text-truncate">
+                  {{ item.name || notSet('name') }}
+                </span>
+                <ProductPreferenceChip :value="item.product_preference" />
               </span>
             </div>
 

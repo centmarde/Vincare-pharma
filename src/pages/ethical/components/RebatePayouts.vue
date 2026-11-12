@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRebatePayouts } from '../composables/useRebatePayouts'
+import RebateVouchers from './RebateVouchers.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import { useDisplay } from 'vuetify'
 
@@ -17,6 +18,10 @@ const {
 onMounted(() => init())
 
 const notSet = (field: string) => `No ${field} set`
+
+// Vouchers first: that is how rebates are really paid, In-House and Ethical
+// alike. The order queue only ever covered Ethical orders with a rebate amount.
+const tab = ref<'vouchers' | 'queue'>('vouchers')
 </script>
 
 <template>
@@ -28,9 +33,17 @@ const notSet = (field: string) => `No ${field} set`
           <v-icon icon="mdi-cash-refund" color="primary" />
           <span class="text-h6 font-weight-bold">Rebate Payouts</span>
         </v-card-title>
+        <v-tabs v-model="tab" color="primary" class="px-4 px-sm-5">
+          <v-tab value="vouchers" class="text-none">Paid by voucher</v-tab>
+          <v-tab value="queue" class="text-none">Ethical order queue</v-tab>
+        </v-tabs>
         <v-divider />
 
-        <v-card-text class="pa-4 pa-sm-5">
+        <v-card-text v-if="tab === 'vouchers'" class="pa-4 pa-sm-5">
+          <RebateVouchers />
+        </v-card-text>
+
+        <v-card-text v-else class="pa-4 pa-sm-5">
           <div class="text-caption text-medium-emphasis mb-4">
             A rebate becomes due once its order is paid in full. Every rebate needs approval
             before cash goes out. Record who received it — it's the only support for the expense.

@@ -7,7 +7,7 @@ import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { nextDocNumber, insertWithDocRetry } from '@/utils/helpers'
 import type { APAgingRow, DateRange, SupplierAPRow } from './types'
-import { applyDateRange, apBucketFor } from './helpers'
+import { applyDateRange, apBucketFor, supplierDocRefs } from './helpers'
 import { mapSupplierPaymentRow } from './mappers'
 import { supplierPayments, supplierAP, apAging, loading, handleError, clearError } from './state'
 
@@ -173,7 +173,7 @@ export async function fetchAPAging() {
   try {
     const [invoicesRes, paymentsRes] = await Promise.all([
       supabase.from('transactions')
-        .select('id, reference_no, si_no, supplier_id, total_amount, created_at, paid_at, supplier:supplier_id(name)')
+        .select('id, reference_no, si_no, po_no, remarks, supplier_id, total_amount, created_at, paid_at, supplier:supplier_id(name)')
         .eq('transaction_type', 'stock_in').neq('status', 'voided')
         .not('supplier_id', 'is', null),
       supabase.from('transactions')
@@ -196,6 +196,8 @@ export async function fetchAPAging() {
         reference_no: (r.si_no ?? r.reference_no ?? null) as string | null,
         supplier_id: r.supplier_id as number,
         supplier_name: (r.supplier?.name ?? null) as string | null,
+        po_no: (r.po_no ?? null) as string | null,
+        supplier_docs: supplierDocRefs(r.remarks),
         invoice_date: (r.paid_at ?? r.created_at ?? '') as string,
         total_amount: Number(r.total_amount ?? 0),
       }))

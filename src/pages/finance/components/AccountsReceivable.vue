@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useAccountsReceivable, arHeaders, arSourceLabel } from '../composables/useAccountsReceivable'
+import { useAccountsReceivable, arHeaders, arSourceLabel, arTermLabels } from '../composables/useAccountsReceivable'
 import type { ARAgingRow } from '@/stores/financeData'
 import { formatCurrency } from '@/utils/helpers'
 import ARDetailDialog from './dialogs/ARDetailDialog.vue'
@@ -18,6 +18,8 @@ const {
   termTotals,
   overdueReceivable,
   customerJackets,
+  search,
+  visibleJackets,
   consignmentReceivable,
   consignmentCollectors,
   showConsignment,
@@ -54,7 +56,7 @@ function onRowClick(_event: unknown, { item }: { item: ARAgingRow }) {
 /** A consignment customer's statement, opened from the collector list. */
 function openConsignmentSOA(customerIds: number[]) {
   const jacket = customerJackets.value.find((j) => j.customerIds.some((id) => customerIds.includes(id)))
-  openSOA(customerIds, jacket ? jacketSource(jacket.rows) : undefined)
+  openSOA(customerIds, jacket ? jacketSource(jacket.allRows) : undefined)
 }
 
 // Credit memos: asking for one on the open bill, and the register.
@@ -85,15 +87,7 @@ const termColor: Record<string, string> = {
   '180+': 'error',
 }
 
-const termLabels: Record<string, string> = {
-  current: 'Current',
-  '1-30': '1–30 days',
-  '31-60': '31–60 days',
-  '61-90': '61–90 days',
-  '91-180': '91–180 days',
-  '180+': 'Over 6 months',
-  'no-term': 'No term',
-}
+const termLabels = arTermLabels
 </script>
 
 <template>
@@ -141,6 +135,17 @@ const termLabels: Record<string, string> = {
         <v-card-title class="pa-4 pa-sm-5 d-flex flex-wrap align-center ga-2">
           <span class="text-h6 font-weight-bold">Accounts Receivable</span>
           <v-spacer />
+          <v-text-field
+            v-model="search"
+            placeholder="Search customer, reference no., amount…"
+            prepend-inner-icon="mdi-magnify"
+            variant="outlined"
+            density="compact"
+            hide-details
+            clearable
+            style="min-width: 240px; max-width: 360px"
+            class="flex-grow-1"
+          />
           <v-btn
             variant="tonal"
             size="small"
@@ -171,9 +176,15 @@ const termLabels: Record<string, string> = {
         >
           No outstanding receivables.
         </div>
+        <div
+          v-else-if="!visibleJackets.length"
+          class="pa-6 text-center text-caption text-medium-emphasis"
+        >
+          No receivable matches that search.
+        </div>
 
         <v-expansion-panels v-else variant="accordion" multiple>
-          <v-expansion-panel v-for="jacket in customerJackets" :key="jacket.key">
+          <v-expansion-panel v-for="jacket in visibleJackets" :key="jacket.key">
             <v-expansion-panel-title>
               <div class="d-flex align-center ga-3 flex-grow-1 pr-3">
                 <span class="font-weight-medium">{{ jacket.customerName }}</span>
@@ -197,7 +208,7 @@ const termLabels: Record<string, string> = {
                   color="primary"
                   class="text-none"
                   prepend-icon="mdi-file-document-outline"
-                  @click.stop="openSOA(jacket.customerIds, jacketSource(jacket.rows))"
+                  @click.stop="openSOA(jacket.customerIds, jacketSource(jacket.allRows))"
                 >
                   View SOA
                 </v-btn>

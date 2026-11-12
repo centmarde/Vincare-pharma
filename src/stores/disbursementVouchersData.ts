@@ -6,6 +6,7 @@ import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { generateNextNumber, insertWithDocRetry, getErrorMessage, formatCurrency } from '@/utils/helpers'
 import type { ExpenseCategory, ExpenseDepartment } from '@/stores/financeData'
+import { fetchAllRows } from '@/stores/shared/paging'
 
 // Disbursement Vouchers: draft ──print──> printed ──record──> recorded (or cancelled).
 // A voucher never moves money or posts to the GL — only its particulars do, at the
@@ -52,6 +53,19 @@ export const emptySignatories = (): VoucherSignatories => ({
   prepared_by_name: '', checked_by_name: '', approved_by_name: '', received_by_name: '',
 })
 
+/**
+ * The accounts a rebate is paid through: 6030 Computed Rebates when it is
+ * earned, 1060 / 1070 Cash Advances – Rebates (and – Rebates Ads) when it is
+ * paid in advance. Staff pay every rebate by voucher, In-House and Ethical
+ * alike, so a voucher with one of these lines is what Rebate Payouts lists.
+ */
+export const rebateAccountCodes = ['6030', '1060', '1070'] as const
+export const advanceRebateCodes = ['1060', '1070'] as const
+
+export function isRebateAccount(code: string | null | undefined): boolean {
+  return (rebateAccountCodes as readonly string[]).includes(code ?? '')
+}
+
 export type VoucherItemType = {
   id: number
   voucher_id: number
@@ -93,6 +107,16 @@ export type VoucherType = {
    */
   supplier_id: number | null
   supplier_name: string | null
+  /**
+   * The customer a REBATE voucher pays — the only link from a voucher to the
+   * customer it is for, since the payee is free text ("DV2608093 BAYUGAN").
+   * Set only on vouchers with a rebate line (see rebateAccountCodes); it has
+   * no effect on the ledger. Every query that totals a customer's documents
+   * filters by transaction_type, so a voucher here never counts as AR.
+   */
+  customer_id: number | null
+  customer_name: string | null
+  customer_department: string | null
   total_amount: number
   printed_at: string | null
   print_count: number
@@ -116,6 +140,8 @@ export type VoucherInput = {
   cash_account_id: number
   /** null = an ordinary expense voucher; set = this voucher pays that supplier. */
   supplier_id: number | null
+  /** The customer a rebate voucher is for; null on anything else. */
+  customer_id: number | null
   check_no: string
   // One receipt per voucher — one payee, one payment, so the OR/SI number sits
   // on the header (and prints in section D) rather than per particular.
@@ -128,10 +154,14 @@ export type VoucherInput = {
 // disbursement_voucher_items has TWO FKs back to transactions (voucher_id and
 // expense_transaction_id), so a bare `disbursement_voucher_items(*)` embed is
 // ambiguous and PostgREST rejects it with PGRST201. The FK must be named.
+/** A supplier voucher not yet recorded (see fetchOpenSupplierVouchers). */
+export type OpenSupplierVoucher = { id: number; dv_no: string | null; status: 'draft' | 'printed'; amount: number }
+
 const voucherSelect = `
   *,
   cash_account:cash_account_id(name, institution, classification),
   supplier:supplier_id(name),
+  customer:customer_id(name, department),
   finance_details(*),
   items:disbursement_voucher_items!disbursement_voucher_items_voucher_id_fkey(
     *,
@@ -181,6 +211,9 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
       voucher_date: row.paid_at,
       supplier_id: row.supplier_id ?? null,
       supplier_name: row.supplier?.name ?? null,
+      customer_id: row.customer_id ?? null,
+      customer_name: row.customer?.name ?? null,
+      customer_department: row.customer?.department ?? null,
       payee: details.paid_to ?? null,
       payee_address: details.payee_address ?? null,
       payee_tin: details.payee_tin ?? null,
@@ -211,13 +244,16 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
     loading.value = true
     clearError()
     try {
-      const { data, error: fetchError } = await supabase
+      // Every page, not the first 1000: the register's totals and the printed
+      // list are filtered from this, so a cut-off response would understate
+      // them without any error.
+      const data = await fetchAllRows<any>(() => supabase
         .from('transactions')
         .select(voucherSelect)
         .eq('transaction_type', 'disbursement_voucher')
         .order('created_at', { ascending: false })
-      if (fetchError) throw fetchError
-      vouchers.value = (data ?? []).map(mapVoucher)
+        .order('id', { ascending: false }))
+      vouchers.value = data.map(mapVoucher)
       return vouchers.value
     } catch (err) {
       handleError(err, 'Failed to fetch disbursement vouchers')
@@ -278,6 +314,7 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
           total_amount: total,
           cash_account_id: payload.cash_account_id,
           supplier_id: payload.supplier_id,
+          customer_id: payload.customer_id,
           remarks: payload.remarks || null,
           created_by: user.id,
         })
@@ -382,6 +419,7 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
         total_amount: total,
         cash_account_id: payload.cash_account_id,
         supplier_id: payload.supplier_id,
+        customer_id: payload.customer_id,
         remarks: payload.remarks || null,
         // Editing a PRINTED voucher sends it back to draft, so it has to be
         // printed again before it can be recorded. Without this the signed
@@ -757,6 +795,78 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
     return refs
   }
 
+  /**
+   * Supplier vouchers raised but not yet recorded (draft / printed), by
+   * supplier. They have not reduced the supplier's balance yet, so the aging
+   * still shows those invoices as unpaid — Supplier Payments warns before a
+   * second voucher is raised for the same bill.
+   */
+  async function fetchOpenSupplierVouchers() {
+    const bySupplier = new Map<number, OpenSupplierVoucher[]>()
+    const { data, error: fetchError } = await supabase
+      .from('transactions')
+      .select('id, dv_no, status, supplier_id, total_amount, created_at')
+      .eq('transaction_type', 'disbursement_voucher')
+      .in('status', ['draft', 'printed'])
+      .not('supplier_id', 'is', null)
+      .order('created_at', { ascending: true })
+    if (fetchError) {
+      handleError(fetchError, 'Failed to load open supplier vouchers')
+      return bySupplier
+    }
+    for (const row of (data ?? []) as any[]) {
+      const list = bySupplier.get(row.supplier_id) ?? []
+      list.push({
+        id: row.id,
+        dv_no: row.dv_no ?? null,
+        status: row.status as 'draft' | 'printed',
+        amount: Number(row.total_amount ?? 0),
+      })
+      bySupplier.set(row.supplier_id, list)
+    }
+    return bySupplier
+  }
+
+  /**
+   * Say which customer a rebate voucher was for, or clear it — at any status
+   * short of cancelled, including recorded ones.
+   *
+   * Allowed after recording, unlike an edit, because it is a label and not the
+   * document: it changes no amount, account or date, posts nothing, and is not
+   * printed. It exists so the rebate vouchers raised before the link existed
+   * can still be attributed to their customer.
+   */
+  async function linkCustomer(voucherId: number, customerId: number | null) {
+    clearError()
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) { toast.error('User not authenticated.'); return { success: false } }
+
+    const { data: updated, error: updateError } = await supabase
+      .from('transactions')
+      .update({ customer_id: customerId })
+      .eq('id', voucherId)
+      .eq('transaction_type', 'disbursement_voucher')
+      .neq('status', 'cancelled')
+      .select('id, dv_no')
+    if (updateError) {
+      handleError(updateError, 'Failed to link the customer.')
+      toast.error(getErrorMessage(updateError) || 'Failed to link the customer.')
+      return { success: false }
+    }
+    if (!updated?.length) {
+      toast.warning('That voucher was cancelled or no longer exists — refresh and try again.')
+      return { success: false }
+    }
+
+    const dvNo = updated[0].dv_no ?? `#${voucherId}`
+    await logVoucher(user.id, 'voucher_link_customer', `${dvNo} | customer ${customerId ?? 'none'}`, voucherId)
+    // Refresh just this voucher so the list does not reload under the user.
+    const fresh = await fetchVoucherById(voucherId)
+    if (fresh) vouchers.value = vouchers.value.map((v) => (v.id === voucherId ? fresh : v))
+    toast.success(customerId ? `${dvNo} linked.` : `${dvNo} unlinked.`)
+    return { success: true }
+  }
+
   async function logVoucher(userId: string, action: string, description: string, voucherId: number) {
     const { error: logError } = await supabase.from('logs').insert({
       created_by: userId, action, description, module: 'finance', transaction_id: voucherId,
@@ -768,8 +878,8 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
     vouchers, loading, error, isLoading, hasError,
     fetchVouchers, fetchVoucherById,
     createVoucher, updateVoucher,
-    markPrinted, recordVoucherExpenses, cancelVoucher,
-    fetchVoucherRefsForExpenses,
+    markPrinted, recordVoucherExpenses, cancelVoucher, linkCustomer,
+    fetchVoucherRefsForExpenses, fetchOpenSupplierVouchers,
     clearError,
   }
 })

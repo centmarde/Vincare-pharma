@@ -57,6 +57,16 @@ export function useOpeningReceivables() {
   const cutoverDate = ref(todayISO())
   const remarks = ref('')
 
+  // A credit memo the customer was already given on this invoice before
+  // cutover. Optional, behind a switch: most legacy invoices have none.
+  const hasCreditMemo = ref(false)
+  const creditMemoNo = ref('')
+  const creditMemoDate = ref(todayISO())
+  const creditMemoAmount = ref(0)
+  const creditMemoReason = ref('')
+  /** What the credit memo takes off — zero while the switch is off. */
+  const creditApplied = computed(() => (hasCreditMemo.value ? Number(creditMemoAmount.value) || 0 : 0))
+
   /**
    * The same customer search the In-House and Ethical order dialogs use.
    *
@@ -70,7 +80,7 @@ export function useOpeningReceivables() {
     useCustomerPicker(customerId)
 
   const outstanding = computed(() =>
-    Math.max(0, (Number(originalAmount.value) || 0) - (Number(alreadyPaid.value) || 0)),
+    Math.max(0, (Number(originalAmount.value) || 0) - (Number(alreadyPaid.value) || 0) - creditApplied.value),
   )
 
   const dueDate = computed(() =>
@@ -135,8 +145,17 @@ export function useOpeningReceivables() {
     if (!cutoverDate.value) missing.push('the cutover date')
     if (!((Number(originalAmount.value) || 0) > 0)) missing.push('the original amount')
     if ((Number(alreadyPaid.value) || 0) < 0) missing.push('a non-negative amount collected')
+    if (hasCreditMemo.value) {
+      if (!(creditApplied.value > 0)) missing.push('the credit memo amount')
+      if (!creditMemoDate.value) missing.push('the credit memo date')
+      else if (cutoverDate.value && creditMemoDate.value > cutoverDate.value) {
+        missing.push('a credit memo dated on or before cutover (one given since is requested on the receivable instead)')
+      }
+    }
     if (outstanding.value <= 0.005 && (Number(originalAmount.value) || 0) > 0) {
-      missing.push('an outstanding balance — this invoice is already fully paid')
+      missing.push(creditApplied.value > 0
+        ? 'an outstanding balance — with the credit memo nothing is left'
+        : 'an outstanding balance — this invoice is already fully paid')
     }
     return missing
   })
@@ -151,6 +170,11 @@ export function useOpeningReceivables() {
     originalAmount.value = 0
     alreadyPaid.value = 0
     remarks.value = ''
+    hasCreditMemo.value = false
+    creditMemoNo.value = ''
+    creditMemoDate.value = todayISO()
+    creditMemoAmount.value = 0
+    creditMemoReason.value = ''
   }
 
   async function submit() {
@@ -166,6 +190,14 @@ export function useOpeningReceivables() {
       alreadyPaid: Number(alreadyPaid.value) || 0,
       cutoverDate: cutoverDate.value,
       remarks: remarks.value,
+      creditMemo: creditApplied.value > 0
+        ? {
+            number: creditMemoNo.value.trim(),
+            date: creditMemoDate.value,
+            amount: creditApplied.value,
+            reason: creditMemoReason.value.trim(),
+          }
+        : null,
     })
     if (result.success) {
       // Cutover date and department persist — a migration session enters many
@@ -197,7 +229,7 @@ export function useOpeningReceivables() {
     const digits = q.replace(/[₱,\s]/g, '')
     const isAmount = /^\d+(\.\d+)?$/.test(digits)
     return recorded.value.filter((r) => {
-      const text = [r.docNo, r.customerName, r.originalNo, r.termLabel, r.notes]
+      const text = [r.docNo, r.customerName, r.originalNo, r.termLabel, r.notes, r.creditMemoNo]
         .some((v) => (v ?? '').toLowerCase().includes(q))
       if (text) return true
       if (!isAmount) return false
@@ -218,13 +250,18 @@ export function useOpeningReceivables() {
       fields: [
         { key: 'original_amount', label: 'Original invoice amount', value: row.originalAmount, type: 'number' },
         { key: 'paid_before_cutover', label: 'Collected before cutover', value: row.paidBeforeCutover, type: 'number' },
+        { key: 'credit_memo_amount', label: 'Credit memo before cutover', value: row.creditBeforeCutover, type: 'number' },
+        { key: 'credit_memo_no', label: 'Their credit memo number', value: row.creditMemoNo, type: 'text' },
+        { key: 'credit_memo_date', label: 'Credit memo date', value: row.creditMemoDate, type: 'date' },
         { key: 'invoice_date', label: 'Invoice date', value: row.invoiceDate, type: 'date' },
         { key: 'term_days', label: 'Credit term (days)', value: row.termDays, type: 'number' },
         { key: 'original_no', label: 'Their invoice number', value: row.originalNo, type: 'text' },
         { key: 'term_label', label: 'Term as they word it', value: row.termLabel, type: 'text' },
         { key: 'notes', label: 'Notes', value: row.notes, type: 'text' },
       ],
-      voidSummary: `Void ${row.docNo ?? 'this opening receivable'} (${formatCurrency(row.outstanding)} outstanding) — reverses its DR Accounts Receivable / CR Opening Balance Equity entry and cancels it. Refused if payments were collected against it.`,
+      voidSummary: `Void ${row.docNo ?? 'this opening receivable'} (${formatCurrency(row.outstanding)} outstanding) — reverses its DR Accounts Receivable / CR Opening Balance Equity entry and cancels it`
+        + (row.creditBeforeCutover > 0 ? `, along with its ${formatCurrency(row.creditBeforeCutover)} credit memo` : '')
+        + '. Refused if payments were collected against it.',
       allowEdit: true,
       allowVoid: true,
       meta: { [openingReceivableKey]: { from: true, to: true } },
@@ -237,6 +274,7 @@ export function useOpeningReceivables() {
     loading,
     department, customerId, originalNo, invoiceDate, termDays, termLabel,
     originalAmount, alreadyPaid, cutoverDate, remarks,
+    hasCreditMemo, creditMemoNo, creditMemoDate, creditMemoAmount, creditMemoReason, creditApplied,
     customerSearch, customerOptions, outstanding, dueDate, daysElapsed, daysRemaining, isOverdue, termSummary,
     blockers, canSubmit,
     setDaysElapsed, applyTermPreset, clearTerm, resetForm, submit, load,

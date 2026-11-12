@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { CustomerType } from '@/stores/customersData'
-import type { DiscountProfile } from '@/stores/discountsData'
+import { normalizeDiscountKind } from '@/stores/discountsData'
+import type { DiscountKind, DiscountProfile } from '@/stores/discountsData'
 
 /**
  * The commercial terms agreed with a customer.
@@ -37,6 +38,16 @@ const unreconciled = computed(() => !!p.value && p.value.rows.length > 0 && !p.v
 
 const hasAny = computed(() =>
   !!(pricing.value || rebates.value || terms.value || hasRates.value || unreconciled.value))
+
+/** "Juan 5% · Maria 5%" — each named person's share, as entered on the profile. */
+function sharesOf(kind: DiscountKind) {
+  return (p.value?.rows ?? [])
+    .filter((r) => normalizeDiscountKind(r.discount_name) === kind && r.description?.trim())
+    .map((r) => `${r.description!.trim()} ${Number(r.discount_rate ?? 0)}%`)
+    .join(' · ')
+}
+const rebateShares = computed(() => sharesOf('rebate'))
+const adsShares = computed(() => sharesOf('ads'))
 </script>
 
 <template>
@@ -125,6 +136,14 @@ const hasAny = computed(() =>
     <div v-if="rebates" class="d-flex ga-2">
       <span class="text-medium-emphasis flex-shrink-0" style="min-width: 68px">Rebates</span>
       <span class="font-weight-medium terms-multiline">{{ rebates }}</span>
+    </div>
+    <div v-if="rebateShares" class="d-flex ga-2 mt-1">
+      <span class="text-medium-emphasis flex-shrink-0" style="min-width: 68px">Rebate to</span>
+      <span class="font-weight-medium">{{ rebateShares }}</span>
+    </div>
+    <div v-if="adsShares" class="d-flex ga-2 mt-1">
+      <span class="text-medium-emphasis flex-shrink-0" style="min-width: 68px">Ads to</span>
+      <span class="font-weight-medium">{{ adsShares }}</span>
     </div>
 
     <div v-if="!hasRates" class="text-medium-emphasis mt-2" style="font-size: 11px">

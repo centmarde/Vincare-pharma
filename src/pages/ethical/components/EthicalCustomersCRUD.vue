@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ProductPreferenceChip from '@/components/customers/ProductPreferenceChip.vue'
 import { onMounted } from 'vue'
 import { useDisplay } from 'vuetify'
 import CustomerTermsChips from '@/components/customers/CustomerTermsChips.vue'
@@ -15,6 +16,7 @@ const {
   customers, loading, totalCount, page, pageSize, searchText, showAll, profileFor, showCreateDialog, showEditDialog, editingCustomer, headers,
   agentOptions, businessStructureOptions, createCustomer, updateCustomer, deleteCustomer,
   openCreateDialog, cancelCreate, openEdit, cancelEdit, init, reload, showDuplicates, openDuplicates,
+  terms, termsBlocker, termsLoadFailed, termsLoading,
 } = useEthicalCustomers()
 
 onMounted(() => init())
@@ -155,6 +157,7 @@ const notSet = (label: string) => `No ${label} set`
               <span class="font-weight-medium">
                 {{ item.name || notSet('name') }}
               </span>
+              <ProductPreferenceChip :value="item.product_preference" />
             </div>
           </template>
 
@@ -245,6 +248,8 @@ const notSet = (label: string) => `No ${label} set`
           <v-card-title>New Customer</v-card-title>
           <v-card-text>
             <CustomerForm
+              :terms="terms"
+              :terms-blocker="termsBlocker"
               :agent-options="agentOptions"
               :business-structure-options="businessStructureOptions"
               @submit="createCustomer"
@@ -261,6 +266,10 @@ const notSet = (label: string) => `No ${label} set`
             <CustomerForm
               :customer="editingCustomer"
               :profile="editingCustomer ? profileFor(editingCustomer.id) : null"
+              :terms="terms"
+              :terms-blocker="termsBlocker"
+              :terms-load-failed="termsLoadFailed"
+              :terms-loading="termsLoading"
               :agent-options="agentOptions"
               :business-structure-options="businessStructureOptions"
               @submit="updateCustomer"

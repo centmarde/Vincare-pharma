@@ -1,4 +1,5 @@
 import type { ReferenceType } from '@/stores/glData'
+import { isCashGLAccount } from '@/utils/cashAccountTypes'
 
 // Transaction templates for the Books entry screen.
 //
@@ -40,6 +41,12 @@ export type BookField = {
   accountFilter?: { from: string; to: string }
   /** `account` fields only: the code selected by default. */
   defaultCode?: string
+  /** `account` fields only: codes the picker must not offer, whatever the range. */
+  excludeCode?: (code: string) => boolean
+  /** `account` fields only: the usual choices, offered as one-click picks —
+   *  named by the reason (`label`), since staff know why the money came in
+   *  before they know which account that is. */
+  suggestions?: { code: string; label: string; hint: string }[]
 }
 
 /** Values collected from the form: amounts by key, plus resolved GL codes. */
@@ -84,6 +91,37 @@ const amount = (key: string, label: string, extra: Partial<BookField> = {}): Boo
 
 const cashField = (label = 'Paid from / received into'): BookField =>
   ({ key: 'cash', label, kind: 'cashAccount' })
+
+/**
+ * What "Money received" may NOT be credited to, because each has its own
+ * screen that keeps a sub-ledger tied to it, and why — the reason is shown to
+ * whoever searches for one, rather than the account just not being there:
+ *   - cash accounts: money between two of our own accounts is a transfer
+ *     (Account Transfers / Bank Deposits), not money coming in;
+ *   - 1030 Accounts Receivable, 1035 PDC Receivable, 2065 Customer Credits:
+ *     a customer paying is a collection, recorded on the order, or the
+ *     customer's statement would never show the payment;
+ *   - 2010 Accounts Payable: the supplier aging is built from receipts and
+ *     payments, so a credit here would move the ledger and not the aging;
+ *   - 3030 Current Year Earnings: derived from the income statement, never
+ *     posted to.
+ */
+const customerPayment = 'A customer paying is recorded as a collection on the order, so it reaches their statement.'
+const subLedgerReasons: Record<string, string> = {
+  '1030': customerPayment,
+  '1035': customerPayment,
+  '2065': customerPayment,
+  '2010': 'Supplier money goes through Supplier Payments, so the supplier aging moves with it.',
+  '3030': 'Current Year Earnings is worked out from the income statement and is never posted to.',
+}
+
+/** Why an account cannot be credited with money received, or null if it can. */
+export function moneyReceivedBlockReason(code: string): string | null {
+  if (isCashGLAccount(code)) return 'Money moving between our own accounts is a transfer — use Account Transfers or Bank Deposits.'
+  return subLedgerReasons[code] ?? null
+}
+
+const notForMoneyReceived = (code: string) => moneyReceivedBlockReason(code) !== null
 
 export const bookTemplates: BookTemplate[] = [
   // ─── Bank ────────────────────────────────────────────────────────────────
@@ -310,6 +348,38 @@ export const bookTemplates: BookTemplate[] = [
     description: 'Post-dated cheque cleared',
     fields: [cashField('Paid from'), amount('amount', 'Cheque amount')],
     build: (v) => [dr('2015', v.amounts.amount), cr(v.codes.cash, v.amounts.amount)],
+  },
+
+  // ─── Cash received ───────────────────────────────────────────────────────
+  {
+    id: 'money_received',
+    group: 'Cash received',
+    title: 'Money received (not from a customer)',
+    summary: 'Money credited to us by someone who is not paying an invoice — SSS or Pag-IBIG paying back, a refund, a grant. The cash account is debited; pick the account to credit.',
+    // Posted like the other templates here, with no document behind it (the
+    // reference id stays null): the entry is the whole record, and its
+    // description carries who paid and their reference.
+    referenceType: 'manual',
+    description: 'Money received',
+    fields: [
+      cashField('Received into'),
+      {
+        key: 'creditAccount', label: 'Credit to', kind: 'account',
+        excludeCode: notForMoneyReceived,
+        hint: 'What the money is for. Customer payments are not entered here — record them as a collection on the order.',
+        // The accountant's call each time — what an agency pays back depends
+        // on how the original amount was booked. These are the usual ones.
+        suggestions: [
+          { code: '1080', label: 'Employee benefit paid back', hint: 'Paying back a benefit the company advanced to an employee and charged to Cash Advances – Employee (e.g. SSS sickness or maternity).' },
+          { code: '2030', label: 'SSS over-remittance', hint: 'SSS returning contributions remitted in excess, still on SSS Payable.' },
+          { code: '2050', label: 'Pag-IBIG over-remittance', hint: 'Pag-IBIG returning contributions remitted in excess, still on Pag-IBIG Payable.' },
+          { code: '7230', label: 'Employer-share refund', hint: 'A refund of employer-share contributions already booked as an expense.' },
+          { code: '4030', label: 'Other income', hint: 'Income with nothing owed back: a refund of a fee, a grant, a dividend.' },
+        ],
+      },
+      amount('amount', 'Amount received'),
+    ],
+    build: (v) => [dr(v.codes.cash, v.amounts.amount), cr(v.codes.creditAccount, v.amounts.amount)],
   },
 
   // ─── Owner ───────────────────────────────────────────────────────────────

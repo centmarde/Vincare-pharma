@@ -4,6 +4,7 @@ import { useToast } from 'vue-toastification'
 import { useCustomersDataStore } from '@/stores/customersData'
 import { useDiscountsDataStore } from '@/stores/discountsData'
 import type { CustomerType, CreateCustomerData } from '@/stores/customersData'
+import { useCustomerTerms } from '@/composables/useCustomerTerms'
 
 export const headers = [
   {title: 'Customer',key: 'name',sortable: true,align: 'start' as const,},
@@ -60,6 +61,8 @@ export function useSalesCustomers() {
   const showForm = ref(false)
   const editingId = ref<number | null>(null)
   const form = ref<CreateCustomerData>(emptyForm())
+  // Markup and discount — saved to the rows orders price from, after the customer.
+  const customerTerms = useCustomerTerms()
 
   const showAll = ref(false)
 
@@ -117,6 +120,7 @@ export function useSalesCustomers() {
   function openCreate() {
     editingId.value = null
     form.value = emptyForm()
+    void customerTerms.load(null)
     showForm.value = true
   }
 
@@ -147,8 +151,11 @@ export function useSalesCustomers() {
       rebate_ratio_distribution: customer.rebate_ratio_distribution,
       rebate_payment_mode: customer.rebate_payment_mode,
       rebate_payment_account_no: customer.rebate_payment_account_no,
+      // Undefined when it was never loaded, so it is not sent (schema 20261111).
+      product_preference: customer.product_preference,
     }
 
+    void customerTerms.load(customer)
     showForm.value = true
   }
 
@@ -162,11 +169,16 @@ export function useSalesCustomers() {
     if (!form.value.name?.trim()) {
       return false
     }
+    if (customerTerms.blocker.value) {
+      toast.warning(customerTerms.blocker.value)
+      return false
+    }
 
     const payload = editingId.value
-      ? { ...form.value }
+      ? { ...form.value, ...customerTerms.customerColumns() }
       : {
           ...form.value,
+          ...customerTerms.customerColumns(),
           department: 'pos',
         }
 
@@ -177,6 +189,7 @@ export function useSalesCustomers() {
     if (!result) {
       return false
     }
+    await customerTerms.saveFor(result)
 
     toast.success(editingId.value ? 'Customer updated.' : 'Customer created.')
 
@@ -218,6 +231,10 @@ export function useSalesCustomers() {
     showForm,
     editingId,
     form,
+    terms: customerTerms.terms,
+    termsBlocker: customerTerms.blocker,
+    termsLoading: customerTerms.loading,
+    termsLoadFailed: customerTerms.loadFailed,
     rules,
     headers,
     openCreate,

@@ -5,7 +5,7 @@ import { formatCurrency } from '@/utils/helpers'
 const {
   groups, templateId, template,
   entryDate, description, amounts, codes, cashIds, posting,
-  cashOptions, cashMovements, accountOptionsFor, accountName,
+  cashOptions, cashMovements, accountOptionsFor, suggestionsFor, accountName,
   lines, totalDebit, totalCredit,
   blockers, canSubmit,
   reset, submit,
@@ -103,13 +103,28 @@ function movementsFor(fieldKey: string) {
                       <strong>{{ formatCurrency(move.after) }}</strong>
                     </div>
                   </template>
-                  <v-autocomplete
-                    v-else
-                    v-model="codes[field.key]"
-                    :items="accountOptionsFor(field)" item-title="title" item-value="value"
-                    :label="field.label" :hint="field.hint" :persistent-hint="!!field.hint"
-                    density="compact" variant="outlined" auto-select-first
-                  />
+                  <template v-else>
+                    <v-autocomplete
+                      v-model="codes[field.key]"
+                      :items="accountOptionsFor(field)" item-title="title" item-value="value"
+                      :label="field.label" :hint="field.hint" :persistent-hint="!!field.hint"
+                      density="compact" variant="outlined" auto-select-first
+                    />
+                    <!-- The usual choices, one click each; the hint says when. -->
+                    <div v-if="suggestionsFor(field).length" class="d-flex flex-wrap ga-1 mt-2">
+                      <v-chip
+                        v-for="s in suggestionsFor(field)" :key="s.code"
+                        size="small" label
+                        :variant="codes[field.key] === s.code ? 'flat' : 'outlined'"
+                        :color="codes[field.key] === s.code ? 'primary' : undefined"
+                        :title="s.hint"
+                        @click="codes[field.key] = s.code"
+                      >
+                        {{ s.label }}
+                        <span class="ms-1 text-medium-emphasis">{{ s.code }}</span>
+                      </v-chip>
+                    </div>
+                  </template>
                 </v-col>
               </v-row>
 

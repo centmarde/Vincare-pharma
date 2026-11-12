@@ -33,7 +33,7 @@ const {
   draftPrintDocument,
   items, isNegotiating, isAwaitingStock, isReady, isDelivered, isPartiallyPaid, isPaid, canRecordPayment,
   shortDatedBatches, shortDatedRequest, shortDatedNote, requestShortDatedApproval,
-  proposedTotal, proposedCost, ratioLabel, ratioClass, profitLabel, marginLabel, deliveredPct, remaining, balance, paidPct,
+  proposedTotal, proposedCost, lineTotal, newLineTotal, ratioLabel, ratioClass, profitLabel, marginLabel, deliveredPct, remaining, balance, paidPct,
   payCashAccountId, cashAccountOptions,
   applyPickedProduct, recordCounter, recheck, deliver, recordPayment, notifyPurchasing,
   termsRequest, lockPending, unlockPending, lockRejected, unlockRejected, canRequestUnlock,
@@ -188,7 +188,7 @@ const productName = (id: number | null) =>
               </v-alert>
               <div class="text-caption font-weight-bold mb-1">Counter-offer (add or remove products, edit quantities and per-unit prices)</div>
               <v-table density="compact">
-                <thead><tr><th class="text-left">Product</th><th class="text-right" style="width:100px">Qty</th><th class="text-right" style="width:140px">PR Price</th><th class="text-right" style="width:110px">Cost/Unit</th><th style="width:48px" /></tr></thead>
+                <thead><tr><th class="text-left">Product</th><th class="text-right" style="width:100px">Qty</th><th class="text-right" style="width:140px">PR Price</th><th class="text-right" style="width:130px">Total</th><th class="text-right" style="width:110px">Cost/Unit</th><th style="width:48px" /></tr></thead>
                 <tbody>
                   <tr v-for="it in items" :key="it.id" :class="{ 'text-disabled': isRemoved(it.id) }">
                     <td>
@@ -219,6 +219,9 @@ const productName = (id: number | null) =>
                       <v-text-field v-model.number="lineQtyEdits[it.id]" type="number" min="1" variant="outlined" density="compact" hide-details :disabled="isRemoved(it.id)" />
                     </td>
                     <td><v-text-field v-model.number="lineEdits[it.id]" type="number" min="0" prefix="₱" variant="outlined" density="compact" hide-details :disabled="isRemoved(it.id)" /></td>
+                    <!-- Per product, qty × PR price — the same figure the
+                         Proposed total below adds up. A removed line counts 0. -->
+                    <td class="text-right font-weight-medium text-no-wrap">{{ isRemoved(it.id) ? '—' : formatCurrency(lineTotal(it)) }}</td>
                     <td class="text-right text-medium-emphasis">{{ formatCurrency(lineCostEdits[it.id] ?? it.cost_price ?? 0) }}</td>
                     <td class="text-center">
                       <v-btn v-if="isRemoved(it.id)" icon="mdi-undo" variant="text" size="x-small" title="Keep this line" @click="restoreItem(it.id)" />
@@ -249,6 +252,7 @@ const productName = (id: number | null) =>
                     </td>
                     <td><v-text-field v-model.number="nl.qty" type="number" min="1" variant="outlined" density="compact" hide-details /></td>
                     <td><v-text-field v-model.number="nl.offer_unit" type="number" min="0" prefix="₱" variant="outlined" density="compact" hide-details /></td>
+                    <td class="text-right font-weight-medium text-no-wrap">{{ formatCurrency(newLineTotal(nl)) }}</td>
                     <td class="text-right text-medium-emphasis">{{ formatCurrency(nl.cost_unit) }}</td>
                     <td class="text-center">
                       <v-btn icon="mdi-close" variant="text" size="x-small" title="Discard this new line" @click="removeNewLine(idx)" />

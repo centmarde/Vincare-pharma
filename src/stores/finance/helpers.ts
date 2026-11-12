@@ -25,6 +25,20 @@ export const categoryTitle = (
   return legacyExpenseCategories.find((c) => c.value === value)?.title ?? value
 }
 
+/**
+ * The supplier's own document numbers on a receipt — "DO NO. 2026-557",
+ * "DR NO. 235260", "SI NO. 4450". There is no column for them: Purchasing types
+ * them into the receipt's remarks as "DO NO. 2026-557 = 190,000.00", one per
+ * line, so they are read from there. A line in any other shape is ignored.
+ */
+export function supplierDocRefs(remarks: string | null | undefined): string[] {
+  const refs: string[] = []
+  for (const match of (remarks ?? '').matchAll(/\b([A-Z]{2,4})\s*NO\.?\s*([A-Z0-9][A-Z0-9/.-]*)\s*=/gi)) {
+    refs.push(`${match[1].toUpperCase()} NO. ${match[2].replace(/\.+$/, '')}`)
+  }
+  return [...new Set(refs)]
+}
+
 export function apBucketFor(daysOutstanding: number): APAgeBucket {
   if (daysOutstanding <= 30) return '0-30'
   if (daysOutstanding <= 60) return '31-60'
