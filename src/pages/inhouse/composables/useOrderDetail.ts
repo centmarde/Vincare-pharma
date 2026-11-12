@@ -138,9 +138,16 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   const qtyFor = (i: { id: number; qty: number }) => Number(lineQtyEdits.value[i.id] ?? i.qty)
   const validNewLines = computed(() => newLines.value.filter((l) => l.product_id && l.qty > 0))
 
+  /** One line's amount as currently edited — qty × PR price. The table's
+   *  per-product Total and the Proposed total both read these, so they agree. */
+  const lineTotal = (i: { id: number; qty: number; unit_price: number }) =>
+    (Number(lineEdits.value[i.id] ?? i.unit_price) || 0) * qtyFor(i)
+  const newLineTotal = (l: { qty: number; offer_unit: number }) =>
+    (Number(l.offer_unit) || 0) * (Number(l.qty) || 0)
+
   const proposedTotal = computed(() =>
-    keptItems.value.reduce((s, i) => s + (lineEdits.value[i.id] ?? i.unit_price) * qtyFor(i), 0)
-    + validNewLines.value.reduce((s, l) => s + l.offer_unit * l.qty, 0))
+    keptItems.value.reduce((s, i) => s + lineTotal(i), 0)
+    + validNewLines.value.reduce((s, l) => s + newLineTotal(l), 0))
   const proposedCost = computed(() =>
     keptItems.value.reduce((s, i) => s + (lineCostEdits.value[i.id] ?? i.cost_price ?? 0) * qtyFor(i), 0)
     + validNewLines.value.reduce((s, l) => s + l.cost_unit * l.qty, 0))
@@ -560,7 +567,7 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     shortDatedBatches, shortDatedRequest, shortDatedNote,
     loadShortDated, requestShortDatedApproval,
     items, status, isNegotiating, isAwaitingStock, isReady, isDelivered, isPartiallyPaid, isPaid, canRecordPayment,
-    proposedTotal, proposedCost, proposedRatio, ratioLabel, ratioClass, profitLabel, marginLabel, deliveredPct, remaining, balance, paidPct,
+    proposedTotal, proposedCost, proposedRatio, lineTotal, newLineTotal, ratioLabel, ratioClass, profitLabel, marginLabel, deliveredPct, remaining, balance, paidPct,
     applyPickedProduct, recordCounter, recheck, deliver, recordPayment, notifyPurchasing,
     termsRequest, termsPending, lockPending, unlockPending, lockRejected, unlockRejected, canRequestUnlock,
     requestTermsApproval, withdrawTermsRequest, requestUnapprove,

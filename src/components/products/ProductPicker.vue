@@ -82,6 +82,7 @@ const term = () => searchInput.value ?? ''
  * in arrival order preserves that: `head` is always the first-expiring batch.
  */
 type NameGroup = {
+  key: string
   name: string
   head: ProductPickerResult
   batches: ProductPickerResult[]
@@ -93,10 +94,11 @@ const groups = computed<NameGroup[]>(() => {
   const byName = new Map<string, NameGroup>()
   for (const row of products.value) {
     const name = row.product_name ?? ''
-    let group = byName.get(name)
+    const key = `${name}\u0000${row.brand ?? ''}`
+    let group = byName.get(key)
     if (!group) {
-      group = { name, head: row, batches: [], totalStock: 0 }
-      byName.set(name, group)
+      group = { key, name, head: row, batches: [], totalStock: 0 }
+      byName.set(key, group)
       out.push(group)
     }
     group.batches.push(row)
@@ -104,6 +106,10 @@ const groups = computed<NameGroup[]>(() => {
   }
   return out
 })
+
+const loadedNameCount = computed(
+  () => new Set(products.value.map((r) => r.product_name ?? '')).size,
+)
 
 function runSearch() {
   currentLimit.value = PAGE_SIZE
@@ -114,7 +120,7 @@ function runSearch() {
       // Counted in NAMES, not rows: the RPC pages by distinct product_name and
       // returns every batch of the names on that page, so rows routinely
       // outnumber pickerTotalCount and comparing rows would hide "See more".
-      hasMore.value = groups.value.length < pickerTotalCount.value
+      hasMore.value = loadedNameCount.value < pickerTotalCount.value
     })
 }
 
@@ -145,7 +151,7 @@ async function loadMore() {
       limit: currentLimit.value,
       locationId: props.locationId,
     })
-    hasMore.value = groups.value.length < pickerTotalCount.value
+    hasMore.value = loadedNameCount.value < pickerTotalCount.value
   } finally {
     loadingMore.value = false
   }
@@ -201,7 +207,7 @@ function onGroupClick(group: NameGroup) {
     pick(group.head)
     return
   }
-  toggleExpand(group.name)
+  toggleExpand(group.key)
 }
 
 function pick(product: ProductPickerResult) {
@@ -267,7 +273,7 @@ watch(
         </div>
 
         <v-list v-else lines="two" density="comfortable">
-          <template v-for="group in groups" :key="group.name">
+          <template v-for="group in groups" :key="group.key">
             <v-list-item class="product-row rounded-lg mb-1" @click="onGroupClick(group)">
               <template #title>
                 <span class="font-weight-bold">{{ group.name || 'Unnamed product' }}</span>
@@ -315,7 +321,7 @@ watch(
                   </div>
                   <v-icon
                     v-if="mode === 'batch' && group.batches.length > 1"
-                    :icon="isExpanded(group.name) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                    :icon="isExpanded(group.key) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
                     size="20"
                   />
                 </div>
@@ -325,7 +331,7 @@ watch(
             <!-- Batch list. Only reachable in batch mode, and only for a name
                  holding more than one — a single batch is selected by its name
                  row, so opening a one-item sub-list would be a dead click. -->
-            <template v-if="mode === 'batch' && group.batches.length > 1 && isExpanded(group.name)">
+            <template v-if="mode === 'batch' && group.batches.length > 1 && isExpanded(group.key)">
               <v-list-item
                 v-for="batch in group.batches"
                 :key="batch.id"

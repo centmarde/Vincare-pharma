@@ -31,7 +31,7 @@
   "author": "Vincare Pharma",
   "lastUpdated": "2026-06-02",
   "outOfService": {
-    "enabled": true
+    "enabled": false
   },
   "theme": {
     "primaryColor": "#9d0f0f",

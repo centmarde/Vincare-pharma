@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { productPreferenceLabel } from '@/stores/customersData'
 import type { CustomerType } from '@/stores/customersData'
 import type { DiscountProfile } from '@/stores/discountsData'
 import CustomerTermsCard from './CustomerTermsCard.vue'
@@ -60,6 +61,7 @@ const groups = computed(() => [
     title: 'Trade profile',
     items: [
       ['Category', c.value.category],
+      ['Buys', productPreferenceLabel(c.value.product_preference)],
       ['Products sold', c.value.product_sales_list],
       ['Target sales', c.value.target_sales],
       ['Payment method', c.value.payment_method],

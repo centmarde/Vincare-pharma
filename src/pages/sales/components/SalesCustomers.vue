@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ProductPreferenceChip from '@/components/customers/ProductPreferenceChip.vue'
 import { computed, onMounted } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useSalesCustomers } from '../composables/useSalesCustomers'
@@ -25,6 +26,10 @@ const {
   showForm,
   editingId,
   form,
+  terms,
+  termsBlocker,
+  termsLoading,
+  termsLoadFailed,
   rules,
   headers,
   openCreate,
@@ -209,6 +214,7 @@ const displayedCustomers = computed(() => customers.value ?? filtered.value)
               <span class="font-weight-medium">
                 {{ item.name || notSet('name') }}
               </span>
+              <ProductPreferenceChip :value="item.product_preference" />
             </div>
           </template>
 
@@ -318,6 +324,10 @@ const displayedCustomers = computed(() => customers.value ?? filtered.value)
         :mobile="mobile"
         :editing-id="editingId"
         v-model:form="form"
+        :terms="terms"
+        :terms-blocker="termsBlocker"
+        :terms-loading="termsLoading"
+        :terms-load-failed="termsLoadFailed"
         :rules="rules"
         :loading="loading"
         @cancel="cancelForm"

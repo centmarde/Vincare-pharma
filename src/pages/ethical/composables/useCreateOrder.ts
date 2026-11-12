@@ -198,9 +198,11 @@ export function useCreateOrder(onCreated: () => void) {
   const netUnitPrice = (unitPrice: number) => round2(unitPrice * (1 - giveawayRate.value / 100))
   const netRevenue = computed(() => round2(subtotal.value * (1 - giveawayRate.value / 100)))
 
-  // 🔴 Hard floor — a line whose net lands under the product's cost is sold at a
-  // real loss. Blocks submit. Lines with no cost_price on the master can't be
-  // judged, so they're skipped rather than guessed at.
+  // 🟠 A line whose net lands under the product's cost is sold at a real loss.
+  // WARNED, not blocked (2026-11-11): selling below cost is sometimes a
+  // deliberate marketing call, and the business asked for it to be allowed.
+  // Lines with no cost_price on the master can't be judged, so they're skipped
+  // rather than guessed at.
   // Carries only WHICH line is underpriced — not the net or the cost behind the
   // judgement. Selling staff must not see company cost, so the figures are not
   // handed to the template at all rather than merely left unrendered.
@@ -333,6 +335,13 @@ export function useCreateOrder(onCreated: () => void) {
     if (!customerId.value) { toast.warning('Select a customer.'); return false }
     if (!outletId.value) { toast.warning('Select a branch.'); return false }
     if (!validLines.value.length) { toast.warning('Add at least one product with quantity.'); return false }
+    // Below cost is allowed (a marketing call) and ₱0 is a free giveaway, but a
+    // negative price is a typo — other lines could hide it in the total.
+    const negative = validLines.value.find(l => !(Number(l.unit_price) >= 0))
+    if (negative) {
+      toast.warning(`${negative.product_name || 'A line'} has a price below zero. Enter 0 for a free item.`)
+      return false
+    }
     return true
   }
 
@@ -382,12 +391,8 @@ export function useCreateOrder(onCreated: () => void) {
   // is when the EO number is issued and the stock is drawn.
   async function submit() {
     if (!validateForm()) return
-    // Never let a below-cost sale through — after discount + rebate this order
-    // would realize less than the goods cost us.
-    if (hasBelowCostLine.value) {
-      toast.error(`Cannot submit: ${belowCostLines.value.length} line(s) are priced below the allowed minimum.`)
-      return
-    }
+    // A below-cost line is allowed (a marketing call); the dialog has already
+    // warned which lines it is.
 
     const startedNew = editingDraftId.value === null
     loading.value = true

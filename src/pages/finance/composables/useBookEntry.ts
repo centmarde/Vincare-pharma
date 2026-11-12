@@ -79,10 +79,17 @@ export function useBookEntry() {
   const accountOptionsFor = (field: BookField) =>
     accounts.value
       .filter((a) => {
+        if (field.excludeCode?.(a.code)) return false
         if (!field.accountFilter) return true
         return a.code >= field.accountFilter.from && a.code <= field.accountFilter.to
       })
       .map((a) => ({ value: a.code, title: `${a.code} — ${a.name}` }))
+
+  /** A field's one-click picks, named from the chart; codes not in it are dropped. */
+  const suggestionsFor = (field: BookField) =>
+    (field.suggestions ?? [])
+      .filter((s) => accounts.value.some((a) => a.code === s.code))
+      .map((s) => ({ ...s, name: accountName(s.code) }))
 
   /** Reset the form whenever a different template is picked. */
   watch(template, (next) => {
@@ -272,7 +279,7 @@ export function useBookEntry() {
   return {
     groups, templateId, template,
     entryDate, description, amounts, codes, cashIds, posting,
-    cashOptions, cashMovements, accountOptionsFor, accountName,
+    cashOptions, cashMovements, accountOptionsFor, suggestionsFor, accountName,
     lines, totalDebit, totalCredit, isBalanced,
     blockers, canSubmit,
     load, reset, submit,

@@ -8,6 +8,7 @@ import { useGLDataStore, openingBalanceEquityCode } from '@/stores/glData'
 import { useCustomersDataStore } from '@/stores/customersData'
 import { generateNextNumber, insertWithDocRetry, getErrorMessage, formatCurrency } from '@/utils/helpers'
 import { fetchAllRows, fetchAllRowsForIds } from '@/stores/shared/paging'
+import { creditMemo } from '@/utils/paymentMethods'
 
 // Opening receivables — invoices raised BEFORE the cutover to this system that
 // the customer has not finished paying.
@@ -56,7 +57,29 @@ export type OpeningReceivableInput = {
    */
   cutoverDate: string
   remarks?: string
+  /**
+   * A credit memo the customer was already given against this invoice before
+   * cutover. Recorded as a credit on the receivable (so it shows in the SOA's
+   * Credit column with their own CM number), but booked to Opening Balance
+   * Equity rather than Sales Returns — see addOpeningReceivable.
+   */
+  creditMemo?: PreCutoverCreditMemo | null
 }
+
+export type PreCutoverCreditMemo = {
+  /** Their own CM number, as printed on the old memo. */
+  number: string
+  /** The date on their memo — on or before cutover. */
+  date: string
+  amount: number
+  reason?: string
+}
+
+/**
+ * Every pre-cutover credit memo's collection remarks start with this — how one
+ * is told apart from a credit memo issued through this system since.
+ */
+export const preCutoverCreditPrefix = 'Credit memo before cutover'
 
 /** Every opening receivable's remarks start with this — it is how they are told apart from real orders. */
 export const openingRemarksPrefix = 'Opening receivable — original invoice '
@@ -94,7 +117,13 @@ export type OpeningReceivableRow = {
   originalAmount: number
   /** Paid before cutover — what was netted off when it was recorded. */
   paidBeforeCutover: number
-  /** Collected through this system since. */
+  /** Credit memo(s) given before cutover, recorded with it. */
+  creditBeforeCutover: number
+  /** Their CM number and date, when there is one. */
+  creditMemoNo: string
+  creditMemoDate: string | null
+  creditMemoReason: string
+  /** Collected through this system since — the pre-cutover credit memo is not counted. */
   collectedSince: number
   outstanding: number
   /** The date its ledger entry carries. */
@@ -103,6 +132,10 @@ export type OpeningReceivableRow = {
 
 const dayMs = 86400000
 const isoDay = (value: string | null | undefined) => (value ? String(value).slice(0, 10) : '')
+
+/** Whether a collection is the credit memo recorded with an opening receivable. */
+export const isPreCutoverCredit = (remarks: string | null | undefined) =>
+  (remarks ?? '').startsWith(preCutoverCreditPrefix)
 
 export const useOpeningReceivablesStore = defineStore('openingReceivables', () => {
   const toast = useToast()
@@ -139,13 +172,31 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
       const ids = rows.map((r) => Number(r.id))
       const [collections, entries] = await Promise.all([
         fetchAllRowsForIds<any>(ids, (batch) => supabase.from('collections')
-          .select('id, transaction_id, amount').in('transaction_id', batch).is('voided_at', null).order('id', { ascending: true })),
+          .select('id, transaction_id, amount, remarks, reference_no, created_at')
+          .in('transaction_id', batch).is('voided_at', null).order('id', { ascending: true })),
         fetchAllRowsForIds<any>(ids, (batch) => supabase.from('journal_entries')
           .select('id, reference_id, entry_date, status, reverses_entry')
           .eq('reference_type', 'sales_invoice').in('reference_id', batch).order('id', { ascending: true })),
       ])
+      // Collected since cutover, and the credit memo recorded WITH the
+      // receivable, kept apart: the second is part of its opening position,
+      // not a payment received here.
       const collected = new Map<number, number>()
-      for (const c of collections) collected.set(Number(c.transaction_id), (collected.get(Number(c.transaction_id)) ?? 0) + Number(c.amount ?? 0))
+      const preCredit = new Map<number, { amount: number; no: string; date: string | null; reason: string }>()
+      for (const c of collections) {
+        const id = Number(c.transaction_id)
+        if (isPreCutoverCredit(c.remarks)) {
+          const prev = preCredit.get(id)
+          preCredit.set(id, {
+            amount: (prev?.amount ?? 0) + Number(c.amount ?? 0),
+            no: prev?.no || (c.reference_no ?? ''),
+            date: prev?.date ?? (c.created_at ? isoDay(c.created_at) : null),
+            reason: prev?.reason || String(c.remarks ?? '').slice(preCutoverCreditPrefix.length).replace(/^ — /, ''),
+          })
+        } else {
+          collected.set(id, (collected.get(id) ?? 0) + Number(c.amount ?? 0))
+        }
+      }
       const cutover = new Map<number, string>()
       for (const e of entries) if (e.status === 'posted' && e.reverses_entry == null) cutover.set(Number(e.reference_id), e.entry_date)
 
@@ -161,6 +212,7 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
         const total = Number(r.total_amount ?? 0)
         const paid = Number(details.amount_paid ?? 0)
         const since = collected.get(Number(r.id)) ?? 0
+        const credit = preCredit.get(Number(r.id))
         return {
           id: r.id,
           docNo: (isInhouse ? r.inhouse_no : r.ethical_no) ?? null,
@@ -173,7 +225,13 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
           termDays,
           dueDate,
           originalAmount: total,
-          paidBeforeCutover: Math.max(0, Math.round((paid - since) * 100) / 100),
+          // amount_paid carries all three: paid before, credited before, and
+          // collected since.
+          paidBeforeCutover: Math.max(0, Math.round((paid - since - (credit?.amount ?? 0)) * 100) / 100),
+          creditBeforeCutover: credit?.amount ?? 0,
+          creditMemoNo: credit?.no ?? '',
+          creditMemoDate: credit?.date ?? null,
+          creditMemoReason: credit?.reason ?? '',
           collectedSince: since,
           outstanding: Math.max(0, total - paid),
           cutoverDate: cutover.get(Number(r.id)) ?? null,
@@ -187,6 +245,74 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
     } finally {
       recordedLoading.value = false
     }
+  }
+
+  /**
+   * Record a credit memo given before cutover against an opening receivable.
+   *
+   * A `collections` row with payment_method 'credit_memo' and their CM number,
+   * dated at the memo's own date — the same shape a credit memo issued here
+   * takes, so the SOA's Credit column, the AR detail and the order all show
+   * it with no special case.
+   *
+   * Its ledger entry is written HERE, not left to the projector: the projector
+   * books a credit memo DR 4020 Sales Returns / CR 1030, which would charge
+   * this period for a credit given on a sale these books never recorded. This
+   * books DR 3050 Opening Balance Equity / CR 1030 at the cutover date — the
+   * mirror of the receivable's own opening entry — under reference_type
+   * 'collection' and the collection's id, which the projector's collections
+   * loop finds and skips.
+   */
+  async function recordPreCutoverCredit(
+    transactionId: number, docNo: string | null, credit: PreCutoverCreditMemo, cutoverDate: string, userId: string,
+  ): Promise<{ success: boolean; error?: string; strandedCollectionId?: number }> {
+    const reason = credit.reason?.trim()
+    const { data: row, error: insertError } = await supabase
+      .from('collections')
+      .insert({
+        transaction_id: transactionId,
+        amount: credit.amount,
+        payment_method: creditMemo,
+        reference_no: credit.number.trim() || null,
+        remarks: reason ? `${preCutoverCreditPrefix} — ${reason}` : preCutoverCreditPrefix,
+        collected_by: userId,
+        agent_id: null,
+        // A credit is not a sale collected: no commission on it.
+        commission_rate: 0,
+        commission_amount: 0,
+        cash_account_id: null,
+        created_at: credit.date,
+      })
+      .select('id')
+      .single()
+    if (insertError || !row) return { success: false, error: getErrorMessage(insertError) || 'the credit could not be saved' }
+
+    const posted = await glStore.postJournalEntry(
+      cutoverDate,
+      'collection',
+      row.id,
+      `Credit memo ${credit.number.trim() || '(unnumbered)'} before cutover — on opening receivable ${docNo ?? ''}`.trim(),
+      [
+        { account_code: openingBalanceEquityCode, debit: credit.amount, credit: 0 },
+        { account_code: '1030', debit: 0, credit: credit.amount },
+      ],
+      userId,
+    )
+    if (!posted.success) {
+      // Never leave the credit without its entry: the projector would book it
+      // to Sales Returns on its next run. If even the cleanup fails, say which
+      // row is left so it can be removed by hand.
+      const { error: deleteError } = await supabase.from('collections').delete().eq('id', row.id)
+      if (deleteError) {
+        return {
+          success: false,
+          error: `its ledger entry could not be posted, and credit #${row.id} could not be removed — it needs manual cleanup`,
+          strandedCollectionId: row.id,
+        }
+      }
+      return { success: false, error: posted.error || 'its ledger entry could not be posted' }
+    }
+    return { success: true }
   }
 
   /** Undo a partially-written receivable so a retry cannot double-record it. */
@@ -205,15 +331,30 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
       toast.error('User not authenticated.'); loading.value = false; return { success: false as const }
     }
 
-    const outstanding = payload.originalAmount - payload.alreadyPaid
+    const credit = payload.creditMemo && payload.creditMemo.amount > 0 ? payload.creditMemo : null
+    const creditAmount = credit?.amount ?? 0
+    // What the customer owed at cutover before the credit memo — the opening
+    // entry books this, and the credit memo's own entry takes its amount off.
+    const beforeCredit = payload.originalAmount - payload.alreadyPaid
+    const outstanding = beforeCredit - creditAmount
     if (payload.originalAmount <= 0) {
       toast.error('The original invoice amount must be positive.'); loading.value = false; return { success: false as const }
     }
     if (payload.alreadyPaid < 0) {
       toast.error('Amount already collected cannot be negative.'); loading.value = false; return { success: false as const }
     }
+    if ((payload.creditMemo?.amount ?? 0) < 0) {
+      toast.error('The credit memo amount cannot be negative.'); loading.value = false; return { success: false as const }
+    }
+    if (credit && (!credit.date || credit.date > payload.cutoverDate)) {
+      toast.error('A credit memo recorded here must be dated on or before the cutover date — one issued since is requested as a credit memo on the receivable.')
+      loading.value = false
+      return { success: false as const }
+    }
     if (outstanding <= 0.005) {
-      toast.error('This invoice is already fully paid — there is nothing outstanding to record.')
+      toast.error(credit
+        ? 'With the credit memo, nothing is outstanding on this invoice — there is nothing to record.'
+        : 'This invoice is already fully paid — there is nothing outstanding to record.')
       loading.value = false
       return { success: false as const }
     }
@@ -282,11 +423,13 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
       return { success: false as const }
     }
 
+    // amount_paid holds the credit memo too, the way every credit on this
+    // system does, so AR, the SOA and the order all read the same balance.
     const detailRow = isInhouse
-      ? { transaction_id: created.id, amount_paid: payload.alreadyPaid, due_date: dueDate }
+      ? { transaction_id: created.id, amount_paid: payload.alreadyPaid + creditAmount, due_date: dueDate }
       : {
           transaction_id: created.id,
-          amount_paid: payload.alreadyPaid,
+          amount_paid: payload.alreadyPaid + creditAmount,
           due_date: dueDate,
           terms_days: payload.termDays,
         }
@@ -309,8 +452,8 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
       created.id,
       `Opening receivable ${docNo} — ${payload.originalNo || 'unnumbered'}`,
       [
-        { account_code: '1030', debit: outstanding, credit: 0 },
-        { account_code: openingBalanceEquityCode, debit: 0, credit: outstanding },
+        { account_code: '1030', debit: beforeCredit, credit: 0 },
+        { account_code: openingBalanceEquityCode, debit: 0, credit: beforeCredit },
       ],
       user.id,
     )
@@ -324,6 +467,36 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
       return { success: false as const }
     }
 
+    if (credit) {
+      const recordedCredit = await recordPreCutoverCredit(created.id, docNo, credit, payload.cutoverDate, user.id)
+      if (!recordedCredit.success) {
+        // Back the whole thing out rather than leave a receivable that looks
+        // right but owes the credit memo's amount more than it should. The
+        // opening entry is reversed, not deleted — posted entries stay.
+        const reversed = glResult.entryId
+          ? await glStore.reverseJournalEntry(glResult.entryId, user.id)
+          : { success: true }
+        handleError(recordedCredit.error, 'Failed to record the credit memo.')
+        if (reversed.success && !recordedCredit.strandedCollectionId) {
+          await rollback(created.id)
+          toast.error(`Could not record the credit memo: ${recordedCredit.error}. Nothing was recorded.`)
+        } else {
+          // Something could not be undone. Keep the document, cancelled, so
+          // what is left behind points at a record instead of at nothing.
+          await supabase.from('transactions')
+            .update({ status: 'cancelled', remarks: `Recording failed — needs checking | ${remarks}` })
+            .eq('id', created.id)
+          const leftovers = [
+            !reversed.success && `reverse the opening entry for ${docNo ?? 'this receivable'} in General Journal`,
+            recordedCredit.strandedCollectionId && `remove credit #${recordedCredit.strandedCollectionId}`,
+          ].filter(Boolean).join(' and ')
+          toast.error(`Could not record the credit memo, and it could not be fully backed out — ${leftovers}.`)
+        }
+        loading.value = false
+        return { success: false as const }
+      }
+    }
+
     // Same as a real order: a customer with no department yet is tagged with
     // the one they first traded through. Never relabels one already set.
     await customersStore.stampDepartmentIfBlank(payload.customerId, payload.department)
@@ -331,12 +504,14 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
     await supabase.from('logs').insert({
       created_by: user.id,
       action: 'opening_receivable_add',
-      description: `${docNo} | ${payload.originalNo} | outstanding ${outstanding}`,
+      description: `${docNo} | ${payload.originalNo} | outstanding ${outstanding}`
+        + (credit ? ` | credit memo ${credit.number || '(unnumbered)'} ${creditAmount}` : ''),
       module: 'finance',
       transaction_id: created.id,
     })
 
-    toast.success(`Opening receivable ${docNo} recorded — ${formatCurrency(outstanding)} outstanding.`)
+    toast.success(`Opening receivable ${docNo} recorded — ${formatCurrency(outstanding)} outstanding`
+      + (credit ? ` after the ${formatCurrency(creditAmount)} credit memo.` : '.'))
     loading.value = false
     return { success: true as const, transactionId: created.id, docNo }
   }
@@ -348,7 +523,9 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
    * either — an opening balance that silently vanished is worse than one
    * visibly voided, since the accountant needs to see that the figure was
    * entered and backed out. Refused once anything has been collected against
-   * it, the same rule ethical_cancel_order applies.
+   * it, the same rule ethical_cancel_order applies — except the credit memo
+   * recorded with it, which is part of the same opening position and is
+   * reversed and voided along with it.
    */
   async function voidOpeningReceivable(transactionId: number, reason: string) {
     loading.value = true
@@ -359,28 +536,93 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
       toast.error('User not authenticated.'); loading.value = false; return { success: false as const }
     }
 
-    const { count } = await supabase
+    const { data: live, error: liveError } = await supabase
       .from('collections')
-      .select('id', { count: 'exact', head: true })
+      .select('id, remarks')
       .eq('transaction_id', transactionId)
       .is('voided_at', null)
-    if ((count ?? 0) > 0) {
+    if (liveError) {
+      toast.error('Could not check the payments on this receivable. Nothing was changed.')
+      loading.value = false
+      return { success: false as const }
+    }
+    // The credit memo recorded WITH it goes with it; anything collected since
+    // has to be voided on its own first.
+    const preCredits = (live ?? []).filter((c) => isPreCutoverCredit(c.remarks))
+    if ((live ?? []).length > preCredits.length) {
       toast.error('This receivable has collections against it and cannot be voided. Void those first.')
       loading.value = false
       return { success: false as const }
     }
 
-    const { data: entry } = await supabase
+    // Its own credit memo first: reverse that entry and void the credit. Done
+    // before the receivable's entry so a failure stops with the receivable
+    // untouched.
+    // Set once the first credit memo is touched: from then on a failure is no
+    // longer "nothing was changed".
+    let creditsChanged = false
+    const stoppedPartWay = 'This receivable\'s credit memo was already voided — please check the receivable before trying again.'
+    for (const c of preCredits) {
+      const { data: creditEntry, error: lookupError } = await supabase
+        .from('journal_entries').select('id')
+        .eq('reference_type', 'collection').eq('reference_id', c.id).eq('status', 'posted')
+        // The original only: a reversal carries the same reference and is also
+        // 'posted', and reversing it would revive the credit's entry on a retry.
+        .is('reverses_entry', null)
+        .maybeSingle()
+      // A failed lookup reads as "no entry"; voiding the credit then would
+      // leave its DR 3050 / CR 1030 live with nothing behind it.
+      if (lookupError) {
+        toast.error(creditsChanged
+          ? `Could not check a credit memo's ledger entry. ${stoppedPartWay}`
+          : 'Could not check the credit memo\'s ledger entry. Nothing was changed.')
+        loading.value = false
+        return { success: false as const }
+      }
+      if (creditEntry) {
+        const reversed = await glStore.reverseJournalEntry(creditEntry.id, user.id)
+        if (!reversed.success) {
+          toast.error(creditsChanged
+            ? `${reversed.error || 'Could not reverse a credit memo\'s ledger entry.'} ${stoppedPartWay}`
+            : reversed.error || 'Could not reverse the credit memo\'s ledger entry. Nothing was changed.')
+          loading.value = false
+          return { success: false as const }
+        }
+        creditsChanged = true
+      }
+      const { error: voidError } = await supabase
+        .from('collections')
+        .update({ voided_at: new Date().toISOString(), voided_by: user.id, void_reason: reason })
+        .eq('id', c.id)
+      if (voidError) {
+        toast.error('The credit memo\'s entry was reversed, but the credit itself could not be voided — please check it.')
+        loading.value = false
+        return { success: false as const }
+      }
+      creditsChanged = true
+    }
+
+    const { data: entry, error: entryLookupError } = await supabase
       .from('journal_entries')
       .select('id')
       .eq('reference_type', 'sales_invoice')
       .eq('reference_id', transactionId)
       .eq('status', 'posted')
+      .is('reverses_entry', null)
       .maybeSingle()
+    if (entryLookupError) {
+      toast.error(creditsChanged
+        ? `Could not check the receivable's ledger entry. ${stoppedPartWay}`
+        : 'Could not check the receivable\'s ledger entry. Nothing was changed.')
+      loading.value = false
+      return { success: false as const }
+    }
     if (entry) {
       const reversed = await glStore.reverseJournalEntry(entry.id, user.id)
       if (!reversed.success) {
-        toast.error(reversed.error || 'Could not reverse the ledger entry. Nothing was changed.')
+        toast.error(creditsChanged
+          ? `${reversed.error || 'Could not reverse the receivable\'s ledger entry.'} ${stoppedPartWay}`
+          : reversed.error || 'Could not reverse the ledger entry. Nothing was changed.')
         loading.value = false
         return { success: false as const }
       }

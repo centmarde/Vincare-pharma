@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import { useRoute } from 'vue-router'
-import { useDisbursementVouchers } from '../composables/useDisbursementVouchers'
+import { computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { prefillFromQuery, useDisbursementVouchers } from '../composables/useDisbursementVouchers'
 import VoucherFormDialog from './dialogs/VoucherFormDialog.vue'
 import VoucherPrintDialog from './dialogs/VoucherPrintDialog.vue'
+import VoucherRegisterPrintDialog from './dialogs/VoucherRegisterPrintDialog.vue'
+import VoucherDetailPanel from './VoucherDetailPanel.vue'
 import VoucherStampDialog from './dialogs/VoucherStampDialog.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import { financePageSizes } from '../composables/financeTable'
@@ -28,6 +30,14 @@ const {
   loading,
   showFormDialog,
   editTarget,
+  createPrefill,
+  showRegisterPrint,
+  openRegisterPrint,
+  visibleColumns,
+  columnOptions,
+  isColumnVisible,
+  toggleColumn,
+  showAllColumns,
   showPrintDialog,
   printTarget,
   printCopyNo,
@@ -41,7 +51,9 @@ const {
   canRecord,
   canCancel,
   recordBlockedReason,
-  particularsSummary,
+  particularsOf,
+  accountsSummary,
+  expanded,
   init,
   openCreateDialog,
   openEditDialog,
@@ -57,12 +69,26 @@ const {
 } = useDisbursementVouchers()
 
 const route = useRoute()
+const router = useRouter()
+
+// What the printed list starts from: the dates, account and columns on screen.
+const registerStart = computed(() => ({
+  dateFrom: dateFrom.value,
+  dateTo: dateTo.value,
+  account: accountFilter.value,
+  columns: visibleColumns.value,
+}))
 
 onMounted(async () => {
   await init()
-  // Arriving from the Expenses page's Record Expense button — open straight
-  // into the form rather than making the user click New Voucher again.
-  if (route.query.new !== undefined) openCreateDialog()
+  // Arriving from the Expenses page's Record Expense button, or from Supplier
+  // Payments with the bill to pay — open straight into the form rather than
+  // making the user click New Voucher again.
+  if (route.query.new !== undefined) {
+    openCreateDialog(prefillFromQuery(route.query))
+    // Dropped from the address so a refresh does not raise the form again.
+    void router.replace({ query: {} })
+  }
 })
 </script>
 
@@ -76,15 +102,26 @@ onMounted(async () => {
             One payee per voucher. Print and sign it before recording the expenses.
           </div>
         </div>
-        <v-btn
-          color="primary"
-          class="text-none font-weight-bold"
-          elevation="0"
-          prepend-icon="mdi-file-document-plus-outline"
-          @click="openCreateDialog"
-        >
-          New Voucher
-        </v-btn>
+        <div class="d-flex align-center ga-2 flex-wrap">
+          <v-btn
+            variant="tonal"
+            color="primary"
+            class="text-none font-weight-bold"
+            prepend-icon="mdi-printer-outline"
+            @click="openRegisterPrint"
+          >
+            Print List
+          </v-btn>
+          <v-btn
+            color="primary"
+            class="text-none font-weight-bold"
+            elevation="0"
+            prepend-icon="mdi-file-document-plus-outline"
+            @click="openCreateDialog()"
+          >
+            New Voucher
+          </v-btn>
+        </div>
       </v-card-title>
 
       <v-divider />
@@ -148,6 +185,50 @@ onMounted(async () => {
           auto-select-first
           style="max-width: 300px; min-width: 220px"
         />
+        <v-spacer />
+        <!-- Which columns the table shows; remembered in this browser. -->
+        <v-menu :close-on-content-click="false" location="bottom end">
+          <template #activator="{ props: menuProps }">
+            <v-btn
+              v-bind="menuProps"
+              variant="outlined"
+              class="text-none"
+              prepend-icon="mdi-view-column-outline"
+            >
+              Columns
+              <span v-if="visibleColumns.length < columnOptions.length" class="text-medium-emphasis ml-1">
+                ({{ visibleColumns.length }}/{{ columnOptions.length }})
+              </span>
+            </v-btn>
+          </template>
+          <v-card min-width="220" rounded="lg">
+            <v-list density="compact">
+              <v-list-item
+                v-for="column in columnOptions"
+                :key="column.key"
+                :title="column.title"
+                :disabled="isColumnVisible(column.key) && visibleColumns.length === 1"
+                @click="toggleColumn(column.key)"
+              >
+                <template #prepend>
+                  <v-checkbox-btn :model-value="isColumnVisible(column.key)" density="compact" readonly />
+                </template>
+              </v-list-item>
+            </v-list>
+            <v-divider />
+            <v-card-actions class="pa-2">
+              <v-btn
+                size="small"
+                variant="text"
+                class="text-none"
+                :disabled="visibleColumns.length === columnOptions.length"
+                @click="showAllColumns"
+              >
+                Show all
+              </v-btn>
+            </v-card-actions>
+          </v-card>
+        </v-menu>
       </div>
 
       <!-- The figure their old system showed: what the vouchers add up to,
@@ -178,13 +259,27 @@ onMounted(async () => {
       <v-data-table
         :items-per-page-options="financePageSizes"
         mobile-breakpoint="md"
+        v-model:expanded="expanded"
         :headers="tableHeaders"
         :items="filteredVouchers"
         :loading="loading"
         loading-text="Loading vouchers..."
         :no-data-text="isFiltering ? 'No vouchers match these filters.' : 'No disbursement vouchers yet.'"
+        item-value="id"
+        show-expand
+        expand-on-click
+        class="dv-table"
         hover
       >
+        <!-- Click a row to read the whole voucher, without opening Edit. -->
+        <template #expanded-row="{ columns, item }">
+          <tr>
+            <td :colspan="columns.length" class="pa-0">
+              <VoucherDetailPanel :voucher="item" :particulars="particularsOf(item)" />
+            </td>
+          </tr>
+        </template>
+
         <template #item.dv_no="{ item }">
           <!-- The full number, "DV-2026-131", as stored and printed. The
                "DV-" was briefly dropped because the header says DV NO.; staff
@@ -225,10 +320,17 @@ onMounted(async () => {
           </div>
         </template>
 
+        <!-- The whole description, up to two lines, with what it is charged to
+             beneath. Longer ones read in full when the row is opened. -->
         <template #item.particulars="{ item }">
-          <span class="text-truncate d-inline-block" style="max-width: 220px">
-            {{ particularsSummary(item) }}
-          </span>
+          <div class="py-2 particulars-cell">
+            <div class="particulars-text" :title="particularsOf(item)">
+              {{ particularsOf(item) || '—' }}
+            </div>
+            <div class="text-caption text-medium-emphasis text-truncate">
+              {{ accountsSummary(item) }}
+            </div>
+          </div>
         </template>
 
         <template #item.total_amount="{ item }">
@@ -273,7 +375,8 @@ onMounted(async () => {
              (disabled) on a draft: the gate is still enforced, and Print being
              the only labelled button already says what comes first. -->
         <template #item.actions="{ item }">
-          <div class="d-flex justify-center align-center ga-1 text-no-wrap">
+          <!-- .stop: a button press must not also open/close the row. -->
+          <div class="d-flex justify-center align-center ga-1 text-no-wrap" @click.stop>
             <v-btn
               v-if="item.status === 'draft'"
               size="small"
@@ -357,8 +460,11 @@ onMounted(async () => {
       :loading="loading"
       :accounts="cashAccounts"
       :editing="editTarget"
+      :prefill="createPrefill"
       @submit="handleSubmit"
     />
+
+    <VoucherRegisterPrintDialog v-model="showRegisterPrint" :start="registerStart" />
 
     <VoucherPrintDialog
       v-model="showPrintDialog"
@@ -405,3 +511,27 @@ onMounted(async () => {
     </v-dialog>
   </v-container>
 </template>
+
+<style scoped>
+/* Rows open to show the whole voucher, so they read as clickable. */
+.dv-table :deep(tbody tr.v-data-table__tr) {
+  cursor: pointer;
+}
+
+.particulars-cell {
+  min-width: 220px;
+  max-width: 340px;
+  text-align: left;
+}
+
+/* Two lines, then an ellipsis: enough for almost every description (the
+   longest are ~130 characters) without the row growing tall. */
+.particulars-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.35;
+}
+</style>
