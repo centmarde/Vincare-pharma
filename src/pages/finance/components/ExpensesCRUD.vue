@@ -30,6 +30,8 @@ const {
   historyLoading,
   historyTitle,
   historyEntries,
+  historyFailed,
+  retryHistory,
   openHistory,
 } = useExpenses()
 
@@ -249,6 +251,8 @@ onMounted(init)
       :title="historyTitle"
       :entries="historyEntries"
       :loading="historyLoading"
+      :failed="historyFailed"
+      @retry="retryHistory"
     />
   </v-container>
 </template>

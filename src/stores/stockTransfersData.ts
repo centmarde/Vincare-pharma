@@ -719,6 +719,11 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
       return { success: false }
     }
     if (to.is_disposed) { toast.error('That batch has been disposed.'); return { success: false } }
+    // The list was read when the dialog opened; the batch may have expired since.
+    if (to.expiry_date && String(to.expiry_date).slice(0, 10) < toLocalISODate(new Date())) {
+      toast.error('That batch has expired. Pick another one.')
+      return { success: false }
+    }
     if (!(Number(to.selling_price) > 0)) {
       toast.error('That batch has no selling price, so the branch could not sell it. Set its price first.')
       return { success: false }
@@ -736,6 +741,20 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
     if (updateError || !updated?.length) {
       handleError(updateError, 'Failed to change the batch.')
       toast.error(updateError?.message || 'The line changed while you were choosing. Reopen the transfer and try again.')
+      return { success: false }
+    }
+
+    // Approved in the moment between our check and the update? Then the
+    // approval deducted the old batch: put the line back so the two agree.
+    const { data: after } = await supabase
+      .from('transactions').select('status').eq('id', transferId).maybeSingle()
+    if (after && after.status !== 'pending_approval') {
+      const { error: revertError } = await supabase
+        .from('transaction_items').update({ product_id: line.product_id })
+        .eq('id', lineId).eq('product_id', newProductId)
+      toast.error(revertError
+        ? 'The transfer was approved while you were changing this line, and the line could not be put back. Check it before it is received.'
+        : 'The transfer was approved while you were changing this line. Nothing was changed.')
       return { success: false }
     }
 
@@ -881,6 +900,28 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
       loading.value = false
       handleError(claimError, 'Failed to approve stock transfer.')
       toast.error(claimError?.message || 'This transfer was already approved or rejected.')
+      await fetchTransfers()
+      return false
+    }
+
+    // A batch swap can land between the read above and the claim. Deduct only
+    // if the lines are still what was checked; otherwise reopen for a re-check.
+    const { data: lineRecheck, error: lineRecheckError } = await supabase
+      .from('transaction_items').select('product_id, qty_stock_out').eq('transaction_id', transferId)
+    const signature = (rows: { product_id: number; qty: number }[]) =>
+      rows.map((r) => `${r.product_id}:${r.qty}`).sort().join('|')
+    const linesNow = ((lineRecheck ?? []) as { product_id: number; qty_stock_out: number | null }[])
+      .map((li) => ({ product_id: li.product_id, qty: li.qty_stock_out ?? 0 }))
+    if (lineRecheckError || signature(linesNow) !== signature(lines)) {
+      await supabase
+        .from('transactions')
+        .update({ status: 'pending_approval', approved_by: null, approved_at: null, updated_at: new Date().toISOString() })
+        .eq('id', transferId)
+        .eq('status', 'approved')
+      loading.value = false
+      toast.error(lineRecheckError
+        ? 'Could not re-read the transfer lines. Nothing was deducted — try again.'
+        : 'A line was changed while approving. Nothing was deducted — review the transfer and approve again.')
       await fetchTransfers()
       return false
     }

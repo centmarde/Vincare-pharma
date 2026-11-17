@@ -57,6 +57,8 @@ export function useExpenses() {
   const showChangeDialog = ref(false)
   const changeTarget = ref<ExpenseType | null>(null)
   const pendingIds = ref<Set<number>>(new Set())
+  /** Expenses with any change request at all (pending, approved or rejected). */
+  const requestedIds = ref<Set<number>>(new Set())
   const appliedEdits = ref<Map<number, AppliedEdit>>(new Map())
 
   // Expense id -> the DV number it was recorded from. Expenses entered directly
@@ -122,11 +124,13 @@ export function useExpenses() {
   }
 
   async function loadPending() {
-    const [pending, edits] = await Promise.all([
+    const [pending, edits, requested] = await Promise.all([
       changeStore.fetchPendingTargetIds(),
       changeStore.fetchAppliedEdits(),
+      changeStore.fetchRequestedTargetIds(),
     ])
     pendingIds.value = new Set(pending)
+    requestedIds.value = new Set(requested)
     // Newest-first from the store, so the first entry per target wins.
     const map = new Map<number, AppliedEdit>()
     const byOriginal = new Map<number, Correction[]>()
@@ -162,7 +166,7 @@ export function useExpenses() {
   /** Whether the expense has anything to show in its change history. */
   function hasHistory(id: number) {
     // A voided expense always has a story to tell ("who voided this?").
-    return pendingIds.value.has(id) || appliedEdits.value.has(id) || replacedBy.value.has(id) || !!replacesOf(id)
+    return pendingIds.value.has(id) || requestedIds.value.has(id) || appliedEdits.value.has(id) || replacedBy.value.has(id) || !!replacesOf(id)
       || expenseById.value.get(id)?.status === 'voided'
   }
 
@@ -171,6 +175,9 @@ export function useExpenses() {
   const historyLoading = ref(false)
   const historyTitle = ref('')
   const historyEntries = ref<ChangeHistoryEntry[]>([])
+  const historyFailed = ref(false)
+  /** The expense the dialog is showing; a slower read for another one is dropped. */
+  let historyFor: number | null = null
 
   const fieldLabels: Record<string, string> = {
     amount: 'Amount', category: 'Expense account', paid_at: 'Date', cash_account_id: 'Paid from',
@@ -205,11 +212,16 @@ export function useExpenses() {
   async function openHistory(id: number) {
     const expense = expenses.value.find((e) => e.id === id)
     if (!expense) return
+    historyFor = id
     historyTitle.value = expense.reference_no ?? `Expense #${id}`
     historyEntries.value = []
+    historyFailed.value = false
     historyOpen.value = true
     historyLoading.value = true
     const rows = await changeStore.fetchHistory(id, expense.reference_no ?? null)
+    if (historyFor !== id) return
+    historyLoading.value = false
+    if (rows === null) { historyFailed.value = true; return }
     historyEntries.value = rows.map((r) => ({
       id: r.id,
       filedAt: formatDatePR_ISO(r.created_at),
@@ -228,7 +240,10 @@ export function useExpenses() {
       resolvedAt: r.resolved_at ? formatDatePR_ISO(r.resolved_at) : null,
       outcome: outcomeOf(r, expense.reference_no ?? null),
     }))
-    historyLoading.value = false
+  }
+
+  function retryHistory() {
+    if (historyFor != null) void openHistory(historyFor)
   }
 
   function editTooltip(id: number) {
@@ -361,7 +376,7 @@ export function useExpenses() {
     showFormDialog,
     showChangeDialog, changeTarget, changeFields, voidSummary, isPending, isEdited, editTooltip,
     voucherFor, expenseAccountLabel, replacedByOf, replacesOf, hasHistory,
-    historyOpen, historyLoading, historyTitle, historyEntries, openHistory,
+    historyOpen, historyLoading, historyTitle, historyEntries, historyFailed, openHistory, retryHistory,
     init, openFormDialog, handleSubmit, openChangeDialog, submitChangeRequest,
   }
 }

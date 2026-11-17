@@ -33,7 +33,8 @@ export type SearchQuery = {
  * the text is not a plain amount, so it is searched as text only.
  */
 export function parseAmountQuery(text: string): AmountQuery | null {
-  const cleaned = text.trim().replace(/^php/i, '').replace(/[₱,\s]/g, '')
+  // "₱ 3,776" / "PHP 3,776" are one amount; "100 50" is two numbers, not 10050.
+  const cleaned = text.trim().replace(/^(php|₱)\s*/i, '').replace(/[₱,]/g, '')
   if (!/^\d+(\.\d{0,2})?$/.test(cleaned)) return null
   const amount = Number(cleaned)
   // "0" would match every unpaid document's ₱0.00 — search it as text only.

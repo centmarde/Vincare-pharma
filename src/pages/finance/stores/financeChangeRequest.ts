@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { getErrorMessage } from '@/utils/helpers'
+import { fetchAllRows } from '@/stores/shared/paging'
 import { applyExpenseChange, applySupplierPaymentChange } from '@/stores/changeRequests/finance'
 import type { AppliedEdit } from '@/stores/changeRequestsData'
 import type { ProposedChange } from '@/utils/changeRequests'
@@ -168,20 +169,37 @@ export const useFinanceChangeRequestStore = defineStore('financeChangeRequest', 
     return (data || []).map((r: any) => r.transaction_id as number)
   }
 
-  // Transactions carrying an APPLIED edit — drives the "Edited" chip.
+  /** Every document with any change request on it (any status) — drives the History button. */
+  async function fetchRequestedTargetIds(): Promise<number[]> {
+    try {
+      const rows = await fetchAllRows<{ transaction_id: number }>(() => supabase
+        .from('change_requests')
+        .select('id, transaction_id, transactions!inner(transaction_type)')
+        .in('transactions.transaction_type', MODULE_TYPES)
+        .order('id', { ascending: true }))
+      return rows.map((r) => r.transaction_id)
+    } catch (e) {
+      handleError(e, 'Failed to fetch change requests')
+      return []
+    }
+  }
+
+  // Transactions carrying an APPLIED edit — drives the "Edited" chip. Paged:
+  // a single response stops at 1,000 rows and would drop the oldest edits.
   async function fetchAppliedEdits(): Promise<AppliedEdit[]> {
-    const { data, error: e } = await supabase
-      .from('change_requests')
-      .select('id, transaction_id, summary, reason, resolved_at, from_transaction_no, to_transaction_no, transactions!inner(transaction_type)')
-      .eq('request_type', 'edit')
-      .eq('status', 'approved')
-      .in('transactions.transaction_type', MODULE_TYPES)
-      .order('resolved_at', { ascending: false })
-    if (e) {
+    try {
+      return await fetchAllRows<AppliedEdit>(() => supabase
+        .from('change_requests')
+        .select('id, transaction_id, summary, reason, resolved_at, from_transaction_no, to_transaction_no, transactions!inner(transaction_type)')
+        .eq('request_type', 'edit')
+        .eq('status', 'approved')
+        .in('transactions.transaction_type', MODULE_TYPES)
+        .order('resolved_at', { ascending: false })
+        .order('id', { ascending: false }) as any)
+    } catch (e) {
       handleError(e, 'Failed to fetch applied edits')
       return []
     }
-    return (data || []) as AppliedEdit[]
   }
 
   // ── Activity log ─────────────────────────────────────────────────────────
@@ -443,7 +461,8 @@ export const useFinanceChangeRequestStore = defineStore('financeChangeRequest', 
    * — for a replacement from the old void-and-reissue days — the one that
    * created it. Oldest first, with the requester's and approver's emails.
    */
-  async function fetchHistory(transactionId: number, docNo: string | null): Promise<FinanceChangeRequestType[]> {
+  /** null when the history could not be read — not the same as "no requests". */
+  async function fetchHistory(transactionId: number, docNo: string | null): Promise<FinanceChangeRequestType[] | null> {
     const filter = docNo
       ? `transaction_id.eq.${transactionId},to_transaction_no.eq.${docNo}`
       : `transaction_id.eq.${transactionId}`
@@ -454,7 +473,7 @@ export const useFinanceChangeRequestStore = defineStore('financeChangeRequest', 
       .order('created_at', { ascending: true })
     if (e) {
       handleError(e, 'Failed to load the change history')
-      return []
+      return null
     }
     if (!authStore.users.length) await authStore.getAllUsers()
     const emailOf = (id: string | null) => authStore.users.find((u: any) => u.id === id)?.email ?? null
@@ -481,6 +500,7 @@ export const useFinanceChangeRequestStore = defineStore('financeChangeRequest', 
     hasPendingRequest,
     fetchPendingTargetIds,
     fetchAppliedEdits,
+    fetchRequestedTargetIds,
     fetchHistory,
     proposeChange,
     approveRequest,

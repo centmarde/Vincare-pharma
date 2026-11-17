@@ -158,6 +158,9 @@ async function refreshAll() {
       refreshTerms(),
       refreshCreditMemos(),
     ])
+    // Same ids do not re-trigger the watcher; Refresh must still retry a
+    // summary read that failed.
+    await loadSummaries(changeRequestIdKey.value)
   } finally {
     refreshing.value = false
   }
@@ -179,12 +182,13 @@ const docSummaries = ref<Map<number, ApprovalDocSummary>>(new Map())
 const changeRequestIdKey = computed(() =>
   mergedItems.value.filter((item) => item.kind === 'undo').map((item) => Number(item.raw.transaction_id)).join(','))
 let summariesRequest = 0
-watch(changeRequestIdKey, async (key) => {
+async function loadSummaries(key: string) {
   const request = ++summariesRequest
   const ids = key ? key.split(',').map(Number) : []
   const found = await approvalContext.fetchDocSummaries(ids)
   if (request === summariesRequest) docSummaries.value = found
-}, { immediate: true })
+}
+watch(changeRequestIdKey, loadSummaries, { immediate: true })
 
 function summaryOf(item: MergedActionItem): ApprovalDocSummary | null {
   return docSummaries.value.get(Number(item.raw.transaction_id)) ?? null

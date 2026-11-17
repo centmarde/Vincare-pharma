@@ -1042,16 +1042,20 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       .from('inhouse_details')
       .update({ amount_paid: newPaid, paid_at: createdAt ?? nowIso })
       .eq('transaction_id', payload.orderId)
+    // The payment row (and a discount's ledger entry) already exist, so this
+    // is NOT "nothing recorded": reporting a failure here invited entering the
+    // same payment again. Warn instead, like Ethical, and leave the status as
+    // it is so it never claims a balance the cache does not show.
     if (detailsError) {
-      handleError(detailsError, 'Failed to record payment.'); toast.error(detailsError.message || 'Failed to record payment.')
-      loading.value = false; return { success: false }
+      handleError(detailsError, 'Payment recorded, but the order balance was not updated.')
+      toast.warning('Payment recorded, but the order balance was not updated — verify it before entering anything else.')
+    } else {
+      const { error: statusError } = await supabase
+        .from('transactions')
+        .update({ status: newStatus, updated_at: nowIso })
+        .eq('id', payload.orderId)
+      if (statusError) console.warn('recordPayment: status flip failed:', statusError.message)
     }
-
-    const { error: statusError } = await supabase
-      .from('transactions')
-      .update({ status: newStatus, updated_at: nowIso })
-      .eq('id', payload.orderId)
-    if (statusError) console.warn('recordPayment: status flip failed:', statusError.message)
 
     // The money lands in the chosen account. Best-effort like every other
     // balance write in the app (JS-over-RPC convention) — surfaced, not rolled

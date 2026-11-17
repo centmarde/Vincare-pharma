@@ -97,7 +97,15 @@ export async function postJournalEntry(
   const { error: linesError } = await supabase.from('journal_entry_lines').insert(
     lines.map(l => ({ journal_entry_id: entry.id, account_code: l.account_code, debit: l.debit ?? 0, credit: l.credit ?? 0, line_memo: l.memo ?? null })),
   )
-  if (linesError) return { success: false, error: linesError.message, entryId: entry.id }
+  if (linesError) {
+    // Take the header back out: a header with no lines books nothing, yet it
+    // counts as "already booked" to the projector, which then skips the
+    // document for good. Only if that fails is the header's id handed back.
+    const { error: cleanupError } = await supabase.from('journal_entries').delete().eq('id', entry.id)
+    if (!cleanupError) return { success: false, error: linesError.message }
+    console.warn('postJournalEntry: could not remove the header left without lines:', entry.id, cleanupError.message)
+    return { success: false, error: linesError.message, entryId: entry.id }
+  }
 
   return { success: true, entryId: entry.id }
 }
@@ -358,8 +366,10 @@ export async function reverseJournalEntry(
     .from('journal_entries').select('id').eq('reverses_entry', entryId).limit(1)
   if (earlier?.length) {
     const earlierId = earlier[0].id as number
-    const { count: earlierLineCount } = await supabase
+    const { count: earlierLineCount, error: countError } = await supabase
       .from('journal_entry_lines').select('id', { count: 'exact', head: true }).eq('journal_entry_id', earlierId)
+    // Unknown is not zero: inserting the lines again could post the reversal twice.
+    if (countError) return { success: false, error: countError.message, reversalId: earlierId }
     if (!earlierLineCount) {
       const { error: resumeLinesError } = await supabase.from('journal_entry_lines').insert(reversedLines(earlierId))
       if (resumeLinesError) return { success: false, error: resumeLinesError.message, reversalId: earlierId }

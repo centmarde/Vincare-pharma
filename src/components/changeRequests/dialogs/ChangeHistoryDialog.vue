@@ -12,9 +12,14 @@ defineProps<{
   title: string
   entries: ChangeHistoryEntry[]
   loading: boolean
+  /** The history could not be read (not the same as "no requests"). */
+  failed?: boolean
 }>()
 
-const emit = defineEmits<{ (e: 'update:modelValue', value: boolean): void }>()
+const emit = defineEmits<{
+  (e: 'update:modelValue', value: boolean): void
+  (e: 'retry'): void
+}>()
 
 const { smAndDown } = useDisplay()
 
@@ -48,6 +53,12 @@ function close() {
         <div v-if="loading" class="text-center py-6">
           <v-progress-circular indeterminate color="primary" />
         </div>
+        <v-alert v-else-if="failed" type="error" variant="tonal" density="compact">
+          <div class="d-flex align-center flex-wrap ga-2">
+            <span class="flex-grow-1">Could not load the change history.</span>
+            <v-btn size="small" variant="text" class="text-none" prepend-icon="mdi-refresh" @click="emit('retry')">Try again</v-btn>
+          </div>
+        </v-alert>
         <div v-else-if="!entries.length" class="text-body-2 text-medium-emphasis text-center py-6">
           No change requests on this document.
         </div>

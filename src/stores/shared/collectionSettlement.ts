@@ -3,6 +3,7 @@
 // behave the same everywhere.
 
 import { supabase } from '@/lib/supabase'
+import { useToast } from 'vue-toastification'
 import { useGLDataStore } from '@/stores/glData'
 import { toLocalISODate } from '@/utils/helpers'
 
@@ -49,6 +50,19 @@ export function settleAgainst(total: number, paid: number, amount: number) {
   }
 }
 
+/**
+ * The date the app books a discount on — the same date the projector books
+ * the payment beside it. A back-dated payment is stored as that day; one for
+ * today (the form's default, so paidOn is usually today's Manila date) keeps
+ * created_at = now(), which the projector books on created_at::date in the
+ * database's UTC session — so today means today's UTC date here too.
+ * Otherwise, between 00:00 and 08:00 Manila, the two landed a day apart.
+ */
+export function discountEntryDate(paidOn: string | null | undefined): string {
+  if (paidOn && paidOn !== toLocalISODate(new Date())) return paidOn
+  return new Date().toISOString().slice(0, 10)
+}
+
 /** A payment date staff entered, refused if it is in the future. */
 export function paymentDateProblem(paidOn: string | null | undefined): string | null {
   if (!paidOn) return null
@@ -73,11 +87,7 @@ export async function bookPaymentDiscount(
   userId: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const result = await useGLDataStore().postJournalEntry(
-    // Same day as the payment beside it: a back-dated one is stored as that
-    // date, and one for today keeps created_at = now(), which the projector
-    // books on its UTC date — so this uses the UTC date too, or between
-    // 00:00 and 08:00 Manila the two would land on different days.
-    paidOn || new Date().toISOString().slice(0, 10),
+    discountEntryDate(paidOn),
     'collection',
     collectionId,
     description,
@@ -91,20 +101,27 @@ export async function bookPaymentDiscount(
   // The statements run the projector, which (since 2026-11-17) books a
   // discount row itself; if it got there first, the unique "one live entry per
   // reference" index refused ours and the discount IS in the ledger — keep it.
-  // Likewise a header that landed without its lines must not lose its row.
+  // Only an entry that has lines counts: a bare header books nothing.
   const { data: live } = await supabase
     .from('journal_entries')
     .select('id')
     .eq('reference_type', 'collection')
     .eq('reference_id', collectionId)
     .neq('status', 'reversed')
-    .limit(1)
-  if (live?.length) return { ok: true }
-  if (result.entryId) {
-    console.warn('bookPaymentDiscount: entry header posted without its lines:', result.entryId, result.error)
-    return { ok: false, error: result.error }
+  const liveIds = (live ?? []).map((e) => e.id as number)
+  if (liveIds.length) {
+    const { count: lineCount } = await supabase
+      .from('journal_entry_lines').select('id', { count: 'exact', head: true }).in('journal_entry_id', liveIds)
+    if (lineCount) return { ok: true }
   }
   const { error: deleteError } = await supabase.from('collections').delete().eq('id', collectionId)
-  if (deleteError) console.warn('bookPaymentDiscount: could not remove the discount row:', deleteError.message)
+  if (deleteError) {
+    // The row stays and already counts toward what was paid. The projector
+    // books a payment_discount row itself on the next statement view, so the
+    // discount IS recorded — say so, rather than invite entering it again.
+    console.warn('bookPaymentDiscount: could not remove the discount row:', deleteError.message)
+    useToast().warning('The discount was saved; its ledger entry will be posted the next time a financial statement is opened.')
+    return { ok: true }
+  }
   return { ok: false, error: result.error }
 }

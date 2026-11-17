@@ -5,6 +5,7 @@
 // could go through before voiding the original).
 
 import { supabase } from '@/lib/supabase'
+import { useToast } from 'vue-toastification'
 import {
   useFinanceDataStore,
   legacyExpenseCategories,
@@ -146,11 +147,22 @@ async function moveCash(
   for (const [accountId, delta] of deltas) {
     if (Math.abs(delta) < 0.005) continue
     const { data: account } = await supabase
-      .from('cash_accounts').select('balance').eq('id', accountId).maybeSingle()
-    if (!account) continue
-    const { error: e } = await supabase
-      .from('cash_accounts').update({ balance: Number(account.balance ?? 0) + delta }).eq('id', accountId)
-    if (e) console.warn('applyExpenseChange: cash account balance update failed:', e.message)
+      .from('cash_accounts').select('name, balance').eq('id', accountId).maybeSingle()
+    const { error: e } = account
+      ? await supabase.from('cash_accounts').update({ balance: Number(account.balance ?? 0) + delta }).eq('id', accountId)
+      : { error: { message: 'cash account not found' } }
+    if (e) {
+      // Best-effort like every balance write (JS-over-RPC; the GL is the
+      // authority, cash_accounts.balance an operational cache) — but never
+      // silent: the document and ledger are already corrected, so name the
+      // exact adjustment still owed instead of leaving it to a later recon.
+      console.warn('applyExpenseChange: cash account balance update failed:', e.message)
+      const sign = delta > 0 ? 'add' : 'take off'
+      useToast().warning(
+        `The expense was corrected, but ${account?.name ?? `cash account #${accountId}`}'s balance was not updated — ${sign} ${Math.abs(delta).toFixed(2)} by hand.`,
+        { timeout: 20000 },
+      )
+    }
   }
 }
 
