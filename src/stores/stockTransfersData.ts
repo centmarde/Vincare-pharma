@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
-import { generateNextNumber, insertWithDocRetry, describeProduct } from '@/utils/helpers'
+import { generateNextNumber, insertWithDocRetry, describeProduct, toLocalISODate } from '@/utils/helpers'
 import { issueRow, useIssueList } from '@/composables/useIssueList'
 import type { IssueRow } from '@/composables/useIssueList'
 import type { ProductType } from '@/stores/productsData'
@@ -52,6 +52,29 @@ export type StockTransferType = {
   updated_at: string | null
   stock_transfer_items?: StockTransferItemType[]
 }
+
+/**
+ * Another batch / brand of a requested product the warehouse could send
+ * instead. One `products` row is one batch, so "the same product" is every
+ * row that shares the generic name.
+ */
+export type TransferSubstitute = {
+  id: number
+  product_name: string | null
+  brand: string | null
+  batch_no: string | null
+  expiry_date: string | null
+  unit: string | null
+  current_stock: number
+  selling_price: number | null
+  /** Units of this batch other lines of the same transfer already ask for. */
+  already_on_transfer: number
+  /** Why it cannot be sent, if it cannot (no selling price, not enough stock). */
+  blocked: string | null
+}
+
+/** A line the warehouse changed to another batch, as logged. */
+export type TransferSubstitutionNote = { created_at: string; description: string }
 
 export type StockTransferLineInput = {
   product_id: number
@@ -580,6 +603,177 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
     return new Map((data ?? []).map((p) => [p.id as number, (p.current_stock as number | null) ?? 0]))
   }
 
+  /** "ACETYLCYSTEINE  200MG" and "acetylcysteine 200mg" are the same product. */
+  function sameName(a: string | null | undefined, b: string | null | undefined): boolean {
+    const norm = (v: string | null | undefined) => (v ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
+    return !!norm(a) && norm(a) === norm(b)
+  }
+
+  /**
+   * The other batches / brands of a requested product that the main warehouse
+   * could send in its place: same generic name, stock on hand, not expired, not
+   * disposed. Soonest expiry first, so the oldest good stock goes out first.
+   * `qtyNeeded` marks the ones that cannot cover the line; `alreadyNeeded`
+   * (units per product the transfer's other lines ask for) counts against the
+   * same stock, since Approve totals per product.
+   */
+  async function fetchTransferSubstitutes(
+    productId: number,
+    qtyNeeded: number,
+    alreadyNeeded: Map<number, number> = new Map(),
+  ): Promise<TransferSubstitute[] | null> {
+    const { data: requested, error: requestedError } = await supabase
+      .from('products').select('id, product_name').eq('id', productId).maybeSingle()
+    if (requestedError || !requested?.product_name) return requestedError ? null : []
+    const today = toLocalISODate(new Date())
+    // Names are stored with stray spaces ("CETIRIZINE 10MG TAB 100'S "), so
+    // match word by word and let sameName() keep only the exact product.
+    const words = requested.product_name.trim().split(/\s+/).filter(Boolean)
+    const { data, error: listError } = await supabase
+      .from('products')
+      .select('id, product_name, brand, batch_no, expiry_date, unit, current_stock, selling_price, is_disposed')
+      .ilike('product_name', `%${words.join('%')}%`)
+      .neq('id', productId)
+      .gt('current_stock', 0)
+      .order('expiry_date', { ascending: true, nullsFirst: false })
+    if (listError) {
+      console.warn('fetchTransferSubstitutes failed:', listError.message)
+      return null
+    }
+    return ((data ?? []) as any[])
+      // The pattern is loose (and ilike treats _ and % as wildcards); keep only real name matches.
+      .filter((p) => sameName(p.product_name, requested.product_name))
+      .filter((p) => !p.is_disposed)
+      .filter((p) => !p.expiry_date || String(p.expiry_date).slice(0, 10) >= today)
+      .map((p) => {
+        const stock = Number(p.current_stock ?? 0)
+        const price = p.selling_price == null ? null : Number(p.selling_price)
+        const already = alreadyNeeded.get(p.id) ?? 0
+        return {
+          id: p.id,
+          product_name: p.product_name ?? null,
+          brand: p.brand ?? null,
+          batch_no: p.batch_no ?? null,
+          expiry_date: p.expiry_date ?? null,
+          unit: p.unit ?? null,
+          current_stock: stock,
+          selling_price: price,
+          already_on_transfer: already,
+          blocked: !(price && price > 0)
+            ? 'No selling price set'
+            : stock < qtyNeeded + already
+              ? already
+                ? `Only ${stock} on hand — ${already} already on this transfer`
+                : `Only ${stock} on hand`
+              : null,
+        }
+      })
+  }
+
+  /**
+   * The approver sends a different batch / brand for one line of a pending
+   * transfer. Only while it is Pending Approval — approving then checks and
+   * deducts the batch actually chosen, and the branch receives that batch.
+   * The swap is logged with both batches, so the change is never silent.
+   * `expectedProductId` is the batch the approver saw on the line: if someone
+   * else changed it meanwhile, nothing is overwritten.
+   */
+  async function substituteTransferLine(
+    transferId: number,
+    lineId: number,
+    newProductId: number,
+    expectedProductId?: number | null,
+  ): Promise<{ success: boolean }> {
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) { toast.error('User not authenticated.'); return { success: false } }
+
+    const { data: transfer, error: fetchError } = await supabase
+      .from('transactions')
+      .select('id, status, transfer_no, transaction_items!transaction_items_transaction_id_fkey(id, product_id, qty_stock_out)')
+      .eq('id', transferId)
+      .eq('transaction_type', 'stock_transfer')
+      .maybeSingle()
+    if (fetchError || !transfer) { toast.error('Transfer not found.'); return { success: false } }
+    if (transfer.status !== 'pending_approval') {
+      toast.error('Only a transfer waiting for approval can have a line changed.')
+      return { success: false }
+    }
+    const line = ((transfer.transaction_items ?? []) as unknown as { id: number; product_id: number }[])
+      .find((li) => li.id === lineId)
+    if (!line) { toast.error('That line is no longer on this transfer.'); return { success: false } }
+    if (line.product_id === newProductId) return { success: true }
+    if (expectedProductId != null && line.product_id !== expectedProductId) {
+      toast.error('Someone else changed this line while you were choosing. Reopen the transfer and try again.')
+      return { success: false }
+    }
+
+    const { data: pair, error: pairError } = await supabase
+      .from('products')
+      .select('id, product_name, brand, batch_no, expiry_date, sku, selling_price, is_disposed')
+      .in('id', [line.product_id, newProductId])
+    const from = (pair ?? []).find((p) => p.id === line.product_id)
+    const to = (pair ?? []).find((p) => p.id === newProductId)
+    if (pairError || !to) { toast.error('Could not read the batch to send instead.'); return { success: false } }
+    if (from && !sameName(from.product_name, to.product_name)) {
+      toast.error('Only another batch or brand of the same product can be sent instead.')
+      return { success: false }
+    }
+    if (to.is_disposed) { toast.error('That batch has been disposed.'); return { success: false } }
+    if (!(Number(to.selling_price) > 0)) {
+      toast.error('That batch has no selling price, so the branch could not sell it. Set its price first.')
+      return { success: false }
+    }
+
+    // Guarded on the line still holding the batch the approver saw, so two
+    // people changing the same line cannot overwrite each other unnoticed.
+    const { data: updated, error: updateError } = await supabase
+      .from('transaction_items')
+      .update({ product_id: newProductId })
+      .eq('id', lineId)
+      .eq('transaction_id', transferId)
+      .eq('product_id', line.product_id)
+      .select('id')
+    if (updateError || !updated?.length) {
+      handleError(updateError, 'Failed to change the batch.')
+      toast.error(updateError?.message || 'The line changed while you were choosing. Reopen the transfer and try again.')
+      return { success: false }
+    }
+
+    const describe = (prod: any) => [
+      prod?.brand, prod?.batch_no ? `batch ${prod.batch_no}` : null,
+      prod?.expiry_date ? `exp ${String(prod.expiry_date).slice(0, 7)}` : null,
+    ].filter(Boolean).join(', ') || `product #${prod?.id}`
+    const { error: logError } = await supabase.from('logs').insert({
+      action: 'line_substituted', module: 'warehouse', created_by: user.id, transaction_id: transferId,
+      description: `${transfer.transfer_no ?? 'Transfer'}: ${to.product_name ?? 'product'} — sending ${describe(to)} instead of ${describe(from)}`,
+    })
+    if (logError) console.warn('substituteTransferLine: activity log insert failed:', logError.message)
+
+    // Touch the transfer so every open screen (the branch, other approvers)
+    // refreshes through realtime, which only watches transactions.
+    const { error: touchError } = await supabase
+      .from('transactions').update({ updated_at: new Date().toISOString() }).eq('id', transferId)
+    if (touchError) console.warn('substituteTransferLine: could not touch the transfer:', touchError.message)
+
+    toast.success(`Line changed — sending ${describe(to)}.`)
+    return { success: true }
+  }
+
+  /** Lines the warehouse switched to another batch, oldest first (from the activity log). */
+  async function fetchSubstitutionNotes(transferId: number): Promise<TransferSubstitutionNote[]> {
+    const { data, error: notesError } = await supabase
+      .from('logs')
+      .select('created_at, description')
+      .eq('transaction_id', transferId)
+      .eq('action', 'line_substituted')
+      .order('created_at', { ascending: true })
+    if (notesError) {
+      console.warn('fetchSubstitutionNotes failed:', notesError.message)
+      return []
+    }
+    return (data ?? []) as TransferSubstitutionNote[]
+  }
+
   // Warehouse approves: deduct products.current_stock per product (was transfer_approve).
   //
   // 1. Read-only checks: prices, then stock per product — every shortage listed.
@@ -945,6 +1139,9 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
     deleteTransferDraft,
     approveTransfer,
     fetchMainStock,
+    fetchTransferSubstitutes,
+    substituteTransferLine,
+    fetchSubstitutionNotes,
     rejectTransfer,
     receiveTransfer,
     clearError,
