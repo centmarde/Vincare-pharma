@@ -8,7 +8,8 @@ import type { OpenSupplierVoucher } from '@/stores/disbursementVouchersData'
 import type { SupplierPaymentType } from '@/stores/financeData'
 import { useRouter } from 'vue-router'
 import { formatCurrency } from '@/utils/helpers'
-import { amountMatches, manilaDayOf, parseAmountQuery } from './useDisbursementVouchers'
+import { manilaDayOf } from './useDisbursementVouchers'
+import { matchesSearch, parseSearch, searchText } from '@/utils/search'
 
 // Supplier Payments is a MONITORING page — it shows what is owed, how old it
 // is, and what has been paid. It does not record payments.
@@ -148,13 +149,11 @@ export function useSupplierPayments() {
     return true
   }
 
-  /** Text, or an amount typed as "20772" / "₱20,772.00" matching any of `amounts`. */
+  const query = computed(() => parseSearch(search.value))
+
+  /** Words in any column, or an amount typed as "20772" / "₱20,772.00" matching any of `amounts`. */
   function matches(texts: (string | null | undefined)[], amounts: (number | null | undefined)[]) {
-    const query = (search.value ?? '').trim().toLowerCase()
-    if (!query) return true
-    const amount = parseAmountQuery(query)
-    if (amount && amounts.some((v) => amountMatches(v, amount))) return true
-    return texts.some((t) => (t ?? '').toLowerCase().includes(query))
+    return !query.value || matchesSearch(searchText(texts), amounts, query.value)
   }
 
   const filteredAging = computed(() => apAging.value.filter((row) =>

@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useConsignmentDataStore, consignmentExpiryWarnMonths } from '@/stores/consignmentData'
 import type { ConsignmentBatch, ConsignmentBatchState } from '@/stores/consignmentData'
+import { matchesSearch, parseSearch, searchText } from '@/utils/search'
 
 // The "expiring at consignees" list: batches delivered to consignment customers
 // and not returned, soonest to expire first, so a pick-up can be planned before
@@ -39,17 +40,20 @@ export function useConsignmentStock() {
 
   /** 'attention' = expired or expiring within the warning window. */
   const view = ref<ConsignmentStockView>('attention')
-  const search = ref('')
+  // null after the field's clear button.
+  const search = ref<string | null>('')
 
   const needsAttention = (b: ConsignmentBatch) => b.state === 'expired' || b.state === 'expiring'
 
   const filtered = computed(() => {
-    const term = search.value.trim().toLowerCase()
+    const query = parseSearch(search.value)
     return batches.value.filter((b) => {
       if (view.value === 'attention' && !needsAttention(b)) return false
-      if (!term) return true
-      return [b.customer_name, b.product_name, b.batch_no, b.customer_area]
-        .some((v) => (v ?? '').toLowerCase().includes(term))
+      return !query || matchesSearch(
+        searchText([b.customer_name, b.product_name, b.batch_no, b.customer_area, b.term_text, ...b.documents]),
+        [b.out_value],
+        query,
+      )
     })
   })
 

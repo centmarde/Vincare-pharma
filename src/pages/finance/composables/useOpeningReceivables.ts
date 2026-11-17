@@ -7,6 +7,7 @@ import { openingReceivableKey } from '@/stores/changeRequests/types'
 import { useFinanceDataStore } from '@/stores/financeData'
 import { useCustomerPicker } from '@/composables/useCustomerPicker'
 import { formatCurrency, toLocalISODate } from '@/utils/helpers'
+import { matchesSearch, parseSearch, searchText } from '@/utils/search'
 
 // Form state for the opening-receivables migration screen. See the store for
 // why these are recorded as documents and why the ledger entry is written
@@ -224,17 +225,13 @@ export function useOpeningReceivables() {
   // null after the field's clear button.
   const recordedSearch = ref<string | null>('')
   const recordedFiltered = computed(() => {
-    const q = (recordedSearch.value ?? '').trim().toLowerCase()
-    if (!q) return recorded.value
-    const digits = q.replace(/[₱,\s]/g, '')
-    const isAmount = /^\d+(\.\d+)?$/.test(digits)
-    return recorded.value.filter((r) => {
-      const text = [r.docNo, r.customerName, r.originalNo, r.termLabel, r.notes, r.creditMemoNo]
-        .some((v) => (v ?? '').toLowerCase().includes(q))
-      if (text) return true
-      if (!isAmount) return false
-      return [r.originalAmount, r.outstanding].some((a) => a.toFixed(2).includes(digits))
-    })
+    const query = parseSearch(recordedSearch.value)
+    if (!query) return recorded.value
+    return recorded.value.filter((r) => matchesSearch(
+      searchText([r.docNo, r.customerName, r.originalNo, r.termLabel, r.notes, r.creditMemoNo]),
+      [r.originalAmount, r.outstanding, r.paidBeforeCutover, r.creditBeforeCutover, r.collectedSince],
+      query,
+    ))
   })
 
   /**

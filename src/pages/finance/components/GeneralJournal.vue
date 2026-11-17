@@ -15,6 +15,11 @@ const {
   REFERENCE_TYPE_OPTIONS,
   entries,
   loading,
+  journalSearch,
+  visibleEntries,
+  shownEntries,
+  hiddenEntryCount,
+  showMoreEntries,
   accountOptions,
   filterAccount,
   showManualEntryDialog,
@@ -98,6 +103,20 @@ function statusColor(status: string): string {
             style="max-width: 200px"
             @update:model-value="fetchJournal"
           />
+          <v-text-field
+            v-model="journalSearch"
+            placeholder="Search entry no., description, account, amount…"
+            prepend-inner-icon="mdi-magnify"
+            density="compact"
+            variant="outlined"
+            hide-details
+            clearable
+            style="min-width: 260px; max-width: 400px"
+          />
+          <span class="text-caption text-medium-emphasis align-self-center">
+            <template v-if="journalSearch?.trim()">{{ visibleEntries.length }} of {{ entries.length }} entries</template>
+            <template v-else>{{ entries.length }} {{ entries.length === 1 ? 'entry' : 'entries' }}</template>
+          </span>
         </div>
 
         <v-progress-linear v-if="loading" indeterminate class="mb-2" />
@@ -116,7 +135,7 @@ function statusColor(status: string): string {
             </tr>
           </thead>
           <tbody>
-            <template v-for="entry in entries" :key="entry.id">
+            <template v-for="entry in shownEntries" :key="entry.id">
               <tr>
                 <td>{{ entry.entry_no }}</td>
                 <td>{{ formatDatePR_ISO(entry.entry_date) }}</td>
@@ -169,13 +188,18 @@ function statusColor(status: string): string {
                 <td></td>
               </tr>
             </template>
-            <tr v-if="!entries.length && !loading">
+            <tr v-if="!visibleEntries.length && !loading">
               <td colspan="8" class="text-center text-caption text-medium-emphasis py-4">
-                No journal entries in this range.
+                {{ entries.length ? 'No journal entry matches that search.' : 'No journal entries in this range.' }}
               </td>
             </tr>
           </tbody>
         </v-table>
+        <div v-if="hiddenEntryCount" class="d-flex justify-center mt-3">
+          <v-btn variant="tonal" size="small" class="text-none" @click="showMoreEntries">
+            Show {{ Math.min(hiddenEntryCount, 100) }} more ({{ hiddenEntryCount }} not shown)
+          </v-btn>
+        </div>
       </v-card-text>
     </v-card>
 
