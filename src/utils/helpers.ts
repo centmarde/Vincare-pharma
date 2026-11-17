@@ -455,6 +455,14 @@ export const formatCurrency = (value: number): string => {
 }
 
 /**
+ * A negotiation round's log text, readable: "proposed: 497599.999999958"
+ * (the raw sum, as older rounds were written) becomes "proposed: ₱497,600.00".
+ */
+export function tidyNegotiationNote(description: string | null | undefined): string {
+  return (description ?? '').replace(/proposed: (-?\d+(?:\.\d+)?)/g, (_, n) => `proposed: ${formatCurrency(Math.round(Number(n) * 100) / 100)}`)
+}
+
+/**
  * Batch expiry as MM/YYYY — the pharma convention, and how expiry is entered
  * across the app (the PR/PO forms use month-only pickers).
  */

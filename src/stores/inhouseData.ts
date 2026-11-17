@@ -14,9 +14,9 @@ import { useCustomersDataStore } from '@/stores/customersData'
 import type { CustomerType } from '@/stores/customersData'
 import type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult } from '@/utils/canvassTypes'
 import { govtShelfLife, QUALIFICATION_MONTHS } from '@/utils/qualification'
-import { describeProduct } from '@/utils/helpers'
+import { describeProduct, formatCurrency } from '@/utils/helpers'
 import { isCreditSettlement, paymentDiscount } from '@/utils/paymentMethods'
-import { bookPaymentDiscount, collectionCreatedAt, paidBeforeDocument, paymentDateProblem, settleAgainst } from '@/stores/shared/collectionSettlement'
+import { bookPaymentDiscount, collectionCreatedAt, paidBeforeDocument, paymentDateProblem, roundPeso, settleAgainst } from '@/stores/shared/collectionSettlement'
 import type { ChequeDetails } from '@/utils/paymentMethods'
 import { issueRow, useIssueList } from '@/composables/useIssueList'
 import { hasPendingTermsRequest, isApprovedLockRequest, unlockBlocker } from '@/stores/shared/termsApprovalGuards'
@@ -207,7 +207,9 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
     if (!payload.lines.length) { toast.warning('Add at least one line item.'); loading.value = false; return { success: false } }
 
-    const subtotal = payload.lines.reduce((sum, l) => sum + l.qty * l.unit_price, 0)
+    // To the centavo, line by line: unit prices can carry more decimals than
+    // pesos do, and the raw float sum was saved as-is (497599.999999958).
+    const subtotal = roundPeso(payload.lines.reduce((sum, l) => sum + roundPeso(l.qty * l.unit_price), 0))
 
     const { data: created, docNo: orderNo, error: insertError } = await insertWithDocRetry<{ id: number }>(
       () => generateIHNumber(),
@@ -274,7 +276,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       .insert(payload.lines.map(l => ({
         transaction_id: created.id, product_id: l.product_id,
         qty_stock_out: l.qty, unit_price: l.unit_price,
-        line_total: l.qty * l.unit_price, cost_price: l.cost_price,
+        line_total: roundPeso(l.qty * l.unit_price), cost_price: l.cost_price,
       })))
       .select('id')
     if (itemsError || !createdItems) {
@@ -364,7 +366,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       // Omitting cost_price keeps the existing value (mirrors the RPC's
       // coalesce-with-existing-row behavior) — never overwrite with null.
       const lineUpdatePayload: Record<string, unknown> = {
-        qty_stock_out: u.qty, unit_price: u.unit_price, line_total: u.unit_price * u.qty,
+        qty_stock_out: u.qty, unit_price: u.unit_price, line_total: roundPeso(u.unit_price * u.qty),
       }
       if (u.product_id != null) lineUpdatePayload.product_id = u.product_id
       if (u.cost_price != null) lineUpdatePayload.cost_price = u.cost_price
@@ -385,13 +387,17 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
         .insert(addLines.map((l) => ({
           transaction_id: payload.orderId, product_id: l.product_id,
           qty_stock_out: l.qty, unit_price: l.unit_price,
-          line_total: l.qty * l.unit_price, cost_price: l.cost_price,
+          line_total: roundPeso(l.qty * l.unit_price), cost_price: l.cost_price,
         })))
       if (addError) {
         handleError(addError, 'Failed to add order line.'); toast.error(addError.message || 'Failed to add order line.')
         loading.value = false; return { success: false }
       }
     }
+
+    // Saved to the centavo — the raw float sum used to land in total_amount,
+    // offer_price and the round's text.
+    const proposedTotal = roundPeso(payload.total)
 
     const lineChanges = [
       addLines.length ? `${addLines.length} line(s) added` : '',
@@ -400,7 +406,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const { error: statusError } = await supabase
       .from('transactions')
-      .update({ total_amount: payload.total, status: 'negotiating', updated_at: new Date().toISOString() })
+      .update({ total_amount: proposedTotal, status: 'negotiating', updated_at: new Date().toISOString() })
       .eq('id', payload.orderId)
     if (statusError) {
       handleError(statusError, 'Failed to record offer.'); toast.error(statusError.message || 'Failed to record offer.')
@@ -409,7 +415,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const { error: detailsError } = await supabase
       .from('inhouse_details')
-      .upsert({ transaction_id: payload.orderId, offer_price: payload.total }, { onConflict: 'transaction_id' })
+      .upsert({ transaction_id: payload.orderId, offer_price: proposedTotal }, { onConflict: 'transaction_id' })
     if (detailsError) {
       handleError(detailsError, 'Failed to record offer.'); toast.error(detailsError.message || 'Failed to record offer.')
       loading.value = false; return { success: false }
@@ -418,7 +424,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     const { error: logError } = await supabase.from('logs').insert({
       created_by: user.id,
       action: payload.party === 'company' ? 'counter' : 'offer',
-      description: `${payload.note ?? ''}${lineChanges ? ` [${lineChanges}]` : ''} | proposed: ${payload.total}`,
+      description: `${payload.note ?? ''}${lineChanges ? ` [${lineChanges}]` : ''} | proposed: ${formatCurrency(proposedTotal)}`,
       module: 'inhouse', transaction_id: payload.orderId,
     })
     if (logError) console.warn('recordOffer: activity log insert failed:', logError.message)

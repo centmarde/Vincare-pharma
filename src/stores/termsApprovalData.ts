@@ -4,6 +4,7 @@ import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
+import { tidyNegotiationNote } from '@/utils/helpers'
 import { useInhouseDataStore } from '@/stores/inhouseData'
 import { useEthicalDataStore } from '@/stores/ethicalData'
 import { useStockSourcingStore } from '@/stores/stockSourcingData'
@@ -328,7 +329,7 @@ export const useTermsApprovalStore = defineStore('termsApproval', () => {
       govt_pr_amount: row.po_amount != null ? Number(row.po_amount) : null,
       po_no: row.po_no ?? null,
       negotiation_rounds: rounds.length,
-      last_round: rounds.length ? rounds[rounds.length - 1].description ?? null : null,
+      last_round: rounds.length ? tidyNegotiationNote(rounds[rounds.length - 1].description) || null : null,
       agent_name: one(row.agent)?.name ?? null,
       discount: Number(ethical?.discount_amount ?? 0),
       rebate: Number(ethical?.rebate_amount ?? 0),

@@ -14,7 +14,7 @@ import type { CollectionType } from '@/stores/ethicalData'
 import { chequeLabel, collectionMethodLabel, collectionPaymentMethodOptions, isCreditSettlement } from '@/utils/paymentMethods'
 import { collectionVoidSummary } from '@/composables/collectionEntry'
 import CollectionPaymentFields from '@/components/collections/CollectionPaymentFields.vue'
-import { formatCurrency, formatDatePR_ISO, formatExpiryLabel } from '@/utils/helpers'
+import { formatCurrency, formatDatePR_ISO, formatExpiryLabel, tidyNegotiationNote } from '@/utils/helpers'
 
 const props = defineProps<{
   modelValue: boolean
@@ -158,7 +158,7 @@ const productName = (id: number | null) =>
           <v-card-text class="pa-3">
             <div v-if="rounds.length" class="mb-3">
               <div v-for="r in rounds" :key="r.id" class="d-flex justify-space-between text-caption py-1" style="border-bottom:1px solid #eee">
-                <span><b class="text-uppercase">{{ r.action }}</b> — {{ r.description }}</span>
+                <span><b class="text-uppercase">{{ r.action }}</b> — {{ tidyNegotiationNote(r.description) }}</span>
                 <span class="text-medium-emphasis">{{ formatDatePR_ISO(r.created_at) }}</span>
               </div>
             </div>
