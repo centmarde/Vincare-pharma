@@ -15,7 +15,8 @@ import type { CustomerType } from '@/stores/customersData'
 import type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult } from '@/utils/canvassTypes'
 import { govtShelfLife, QUALIFICATION_MONTHS } from '@/utils/qualification'
 import { describeProduct } from '@/utils/helpers'
-import { isCreditSettlement } from '@/utils/paymentMethods'
+import { isCreditSettlement, paymentDiscount } from '@/utils/paymentMethods'
+import { bookPaymentDiscount, collectionCreatedAt, paidBeforeDocument, paymentDateProblem, settleAgainst } from '@/stores/shared/collectionSettlement'
 import type { ChequeDetails } from '@/utils/paymentMethods'
 import { issueRow, useIssueList } from '@/composables/useIssueList'
 import { hasPendingTermsRequest, isApprovedLockRequest, unlockBlocker } from '@/stores/shared/termsApprovalGuards'
@@ -945,18 +946,28 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
      * touches those columns.
      */
     cheque?: ChequeDetails | null
+    /**
+     * The day the customer paid (YYYY-MM-DD), when it was not today. Stored as
+     * the collection's date, so the ledger books it on that day.
+     */
+    paidOn?: string | null
   }) => {
-    // A return credit or a credit memo: settled by a credit, so no money moves.
+    // A return credit, credit memo or payment discount: settled by a credit,
+    // so no money moves.
     const isReturnCredit = isCreditSettlement(payload.method)
+    const isDiscount = payload.method === paymentDiscount
+    const createdAt = collectionCreatedAt(payload.paidOn)
     loading.value = true
     clearError()
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
     if (payload.amount <= 0) { toast.error('Payment amount must be positive.'); loading.value = false; return { success: false } }
+    const dateProblem = paymentDateProblem(payload.paidOn)
+    if (dateProblem) { toast.error(dateProblem); loading.value = false; return { success: false } }
 
     const { data: order, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, total_amount, inhouse_details(amount_paid)')
+      .select('id, status, created_at, total_amount, inhouse_no, inhouse_details(amount_paid)')
       .eq('id', payload.orderId)
       .eq('transaction_type', 'inhouse_order')
       .maybeSingle()
@@ -968,11 +979,13 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       toast.error('Order must be fully delivered before payment.')
       loading.value = false; return { success: false }
     }
+    const tooEarly = paidBeforeDocument(payload.paidOn, order.created_at)
+    if (tooEarly) { toast.error(tooEarly); loading.value = false; return { success: false } }
 
     const paid = (order.inhouse_details as unknown as { amount_paid: number | null } | null)?.amount_paid ?? 0
     const total = order.total_amount ?? 0
-    const balance = total - paid
-    if (payload.amount > balance) {
+    const { balance, newPaid, exceeds, settled } = settleAgainst(total, paid, payload.amount)
+    if (exceeds) {
       toast.error(`Payment (${payload.amount}) exceeds outstanding balance (${balance}).`)
       loading.value = false; return { success: false }
     }
@@ -1002,6 +1015,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
         ...(payload.cheque
           ? { cheque_bank: payload.cheque.bank, cheque_no: payload.cheque.number, cheque_date: payload.cheque.date }
           : {}),
+        ...(createdAt ? { created_at: createdAt } : {}),
       })
       .select('id')
       .single()
@@ -1010,13 +1024,23 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       loading.value = false; return { success: false }
     }
 
-    const newPaid = paid + payload.amount
-    const newStatus = newPaid >= total ? 'paid' : 'partial'
+    // A discount is booked before the balance changes: if the ledger entry
+    // cannot be posted the discount row is taken back out.
+    if (isDiscount) {
+      const booked = await bookPaymentDiscount(payment.id, payload.amount, payload.paidOn,
+        `Discount on In-House order ${(order as { inhouse_no?: string | null }).inhouse_no ?? payload.orderId}`, user.id)
+      if (!booked.ok) {
+        toast.error(`The discount was not recorded: ${booked.error ?? 'the ledger entry failed'}.`)
+        loading.value = false; return { success: false }
+      }
+    }
+
+    const newStatus = settled ? 'paid' : 'partial'
     const nowIso = new Date().toISOString()
 
     const { error: detailsError } = await supabase
       .from('inhouse_details')
-      .update({ amount_paid: newPaid, paid_at: nowIso })
+      .update({ amount_paid: newPaid, paid_at: createdAt ?? nowIso })
       .eq('transaction_id', payload.orderId)
     if (detailsError) {
       handleError(detailsError, 'Failed to record payment.'); toast.error(detailsError.message || 'Failed to record payment.')
@@ -1045,14 +1069,17 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const { error: logError } = await supabase.from('logs').insert({
       created_by: user.id, action: 'payment',
-      description: account
+      description: (account
         ? `Payment of ${payload.amount} into ${account.name} (${newPaid}/${total})`
-        : `Returned goods credit of ${payload.amount} (${payload.reference ?? 'return'}) (${newPaid}/${total})`,
+        : isDiscount
+        ? `Discount of ${payload.amount} given at payment (${newPaid}/${total})`
+        : `Returned goods credit of ${payload.amount} (${payload.reference ?? 'return'}) (${newPaid}/${total})`)
+        + (createdAt ? ` (paid ${createdAt})` : ''),
       module: 'inhouse', transaction_id: payload.orderId,
     })
     if (logError) console.warn('recordPayment: activity log insert failed:', logError.message)
 
-    toast.success(isReturnCredit ? 'Credit taken off the bill.' : 'Payment recorded.')
+    toast.success(isDiscount ? 'Discount taken off the bill.' : isReturnCredit ? 'Credit taken off the bill.' : 'Payment recorded.')
     await fetchOrders()
     loading.value = false
     return { success: true, paymentId: payment.id }

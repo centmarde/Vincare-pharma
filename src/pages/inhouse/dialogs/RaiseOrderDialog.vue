@@ -128,8 +128,8 @@ onMounted(init)
               </td>
               <td class="text-medium-emphasis">{{ line.unit || '—' }}</td>
               <td><v-text-field v-model.number="line.qty" type="number" min="1" variant="outlined" density="compact" hide-details class="input-number" /></td>
-              <td><v-text-field v-model.number="line.offer_unit" type="number" min="0" prefix="₱" variant="outlined" density="compact" hide-details /></td>
-              <td><v-text-field v-model.number="line.cost_unit" type="number" min="0" prefix="₱" variant="outlined" density="compact" hide-details /></td>
+              <td><MoneyField v-model="line.offer_unit" prefix="₱" variant="outlined" density="compact" hide-details /></td>
+              <td><MoneyField v-model="line.cost_unit" prefix="₱" variant="outlined" density="compact" hide-details /></td>
               <td class="text-right">{{ formatCurrency(line.qty * line.offer_unit) }}</td>
               <td class="text-center">
                 <v-btn variant="text" size="small" icon="mdi-close" color="error" :disabled="lines.length === 1" @click="removeLine(i)" />

@@ -14,7 +14,8 @@ import { useFinanceDataStore } from '@/stores/financeData'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { formatCurrency } from '@/utils/helpers'
-import { chequeFor, chequeLabel, chequeProblem, collectionMethodLabel } from '@/utils/paymentMethods'
+import { chequeLabel, collectionMethodLabel } from '@/utils/paymentMethods'
+import { discountFailedMessage, recordSettlement, settlementProblem, settlementSummary, todayISO } from '@/composables/collectionEntry'
 import type { CollectionType } from '@/stores/ethicalData'
 import type { DraftPrintDocument } from '@/components/orderPrint/useDraftOrderPrint'
 
@@ -115,6 +116,9 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   // Where the money is deposited. Without it nothing ever credited
   // cash_accounts.balance, which only ever decreased.
   const payCashAccountId = ref<number | null>(null)
+  // A discount given as they pay (no cash), and the day they paid.
+  const payDiscount = ref(0)
+  const payPaidOn = ref(todayISO())
 
   const items = computed(() => order()?.items ?? [])
   const status = computed(() => order()?.status ?? '')
@@ -216,6 +220,8 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     payChequeNo.value = ''
     payChequeDate.value = ''
     payCashAccountId.value = null
+    payDiscount.value = 0
+    payPaidOn.value = todayISO()
     requestedAt.value = null
     shortDatedBatches.value = []
     shortDatedRequest.value = null
@@ -477,40 +483,37 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     if (result.success) onChanged()
   }
 
-  async function recordPayment() {
-    const o = order(); if (!o || !(payAmount.value > 0)) return
-    if (payCashAccountId.value === null) { toast.warning('Choose which cash account received this payment'); return }
-    const chequeInput = { bank: payChequeBank.value, number: payChequeNo.value, date: payChequeDate.value }
-    const chequeMissing = chequeProblem(payMethod.value, chequeInput)
-    if (chequeMissing) { toast.warning(`Enter ${chequeMissing} for this cheque`); return }
-    const cheque = chequeFor(payMethod.value, chequeInput)
+  const payInput = computed(() => ({
+    amount: payAmount.value,
+    discount: payDiscount.value,
+    paidOn: payPaidOn.value,
+    method: payMethod.value,
+    reference: payReference.value,
+    remarks: payRemarks.value,
+    cashAccountId: payCashAccountId.value,
+    cheque: { bank: payChequeBank.value, number: payChequeNo.value, date: payChequeDate.value },
+  }))
+  /** Why the payment cannot be recorded yet, or null — drives the button. */
+  const payProblem = computed(() => settlementProblem(payInput.value, balance.value))
 
-    const willFullyPay = payAmount.value >= balance.value
-    const summary = [
-      `Amount: ${formatCurrency(payAmount.value)}`,
-      `Method: ${collectionMethodLabel(payMethod.value)}`,
-      cheque ? `Cheque: ${chequeLabel({ cheque_bank: cheque.bank, cheque_no: cheque.number, cheque_date: cheque.date })}` : '',
-      `Reference / OR #: ${payReference.value || '—'}`,
-      `Deposited to: ${cashAccountName(payCashAccountId.value)}`,
-      `Note: ${payRemarks.value || '—'}`,
-      `Remaining balance after this: ${formatCurrency(Math.max(0, balance.value - payAmount.value))}`,
-      willFullyPay ? 'This will mark the order as PAID IN FULL.' : '',
-    ].filter(Boolean).join('\n')
+  async function recordPayment() {
+    const o = order(); if (!o) return
+    const problem = payProblem.value
+    if (problem) { toast.warning(problem); return }
+    const summary = settlementSummary(payInput.value, balance.value, cashAccountName(payCashAccountId.value))
     const ok = await confirmDialog(summary, { title: 'Confirm Payment', confirmText: 'Record Payment' })
     if (!ok) return
 
     loading.value = true
-    const result = await store.recordPayment({
-      orderId:   o.id,
-      amount:    payAmount.value,
-      method:    payMethod.value,
-      reference: payReference.value || undefined,
-      remarks:   payRemarks.value || undefined,
-      cashAccountId: payCashAccountId.value,
-      cheque,
-    })
+    const result = await recordSettlement(payInput.value, (payload) => store.recordPayment({ orderId: o.id, ...payload }))
     loading.value = false
+    if (result.discountFailed) toast.warning(discountFailedMessage(payInput.value.amount))
     if (result.success) {
+      // A discount that failed stays filled in (with its date) to re-enter.
+      if (!result.discountFailed) {
+        payDiscount.value = 0
+        payPaidOn.value = todayISO()
+      }
       payReference.value = ''
       payRemarks.value = ''
       payCashAccountId.value = null
@@ -562,6 +565,7 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     lineQtyEdits, newLines, hasUnsavedLineChanges, isRemoved, removeItem, restoreItem, addNewLine, removeNewLine, applyPickedProductToNewLine,
     receivedBy, issuedReceipt,
     payAmount, payMethod, payReference, payRemarks, payCashAccountId, cashAccountOptions,
+    payDiscount, payPaidOn, payProblem,
     payChequeBank, payChequeNo, payChequeDate,
     requestedAt, requestNote,
     shortDatedBatches, shortDatedRequest, shortDatedNote,

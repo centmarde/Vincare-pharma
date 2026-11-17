@@ -10,7 +10,8 @@ import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { useTermsApprovalStore, isWithdrawn } from '@/stores/termsApprovalData'
 import type { TermsRequest } from '@/stores/termsApprovalData'
 import { formatCurrency } from '@/utils/helpers'
-import { chequeFor, chequeLabel, chequeProblem, collectionMethodLabel } from '@/utils/paymentMethods'
+import { chequeLabel, collectionMethodLabel } from '@/utils/paymentMethods'
+import { discountFailedMessage, recordSettlement, settlementProblem, settlementSummary, todayISO } from '@/composables/collectionEntry'
 
 const toast = useToast()
 const { confirmDialog, inputValue: confirmInput } = useConfirmDialog()
@@ -38,6 +39,9 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
   // Where the money is deposited. A collection has to land in a real account or
   // cash_accounts.balance never reflects the payment.
   const collectionCashAccountId = ref<number | null>(null)
+  // A discount given as they pay (no cash), and the day they paid.
+  const collectionDiscount = ref(0)
+  const collectionPaidOn = ref(todayISO())
   // delivery receipt: consignee's printed name + the DR to print once issued
   const receivedBy = ref('')
   const issuedReceipt = ref<DeliveryReceiptType | null>(null)
@@ -97,6 +101,12 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
       requestedAt.value = null
       requestNote.value = ''
       collectionCashAccountId.value = null
+      // Another order: nothing typed for the last one carries over.
+      collectionAmount.value = 0
+      collectionDiscount.value = 0
+      collectionPaidOn.value = todayISO()
+      collectionReference.value = ''
+      collectionRemarks.value = ''
       termsRequest.value = null
       if (o?.id) {
         void loadTermsRequest(o.id)
@@ -187,43 +197,38 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
     loading.value = false
   }
 
+  const collectionInput = computed(() => ({
+    amount: collectionAmount.value,
+    discount: collectionDiscount.value,
+    paidOn: collectionPaidOn.value,
+    method: collectionMethod.value,
+    reference: collectionReference.value,
+    remarks: collectionRemarks.value,
+    cashAccountId: collectionCashAccountId.value,
+    cheque: { bank: collectionChequeBank.value, number: collectionChequeNo.value, date: collectionChequeDate.value },
+  }))
+  /** Why the collection cannot be recorded yet, or null — drives the button. */
+  const collectionProblem = computed(() => settlementProblem(collectionInput.value, balance.value))
+
   async function recordCollection() {
     const o = order()
     if (!o?.id) return
-    if (collectionAmount.value <= 0) { toast.warning('Amount must be positive'); return }
-    if (collectionAmount.value > balance.value) { toast.warning('Amount exceeds balance'); return }
-    if (collectionCashAccountId.value === null) { toast.warning('Choose which cash account received this payment'); return }
-    const chequeInput = { bank: collectionChequeBank.value, number: collectionChequeNo.value, date: collectionChequeDate.value }
-    const chequeMissing = chequeProblem(collectionMethod.value, chequeInput)
-    if (chequeMissing) { toast.warning(`Enter ${chequeMissing} for this cheque`); return }
-    const cheque = chequeFor(collectionMethod.value, chequeInput)
-
-    const willFullyPay = collectionAmount.value >= balance.value
-    const summary = [
-      `Amount: ${formatCurrency(collectionAmount.value)}`,
-      `Method: ${collectionMethodLabel(collectionMethod.value)}`,
-      cheque ? `Cheque: ${chequeLabel({ cheque_bank: cheque.bank, cheque_no: cheque.number, cheque_date: cheque.date })}` : '',
-      `Reference / OR #: ${collectionReference.value || '—'}`,
-      `Deposited to: ${cashAccountName(collectionCashAccountId.value)}`,
-      `Note: ${collectionRemarks.value || '—'}`,
-      `Remaining balance after this: ${formatCurrency(Math.max(0, balance.value - collectionAmount.value))}`,
-      willFullyPay ? 'This will mark the order as PAID IN FULL.' : '',
-    ].filter(Boolean).join('\n')
+    const problem = collectionProblem.value
+    if (problem) { toast.warning(problem); return }
+    const summary = settlementSummary(collectionInput.value, balance.value, cashAccountName(collectionCashAccountId.value))
     const ok = await confirmDialog(summary, { title: 'Confirm Collection', confirmText: 'Record Collection' })
     if (!ok) return
 
     loading.value = true
-    const result = await ethical.recordCollection({
-      orderId: o.id,
-      amount: collectionAmount.value,
-      method: collectionMethod.value || undefined,
-      reference: collectionReference.value || undefined,
-      remarks: collectionRemarks.value || undefined,
-      cashAccountId: collectionCashAccountId.value,
-      cheque,
-    })
+    const result = await recordSettlement(collectionInput.value, (payload) => ethical.recordCollection({ orderId: o.id, ...payload }))
     loading.value = false
+    if (result.discountFailed) toast.warning(discountFailedMessage(collectionInput.value.amount))
     if (result.success) {
+      // A discount that failed stays filled in (with its date) to re-enter.
+      if (!result.discountFailed) {
+        collectionDiscount.value = 0
+        collectionPaidOn.value = todayISO()
+      }
       collectionAmount.value = 0
       collectionMethod.value = 'cash'
       collectionReference.value = ''
@@ -265,6 +270,9 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
     collectionAmount,
     collectionMethod,
     collectionReference,
+    collectionDiscount,
+    collectionPaidOn,
+    collectionProblem,
     collectionRemarks,
     collectionCashAccountId,
     collectionChequeBank,

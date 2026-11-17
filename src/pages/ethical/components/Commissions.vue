@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useCommissions } from '../composables/useCommissions'
 import { useEthicalDataStore } from '@/stores/ethicalData'
 import { formatCurrency } from '@/utils/helpers'
 import { useDisplay } from 'vuetify'
+import { isCreditSettlement } from '@/utils/paymentMethods'
 
 const { mobile } = useDisplay()
 const { collections, commissionSummary, loading, statusFilter, init } = useCommissions()
 const ethical = useEthicalDataStore()
+
+// A discount or return credit earns no commission — not a line to pay out.
+const commissionRows = computed(() => collections.value.filter((c) => !isCreditSettlement(c.payment_method)))
 
 async function markPaid(collectionId: number) {
   await ethical.markCommissionPaid(collectionId)
@@ -117,7 +121,7 @@ onMounted(() => init())
           <!-- MOBILE: collection cards -->
           <template v-else-if="mobile">
             <v-card
-              v-for="(col, idx) in collections" :key="`col-${idx}`"
+              v-for="(col, idx) in commissionRows" :key="`col-${idx}`"
               variant="outlined" rounded="lg" class="mb-2 pa-3"
             >
               <div class="d-flex align-start ga-3">
@@ -178,7 +182,7 @@ onMounted(() => init())
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(col, idx) in collections" :key="`col-${idx}`">
+              <tr v-for="(col, idx) in commissionRows" :key="`col-${idx}`">
                 <td>{{ col.created_at ? new Date(col.created_at).toLocaleDateString() : '—' }}</td>
                 <td class="text-right">{{ formatCurrency(col.amount ?? 0) }}</td>
                 <td class="text-right">{{ col.commission_rate?.toFixed(2) }}%</td>
