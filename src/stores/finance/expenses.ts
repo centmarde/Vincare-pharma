@@ -12,6 +12,7 @@ import { applyDateRange } from './helpers'
 import { mapExpenseRow } from './mappers'
 import { expenses, loading, handleError, clearError } from './state'
 import { fetchCashAccounts } from './cashAccounts'
+import { fetchAllRows } from '@/stores/shared/paging'
 
 const toast = useToast()
 
@@ -30,18 +31,20 @@ export async function fetchExpenses(options: DateRange & { category?: ExpenseCat
     // Voided expenses are deliberately INCLUDED here — this is the document
     // list, and the accountant wants reversed documents visible and flagged.
     // Every aggregate below (opex, liquidation, cash) excludes them instead.
-    let q = supabase.from('transactions')
-      .select(options.category
-        ? '*, cash_account:cash_account_id(name), finance_details!inner(*)'
-        : '*, cash_account:cash_account_id(name), finance_details(*)')
-      .eq('transaction_type', 'expense')
-    if (options.category) q = q.eq('finance_details.category', options.category)
-    q = applyDateRange(q, 'paid_at', options)
-    q = q.order('paid_at', { ascending: false })
-
-    const { data, error: fetchError } = await q
-    if (fetchError) throw fetchError
-    expenses.value = (data || []).map(mapExpenseRow)
+    // Paged: a single request stops at 1,000 rows, and expenses pass that
+    // within the year — the oldest would silently drop off the list.
+    const data = await fetchAllRows<any>(() => {
+      let q = supabase.from('transactions')
+        .select(options.category
+          ? '*, cash_account:cash_account_id(name), finance_details!inner(*)'
+          : '*, cash_account:cash_account_id(name), finance_details(*)')
+        .eq('transaction_type', 'expense')
+      if (options.category) q = q.eq('finance_details.category', options.category)
+      q = applyDateRange(q, 'paid_at', options)
+      // id last, so paging never skips or repeats rows sharing a date.
+      return q.order('paid_at', { ascending: false }).order('id', { ascending: false })
+    })
+    expenses.value = data.map(mapExpenseRow)
     return expenses.value
   } catch (err) {
     handleError(err, 'Failed to fetch expenses')

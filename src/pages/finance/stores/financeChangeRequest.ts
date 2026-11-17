@@ -4,10 +4,8 @@ import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
-import { useFinanceDataStore } from '@/stores/financeData'
-import type { ExpenseCategory, ExpenseDepartment } from '@/stores/financeData'
-import { useGLDataStore } from '@/stores/glData'
 import { getErrorMessage } from '@/utils/helpers'
+import { applyExpenseChange, applySupplierPaymentChange } from '@/stores/changeRequests/finance'
 import type { AppliedEdit } from '@/stores/changeRequestsData'
 import type { ProposedChange } from '@/utils/changeRequests'
 import { parseProposedChanges, serializeProposedChanges } from '@/utils/changeRequests'
@@ -18,11 +16,10 @@ import { parseProposedChanges, serializeProposedChanges } from '@/utils/changeRe
 // stay on GeneralJournal's existing direct-reversal flow).
 //
 // Mirrors the purchasing reference (`src/pages/purchasing/stores/oldChangeRequestPR.ts`)
-// structurally: same fetch/propose/approve/reject/apply shape, scoped to this
+// structurally: same fetch/propose/approve/reject shape, scoped to this
 // module's transaction types via `transactions!inner(transaction_type)`. The
-// apply logic itself (void/edit rules per document type) is carried over
-// verbatim from the shared `src/stores/changeRequestsData.ts`, which keeps it
-// for inhouse/ethical collections.
+// apply logic (void/edit rules per document type) is NOT copied here — it is
+// imported from `src/stores/changeRequests/finance.ts`, the one copy.
 
 const toast = useToast()
 
@@ -38,11 +35,6 @@ const MODULE_TYPES = ['expense', 'supplier_payment']
 // bug the lead fixed for the PR undo flow).
 const PREV_STATUS_KEY = '__prev_status'
 
-function stripReservedKeys(changes: ProposedChange): ProposedChange {
-  const out: ProposedChange = {}
-  for (const [k, v] of Object.entries(changes)) if (k !== PREV_STATUS_KEY) out[k] = v
-  return out
-}
 
 export type FinanceChangeRequestType = {
   id: number
@@ -55,6 +47,7 @@ export type FinanceChangeRequestType = {
   status: 'pending' | 'approved' | 'rejected'
   created_by: string | null
   created_by_email?: string | null
+  resolved_by_email?: string | null
   resolved_by: string | null
   resolved_at: string | null
   resolution_note: string | null
@@ -179,7 +172,7 @@ export const useFinanceChangeRequestStore = defineStore('financeChangeRequest', 
   async function fetchAppliedEdits(): Promise<AppliedEdit[]> {
     const { data, error: e } = await supabase
       .from('change_requests')
-      .select('transaction_id, summary, reason, resolved_at, to_transaction_no, transactions!inner(transaction_type)')
+      .select('id, transaction_id, summary, reason, resolved_at, from_transaction_no, to_transaction_no, transactions!inner(transaction_type)')
       .eq('request_type', 'edit')
       .eq('status', 'approved')
       .in('transactions.transaction_type', MODULE_TYPES)
@@ -415,6 +408,10 @@ export const useFinanceChangeRequestStore = defineStore('financeChangeRequest', 
   }
 
   // ─── Apply dispatch ─────────────────────────────────────────────────────────
+  // The appliers live in ONE place (src/stores/changeRequests/finance.ts),
+  // shared with the shared store's dispatcher, so the two approval routes run
+  // the same code. They used to be two copies that had drifted: only the other
+  // one checked a correction could go through before voiding the original.
   async function applyChange(request: FinanceChangeRequestType, userId: string): Promise<ApplyResult> {
     const txnType = await resolveTransactionType(request.transaction_id)
     if (!txnType) return { success: false, error: 'Transaction not found.' }
@@ -441,335 +438,31 @@ export const useFinanceChangeRequestStore = defineStore('financeChangeRequest', 
     return data?.transaction_type ?? null
   }
 
-  // Reverse a document's projected GL entry (the ORIGINAL booking, not a mirror
-  // reversal — reverses_entry IS NULL — so a retry can't re-reverse). Returns
-  // ok when there's nothing to reverse (never projected). Shared by every void.
-  async function reverseProjectedEntry(
-    referenceType: 'disbursement' | 'collection',
-    referenceId: number,
-    userId: string,
-  ): Promise<{ ok: boolean; error?: string }> {
-    const gl = useGLDataStore()
-    const { data: je } = await supabase
-      .from('journal_entries')
-      .select('id')
-      .eq('reference_type', referenceType)
-      .eq('reference_id', referenceId)
-      .eq('status', 'posted')
-      .is('reverses_entry', null)
-      .maybeSingle()
-    if (!je) return { ok: true }
-    const rev = await gl.reverseJournalEntry(je.id, userId)
-    return rev.success ? { ok: true } : { ok: false, error: rev.error }
-  }
-
-  // ── Edit model helpers ───────────────────────────────────────────────────
-  type Diff = { from: unknown; to: unknown }
-  function toVal(changes: ProposedChange, key: string): unknown {
-    return key in changes ? (changes[key] as Diff).to : undefined
-  }
-  function normVal(v: unknown): string {
-    return v == null ? '' : String(v)
-  }
-  // First changed field whose LIVE value no longer matches the request's `from`
-  // (the document drifted since the request was filed) — don't apply stale edits.
-  function firstStaleField(changes: ProposedChange, current: Record<string, unknown>): string | null {
-    for (const [k, diff] of Object.entries(changes)) {
-      if (normVal((diff as Diff).from) !== normVal(current[k])) return k
+  /**
+   * Every change request that touched a document: those filed against it, and
+   * — for a replacement from the old void-and-reissue days — the one that
+   * created it. Oldest first, with the requester's and approver's emails.
+   */
+  async function fetchHistory(transactionId: number, docNo: string | null): Promise<FinanceChangeRequestType[]> {
+    const filter = docNo
+      ? `transaction_id.eq.${transactionId},to_transaction_no.eq.${docNo}`
+      : `transaction_id.eq.${transactionId}`
+    const { data, error: e } = await supabase
+      .from('change_requests')
+      .select('*')
+      .or(filter)
+      .order('created_at', { ascending: true })
+    if (e) {
+      handleError(e, 'Failed to load the change history')
+      return []
     }
-    return null
-  }
-  function staleError(k: string) {
-    return {
-      success: false as const,
-      error: `"${k}" changed since this request was filed — please re-file the edit.`,
-    }
-  }
-  // Reverse + reissue dates the replacement at the correction date (accountant's
-  // call), so a fix never lands back in an already-reported period.
-  function correctionDate(): string {
-    return new Date().toISOString().slice(0, 10)
-  }
-  function reissueReason(r: FinanceChangeRequestType): string {
-    return `Corrected via change request #${r.id}${r.reason ? `: ${r.reason}` : ''}`
-  }
-  function reissueRemarks(r: FinanceChangeRequestType, remarks: unknown): string {
-    const backlink = `Replaces ${txnLabel(r.from_transaction_no, r.transaction_id)} (change request #${r.id})`
-    const existing = (remarks ?? '') as string
-    return existing ? `${backlink} | ${existing}` : backlink
-  }
-
-  const EXPENSE_LEDGER_KEYS = new Set(['amount', 'category', 'cash_account_id', 'paid_at'])
-  const EXPENSE_MEMO_TX_KEYS = new Set(['payment_method', 'remarks'])
-  const EXPENSE_MEMO_DETAIL_KEYS = new Set(['paid_to', 'department', 'or_si_no'])
-
-  // Reverse the expense's projected GL entry (if booked), then soft-void the
-  // document and restore the cash account. The row stays, flagged.
-  async function voidExpense(
-    targetId: number,
-    userId: string,
-    reason: string | null,
-  ): Promise<{ success: boolean; error?: string }> {
-    const financeStore = useFinanceDataStore()
-    const rev = await reverseProjectedEntry('disbursement', targetId, userId)
-    if (!rev.ok)
-      return { success: false, error: rev.error || 'Failed to reverse the expense journal entry.' }
-    const result = await financeStore.voidExpense(targetId, reason)
-    return result.success
-      ? { success: true }
-      : { success: false, error: 'Failed to void the expense (GL already reversed — please retry).' }
-  }
-
-  async function applyExpenseChange(request: FinanceChangeRequestType, userId: string): Promise<ApplyResult> {
-    if (request.request_type === 'void') {
-      const v = await voidExpense(request.transaction_id, userId, request.reason)
-      return v.success ? { success: true, resultRef: request.from_transaction_no ?? undefined } : v
-    }
-
-    // EDIT — read live state (for the stale-guard + the reissue base).
-    const changes = stripReservedKeys(request.proposed_changes ?? {})
-    const { data: cur } = await supabase
-      .from('transactions')
-      .select(
-        'total_amount, cash_account_id, paid_at, payment_method, remarks, status, finance_details(category, paid_to, department, or_si_no)',
-      )
-      .eq('id', request.transaction_id)
-      .eq('transaction_type', 'expense')
-      .maybeSingle()
-    if (!cur) return { success: false, error: 'Expense not found.' }
-    if (cur.status === 'voided') return { success: false, error: 'This expense has already been voided.' }
-    const fd = ((Array.isArray(cur.finance_details)
-      ? cur.finance_details[0]
-      : cur.finance_details) ?? {}) as Record<string, unknown>
-    const current: Record<string, unknown> = {
-      amount: cur.total_amount,
-      cash_account_id: cur.cash_account_id,
-      paid_at: (cur.paid_at ?? '').slice(0, 10),
-      payment_method: cur.payment_method,
-      remarks: cur.remarks,
-      category: fd.category,
-      paid_to: fd.paid_to,
-      department: fd.department,
-      or_si_no: fd.or_si_no,
-    }
-    const stale = firstStaleField(changes, current)
-    if (stale) return staleError(stale)
-
-    // Memo-only edit → update in place (same document). Unlike void/reissue,
-    // this path never sets a new status on its own, so the 'change_request'
-    // gate set at propose time must be cleared explicitly here — restore the
-    // pre-gate status stashed in __prev_status (else the document is
-    // permanently stuck gated, invisible to whatever normally reads its
-    // status).
-    if (!Object.keys(changes).some((k) => EXPENSE_LEDGER_KEYS.has(k))) {
-      const txUpdate: Record<string, unknown> = {}
-      const detailUpdate: Record<string, unknown> = {}
-      for (const [key, diff] of Object.entries(changes)) {
-        const to = (diff as Diff).to
-        if (EXPENSE_MEMO_TX_KEYS.has(key)) txUpdate[key] = to
-        else if (EXPENSE_MEMO_DETAIL_KEYS.has(key)) detailUpdate[key] = to
-      }
-      const prevStatus = (request.proposed_changes?.[PREV_STATUS_KEY] as { from?: unknown } | undefined)?.from
-      if (typeof prevStatus === 'string') txUpdate.status = prevStatus
-      else console.warn('applyExpenseChange: no __prev_status stashed — document may stay gated on change_request.')
-      if (Object.keys(txUpdate).length) {
-        const { error: e } = await supabase
-          .from('transactions')
-          .update(txUpdate)
-          .eq('id', request.transaction_id)
-        if (e) return { success: false, error: e.message }
-      }
-      if (Object.keys(detailUpdate).length) {
-        const { error: e } = await supabase
-          .from('finance_details')
-          .update(detailUpdate)
-          .eq('transaction_id', request.transaction_id)
-        if (e) return { success: false, error: e.message }
-      }
-      return { success: true, resultRef: request.from_transaction_no ?? undefined }
-    }
-
-    // Ledger edit → reverse the old expense + reissue a corrected one.
-    // The replacement is dated at the CORRECTION date, not the original value
-    // date, so a correction never posts back into an already-reported period
-    // (unless the edit is explicitly changing paid_at itself).
-    const financeStore = useFinanceDataStore()
-    const merged = {
-      category: (toVal(changes, 'category') ?? fd.category) as ExpenseCategory,
-      amount: Number(toVal(changes, 'amount') ?? cur.total_amount ?? 0),
-      paidTo: ((toVal(changes, 'paid_to') ?? fd.paid_to) as string | undefined) || undefined,
-      paymentMethod:
-        ((toVal(changes, 'payment_method') ?? cur.payment_method) as string | undefined) || undefined,
-      valueDate: ((toVal(changes, 'paid_at') ?? correctionDate()) as string | undefined) || undefined,
-      remarks: reissueRemarks(request, toVal(changes, 'remarks') ?? cur.remarks),
-      department:
-        ((toVal(changes, 'department') ?? fd.department) as ExpenseDepartment | undefined) || undefined,
-      orSiNo: ((toVal(changes, 'or_si_no') ?? fd.or_si_no) as string | undefined) || undefined,
-      cashAccountId: Number(toVal(changes, 'cash_account_id') ?? cur.cash_account_id),
-    }
-    const v = await voidExpense(request.transaction_id, userId, reissueReason(request))
-    if (!v.success) return v
-    const res = await financeStore.recordExpense(merged)
-    if (!res.success)
-      return {
-        success: false,
-        error: 'Old expense voided, but reissuing the corrected expense failed — please re-record it manually.',
-      }
-    return { success: true, resultId: res.expenseId, resultRef: res.expenseNo ?? undefined }
-  }
-
-  // ── Supplier payment ──────────────────────────────────────────────────────
-  // Projects as 'disbursement' (DR AP / CR cash). Void reverses that + restores
-  // suppliers.balance (which reissueSupplierPayment decremented). Edit is
-  // memo-only; amount changes go through void + re-record.
-  async function voidSupplierPayment(
-    targetId: number,
-    userId: string,
-    reason: string | null,
-  ): Promise<{ success: boolean; error?: string }> {
-    const { data: pay } = await supabase
-      .from('transactions')
-      .select('supplier_id, total_amount, status, cash_account_id')
-      .eq('id', targetId)
-      .eq('transaction_type', 'supplier_payment')
-      .maybeSingle()
-    if (!pay) return { success: false, error: 'Supplier payment not found.' }
-    if (pay.status === 'voided') return { success: false, error: 'This payment has already been voided.' }
-    const voidedCashAccountId = pay.cash_account_id as number | null
-    const voidedAmount = (pay.total_amount ?? 0) as number
-
-    // Only give back what the payment took. reissueSupplierPayment lowers the
-    // cached suppliers.balance; a payment raised from a disbursement voucher
-    // never touches it. Restoring for a voucher payment wrote the amount into a
-    // balance that was never lowered — turning a blank cache into a bogus
-    // figure and a false drift warning on the Supplier Payments page.
-    // Looked up BEFORE anything changes, and a failed lookup stops the void:
-    // read as "not from a voucher", it would restore a balance that was never
-    // lowered, on a payment already voided that no retry could reach.
-    const { count: voucherLines, error: voucherLookupError } = await supabase
-      .from('disbursement_voucher_items')
-      .select('id', { count: 'exact', head: true })
-      .eq('expense_transaction_id', targetId)
-    if (voucherLookupError) {
-      return { success: false, error: `Could not check whether this payment came from a voucher (${voucherLookupError.message}). Nothing was voided.` }
-    }
-    const fromVoucher = (voucherLines ?? 0) > 0
-
-    const rev = await reverseProjectedEntry('disbursement', targetId, userId)
-    if (!rev.ok)
-      return { success: false, error: rev.error || 'Failed to reverse the payment journal entry.' }
-
-    // Void marker first: it is what excludes the payment from every AP read, so
-    // it must land before the compensating balance restore. (transactions.
-    // voided_at/voided_by/void_reason were dropped from the schema — status is
-    // the only signal now; the who/when/why lives on the change_requests row.)
-    const { error: voidErr } = await supabase
-      .from('transactions')
-      .update({ status: 'voided' })
-      .eq('id', targetId)
-      .eq('transaction_type', 'supplier_payment')
-      .neq('status', 'voided')
-    if (voidErr) return { success: false, error: voidErr.message }
-
-    if (pay.supplier_id && !fromVoucher) {
-      const { data: s } = await supabase
-        .from('suppliers')
-        .select('balance')
-        .eq('id', pay.supplier_id)
-        .maybeSingle()
-      if (s) {
-        const { error: e } = await supabase
-          .from('suppliers')
-          .update({ balance: (s.balance ?? 0) + (pay.total_amount ?? 0) })
-          .eq('id', pay.supplier_id)
-        if (e) console.warn('voidSupplierPayment: suppliers.balance restore failed:', e.message)
-      }
-    }
-
-    // Put the cash back. Voucher-raised payments DEDUCT from a cash account, so
-    // voiding one without restoring it leaves the account permanently short by
-    // the voided amount. The old in-page payment dialog never touched cash at
-    // all, which is why this restore did not exist before. Mirrors voidExpense.
-    if (voidedCashAccountId && voidedAmount > 0) {
-      const { data: account } = await supabase
-        .from('cash_accounts').select('balance').eq('id', voidedCashAccountId).maybeSingle()
-      if (account) {
-        const { error: e } = await supabase
-          .from('cash_accounts')
-          .update({ balance: (account.balance ?? 0) + voidedAmount })
-          .eq('id', voidedCashAccountId)
-        if (e) console.warn('voidSupplierPayment: cash account balance restore failed:', e.message)
-      }
-    }
-    return { success: true }
-  }
-
-  async function applySupplierPaymentChange(request: FinanceChangeRequestType, userId: string): Promise<ApplyResult> {
-    if (request.request_type === 'void') {
-      const v = await voidSupplierPayment(request.transaction_id, userId, request.reason)
-      return v.success ? { success: true, resultRef: request.from_transaction_no ?? undefined } : v
-    }
-
-    const changes = stripReservedKeys(request.proposed_changes ?? {})
-    const { data: cur } = await supabase
-      .from('transactions')
-      .select('supplier_id, total_amount, payment_method, paid_at, remarks, status, cash_account_id')
-      .eq('id', request.transaction_id)
-      .eq('transaction_type', 'supplier_payment')
-      .maybeSingle()
-    if (!cur) return { success: false, error: 'Supplier payment not found.' }
-    if (cur.status === 'voided') return { success: false, error: 'This payment has already been voided.' }
-    const current: Record<string, unknown> = {
-      amount: cur.total_amount,
-      payment_method: cur.payment_method,
-      remarks: cur.remarks,
-    }
-    const stale = firstStaleField(changes, current)
-    if (stale) return staleError(stale)
-
-    // Memo-only (method/remarks) → in place. Clear the 'change_request' gate
-    // here too — this path never sets a status of its own (see the matching
-    // note in applyExpenseChange).
-    if (!('amount' in changes)) {
-      const txUpdate: Record<string, unknown> = {}
-      for (const [key, diff] of Object.entries(changes)) {
-        if (key === 'payment_method' || key === 'remarks') txUpdate[key] = (diff as Diff).to
-      }
-      const prevStatus = (request.proposed_changes?.[PREV_STATUS_KEY] as { from?: unknown } | undefined)?.from
-      if (typeof prevStatus === 'string') txUpdate.status = prevStatus
-      else console.warn('applySupplierPaymentChange: no __prev_status stashed — document may stay gated on change_request.')
-      if (Object.keys(txUpdate).length) {
-        const { error: e } = await supabase
-          .from('transactions')
-          .update(txUpdate)
-          .eq('id', request.transaction_id)
-        if (e) return { success: false, error: e.message }
-      }
-      return { success: true, resultRef: request.from_transaction_no ?? undefined }
-    }
-
-    // Amount edit → reverse + reissue, dated at the correction date.
-    const financeStore = useFinanceDataStore()
-    const merged = {
-      supplierId: Number(cur.supplier_id),
-      amount: Number(toVal(changes, 'amount') ?? cur.total_amount ?? 0),
-      paymentMethod:
-        ((toVal(changes, 'payment_method') ?? cur.payment_method) as string | undefined) || undefined,
-      valueDate: correctionDate(),
-      // Carried forward or the replacement loses its cash account, and the GL
-      // credits 1020 instead of whatever actually paid.
-      cashAccountId: cur.cash_account_id ?? null,
-      remarks: reissueRemarks(request, toVal(changes, 'remarks') ?? cur.remarks),
-    }
-    const v = await voidSupplierPayment(request.transaction_id, userId, reissueReason(request))
-    if (!v.success) return v
-    const res = await financeStore.reissueSupplierPayment(merged)
-    if (!res.success)
-      return {
-        success: false,
-        error: 'Old payment voided, but reissuing the corrected payment failed — please re-record it manually.',
-      }
-    return { success: true, resultId: res.paymentId, resultRef: res.paymentNo ?? undefined }
+    if (!authStore.users.length) await authStore.getAllUsers()
+    const emailOf = (id: string | null) => authStore.users.find((u: any) => u.id === id)?.email ?? null
+    return (data || []).map((row) => ({
+      ...mapRequestRow(row),
+      created_by_email: emailOf(row.created_by),
+      resolved_by_email: emailOf(row.resolved_by),
+    }))
   }
 
   function resetStore() {
@@ -788,6 +481,7 @@ export const useFinanceChangeRequestStore = defineStore('financeChangeRequest', 
     hasPendingRequest,
     fetchPendingTargetIds,
     fetchAppliedEdits,
+    fetchHistory,
     proposeChange,
     approveRequest,
     rejectRequest,

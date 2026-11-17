@@ -9,6 +9,7 @@ import { nextDocNumber, insertWithDocRetry } from '@/utils/helpers'
 import type { APAgingRow, DateRange, SupplierAPRow } from './types'
 import { applyDateRange, apBucketFor, supplierDocRefs } from './helpers'
 import { mapSupplierPaymentRow } from './mappers'
+import { fetchAllRows } from '@/stores/shared/paging'
 import { supplierPayments, supplierAP, apAging, loading, handleError, clearError } from './state'
 
 const toast = useToast()
@@ -23,16 +24,16 @@ export async function fetchSupplierPayments(options: DateRange & { supplierId?: 
   loading.value = true
   clearError()
   try {
-    let q = supabase.from('transactions')
-      .select('*, supplier:supplier_id(name)')
-      .eq('transaction_type', 'supplier_payment')
-    if (options.supplierId) q = q.eq('supplier_id', options.supplierId)
-    q = applyDateRange(q, 'paid_at', options)
-    q = q.order('paid_at', { ascending: false })
-
-    const { data, error: fetchError } = await q
-    if (fetchError) throw fetchError
-    supplierPayments.value = (data || []).map(mapSupplierPaymentRow)
+    // Paged past PostgREST's 1,000-row cap; id last keeps the pages stable.
+    const data = await fetchAllRows<any>(() => {
+      let q = supabase.from('transactions')
+        .select('*, supplier:supplier_id(name)')
+        .eq('transaction_type', 'supplier_payment')
+      if (options.supplierId) q = q.eq('supplier_id', options.supplierId)
+      q = applyDateRange(q, 'paid_at', options)
+      return q.order('paid_at', { ascending: false }).order('id', { ascending: false })
+    })
+    supplierPayments.value = data.map(mapSupplierPaymentRow)
     return supplierPayments.value
   } catch (err) {
     handleError(err, 'Failed to fetch supplier payments')
@@ -137,6 +138,23 @@ export async function reissueSupplierPayment(payload: {
   const { error: balanceError } = await supabase
     .from('suppliers').update({ balance: (supplier.balance ?? 0) - payload.amount }).eq('id', payload.supplierId)
   if (balanceError) console.warn('reissueSupplierPayment: supplier balance update failed:', balanceError.message)
+
+  // The cash leaves the account it is paid from. voidSupplierPayment gives a
+  // payment's amount back to its cash account, so a correction that voided the
+  // old payment (cash back) and records this one must take this amount out —
+  // without it the account ended up higher by the corrected amount.
+  if (payload.cashAccountId != null) {
+    const { data: account } = await supabase
+      .from('cash_accounts').select('balance').eq('id', payload.cashAccountId).maybeSingle()
+    const { error: cashError } = account
+      ? await supabase.from('cash_accounts')
+        .update({ balance: (account.balance ?? 0) - payload.amount }).eq('id', payload.cashAccountId)
+      : { error: { message: 'cash account not found' } }
+    if (cashError) {
+      console.warn('reissueSupplierPayment: cash account balance update failed:', cashError.message)
+      toast.warning(`Payment ${paymentNo} recorded, but its cash account balance was not updated. Verify it manually.`)
+    }
+  }
 
   const { error: logError } = await supabase.from('logs').insert({
     created_by: user.id, action: 'supplier_payment',

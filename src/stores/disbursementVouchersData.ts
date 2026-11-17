@@ -6,7 +6,7 @@ import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { generateNextNumber, insertWithDocRetry, getErrorMessage, formatCurrency } from '@/utils/helpers'
 import type { ExpenseCategory, ExpenseDepartment } from '@/stores/financeData'
-import { fetchAllRows } from '@/stores/shared/paging'
+import { fetchAllRows, fetchAllRowsForIds } from '@/stores/shared/paging'
 
 // Disbursement Vouchers: draft ──print──> printed ──record──> recorded (or cancelled).
 // A voucher never moves money or posts to the GL — only its particulars do, at the
@@ -78,6 +78,19 @@ export type VoucherItemType = {
   /** The expense this line became, once recorded. Drives the RECORDED stamp. */
   expense_no: string | null
   expense_recorded_at: string | null
+  /** The recorded expense's status — 'voided' once undone or corrected the old way. */
+  expense_status: string | null
+  /**
+   * The expense that replaced this line's voided one. Corrections before
+   * 2026-11-17 voided the expense and recorded a copy under a new number, and
+   * the line kept pointing at the voided original.
+   */
+  corrected_expense_no: string | null
+  /**
+   * The expense's amount now. Since 2026-11-17 a correction changes the
+   * expense in place, so it can differ from what the voucher was printed with.
+   */
+  expense_amount: number | null
 }
 
 export type VoucherType = {
@@ -165,7 +178,7 @@ const voucherSelect = `
   finance_details(*),
   items:disbursement_voucher_items!disbursement_voucher_items_voucher_id_fkey(
     *,
-    expense:expense_transaction_id(expense_no, created_at)
+    expense:expense_transaction_id(expense_no, created_at, status, total_amount)
   )
 `
 
@@ -197,7 +210,64 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
       expense_transaction_id: row.expense_transaction_id ?? null,
       expense_no: row.expense?.expense_no ?? null,
       expense_recorded_at: row.expense?.created_at ?? null,
+      expense_status: row.expense?.status ?? null,
+      corrected_expense_no: null,
+      expense_amount: row.expense?.total_amount == null ? null : Number(row.expense.total_amount),
     }
+  }
+
+  /**
+   * Fill `corrected_expense_no` on lines whose expense was voided by an
+   * approved edit: the replacement's number, from the change request. A
+   * failed lookup leaves the lines as they are — this is a label, not data.
+   */
+  async function attachCorrections(list: VoucherType[]) {
+    const voidedIds = [...new Set(list.flatMap((v) => v.items)
+      .filter((line) => line.expense_status === 'voided' && line.expense_transaction_id != null)
+      .map((line) => line.expense_transaction_id as number))]
+    if (!voidedIds.length) return list
+    try {
+      const rows = await fetchAllRowsForIds<{ transaction_id: number; from_transaction_no: string | null; to_transaction_no: string | null }>(
+        voidedIds,
+        (batch) => supabase
+          .from('change_requests')
+          .select('id, transaction_id, from_transaction_no, to_transaction_no')
+          .in('transaction_id', batch)
+          .eq('request_type', 'edit')
+          .eq('status', 'approved')
+          .order('id', { ascending: true }),
+      )
+      // A second request on the same voided original was a mistaken duplicate
+      // whose copy was voided in turn: the copy still standing is the
+      // replacement, else the first one (the Expenses page uses the same rule).
+      const candidates = new Map<number, string[]>()
+      for (const r of rows) {
+        if (r.to_transaction_no && r.to_transaction_no !== r.from_transaction_no) {
+          candidates.set(r.transaction_id, [...(candidates.get(r.transaction_id) ?? []), r.to_transaction_no])
+        }
+      }
+      const copyNos = [...new Set([...candidates.values()].flat())]
+      const voidedCopies = new Set<string>()
+      if (copyNos.length) {
+        const { data: copies } = await supabase
+          .from('transactions').select('expense_no, status').eq('transaction_type', 'expense').in('expense_no', copyNos)
+        for (const c of copies ?? []) if (c.status === 'voided' && c.expense_no) voidedCopies.add(c.expense_no)
+      }
+      const replacement = new Map<number, string>()
+      for (const [originalId, nos] of candidates) {
+        replacement.set(originalId, nos.find((no) => !voidedCopies.has(no)) ?? nos[0])
+      }
+      for (const voucher of list) {
+        for (const line of voucher.items) {
+          if (line.expense_transaction_id != null) {
+            line.corrected_expense_no = replacement.get(line.expense_transaction_id) ?? null
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('attachCorrections: could not read the corrections:', err)
+    }
+    return list
   }
 
   function mapVoucher(row: any): VoucherType {
@@ -253,7 +323,7 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
         .eq('transaction_type', 'disbursement_voucher')
         .order('created_at', { ascending: false })
         .order('id', { ascending: false }))
-      vouchers.value = data.map(mapVoucher)
+      vouchers.value = await attachCorrections(data.map(mapVoucher))
       return vouchers.value
     } catch (err) {
       handleError(err, 'Failed to fetch disbursement vouchers')
@@ -272,7 +342,9 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
         .eq('id', id)
         .maybeSingle()
       if (fetchError) throw fetchError
-      return data ? mapVoucher(data) : null
+      if (!data) return null
+      const [voucher] = await attachCorrections([mapVoucher(data)])
+      return voucher
     } catch (err) {
       handleError(err, 'Failed to load voucher')
       return null

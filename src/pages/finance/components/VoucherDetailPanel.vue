@@ -67,6 +67,24 @@ const printedLine = computed(() => {
               <td>
                 {{ expenseAccountLabel(line.category) }}
                 <span v-if="line.expense_no" class="text-caption text-medium-emphasis ms-1">· {{ line.expense_no }}</span>
+                <!-- Corrected the old way: the expense was voided and a copy
+                     recorded under a new number. Point at the copy. -->
+                <span
+                  v-if="line.corrected_expense_no"
+                  class="text-caption text-info ms-1"
+                  :title="`${line.expense_no} was voided and corrected as ${line.corrected_expense_no}`"
+                >→ corrected as {{ line.corrected_expense_no }}</span>
+                <span
+                  v-else-if="line.expense_status === 'voided'"
+                  class="text-caption text-error ms-1"
+                >(voided)</span>
+                <!-- Corrected in place after recording: the expense no longer
+                     matches the printed voucher. -->
+                <span
+                  v-else-if="line.expense_amount != null && Math.abs(line.expense_amount - line.amount) > 0.005"
+                  class="text-caption text-info ms-1"
+                  :title="`${line.expense_no} was corrected through a change request after this voucher was recorded`"
+                >· expense corrected to {{ formatCurrency(line.expense_amount) }}</span>
               </td>
               <td class="text-right text-no-wrap">{{ formatCurrency(line.amount) }}</td>
             </tr>

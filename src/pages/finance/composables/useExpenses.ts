@@ -9,8 +9,10 @@ import type { ExpenseType } from '@/stores/financeData'
 import { useFinanceChangeRequestStore } from '../stores/financeChangeRequest'
 import { useDisbursementVouchersStore } from '@/stores/disbursementVouchersData'
 import type { ChangeRequestField, ProposedChange, AppliedEdit } from '@/stores/changeRequestsData'
-import { formatCurrency } from '@/utils/helpers'
-import { parseAmountQuery, amountMatches } from './useDisbursementVouchers'
+import type { FinanceChangeRequestType } from '../stores/financeChangeRequest'
+import type { ChangeHistoryEntry } from '@/utils/changeRequests'
+import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
+import { matchesSearch, parseSearch, searchText } from '@/utils/search'
 import { useExpenseAccounts } from './useExpenseAccounts'
 import type { AddExpensePayload } from '@/utils/cashAccountTypes'
 
@@ -61,6 +63,32 @@ export function useExpenses() {
   // through Record Expense have no voucher, which is a valid state.
   const voucherRefs = ref<Map<number, string>>(new Map())
 
+  // Corrections from before 2026-11-17 voided the expense and recorded a copy
+  // under a new number. These two maps tie each pair together so the page can
+  // say where an expense went (and where a copy came from). Corrections since
+  // then stay on the same document, so neither map grows any more.
+  type Correction = { requestId: number | null; docNo: string; originalId: number | null }
+  /** Voided original's id -> every copy recorded for it, newest first. */
+  const copiesOf = ref<Map<number, Correction[]>>(new Map())
+  /** Expense id -> row, and EXP number -> row, for the lookups below (one pass, not one per row). */
+  const expenseById = computed(() => new Map(expenses.value.map((e) => [e.id, e])))
+  const expenseByNo = computed(() => new Map(expenses.value.map((e) => [e.reference_no, e])))
+  /**
+   * Voided original's id -> the expense that replaced it. When a second
+   * request made a duplicate copy that was voided in turn, the live copy is
+   * the replacement (the voucher view uses the same rule).
+   */
+  const replacedBy = computed(() => {
+    const map = new Map<number, Correction>()
+    for (const [originalId, copies] of copiesOf.value) {
+      const live = copies.find((c) => expenseByNo.value.get(c.docNo)?.status !== 'voided')
+      map.set(originalId, live ?? copies[copies.length - 1])
+    }
+    return map
+  })
+  /** Replacement's EXP number -> the expense it replaced. */
+  const replaces = ref<Map<string, Correction>>(new Map())
+
   // ─── Actions ──────────────────────────────────────────────────────
   async function init() {
     await Promise.all([financeStore.fetchExpenses(), financeStore.fetchCashAccounts(), ensureAccountsLoaded()])
@@ -73,8 +101,24 @@ export function useExpenses() {
     )
   }
 
+  /**
+   * The voucher an expense was recorded from. An old-style replacement was
+   * recorded on its own, not from the voucher, so it reads its original's.
+   */
   function voucherFor(id: number): string | null {
-    return voucherRefs.value.get(id) ?? null
+    const own = voucherRefs.value.get(id)
+    if (own) return own
+    const originalId = replacesOf(id)?.originalId
+    return originalId != null ? voucherRefs.value.get(originalId) ?? null : null
+  }
+
+  function replacedByOf(id: number): Correction | null {
+    return replacedBy.value.get(id) ?? null
+  }
+
+  function replacesOf(id: number): Correction | null {
+    const no = expenseById.value.get(id)?.reference_no
+    return no ? replaces.value.get(no) ?? null : null
   }
 
   async function loadPending() {
@@ -85,18 +129,106 @@ export function useExpenses() {
     pendingIds.value = new Set(pending)
     // Newest-first from the store, so the first entry per target wins.
     const map = new Map<number, AppliedEdit>()
-    for (const e of edits) if (!map.has(e.transaction_id)) map.set(e.transaction_id, e)
+    const byOriginal = new Map<number, Correction[]>()
+    const byReplacement = new Map<string, Correction>()
+    for (const e of edits) {
+      if (!map.has(e.transaction_id)) map.set(e.transaction_id, e)
+      // A different number means the old void-and-reissue: link the pair.
+      if (e.to_transaction_no && e.to_transaction_no !== e.from_transaction_no) {
+        const copies = byOriginal.get(e.transaction_id) ?? []
+        copies.push({ requestId: e.id ?? null, docNo: e.to_transaction_no, originalId: e.transaction_id })
+        byOriginal.set(e.transaction_id, copies)
+        byReplacement.set(e.to_transaction_no, {
+          requestId: e.id ?? null, docNo: e.from_transaction_no ?? `#${e.transaction_id}`, originalId: e.transaction_id,
+        })
+      }
+    }
     appliedEdits.value = map
+    copiesOf.value = byOriginal
+    replaces.value = byReplacement
   }
 
   function isPending(id: number) {
     return pendingIds.value.has(id)
   }
 
-  // An approved edit landed on this exact expense (a memo edit — a ledger edit
-  // voids the original instead, which the row's own voided_at already shows).
+  // An approved edit landed on this exact expense. Since 2026-11-17 that is
+  // every edit, ledger ones included; an old-style void-and-reissue original
+  // is voided, so the VOIDED chip shows there instead.
   function isEdited(id: number) {
     return appliedEdits.value.has(id)
+  }
+
+  /** Whether the expense has anything to show in its change history. */
+  function hasHistory(id: number) {
+    // A voided expense always has a story to tell ("who voided this?").
+    return pendingIds.value.has(id) || appliedEdits.value.has(id) || replacedBy.value.has(id) || !!replacesOf(id)
+      || expenseById.value.get(id)?.status === 'voided'
+  }
+
+  // ─── Change history ───────────────────────────────────────────────
+  const historyOpen = ref(false)
+  const historyLoading = ref(false)
+  const historyTitle = ref('')
+  const historyEntries = ref<ChangeHistoryEntry[]>([])
+
+  const fieldLabels: Record<string, string> = {
+    amount: 'Amount', category: 'Expense account', paid_at: 'Date', cash_account_id: 'Paid from',
+    department: 'Department', payment_method: 'Payment method', paid_to: 'Paid to',
+    or_si_no: 'OR/SI no.', remarks: 'Description',
+  }
+
+  /** A stored value as staff know it: account names, pesos, readable dates. */
+  function displayValue(key: string, value: unknown): string {
+    if (value == null || value === '') return '—'
+    if (key === 'amount') return formatCurrency(Number(value))
+    if (key === 'category') return expenseAccountLabel(String(value))
+    if (key === 'paid_at') return formatDatePR_ISO(String(value))
+    if (key === 'cash_account_id') return cashAccounts.value.find((a) => a.id === Number(value))?.name ?? `Account #${value}`
+    if (key === 'department') return expenseDepartments.find((d) => d.value === value)?.title ?? String(value)
+    if (key === 'payment_method') return expensePaymentMethods.find((m) => m.value === value)?.title ?? String(value)
+    return String(value)
+  }
+
+  function outcomeOf(r: FinanceChangeRequestType, docNo: string | null): string | null {
+    if (r.status === 'rejected') return r.resolution_note && r.resolution_note !== 'Rejected by approver.' ? `“${r.resolution_note}”` : null
+    if (r.status !== 'approved') return null
+    if (r.request_type === 'void') return 'The expense was voided and its amount returned to the cash account.'
+    if (r.to_transaction_no && r.to_transaction_no !== r.from_transaction_no) {
+      return r.to_transaction_no === docNo
+        ? `This expense was recorded as the corrected copy of ${r.from_transaction_no ?? 'the original'}.`
+        : `The original was voided and the correction recorded as ${r.to_transaction_no}.`
+    }
+    return 'Corrected on this same expense.'
+  }
+
+  async function openHistory(id: number) {
+    const expense = expenses.value.find((e) => e.id === id)
+    if (!expense) return
+    historyTitle.value = expense.reference_no ?? `Expense #${id}`
+    historyEntries.value = []
+    historyOpen.value = true
+    historyLoading.value = true
+    const rows = await changeStore.fetchHistory(id, expense.reference_no ?? null)
+    historyEntries.value = rows.map((r) => ({
+      id: r.id,
+      filedAt: formatDatePR_ISO(r.created_at),
+      kind: r.request_type === 'void' ? 'Void' : 'Edit',
+      status: r.status,
+      requestedBy: r.created_by_email ?? null,
+      reason: r.reason,
+      changes: Object.entries(r.proposed_changes ?? {})
+        .filter(([key]) => !key.startsWith('__'))
+        .map(([key, diff]) => ({
+          label: fieldLabels[key] ?? key,
+          from: displayValue(key, diff.from),
+          to: displayValue(key, diff.to),
+        })),
+      resolvedBy: r.resolved_by_email ?? null,
+      resolvedAt: r.resolved_at ? formatDatePR_ISO(r.resolved_at) : null,
+      outcome: outcomeOf(r, expense.reference_no ?? null),
+    }))
+    historyLoading.value = false
   }
 
   function editTooltip(id: number) {
@@ -153,9 +285,9 @@ export function useExpenses() {
     if (changeTarget.value) showChangeDialog.value = true
   }
 
-  // Memo fields edit in place; amount / category / account / date are ledger
-  // fields — an approved edit to those reverses the old expense and reissues a
-  // corrected one (new number). See applyExpenseChange.
+  // Every edit lands on the SAME expense. Amount / account / cash account /
+  // date also correct its ledger entry (reversed and re-posted). See
+  // applyExpenseChange.
   const changeFields = computed<ChangeRequestField[]>(() => {
     const e = changeTarget.value
     if (!e) return []
@@ -163,9 +295,9 @@ export function useExpenses() {
       { key: 'amount', label: 'Amount', value: e.amount ?? 0, type: 'number' },
       // Chart of accounts, same source as the Add Expense and voucher pickers,
       // so a change request can't propose a category the two can't produce.
-      { key: 'category', label: 'Account', value: e.category, type: 'select', items: expenseAccountItems.value },
+      { key: 'category', label: 'Expense Account', value: e.category, type: 'select', items: expenseAccountItems.value },
       { key: 'paid_at', label: 'Date', value: (e.paid_at ?? '').slice(0, 10), type: 'date' },
-      { key: 'cash_account_id', label: 'Account', value: e.cash_account_id, type: 'select', items: cashAccounts.value.map((a) => ({ title: a.name, value: a.id })) },
+      { key: 'cash_account_id', label: 'Paid From', value: e.cash_account_id, type: 'select', items: cashAccounts.value.map((a) => ({ title: a.name, value: a.id })) },
       { key: 'department', label: 'Department', value: e.department, type: 'select', items: expenseDepartments.map((d) => ({ title: d.title, value: d.value })) },
       { key: 'payment_method', label: 'Payment Method', value: e.payment_method, type: 'select', items: expensePaymentMethods.map((m) => ({ title: m.title, value: m.value })) },
       { key: 'paid_to', label: 'Paid To', value: e.paid_to, type: 'text' },
@@ -204,24 +336,32 @@ export function useExpenses() {
    * Null after the field's clear button.
    */
   const search = ref<string | null>('')
+  // Built once per list load, not per keystroke. Includes the expense it
+  // replaced / was replaced by, so either number finds both halves of an old
+  // correction.
+  const expenseSearchIndex = computed(() => expenses.value.map((e) => ({
+    expense: e,
+    text: searchText([
+      e.reference_no, voucherFor(e.id), e.paid_to, e.department, e.or_si_no, e.remarks, e.cash_account_name, e.status,
+      e.category, expenseAccountLabel(e.category),
+      expensePaymentMethods.find((m) => m.value === e.payment_method)?.title ?? e.payment_method,
+      replacedByOf(e.id)?.docNo, replacesOf(e.id)?.docNo,
+    ]),
+  })))
   const filteredExpenses = computed(() => {
-    const query = (search.value ?? '').trim().toLowerCase()
+    const query = parseSearch(search.value)
     if (!query) return expenses.value
-    const amountQuery = parseAmountQuery(query)
-    return expenses.value.filter((e) => {
-      if (amountQuery && amountMatches(e.amount, amountQuery)) return true
-      return [
-        e.reference_no, voucherFor(e.id), e.paid_to, e.department, e.or_si_no, e.remarks, e.cash_account_name, e.status,
-        expenseAccountLabel(e.category),
-      ].some((v) => (v ?? '').toLowerCase().includes(query))
-    })
+    return expenseSearchIndex.value
+      .filter(({ expense, text }) => matchesSearch(text, [expense.amount], query))
+      .map(({ expense }) => expense)
   })
 
   return {
     expenses, cashAccounts, loading, search, filteredExpenses,
     showFormDialog,
     showChangeDialog, changeTarget, changeFields, voidSummary, isPending, isEdited, editTooltip,
-    voucherFor, expenseAccountLabel,
+    voucherFor, expenseAccountLabel, replacedByOf, replacesOf, hasHistory,
+    historyOpen, historyLoading, historyTitle, historyEntries, openHistory,
     init, openFormDialog, handleSubmit, openChangeDialog, submitChangeRequest,
   }
 }
