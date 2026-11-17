@@ -80,9 +80,9 @@ function orderLabel(): string {
         <template v-else>
           <div class="figure"><div class="figure-label">Offer total</div><div class="figure-value font-weight-bold">{{ formatCurrency(details.total) }}</div></div>
           <div class="figure">
-            <div class="figure-label">Government PR</div>
+            <div class="figure-label">Customer's purchase request (gov't PR)</div>
             <div class="figure-value">{{ details.govt_pr_amount != null ? formatCurrency(details.govt_pr_amount) : '—' }}</div>
-            <div v-if="details.govt_pr_no" class="figure-note">PR # {{ details.govt_pr_no }}</div>
+            <div v-if="details.govt_pr_no" class="figure-note">Their PR # {{ details.govt_pr_no }}</div>
             <div v-if="prComparison" class="figure-note" :class="prComparison.over ? 'text-error font-weight-bold' : ''">{{ prComparison.label }}</div>
           </div>
         </template>
@@ -104,7 +104,9 @@ function orderLabel(): string {
         <div v-else class="figure">
           <div class="figure-label">Negotiation</div>
           <div class="figure-value">{{ details.negotiation_rounds }} round(s)</div>
-          <div v-if="details.po_no" class="figure-note">PO {{ details.po_no }}</div>
+          <!-- Our company PO for this SALE. It shares the PO-YYYY-### series with
+               Purchasing's buying POs, so it is labelled to stop it reading as one. -->
+          <div v-if="details.po_no" class="figure-note">Company PO for this sale: {{ details.po_no }}</div>
         </div>
       </div>
 
@@ -129,7 +131,7 @@ function orderLabel(): string {
           <div v-for="(s, i) in details.short_lines" :key="i">
             {{ s.product_name }} — needs {{ s.needed }}, {{ s.available }} {{ s.expired ? 'usable (batch expired)' : 'available' }}
           </div>
-          <div v-if="!isEthical" class="mt-1">Approving still locks the terms; the order waits for stock and its PO is issued once stock arrives.</div>
+          <div v-if="!isEthical" class="mt-1">Approving still locks the terms; the order waits for stock and its company PO (for this sale) is issued once stock arrives.</div>
         </v-alert>
         <div v-else class="text-caption text-green-darken-1 mb-2">
           <v-icon icon="mdi-check-circle-outline" size="14" class="mr-1" />Stock is sufficient today for every line.
