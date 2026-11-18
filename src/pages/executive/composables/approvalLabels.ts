@@ -138,13 +138,13 @@ export function bannerFor(kind: ApprovalKind, raw: any): { direction: ApprovalDi
   const direction = directionOf(kind)
   switch (kind) {
     case 'pr_approval':
-      return { direction, text: `Buying stock from ${prSuppliers(raw)} — money goes out to the supplier.` }
+      return { direction, text: `Buying stock from ${prSuppliers(raw)}.` }
     case 'terms':
       return {
         direction,
         text: raw?.request_type === 'unlock_terms'
           ? `Undoing the agreed terms of a sale to ${raw?.customer_name ?? 'a customer'}.`
-          : `Selling to ${raw?.customer_name ?? 'a customer'} (${raw?.order_type === 'ethical_order' ? 'Ethical' : 'In-House'}) — money comes in from the customer.`,
+          : `Selling to ${raw?.customer_name ?? 'a customer'} (${raw?.order_type === 'ethical_order' ? 'Ethical' : 'In-House'}).`,
       }
     case 'credit_memo':
       return { direction, text: `A credit to ${raw?.customer_name ?? 'a customer'} — takes an amount off what they owe us for a sale.` }
