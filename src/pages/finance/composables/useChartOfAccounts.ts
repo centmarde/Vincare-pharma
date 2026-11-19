@@ -4,6 +4,7 @@ import { useToast } from 'vue-toastification'
 import { useGLDataStore, ACCOUNT_CATEGORIES, nextAccountCode } from '@/stores/glData'
 import type { AccountCategoryKey, AccountLedgerLine, GLAccount } from '@/stores/glData'
 import { useFinanceDataStore, glAccountCodeFor } from '@/stores/financeData'
+import { matchesSearch, parseSearch, searchText as buildSearchText } from '@/utils/search'
 
 const toast = useToast()
 
@@ -56,10 +57,10 @@ export function useChartOfAccounts() {
   const newIsContra = ref(false)
 
   const filteredAccounts = computed(() => {
-    const q = searchText.value.trim().toLowerCase()
-    if (!q) return accounts.value
-    return accounts.value.filter((a) =>
-      a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q) || a.subsection.toLowerCase().includes(q))
+    const query = parseSearch(searchText.value)
+    if (!query) return accounts.value
+    // Words in any order: "repairs transport" finds 7170.
+    return accounts.value.filter((a) => matchesSearch(buildSearchText([a.code, a.name, a.subsection, a.class]), [], query))
   })
 
   // Grouped for the printable/reference "cheat sheet" view — same data as the

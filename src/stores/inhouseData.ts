@@ -14,8 +14,9 @@ import { useCustomersDataStore } from '@/stores/customersData'
 import type { CustomerType } from '@/stores/customersData'
 import type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult } from '@/utils/canvassTypes'
 import { govtShelfLife, QUALIFICATION_MONTHS } from '@/utils/qualification'
-import { describeProduct } from '@/utils/helpers'
-import { isCreditSettlement } from '@/utils/paymentMethods'
+import { describeProduct, formatCurrency } from '@/utils/helpers'
+import { isCreditSettlement, paymentDiscount } from '@/utils/paymentMethods'
+import { collectionCreatedAt, paidBeforeDocument, paidSoFar, paymentDateProblem, roundPeso, saveOrderBalance, settleAgainst } from '@/stores/shared/collectionSettlement'
 import type { ChequeDetails } from '@/utils/paymentMethods'
 import { issueRow, useIssueList } from '@/composables/useIssueList'
 import { hasPendingTermsRequest, isApprovedLockRequest, unlockBlocker } from '@/stores/shared/termsApprovalGuards'
@@ -206,7 +207,9 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
     if (!payload.lines.length) { toast.warning('Add at least one line item.'); loading.value = false; return { success: false } }
 
-    const subtotal = payload.lines.reduce((sum, l) => sum + l.qty * l.unit_price, 0)
+    // To the centavo, line by line: unit prices can carry more decimals than
+    // pesos do, and the raw float sum was saved as-is (497599.999999958).
+    const subtotal = roundPeso(payload.lines.reduce((sum, l) => sum + roundPeso(l.qty * l.unit_price), 0))
 
     const { data: created, docNo: orderNo, error: insertError } = await insertWithDocRetry<{ id: number }>(
       () => generateIHNumber(),
@@ -273,7 +276,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       .insert(payload.lines.map(l => ({
         transaction_id: created.id, product_id: l.product_id,
         qty_stock_out: l.qty, unit_price: l.unit_price,
-        line_total: l.qty * l.unit_price, cost_price: l.cost_price,
+        line_total: roundPeso(l.qty * l.unit_price), cost_price: l.cost_price,
       })))
       .select('id')
     if (itemsError || !createdItems) {
@@ -363,7 +366,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       // Omitting cost_price keeps the existing value (mirrors the RPC's
       // coalesce-with-existing-row behavior) — never overwrite with null.
       const lineUpdatePayload: Record<string, unknown> = {
-        qty_stock_out: u.qty, unit_price: u.unit_price, line_total: u.unit_price * u.qty,
+        qty_stock_out: u.qty, unit_price: u.unit_price, line_total: roundPeso(u.unit_price * u.qty),
       }
       if (u.product_id != null) lineUpdatePayload.product_id = u.product_id
       if (u.cost_price != null) lineUpdatePayload.cost_price = u.cost_price
@@ -384,13 +387,17 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
         .insert(addLines.map((l) => ({
           transaction_id: payload.orderId, product_id: l.product_id,
           qty_stock_out: l.qty, unit_price: l.unit_price,
-          line_total: l.qty * l.unit_price, cost_price: l.cost_price,
+          line_total: roundPeso(l.qty * l.unit_price), cost_price: l.cost_price,
         })))
       if (addError) {
         handleError(addError, 'Failed to add order line.'); toast.error(addError.message || 'Failed to add order line.')
         loading.value = false; return { success: false }
       }
     }
+
+    // Saved to the centavo — the raw float sum used to land in total_amount,
+    // offer_price and the round's text.
+    const proposedTotal = roundPeso(payload.total)
 
     const lineChanges = [
       addLines.length ? `${addLines.length} line(s) added` : '',
@@ -399,7 +406,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const { error: statusError } = await supabase
       .from('transactions')
-      .update({ total_amount: payload.total, status: 'negotiating', updated_at: new Date().toISOString() })
+      .update({ total_amount: proposedTotal, status: 'negotiating', updated_at: new Date().toISOString() })
       .eq('id', payload.orderId)
     if (statusError) {
       handleError(statusError, 'Failed to record offer.'); toast.error(statusError.message || 'Failed to record offer.')
@@ -408,7 +415,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const { error: detailsError } = await supabase
       .from('inhouse_details')
-      .upsert({ transaction_id: payload.orderId, offer_price: payload.total }, { onConflict: 'transaction_id' })
+      .upsert({ transaction_id: payload.orderId, offer_price: proposedTotal }, { onConflict: 'transaction_id' })
     if (detailsError) {
       handleError(detailsError, 'Failed to record offer.'); toast.error(detailsError.message || 'Failed to record offer.')
       loading.value = false; return { success: false }
@@ -417,7 +424,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     const { error: logError } = await supabase.from('logs').insert({
       created_by: user.id,
       action: payload.party === 'company' ? 'counter' : 'offer',
-      description: `${payload.note ?? ''}${lineChanges ? ` [${lineChanges}]` : ''} | proposed: ${payload.total}`,
+      description: `${payload.note ?? ''}${lineChanges ? ` [${lineChanges}]` : ''} | proposed: ${formatCurrency(proposedTotal)}`,
       module: 'inhouse', transaction_id: payload.orderId,
     })
     if (logError) console.warn('recordOffer: activity log insert failed:', logError.message)
@@ -945,18 +952,28 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
      * touches those columns.
      */
     cheque?: ChequeDetails | null
+    /**
+     * The day the customer paid (YYYY-MM-DD), when it was not today. Stored as
+     * the collection's date, so the ledger books it on that day.
+     */
+    paidOn?: string | null
   }) => {
-    // A return credit or a credit memo: settled by a credit, so no money moves.
+    // A return credit, credit memo or payment discount: settled by a credit,
+    // so no money moves.
     const isReturnCredit = isCreditSettlement(payload.method)
+    const isDiscount = payload.method === paymentDiscount
+    const createdAt = collectionCreatedAt(payload.paidOn)
     loading.value = true
     clearError()
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
     if (payload.amount <= 0) { toast.error('Payment amount must be positive.'); loading.value = false; return { success: false } }
+    const dateProblem = paymentDateProblem(payload.paidOn)
+    if (dateProblem) { toast.error(dateProblem); loading.value = false; return { success: false } }
 
     const { data: order, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, total_amount, inhouse_details(amount_paid)')
+      .select('id, status, created_at, total_amount, inhouse_no, inhouse_details(amount_paid)')
       .eq('id', payload.orderId)
       .eq('transaction_type', 'inhouse_order')
       .maybeSingle()
@@ -968,11 +985,20 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       toast.error('Order must be fully delivered before payment.')
       loading.value = false; return { success: false }
     }
+    const tooEarly = paidBeforeDocument(payload.paidOn, order.created_at)
+    if (tooEarly) { toast.error(tooEarly); loading.value = false; return { success: false } }
 
-    const paid = (order.inhouse_details as unknown as { amount_paid: number | null } | null)?.amount_paid ?? 0
+    // The cache or the payment rows, whichever is ahead — see paidSoFar. A
+    // payment whose cache write failed still counts, so the same amount can't
+    // be entered again and a discount entered with it sees the right balance.
+    const paid = await paidSoFar(payload.orderId, (order.inhouse_details as unknown as { amount_paid: number | null } | null)?.amount_paid)
+    if (paid === null) {
+      toast.error('Could not read the payments on this order. Nothing was recorded — try again.')
+      loading.value = false; return { success: false }
+    }
     const total = order.total_amount ?? 0
-    const balance = total - paid
-    if (payload.amount > balance) {
+    const { balance, newPaid, exceeds, settled } = settleAgainst(total, paid, payload.amount)
+    if (exceeds) {
       toast.error(`Payment (${payload.amount}) exceeds outstanding balance (${balance}).`)
       loading.value = false; return { success: false }
     }
@@ -1002,32 +1028,43 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
         ...(payload.cheque
           ? { cheque_bank: payload.cheque.bank, cheque_no: payload.cheque.number, cheque_date: payload.cheque.date }
           : {}),
+        ...(createdAt ? { created_at: createdAt } : {}),
       })
-      .select('id')
+      .select('id, created_at')
       .single()
     if (paymentError || !payment) {
       handleError(paymentError, 'Failed to record payment.'); toast.error(paymentError?.message || 'Failed to record payment.')
       loading.value = false; return { success: false }
     }
 
-    const newPaid = paid + payload.amount
-    const newStatus = newPaid >= total ? 'paid' : 'partial'
+    // A discount needs no ledger work here: gl_project_events books the
+    // payment_discount row (DR 4040 / CR 1030) like any other collection.
+
+    const newStatus = settled ? 'paid' : 'partial'
     const nowIso = new Date().toISOString()
 
-    const { error: detailsError } = await supabase
-      .from('inhouse_details')
-      .update({ amount_paid: newPaid, paid_at: nowIso })
-      .eq('transaction_id', payload.orderId)
-    if (detailsError) {
-      handleError(detailsError, 'Failed to record payment.'); toast.error(detailsError.message || 'Failed to record payment.')
+    // The cache must never fall behind the rows (see saveOrderBalance): if it
+    // can't be written the payment is undone and nothing is recorded.
+    const cache = await saveOrderBalance(
+      () => supabase.from('inhouse_details').update({ amount_paid: newPaid, paid_at: createdAt ?? nowIso }).eq('transaction_id', payload.orderId),
+      payment.id, user.id)
+    if (!cache.saved && cache.undone) {
+      handleError(cache.error, 'Failed to record payment.')
+      toast.error('Nothing was recorded — the order balance could not be updated. Try again.')
       loading.value = false; return { success: false }
     }
-
-    const { error: statusError } = await supabase
-      .from('transactions')
-      .update({ status: newStatus, updated_at: nowIso })
-      .eq('id', payload.orderId)
-    if (statusError) console.warn('recordPayment: status flip failed:', statusError.message)
+    if (!cache.saved) {
+      // Neither saved nor undone: the row stands. Say so, and leave the status
+      // as it is so it never claims a balance the cache does not show.
+      handleError(cache.error, 'Payment recorded, but the order balance was not updated.')
+      toast.error('Payment recorded, but the order balance could not be updated or undone. Ask Finance to check this order before entering anything else on it.', { timeout: 20000 })
+    } else {
+      const { error: statusError } = await supabase
+        .from('transactions')
+        .update({ status: newStatus, updated_at: nowIso })
+        .eq('id', payload.orderId)
+      if (statusError) console.warn('recordPayment: status flip failed:', statusError.message)
+    }
 
     // The money lands in the chosen account. Best-effort like every other
     // balance write in the app (JS-over-RPC convention) — surfaced, not rolled
@@ -1045,14 +1082,17 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
 
     const { error: logError } = await supabase.from('logs').insert({
       created_by: user.id, action: 'payment',
-      description: account
+      description: (account
         ? `Payment of ${payload.amount} into ${account.name} (${newPaid}/${total})`
-        : `Returned goods credit of ${payload.amount} (${payload.reference ?? 'return'}) (${newPaid}/${total})`,
+        : isDiscount
+        ? `Discount of ${payload.amount} given at payment (${newPaid}/${total})`
+        : `Returned goods credit of ${payload.amount} (${payload.reference ?? 'return'}) (${newPaid}/${total})`)
+        + (createdAt ? ` (paid ${createdAt})` : ''),
       module: 'inhouse', transaction_id: payload.orderId,
     })
     if (logError) console.warn('recordPayment: activity log insert failed:', logError.message)
 
-    toast.success(isReturnCredit ? 'Credit taken off the bill.' : 'Payment recorded.')
+    toast.success(isDiscount ? 'Discount taken off the bill.' : isReturnCredit ? 'Credit taken off the bill.' : 'Payment recorded.')
     await fetchOrders()
     loading.value = false
     return { success: true, paymentId: payment.id }

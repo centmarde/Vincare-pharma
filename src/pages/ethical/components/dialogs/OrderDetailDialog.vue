@@ -9,7 +9,8 @@ import ChangeRequestDialog from '@/components/changeRequests/dialogs/ChangeReque
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
 import { useChangeRequestsDataStore } from '@/stores/changeRequestsData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
-import { chequeLabel, collectionMethodLabel, collectionPaymentMethodOptions } from '@/utils/paymentMethods'
+import { chequeLabel, collectionMethodLabel, collectionPaymentMethodOptions, isCreditSettlement } from '@/utils/paymentMethods'
+import { collectionVoidSummary } from '@/composables/collectionEntry'
 import CollectionPaymentFields from '@/components/collections/CollectionPaymentFields.vue'
 import { useDisplay } from 'vuetify'
 
@@ -30,6 +31,7 @@ const order = computed(() => ethical.currentOrder)
 
 const {
   loading, collectionAmount, collectionMethod, collectionReference, collectionRemarks,
+  collectionDiscount, collectionPaidOn, collectionProblem,
   collectionChequeBank, collectionChequeNo, collectionChequeDate,
   receivedBy, issuedReceipt, canIssueDR,
   requestedAt, requestNote,
@@ -64,8 +66,10 @@ function requestUndoCollection(c: CollectionType) {
       { key: 'cheque_date', label: 'Cheque date', value: c.cheque_date ?? null, type: 'date' },
       { key: 'remarks', label: 'Payment note', value: c.remarks, type: 'text' },
     ],
-    voidSummary: `Void this ${formatCurrency(c.amount ?? 0)} collection on ${order.value.order_no ?? 'the order'} — reverses it in the ledger (DR AR / CR cash) and rolls the order's paid amount + status back.`,
-    allowEdit: true,
+    voidSummary: collectionVoidSummary(c.amount ?? 0, c.payment_method, order.value.order_no ?? null, 'collection'),
+    // A discount / return credit has its own ledger entry: void it and enter
+    // it again rather than edit it into a cash payment.
+    allowEdit: !isCreditSettlement(c.payment_method),
     allowVoid: true,
     meta: { __collection_id: { from: c.id, to: c.id } },
   })
@@ -290,21 +294,25 @@ watch(
           v-model:cheque-no="collectionChequeNo"
           v-model:cheque-date="collectionChequeDate"
           v-model:remarks="collectionRemarks"
+          v-model:discount="collectionDiscount"
+          v-model:paid-on="collectionPaidOn"
           :balance="balance"
           :cash-account-options="cashAccountOptions"
           :disabled="isPaid"
         />
         <v-row dense>
-          <v-col cols="12" class="d-flex align-center mt-1">
+          <v-col cols="12" class="d-flex align-center flex-wrap ga-2 mt-1">
             <v-btn
               color="success"
               :block="mobile"
-              :disabled="isPaid || collectionAmount <= 0 || collectionCashAccountId === null"
+              :disabled="isPaid || !!collectionProblem"
               :loading="loading"
               @click="recordCollection"
             >
               Record
             </v-btn>
+            <!-- Why Record is greyed out. -->
+            <span v-if="!isPaid && collectionProblem" class="text-caption text-medium-emphasis">{{ collectionProblem }}</span>
           </v-col>
         </v-row>
 
@@ -322,7 +330,7 @@ watch(
               <span class="font-weight-medium text-body-2">
                 {{ c.created_at ? new Date(c.created_at).toLocaleDateString() : '—' }}
               </span>
-              <v-chip size="x-small" :color="c.commission_status === 'paid' ? 'success' : 'warning'" variant="tonal">
+              <v-chip v-if="!isCreditSettlement(c.payment_method)" size="x-small" :color="c.commission_status === 'paid' ? 'success' : 'warning'" variant="tonal">
                 {{ c.commission_status }}
               </v-chip>
             </div>
@@ -349,7 +357,7 @@ watch(
 
             <div class="d-flex flex-wrap ga-2 mt-2">
               <v-btn
-                v-if="c.commission_status === 'unpaid'"
+                v-if="c.commission_status === 'unpaid' && !isCreditSettlement(c.payment_method)"
                 size="small" variant="flat" color="primary" class="text-none"
                 @click="markCommissionPaid(c)"
               >
@@ -390,13 +398,13 @@ watch(
               </td>
               <td class="text-right">{{ formatCurrency(c.commission_amount ?? 0) }}</td>
               <td>
-                <v-chip size="x-small" :color="c.commission_status === 'paid' ? 'success' : 'warning'">
+                <v-chip v-if="!isCreditSettlement(c.payment_method)" size="x-small" :color="c.commission_status === 'paid' ? 'success' : 'warning'">
                   {{ c.commission_status }}
                 </v-chip>
               </td>
               <td class="d-flex align-center ga-1">
                 <v-btn
-                  v-if="c.commission_status === 'unpaid'"
+                  v-if="c.commission_status === 'unpaid' && !isCreditSettlement(c.payment_method)"
                   size="x-small"
                   @click="markCommissionPaid(c)"
                 >

@@ -29,9 +29,9 @@ const {
   selectedDetail,
   openDetail,
   refreshDetail,
-  paymentOpen, payAmount, payMethod, payReference, payRemarks, payCashAccountId, paying,
+  paymentOpen, payAmount, payMethod, payReference, payRemarks, payCashAccountId, paying, payDiscount, payPaidOn,
   payChequeBank, payChequeNo, payChequeDate,
-  cashAccountOptions, canRecordPayment, openPayment, confirmPayment,
+  cashAccountOptions, canRecordPayment, payProblem, openPayment, confirmPayment,
   soaOpen,
   soaLoading,
   soaData,
@@ -286,11 +286,14 @@ const termLabels = arTermLabels
         v-model:cheque-bank="payChequeBank"
         v-model:cheque-no="payChequeNo"
         v-model:cheque-date="payChequeDate"
+        v-model:discount="payDiscount"
+        v-model:paid-on="payPaidOn"
         :sale-no="selectedDetail?.reference_no ?? null"
         :customer-name="selectedDetail?.customer_name ?? null"
         :balance="selectedDetail?.balance ?? 0"
         :cash-account-options="cashAccountOptions"
         :can-confirm="canRecordPayment"
+        :problem="payProblem"
         :loading="paying"
         @confirm="confirmPayment"
       />

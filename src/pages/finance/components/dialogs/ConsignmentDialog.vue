@@ -138,7 +138,7 @@ function sinceLabel(days: number | null): string {
               </v-btn-toggle>
               <v-text-field
                 v-model="search"
-                placeholder="Customer, product or batch"
+                placeholder="Customer, product, batch, document no. or amount"
                 prepend-inner-icon="mdi-magnify"
                 variant="outlined"
                 density="compact"

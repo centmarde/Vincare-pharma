@@ -83,6 +83,26 @@ export function glAccountCodeFor(
   return account.gl_account_code || glCashCode(account.classification)
 }
 
+/**
+ * The account an expense's category books to when the category is not itself
+ * an account code in the chart — rows written before categories became account
+ * codes still carry these slugs. The SAME frozen map as `gl_project_events`'
+ * expense loop: an expense corrected in place is posted by the app, and it must
+ * land where the projector would have put it. Anything unknown falls to 7080.
+ */
+const legacyExpenseAccountCodes: Record<string, string> = {
+  rent: '7130', utilities: '7270', supplies: '7080', maintenance: '7150',
+  transportation: '7250', taxes_fees: '7240', taxes_licenses: '7240',
+  representation: '6040', fuel_lubricants: '7050', labor_services: '7070',
+  freight_handling: '5030', meals: '6040',
+}
+
+/** The debit account for an expense category, given whether it is a chart code. */
+export function expenseDebitAccount(category: string | null | undefined, isChartCode: boolean): string {
+  if (category && isChartCode) return category
+  return (category && legacyExpenseAccountCodes[category]) || '7080'
+}
+
 export function termFor(daysOverdue: number | null): ARAgingTerm {
   if (daysOverdue == null) return 'no-term'
   if (daysOverdue <= 0) return 'current'

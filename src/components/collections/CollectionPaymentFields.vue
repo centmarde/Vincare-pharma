@@ -25,9 +25,18 @@ const chequeBank = defineModel<string>('chequeBank', { required: true })
 const chequeNo = defineModel<string>('chequeNo', { required: true })
 const chequeDate = defineModel<string>('chequeDate', { required: true })
 const remarks = defineModel<string>('remarks', { required: true })
+/** A discount given as they pay — taken off the bill, no cash. Optional. */
+const discount = defineModel<number>('discount', { default: 0 })
+/** The day they paid (YYYY-MM-DD); today by default. */
+const paidOn = defineModel<string>('paidOn', { default: '' })
 
+const today = toLocalISODate(new Date())
 const isCheque = computed(() => method.value === 'cheque')
-const overpaid = computed(() => (amount.value || 0) > props.balance + 0.005)
+// What the payment and the discount settle together.
+const settles = computed(() => (amount.value || 0) + (discount.value || 0))
+const overpaid = computed(() => settles.value > props.balance + 0.005)
+const futureDate = computed(() => !!paidOn.value && paidOn.value > today)
+const backDated = computed(() => !!paidOn.value && paidOn.value < today)
 const postDated = computed(() => isCheque.value && !!chequeDate.value && chequeDate.value > toLocalISODate(new Date()))
 const col = computed(() => (props.narrow ? 12 : 6))
 </script>
@@ -37,13 +46,40 @@ const col = computed(() => (props.narrow ? 12 : 6))
     <v-col cols="12" :sm="col">
       <MoneyField
         v-model="amount"
-        label="Amount *"
+        label="Amount received *"
         prefix="₱"
         variant="outlined"
         density="compact"
         :disabled="disabled"
-        :error-messages="overpaid ? 'More than what is owed' : undefined"
+        :error-messages="overpaid ? 'Amount + discount is more than what is owed' : undefined"
         :hide-details="!overpaid"
+      />
+    </v-col>
+    <v-col cols="12" :sm="col">
+      <MoneyField
+        v-model="discount"
+        label="Discount given"
+        prefix="₱"
+        variant="outlined"
+        density="compact"
+        :disabled="disabled"
+        hint="Taken off the bill — no cash. Leave 0 if none."
+        persistent-hint
+      />
+    </v-col>
+    <v-col cols="12" :sm="col">
+      <v-text-field
+        v-model="paidOn"
+        label="Payment date *"
+        type="date"
+        :max="today"
+        variant="outlined"
+        density="compact"
+        :disabled="disabled"
+        :error-messages="futureDate ? 'Cannot be in the future' : undefined"
+        :hint="backDated ? 'Back-dated — recorded on this day.' : undefined"
+        :persistent-hint="backDated"
+        :hide-details="!futureDate && !backDated"
       />
     </v-col>
     <v-col cols="12" :sm="col">

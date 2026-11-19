@@ -80,7 +80,11 @@ export type ApplyResult = { success: boolean; resultId?: number; resultRef?: str
 
 // One approved edit against a document, for the "Edited" chip.
 export type AppliedEdit = {
+  /** The change request's id, when the fetch selected it. */
+  id?: number
   transaction_id: number
+  /** The document's number when the request was filed. */
+  from_transaction_no?: string | null
   summary: string | null
   reason: string | null
   resolved_at: string | null

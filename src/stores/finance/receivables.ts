@@ -9,7 +9,7 @@ import type {
 import { termFor } from './helpers'
 import { arAging, loading, handleError, clearError } from './state'
 import { fetchAllRows, fetchAllRowsForIds } from '@/stores/shared/paging'
-import { chargeToAccount, chequeLabel, collectionMethodLabel, isCreditSettlement, returnCredit } from '@/utils/paymentMethods'
+import { chargeToAccount, chequeLabel, collectionMethodLabel, isCreditSettlement, paymentDiscount, returnCredit } from '@/utils/paymentMethods'
 import { isConsignmentTerm, parseTermDays, toLocalISODate } from '@/utils/helpers'
 
 // ─── POS sales charged to a customer account ───────────────────────────────
@@ -421,6 +421,8 @@ export async function fetchStatementOfAccount(customerIds: number | number[], so
         // A return credit is not money: it is the value of goods they returned.
         description: p.payment_method === returnCredit
           ? `Returned goods${p.reference_no ? ` (${p.reference_no})` : ''}`
+          : p.payment_method === paymentDiscount
+          ? `Discount given${p.reference_no ? ` (OR ${p.reference_no})` : ''}`
           : `Payment${p.payment_method ? ` (${[collectionMethodLabel(p.payment_method), chequeLabel(p)].filter(Boolean).join(' — ')})` : ''}`,
         charge: 0,
         payment: p.amount ?? 0,

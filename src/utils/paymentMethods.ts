@@ -121,9 +121,18 @@ export const returnCredit = 'return_credit'
  */
 export const creditMemo = 'credit_memo'
 
+/**
+ * A `collections` row for a DISCOUNT given when the customer pays — the bill
+ * is settled for less than its balance (prompt payment, a rounded-off balance).
+ * Not money: no cash account, no commission. The app books it itself,
+ * DR 4040 Sales discount / CR 1030 (stores/shared/collectionSettlement.ts), so
+ * the ledger never reads it as cash. Its reference_no is the payment's OR.
+ */
+export const paymentDiscount = 'payment_discount'
+
 /** Settled by a credit, not money: no cash account, no commission. */
 export function isCreditSettlement(method: string | null | undefined): boolean {
-  return method === returnCredit || method === creditMemo
+  return method === returnCredit || method === creditMemo || method === paymentDiscount
 }
 
 /** How a payment on a receivable reads: 'Bank Transfer', 'Returned goods', ... */
@@ -131,6 +140,7 @@ export function collectionMethodLabel(value: string | null | undefined): string 
   if (!value) return '—'
   if (value === returnCredit) return 'Returned goods'
   if (value === creditMemo) return 'Credit memo'
+  if (value === paymentDiscount) return 'Discount'
   return paymentMethods.find((m) => m.value === value)?.title ?? value
 }
 
