@@ -363,14 +363,29 @@ export async function reverseJournalEntry(
   // Finish that one instead of refusing for good — refusing left the
   // original live, so the document could never be corrected or voided.
   const { data: earlier } = await supabase
-    .from('journal_entries').select('id').eq('reverses_entry', entryId).limit(1)
+    .from('journal_entries').select('id, posted_at').eq('reverses_entry', entryId).limit(1)
   if (earlier?.length) {
     const earlierId = earlier[0].id as number
     const { count: earlierLineCount, error: countError } = await supabase
       .from('journal_entry_lines').select('id', { count: 'exact', head: true }).eq('journal_entry_id', earlierId)
     // Unknown is not zero: inserting the lines again could post the reversal twice.
     if (countError) return { success: false, error: countError.message, reversalId: earlierId }
+    const wroteLines = !earlierLineCount
     if (!earlierLineCount) {
+      // Two approvals can both see the header empty. The right to write its
+      // lines is claimed first, by a conditional update on the header row:
+      // the database applies it to one caller only (the other's posted_at no
+      // longer matches), so the loser writes nothing and says so.
+      const seenPostedAt = earlier[0].posted_at as string | null
+      let claim = supabase
+        .from('journal_entries').update({ posted_at: new Date().toISOString(), posted_by: userId })
+        .eq('id', earlierId)
+      claim = seenPostedAt == null ? claim.is('posted_at', null) : claim.eq('posted_at', seenPostedAt)
+      const { data: claimed, error: claimError } = await claim.select('id')
+      if (claimError) return { success: false, error: claimError.message, reversalId: earlierId }
+      if (!claimed?.length) {
+        return { success: false, error: 'Another approval is finishing this reversal right now. Nothing was posted by this one — refresh in a moment.', reversalId: earlierId }
+      }
       const { error: resumeLinesError } = await supabase.from('journal_entry_lines').insert(reversedLines(earlierId))
       if (resumeLinesError) return { success: false, error: resumeLinesError.message, reversalId: earlierId }
     }
@@ -380,7 +395,13 @@ export async function reverseJournalEntry(
     // Nothing flipped: another approval finished it first. Stop, so the caller
     // doesn't post its corrected entry a second time.
     if (!resumed?.length) {
-      return { success: false, error: 'This reversal was already finished by another approval. Nothing was posted.', reversalId: earlierId }
+      return {
+        success: false,
+        error: wroteLines
+          ? 'Another approval finished this reversal at the same time (this one only completed its lines). Nothing else was posted.'
+          : 'This reversal was already finished by another approval. Nothing was posted.',
+        reversalId: earlierId,
+      }
     }
     return { success: true, reversalId: earlierId }
   }

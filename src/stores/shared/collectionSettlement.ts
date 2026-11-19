@@ -3,19 +3,22 @@
 // behave the same everywhere.
 
 import { supabase } from '@/lib/supabase'
-import { useToast } from 'vue-toastification'
-import { useGLDataStore } from '@/stores/glData'
 import { toLocalISODate } from '@/utils/helpers'
+import { reverseProjectedEntry } from '@/stores/changeRequests/ledger'
 
 /**
  * The `created_at` to store for a payment received on `paidOn` (YYYY-MM-DD).
- * The ledger books a collection on its created_at date, so a back-dated
- * payment lands in the right day. Today (or nothing) keeps the real
- * timestamp. A date-only value is stored as that day, the same way the
- * pre-cutover credit memo is.
+ * The ledger books every collection — payments AND discounts — on
+ * created_at::date in the database's UTC session, so the stored value must
+ * fall on the picked day in UTC. A date-only value is stored as midnight UTC
+ * of that day. Today keeps the real save time, except before 08:00 in Manila,
+ * when that instant is still yesterday in UTC — then the picked date is
+ * stored, or a payment dated Nov 1 at 00:30 would book on Oct 31.
  */
 export function collectionCreatedAt(paidOn: string | null | undefined): string | undefined {
-  if (!paidOn || paidOn === toLocalISODate(new Date())) return undefined
+  if (!paidOn) return undefined
+  const now = new Date()
+  if (paidOn === toLocalISODate(now) && now.toISOString().slice(0, 10) === paidOn) return undefined
   return paidOn
 }
 
@@ -29,9 +32,20 @@ export function paidBeforeDocument(paidOn: string | null | undefined, documentCr
   return paidOn < issued ? `The payment date cannot be before the bill was issued (${issued}).` : null
 }
 
-/** Pesos rounded to the centavo — sums like 75,065.63 + 18,772.35 drift in floating point. */
+/**
+ * Pesos rounded to the centavo, half away from zero — sums like 75,065.63 +
+ * 18,772.35 drift in floating point, and a product like 20.15 × 0.5 is
+ * 10.074999… in binary, which a plain Math.round(x * 100) takes down to
+ * 10.07. Trimming to 15 significant digits first restores the 10.075 that
+ * was meant, and the shift is done in the exponent (no second multiply), so
+ * it rounds to 10.08.
+ */
 export function roundPeso(value: number): number {
-  return Math.round((value + Number.EPSILON) * 100) / 100
+  if (!Number.isFinite(value) || value === 0) return value === 0 ? 0 : value
+  const sign = value < 0 ? -1 : 1
+  const [mantissa, exponent] = Number(Math.abs(value).toPrecision(15)).toExponential().split('e')
+  const cents = Math.round(Number(`${mantissa}e${Number(exponent) + 2}`))
+  return sign * Number(`${cents}e-2`)
 }
 
 /**
@@ -48,19 +62,6 @@ export function settleAgainst(total: number, paid: number, amount: number) {
     exceeds: roundPeso(amount) > balance + 0.005,
     settled: newPaid >= roundPeso(total) - 0.005,
   }
-}
-
-/**
- * The day the ledger books a collection on: gl_project_events reads
- * created_at::date (the database runs in UTC), so the app books a discount on
- * the UTC date of the row it just saved — read from the row, not the clock,
- * so a save just before midnight UTC can't land a day apart. A back-dated
- * payment is stored as that date (midnight UTC), which gives the same day.
- */
-export function ledgerDateOf(createdAt: string | null | undefined): string {
-  if (createdAt && /^\d{4}-\d{2}-\d{2}$/.test(createdAt)) return createdAt
-  const at = createdAt ? new Date(createdAt) : new Date()
-  return (Number.isNaN(at.getTime()) ? new Date() : at).toISOString().slice(0, 10)
 }
 
 /**
@@ -87,68 +88,35 @@ export function paymentDateProblem(paidOn: string | null | undefined): string | 
 }
 
 /**
- * Book a payment discount the app itself: DR 4040 Sales discount / CR 1030
- * Accounts Receivable, on the collection's own reference so gl_project_events
- * skips it (it skips any collection that already has an entry) and never
- * debits cash for it. If the entry cannot be posted, the discount row is
- * removed again — a discount the ledger does not know about would leave the
- * bill settled with Accounts Receivable still showing it owed.
+ * Write an order's paid-amount cache after a payment row was saved. Tried
+ * twice; if it still fails, the payment row is undone (soft-voided, and its
+ * ledger entry reversed should the projector have booked it already), so the
+ * cache never falls behind the rows. That matters because older orders carry
+ * amount_paid with no payment rows behind it — a lagging cache could not be
+ * rebuilt from the rows, and the same payment could be entered again.
+ *
+ * Discounts need nothing else: gl_project_events books a payment_discount row
+ * itself (DR 4040 / CR 1030, no cash) on its created_at date, like every other
+ * collection — so the app never posts or deletes a discount entry.
  */
-export async function bookPaymentDiscount(
+export async function saveOrderBalance(
+  write: () => PromiseLike<{ error: { message: string } | null }>,
   collectionId: number,
-  amount: number,
-  /** The saved collection row's created_at. */
-  rowCreatedAt: string | null | undefined,
-  description: string,
   userId: string,
-): Promise<{ ok: boolean; error?: string; stuck?: boolean }> {
-  const result = await useGLDataStore().postJournalEntry(
-    ledgerDateOf(rowCreatedAt),
-    'collection',
-    collectionId,
-    description,
-    [
-      { account_code: '4040', debit: amount, credit: 0, memo: 'Discount given at payment' },
-      { account_code: '1030', debit: 0, credit: amount, memo: 'Taken off what the customer owes' },
-    ],
-    userId,
-  )
-  if (result.success) return { ok: true }
-  // The statements run the projector, which (since 2026-11-17) books a
-  // discount row itself; if it got there first, the unique "one live entry per
-  // reference" index refused ours and the discount IS in the ledger — keep it.
-  // Only an entry that has lines counts: a bare header books nothing.
-  // An unreadable ledger is NOT an empty one: the row stays (never deleted on
-  // a guess) and the discount is reported as needing a manual check.
-  const manualFix = (why: string) => ({
-    ok: false,
-    stuck: true,
-    error: `${why} — discount #${collectionId} needs a manual check by Finance`,
-  })
-  const { data: live, error: liveError } = await supabase
-    .from('journal_entries')
+): Promise<{ saved: true } | { saved: false; undone: boolean; error: string }> {
+  let { error } = await write()
+  if (!error) return { saved: true }
+  ;({ error } = await write())
+  if (!error) return { saved: true }
+  console.warn('saveOrderBalance: paid amount not saved, undoing the payment:', error.message)
+  const { data: voided, error: voidError } = await supabase
+    .from('collections')
+    .update({ voided_at: new Date().toISOString(), voided_by: userId, void_reason: 'Not recorded: the order balance could not be updated' })
+    .eq('id', collectionId)
+    .is('voided_at', null)
     .select('id')
-    .eq('reference_type', 'collection')
-    .eq('reference_id', collectionId)
-    .neq('status', 'reversed')
-  if (liveError) return manualFix('Could not read the ledger')
-  const liveIds = (live ?? []).map((e) => e.id as number)
-  let bareHeader = false
-  if (liveIds.length) {
-    const { count: lineCount, error: countError } = await supabase
-      .from('journal_entry_lines').select('id', { count: 'exact', head: true }).in('journal_entry_id', liveIds)
-    if (countError) return manualFix('Could not read the ledger')
-    if (lineCount) return { ok: true }
-    bareHeader = true
-  }
-  const { error: deleteError } = await supabase.from('collections').delete().eq('id', collectionId)
-  if (!deleteError) return { ok: false, error: result.error }
-  console.warn('bookPaymentDiscount: could not remove the discount row:', deleteError.message)
-  // The row stays and counts toward what was paid. With no entry at all, the
-  // projector books a payment_discount row on the next statement view, so it
-  // IS recorded. A bare header blocks that (the projector skips any row with
-  // an entry): then nobody will book it, and it must be fixed by hand.
-  if (bareHeader) return manualFix('The ledger entry failed and could not be undone')
-  useToast().warning('The discount was saved; its ledger entry will be posted the next time a financial statement is opened.')
-  return { ok: true }
+  if (voidError || !voided?.length) return { saved: false, undone: false, error: error.message }
+  const reversed = await reverseProjectedEntry('collection', collectionId, userId)
+  if (!reversed.ok) console.warn('saveOrderBalance: ledger entry not reversed:', reversed.error)
+  return { saved: false, undone: true, error: error.message }
 }

@@ -142,11 +142,15 @@ function reportUnpriced(rows: IssueRow[]) {
  * reads 'line_change' instead of 'pending_approval'. Approve claims only a
  * 'pending_approval' row and a swap only locks one, so the two can never
  * interleave (an approval deducting one batch while the line records another).
- * Shown as Pending Approval everywhere; a lock older than this is a swap that
- * died part-way, and the next swap or approval clears it.
+ * Shown as Pending Approval everywhere. A swap gives up if it has held the
+ * lock longer than swapGiveUpMs before changing the line, and only a lock
+ * older than staleLineChangeMs (a swap that died part-way) may be cleared —
+ * the wide gap between the two keeps a slow-but-alive swap from ever racing
+ * an approval that cleared its lock, even with clocks a few minutes apart.
  */
 const lineChangeStatus = 'line_change'
-const staleLineChangeMs = 2 * 60 * 1000
+const staleLineChangeMs = 10 * 60 * 1000
+const swapGiveUpMs = 60 * 1000
 
 /** Clears a swap lock left behind by a swap that never finished. True when the transfer is pending again. */
 async function clearStaleLineChange(transferId: number, updatedAt: string | null): Promise<boolean> {
@@ -758,15 +762,43 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
     // Hold the transfer while the line changes (see lineChangeStatus): an
     // approval can't claim it now, and if it was approved a moment ago this
     // finds nothing to lock.
+    // The lock's updated_at is this swap's token: releasing checks it, so a
+    // swap never releases (or trusts) a lock that was cleared and retaken.
+    const lockToken = new Date().toISOString()
+    const lockedAt = Date.now()
     const { data: locked, error: lockError } = await supabase
       .from('transactions')
-      .update({ status: lineChangeStatus, updated_at: new Date().toISOString() })
+      .update({ status: lineChangeStatus, updated_at: lockToken })
       .eq('id', transferId)
       .eq('status', 'pending_approval')
       .select('id')
     if (lockError || !locked?.length) {
       handleError(lockError, 'Failed to change the batch.')
       toast.error(lockError?.message || 'This transfer was approved or changed while you were choosing. Reopen it and try again.')
+      return { success: false }
+    }
+    async function release(): Promise<boolean> {
+      const { data: released, error: releaseError } = await supabase
+        .from('transactions')
+        .update({ status: 'pending_approval', updated_at: new Date().toISOString() })
+        .eq('id', transferId)
+        .eq('status', lineChangeStatus)
+        .eq('updated_at', lockToken)
+        .select('id')
+      if (releaseError) console.warn('substituteTransferLine: could not release the transfer:', releaseError.message)
+      return !releaseError && !!released?.length
+    }
+    async function putLineBack() {
+      const { error: revertError } = await supabase
+        .from('transaction_items').update({ product_id: line!.product_id })
+        .eq('id', lineId).eq('transaction_id', transferId).eq('product_id', newProductId)
+      return !revertError
+    }
+
+    // Too slow (a stalled connection)? Give up before touching the line.
+    if (Date.now() - lockedAt > swapGiveUpMs) {
+      await release()
+      toast.error('The connection was too slow to change the batch safely. Nothing was changed — try again.')
       return { success: false }
     }
 
@@ -779,35 +811,47 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
       .eq('transaction_id', transferId)
       .eq('product_id', line.product_id)
       .select('id')
-
-    // Release the hold whatever happened; the new updated_at also refreshes
-    // every open screen (realtime watches transactions).
-    const { data: released, error: releaseError } = await supabase
-      .from('transactions')
-      .update({ status: 'pending_approval', updated_at: new Date().toISOString() })
-      .eq('id', transferId)
-      .eq('status', lineChangeStatus)
-      .select('id')
-    if (releaseError || !released?.length) {
-      console.warn('substituteTransferLine: could not release the transfer:', releaseError?.message)
-      toast.warning('The transfer may show as busy for up to two minutes; it frees itself after that.')
-    }
-
     if (updateError || !updated?.length) {
+      const freed = await release()
+      if (!freed) toast.warning('The transfer may show as busy for a few minutes; it frees itself after that.')
       handleError(updateError, 'Failed to change the batch.')
       toast.error(updateError?.message || 'The line changed while you were choosing. Reopen the transfer and try again.')
       return { success: false }
     }
 
+    // The swap and its history go together: the note the branch reads comes
+    // from this log row. Tried twice; if it still fails the line goes back,
+    // so a batch is never changed without a record of it.
     const describe = (prod: any) => [
       prod?.brand, prod?.batch_no ? `batch ${prod.batch_no}` : null,
       prod?.expiry_date ? `exp ${String(prod.expiry_date).slice(0, 7)}` : null,
     ].filter(Boolean).join(', ') || `product #${prod?.id}`
-    const { error: logError } = await supabase.from('logs').insert({
+    const logRow = {
       action: 'line_substituted', module: 'warehouse', created_by: user.id, transaction_id: transferId,
       description: `${transfer.transfer_no ?? 'Transfer'}: ${to.product_name ?? 'product'} — sending ${describe(to)} instead of ${describe(from)}`,
-    })
-    if (logError) console.warn('substituteTransferLine: activity log insert failed:', logError.message)
+    }
+    let { error: logError } = await supabase.from('logs').insert(logRow)
+    if (logError) ({ error: logError } = await supabase.from('logs').insert(logRow))
+    if (logError) {
+      console.warn('substituteTransferLine: activity log insert failed:', logError.message)
+      const putBack = await putLineBack()
+      await release()
+      toast.error(putBack
+        ? 'Could not record the change, so the batch was put back. Nothing was changed — try again.'
+        : 'Could not record the change, and the batch could not be put back. Check this line before approving.', { timeout: putBack ? 8000 : 20000 })
+      return { success: false }
+    }
+
+    // Release by token. If the lock was cleared meanwhile (this swap stalled
+    // past staleLineChangeMs), an approval may have counted the old batch:
+    // put the line back and say so, rather than let the two disagree.
+    if (!(await release())) {
+      const putBack = await putLineBack()
+      toast.error(putBack
+        ? 'This change took too long and the transfer moved on, so the batch was put back. Reopen the transfer and check it.'
+        : 'This change took too long and the transfer moved on. Check this line before it is received.', { timeout: 20000 })
+      return { success: false }
+    }
 
     toast.success(`Line changed — sending ${describe(to)}.`)
     return { success: true }

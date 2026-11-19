@@ -5,7 +5,7 @@ import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { fetchAllRows, fetchAllRowsForIds } from '@/stores/shared/paging'
 import { chargeToAccount, isCreditSettlement, paymentDiscount } from '@/utils/paymentMethods'
-import { bookPaymentDiscount, collectionCreatedAt, paidBeforeDocument, paymentDateProblem } from '@/stores/shared/collectionSettlement'
+import { collectionCreatedAt, paidBeforeDocument, paymentDateProblem } from '@/stores/shared/collectionSettlement'
 import type { ChequeDetails } from '@/utils/paymentMethods'
 import { formatCurrency, getErrorMessage } from '@/utils/helpers'
 
@@ -84,7 +84,7 @@ export const useSalesChargesStore = defineStore('salesCharges', () => {
      * the collection's date, so the ledger books it on that day.
      */
     paidOn?: string | null
-  }): Promise<{ success: boolean; stuck?: boolean }> {
+  }): Promise<{ success: boolean }> {
     // A return credit, credit memo or payment discount: settled by a credit,
     // so no money moves.
     const isReturnCredit = isCreditSettlement(payload.method)
@@ -152,16 +152,8 @@ export const useSalesChargesStore = defineStore('salesCharges', () => {
       }).select('id, created_at').single()
       if (insertError || !inserted) throw insertError ?? new Error('Failed to record the payment.')
 
-      if (isDiscount) {
-        const booked = await bookPaymentDiscount(inserted.id, payload.amount, inserted.created_at,
-          `Discount on ${sale.sale_no ?? `sale #${sale.id}`}`, user.id)
-        if (!booked.ok) {
-          toast.error(booked.stuck
-            ? `${booked.error}. Don't enter it again.`
-            : `The discount was not recorded: ${booked.error ?? 'the ledger entry failed'}.`, { timeout: booked.stuck ? 20000 : undefined })
-          return { success: false, stuck: booked.stuck }
-        }
-      }
+      // A discount needs no ledger work here: gl_project_events books the
+      // payment_discount row (DR 4040 / CR 1030) like any other collection.
 
       // Best-effort like every other balance write here (JS-over-RPC
       // convention): surfaced, not rolled back — the collections row is the record.

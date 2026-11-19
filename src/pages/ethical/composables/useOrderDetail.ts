@@ -222,12 +222,10 @@ export function useOrderDetail(order: () => EthicalOrderType | undefined) {
     loading.value = true
     const result = await recordSettlement(collectionInput.value, (payload) => ethical.recordCollection({ orderId: o.id, ...payload }))
     loading.value = false
-    if (result.discountFailed && !result.discountStuck) toast.warning(discountFailedMessage(collectionInput.value.amount))
-    if (result.discountStuck) collectionDiscount.value = 0
+    if (result.discountFailed) toast.warning(discountFailedMessage(collectionInput.value.amount))
     if (result.success) {
-      // A discount that failed stays filled in (with its date) to re-enter —
-      // unless it is stuck, which Finance fixes (entering it again doubles it).
-      if (!result.discountFailed || result.discountStuck) {
+      // A discount that failed stays filled in (with its date) to re-enter.
+      if (!result.discountFailed) {
         collectionDiscount.value = 0
         collectionPaidOn.value = todayISO()
       }

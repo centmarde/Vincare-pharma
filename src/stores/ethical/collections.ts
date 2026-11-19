@@ -8,7 +8,7 @@ import { useAuthUserStore } from '@/stores/authUser'
 import { useGLDataStore } from '@/stores/glData'
 import type { CollectionType, CommissionSummaryRow } from './types'
 import { isCreditSettlement, paymentDiscount } from '@/utils/paymentMethods'
-import { bookPaymentDiscount, collectionCreatedAt, paidBeforeDocument, paidSoFar, paymentDateProblem, settleAgainst } from '@/stores/shared/collectionSettlement'
+import { collectionCreatedAt, paidBeforeDocument, paidSoFar, paymentDateProblem, saveOrderBalance, settleAgainst } from '@/stores/shared/collectionSettlement'
 import { toLocalISODate } from '@/utils/helpers'
 import type { ChequeDetails } from '@/utils/paymentMethods'
 import { collections, commissionSummary, loading, handleError, clearError } from './state'
@@ -142,19 +142,8 @@ export async function recordCollection(payload: {
     return { success: false }
   }
 
-  // A discount is booked here, before the balance changes: if the ledger
-  // entry cannot be posted the discount row is taken back out.
-  if (isDiscount) {
-    const booked = await bookPaymentDiscount(collection.id, payload.amount, collection.created_at,
-      `Discount on ethical order ${order.ethical_no ?? payload.orderId}`, user.id)
-    if (!booked.ok) {
-      toast.error(booked.stuck
-        ? `${booked.error}. Don't enter it again.`
-        : `The discount was not recorded: ${booked.error ?? 'the ledger entry failed'}.`, { timeout: booked.stuck ? 20000 : undefined })
-      loading.value = false
-      return { success: false, stuck: booked.stuck }
-    }
-  }
+  // A discount needs no ledger work here: gl_project_events books the
+  // payment_discount row (DR 4040 / CR 1030) like any other collection.
 
   const nowIso = new Date().toISOString()
   // The rebate only falls due once the order is paid IN FULL, and every rebate
@@ -166,11 +155,21 @@ export async function recordCollection(payload: {
   const detailsUpdate: Record<string, unknown> = { amount_paid: newPaid, paid_at: createdAt ?? nowIso }
   if (rebateFallsDueNow) detailsUpdate.rebate_status = 'pending_approval'
 
-  const { error: detailsError } = await supabase
-    .from('ethical_details')
-    .update(detailsUpdate)
-    .eq('transaction_id', payload.orderId)
-  if (detailsError) console.warn('recordCollection: ethical_details update failed:', detailsError.message)
+  // The cache must never fall behind the rows (see saveOrderBalance): if it
+  // can't be written the payment is undone and nothing is recorded.
+  const cache = await saveOrderBalance(
+    () => supabase.from('ethical_details').update(detailsUpdate).eq('transaction_id', payload.orderId),
+    collection.id, user.id)
+  if (!cache.saved && cache.undone) {
+    handleError(cache.error, 'Failed to record collection.')
+    toast.error('Nothing was recorded — the order balance could not be updated. Try again.')
+    loading.value = false
+    return { success: false }
+  }
+  const detailsError = cache.saved ? null : cache.error
+  if (detailsError) {
+    toast.error('Collection recorded, but the order balance could not be updated or undone. Ask Finance to check this order before entering anything else on it.', { timeout: 20000 })
+  }
 
   // Only flip status if the amount_paid cache write above actually landed —
   // status='paid'/'partial' otherwise implies a balance that the cache
@@ -231,8 +230,8 @@ export async function recordCollection(payload: {
     }
   }
 
-  if (detailsError) toast.warning('Collection recorded, but the order balance may be out of sync — verify manually.')
-  else toast.success(isDiscount ? 'Discount taken off the bill.' : isReturnCredit ? 'Credit taken off the bill.' : 'Collection recorded.')
+  // A cache that could be neither saved nor undone was already reported above.
+  if (!detailsError) toast.success(isDiscount ? 'Discount taken off the bill.' : isReturnCredit ? 'Credit taken off the bill.' : 'Collection recorded.')
   await fetchOrders()
   await fetchCollections(payload.orderId)
   loading.value = false

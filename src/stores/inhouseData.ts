@@ -16,7 +16,7 @@ import type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult } from 
 import { govtShelfLife, QUALIFICATION_MONTHS } from '@/utils/qualification'
 import { describeProduct, formatCurrency } from '@/utils/helpers'
 import { isCreditSettlement, paymentDiscount } from '@/utils/paymentMethods'
-import { bookPaymentDiscount, collectionCreatedAt, paidBeforeDocument, paidSoFar, paymentDateProblem, roundPeso, settleAgainst } from '@/stores/shared/collectionSettlement'
+import { collectionCreatedAt, paidBeforeDocument, paidSoFar, paymentDateProblem, roundPeso, saveOrderBalance, settleAgainst } from '@/stores/shared/collectionSettlement'
 import type { ChequeDetails } from '@/utils/paymentMethods'
 import { issueRow, useIssueList } from '@/composables/useIssueList'
 import { hasPendingTermsRequest, isApprovedLockRequest, unlockBlocker } from '@/stores/shared/termsApprovalGuards'
@@ -1037,33 +1037,27 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       loading.value = false; return { success: false }
     }
 
-    // A discount is booked before the balance changes: if the ledger entry
-    // cannot be posted the discount row is taken back out.
-    if (isDiscount) {
-      const booked = await bookPaymentDiscount(payment.id, payload.amount, payment.created_at,
-        `Discount on In-House order ${(order as { inhouse_no?: string | null }).inhouse_no ?? payload.orderId}`, user.id)
-      if (!booked.ok) {
-        toast.error(booked.stuck
-          ? `${booked.error}. Don't enter it again.`
-          : `The discount was not recorded: ${booked.error ?? 'the ledger entry failed'}.`, { timeout: booked.stuck ? 20000 : undefined })
-        loading.value = false; return { success: false, stuck: booked.stuck }
-      }
-    }
+    // A discount needs no ledger work here: gl_project_events books the
+    // payment_discount row (DR 4040 / CR 1030) like any other collection.
 
     const newStatus = settled ? 'paid' : 'partial'
     const nowIso = new Date().toISOString()
 
-    const { error: detailsError } = await supabase
-      .from('inhouse_details')
-      .update({ amount_paid: newPaid, paid_at: createdAt ?? nowIso })
-      .eq('transaction_id', payload.orderId)
-    // The payment row (and a discount's ledger entry) already exist, so this
-    // is NOT "nothing recorded": reporting a failure here invited entering the
-    // same payment again. Warn instead, like Ethical, and leave the status as
-    // it is so it never claims a balance the cache does not show.
-    if (detailsError) {
-      handleError(detailsError, 'Payment recorded, but the order balance was not updated.')
-      toast.warning('Payment recorded, but the order balance was not updated — verify it before entering anything else.')
+    // The cache must never fall behind the rows (see saveOrderBalance): if it
+    // can't be written the payment is undone and nothing is recorded.
+    const cache = await saveOrderBalance(
+      () => supabase.from('inhouse_details').update({ amount_paid: newPaid, paid_at: createdAt ?? nowIso }).eq('transaction_id', payload.orderId),
+      payment.id, user.id)
+    if (!cache.saved && cache.undone) {
+      handleError(cache.error, 'Failed to record payment.')
+      toast.error('Nothing was recorded — the order balance could not be updated. Try again.')
+      loading.value = false; return { success: false }
+    }
+    if (!cache.saved) {
+      // Neither saved nor undone: the row stands. Say so, and leave the status
+      // as it is so it never claims a balance the cache does not show.
+      handleError(cache.error, 'Payment recorded, but the order balance was not updated.')
+      toast.error('Payment recorded, but the order balance could not be updated or undone. Ask Finance to check this order before entering anything else on it.', { timeout: 20000 })
     } else {
       const { error: statusError } = await supabase
         .from('transactions')
