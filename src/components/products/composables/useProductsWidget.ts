@@ -238,6 +238,50 @@ export function useProductsWidget() {
     })
   }
 
+  /**
+   * Fetch EVERY product that matches the current filters — search, type,
+   * warehouse, expiry — ignoring pagination, so the CSV/PDF export reflects
+   * the whole filtered set and not just the page on screen. Gipaginate ang
+   * fetch (500 kapin) para dili ma-truncate sa PostgREST 1,000-row cap, dayon
+   * i-restore ang on-screen page kay ma-overwrite man ang store list sa dagan.
+   */
+  async function fetchAllFilteredProducts(): Promise<ProductType[]> {
+    const range = expiryFilterRange.value
+
+    const ids = selectedWarehouseId.value
+      ? warehouseProductIds.value.length > 0
+        ? [...warehouseProductIds.value]
+        : [-1]
+      : undefined
+
+    let eligibleIds = ids && ids.length > 0 ? ids : undefined
+    if (!selectedWarehouseId.value && typeFilter.value !== 'All') {
+      const rpcIds = await productsStore.fetchEligibleProductIds(typeFilter.value)
+      eligibleIds = rpcIds.length > 0 ? rpcIds : [-1]
+    }
+
+    const pageSize = 500
+    const all: ProductType[] = []
+    for (let offset = 0; ; offset += pageSize) {
+      await productsStore.fetchProducts({
+        search: searchQuery.value,
+        category: typeFilter.value !== 'All' ? typeFilter.value : undefined,
+        limit: pageSize,
+        offset,
+        eligibleIds,
+        expiryStart: range?.start,
+        expiryEnd: range?.end,
+      })
+      const batch = productsStore.products
+      all.push(...batch)
+      if (batch.length < pageSize) break
+    }
+
+    // Restore the on-screen page — ang export loop nag-overwrite sa store list.
+    await fetchProducts()
+    return all
+  }
+
   function setWarehouseFilter(warehouseId: number | null) {
     selectedWarehouseId.value = warehouseId
     if (warehouseId) {
@@ -1075,6 +1119,7 @@ export function useProductsWidget() {
     fetchMainWarehouseReservations,
     openAddReservationDialog,
     handleTableOptions,
+    fetchAllFilteredProducts,
     //Stock order for Purchaser
     isEditRestricted,
     isPurchaser,

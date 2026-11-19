@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useDisplay } from 'vuetify'
+import { useToast } from 'vue-toastification'
 import { formatCurrency, formatMonthYear, isBlank, NOT_SET } from '@/utils/helpers'
 import { useProductsWidget } from '@/components/products/composables/useProductsWidget.ts'
 import { useTheme } from '@/stores/useTheme'
@@ -20,6 +21,9 @@ import { useWarehousesDataStore } from '@/stores/warehouseData'
 import { useCustomersDataStore } from '@/stores/customersData'
 import { canViewSupplierName } from '@/utils/roleHelpers'
 import PurchaseRequisitionDialog from '@/pages/purchasing/components/dialogs/PurchaseRequisitionDialog.vue'
+import ProductsWidgetPrint from './print/ProductsWidgetPrint.vue'
+import ExportDialogLoading from './dialogs/ExportDialogLoading.vue'
+import type { ProductType } from '@/stores/productsData'
 
 const { mobile } = useDisplay()
 const logsStore = useLogsDataStore()
@@ -104,10 +108,38 @@ const {
   showAddReservationDialog,
   selectedProductForReservation,
   fetchMainWarehouseReservations,
+  fetchAllFilteredProducts,
 } = useProductsWidget()
 
 // Manage ignored items dialog
 const showManageIgnoredDialog = ref(false)
+
+// Export / print state (CSV + PDF) — i-export ang tanang produkto nga mo-match
+// sa current filters (search, type, expiry, warehouse), dili lang ang page.
+const showPrintDialog = ref(false)
+const printProducts = ref<ProductType[]>([])
+const exportLoading = ref(false)
+const toast = useToast()
+
+// Human-readable warehouse name para ma-ipakita sa print report header.
+const selectedWarehouseName = computed(() => {
+  const w = warehousesStore.warehouses.find((x) => x.id === selectedWarehouseId.value)
+  return w?.name ?? null
+})
+
+// Ang stock nga makita sa table: warehouse-specific kung naka-filter sa
+// warehouse, kon dili ang main-warehouse available stock.
+function resolvedStock(item: ProductType): number {
+  return selectedWarehouseId.value ? getWarehouseStock(item.id) ?? 0 : getMainWarehouseStock(item)
+}
+
+// I-format ang reservations (expanded-row detail) ngadto sa usa ka cell:
+// "CustomerName (qty); CustomerName (qty)". Blank kung walay reservation.
+function formatReservations(item: ProductType): string {
+  return getProductReservations(item.id)
+    .map((r) => `${r.customer_name} (${r.reserved_qty})`)
+    .join('; ')
+}
 
 // Build list of ignored products with their info by matching product IDs from allEligibleProducts
 const ignoredProductEntries = computed(() => {
@@ -208,6 +240,86 @@ function stockColor(item: any, stock: number) {
   if (isLowStock) return 'warning'
   return isDark.value === 'dark' ? 'grey-lighten-2' : 'grey-darken-3'
 }
+
+// ── Export (CSV) ────────────────────────────────────────────────────────────
+// Straight CSV sa tanang filtered produkto, RFC 4180 nga escape (dobli ang
+// quotes inside a field). Gisunod ni ang StatementOfAccounts exportCsv pattern.
+async function exportCsv() {
+  if (exportLoading.value) return
+  exportLoading.value = true
+  // fetchAllFilteredProducts() na ang mo-handle sa tanang Supabase errors
+  // mismo (mo-return og [] kung mapakyas) — wala gi-wrap sa try/catch dire.
+  const rows = await fetchAllFilteredProducts()
+
+  try {
+    const esc = (value: string) => `"${value.replace(/"/g, '""')}"`
+    const cols: [string, (p: ProductType) => string][] = [
+      ['Category', (p) => p.category ?? ''],
+      ['Product Name', (p) => p.product_name ?? ''],
+      ['Brand', (p) => p.brand ?? ''],
+      ['SKU', (p) => p.sku ?? ''],
+      ['Stock', (p) => String(resolvedStock(p))],
+      [
+        'Selling Price',
+        (p) => (isBlank(p.selling_price) ? '' : formatCurrency(Number(p.selling_price))),
+      ],
+      ['Unit', (p) => p.unit ?? ''],
+      ['Batch No.', (p) => p.batch_no ?? ''],
+      ['Expiry Date', (p) => (p.expiry_date ? formatMonthYear(p.expiry_date) : '')],
+      // Expanded-row details isip columns: Barcode, Status, Reservations.
+      ['Barcode', (p) => p.barcode ?? ''],
+      ['Status', (p) => p.status ?? ''],
+      ['Reserved', (p) => formatReservations(p)],
+    ]
+    // Warehouse Total Qty — ang expanded row nagpakita ra ni kung naay warehouse
+    // filter nga active, mao nga i-dugang ra ang column kung ingon ana.
+    if (selectedWarehouseId.value) {
+      cols.push([
+        'Warehouse Total Qty',
+        (p) => String(getWarehouseProductDetail(p.id)?.total_qty ?? ''),
+      ])
+    }
+    // Supplier ra ang idugang kung ang role angay makakita sa supplier name.
+    if (canViewSupplierName(authUser.userRole)) {
+      cols.push(['Supplier', (p) => p.suppliers?.name ?? ''])
+    }
+
+    const lines = [
+      cols.map(([title]) => esc(title)).join(','),
+      ...rows.map((p) => cols.map(([, value]) => esc(value(p))).join(',')),
+    ]
+    // I-apil ang filter type sa filename kung naay active nga type filter;
+    // kung 'All' (walay filter), dili na i-apil.
+    const filterTag =
+      typeFilter.value !== 'All' ? `-${typeFilter.value.toLowerCase().replace(/\s+/g, '-')}` : ''
+    // BOM (\uFEFF) para ang Excel maka-recognize sa UTF-8 nga text.
+    const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `products${filterTag}-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success(`Exported ${rows.length} product${rows.length === 1 ? '' : 's'} to CSV.`)
+  } catch (err) {
+    console.error('[ProductsWidget] CSV export failed:', err)
+    toast.error('Could not export the products to CSV.')
+  } finally {
+    exportLoading.value = false
+  }
+}
+
+// ── PDF export ──────────────────────────────────────────────────────────────
+// Kuhaon ang tanang filtered rows unya i-open ang print dialog nga mo-rasterise
+// sa report ngadto sa PDF.
+async function openPdfPrint() {
+  if (exportLoading.value) return
+  exportLoading.value = true
+  // Same story as exportCsv: ang store na ang mo-handle sa Supabase errors.
+  printProducts.value = await fetchAllFilteredProducts()
+  showPrintDialog.value = true
+  exportLoading.value = false
+}
 </script>
 
 <template>
@@ -284,6 +396,32 @@ function stockColor(item: any, stock: number) {
             <v-divider class="mt-2"></v-divider>
           </template>
         </v-select>
+        <!-- Export options: 3-dot menu para ma-shrink ang header -->
+        <v-menu location="bottom end">
+          <template #activator="{ props: menuProps }">
+            <v-btn
+              v-bind="menuProps"
+              icon="mdi-dots-horizontal"
+              variant="tonal"
+              :loading="exportLoading"
+              aria-label="Export options"
+            ></v-btn>
+          </template>
+          <v-list density="compact" min-width="200">
+            <v-list-item
+              prepend-icon="mdi-file-delimited-outline"
+              title="Export CSV"
+              :disabled="exportLoading"
+              @click="exportCsv"
+            />
+            <v-list-item
+              prepend-icon="mdi-file-pdf-box"
+              title="Download PDF"
+              :disabled="exportLoading"
+              @click="openPdfPrint"
+            />
+          </v-list>
+        </v-menu>
         <!-- I want to restrict this when the user is a warehouse user -->
         <v-btn
           color="primary"
@@ -367,6 +505,28 @@ function stockColor(item: any, stock: number) {
         persistent-placeholder
         class="mt-2"
       ></v-select>
+      <div class="d-flex ga-2 pt-2">
+        <v-btn
+          variant="tonal"
+          size="small"
+          class="text-none flex-grow-1"
+          prepend-icon="mdi-file-delimited-outline"
+          :loading="exportLoading"
+          @click="exportCsv"
+        >
+          CSV
+        </v-btn>
+        <v-btn
+          variant="tonal"
+          size="small"
+          class="text-none flex-grow-1"
+          prepend-icon="mdi-file-pdf-box"
+          :disabled="exportLoading"
+          @click="openPdfPrint"
+        >
+          PDF
+        </v-btn>
+      </div>
     </div>
 
     <!-- How to make this to the end of right part -->
@@ -677,6 +837,24 @@ function stockColor(item: any, stock: number) {
       selectedWarehouseId ? setWarehouseFilter(selectedWarehouseId) : fetchMainWarehouseReservations()
     "
   />
+
+  <!-- Products print / PDF report -->
+  <ProductsWidgetPrint
+    v-model="showPrintDialog"
+    :items="printProducts"
+    :type-filter="typeFilter"
+    :search-query="searchQuery"
+    :expiry-label="expiryFilterLabel"
+    :warehouse-name="selectedWarehouseName"
+    :can-view-supplier="canViewSupplierName(authUser.userRole)"
+    :show-warehouse-qty="!!selectedWarehouseId"
+    :get-stock="resolvedStock"
+    :get-reservations="(item) => getProductReservations(item.id)"
+    :get-warehouse-qty="(item) => getWarehouseProductDetail(item.id)?.total_qty ?? null"
+  />
+
+  <!-- Loading overlay samtang ongoing ang export — nag-cover sa table view -->
+  <ExportDialogLoading v-model="exportLoading" />
 </template>
 
 <style scoped>
