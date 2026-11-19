@@ -100,8 +100,8 @@ export function settlementSummary(input: SettlementInput, balance: number, cashA
  */
 export async function recordSettlement(
   input: SettlementInput,
-  record: (payload: SettlementRecordPayload) => Promise<{ success: boolean }>,
-): Promise<{ success: boolean; discountFailed?: boolean }> {
+  record: (payload: SettlementRecordPayload) => Promise<{ success: boolean; stuck?: boolean }>,
+): Promise<{ success: boolean; discountFailed?: boolean; discountStuck?: boolean }> {
   const amount = Number(input.amount) || 0
   const discount = Number(input.discount) || 0
   const paidOn = input.paidOn || null
@@ -127,7 +127,9 @@ export async function recordSettlement(
       cheque: null,
       paidOn,
     })
-    if (!discounted.success) return { success: amount > 0, discountFailed: true }
+    // stuck: the discount row could be neither booked nor removed — Finance
+    // fixes it; entering it again would give the discount twice.
+    if (!discounted.success) return { success: amount > 0, discountFailed: true, discountStuck: !!discounted.stuck }
   }
   return { success: true }
 }

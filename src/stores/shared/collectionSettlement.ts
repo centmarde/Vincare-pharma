@@ -51,16 +51,31 @@ export function settleAgainst(total: number, paid: number, amount: number) {
 }
 
 /**
- * The date the app books a discount on — the same date the projector books
- * the payment beside it. A back-dated payment is stored as that day; one for
- * today (the form's default, so paidOn is usually today's Manila date) keeps
- * created_at = now(), which the projector books on created_at::date in the
- * database's UTC session — so today means today's UTC date here too.
- * Otherwise, between 00:00 and 08:00 Manila, the two landed a day apart.
+ * The day the ledger books a collection on: gl_project_events reads
+ * created_at::date (the database runs in UTC), so the app books a discount on
+ * the UTC date of the row it just saved — read from the row, not the clock,
+ * so a save just before midnight UTC can't land a day apart. A back-dated
+ * payment is stored as that date (midnight UTC), which gives the same day.
  */
-export function discountEntryDate(paidOn: string | null | undefined): string {
-  if (paidOn && paidOn !== toLocalISODate(new Date())) return paidOn
-  return new Date().toISOString().slice(0, 10)
+export function ledgerDateOf(createdAt: string | null | undefined): string {
+  if (createdAt && /^\d{4}-\d{2}-\d{2}$/.test(createdAt)) return createdAt
+  const at = createdAt ? new Date(createdAt) : new Date()
+  return (Number.isNaN(at.getTime()) ? new Date() : at).toISOString().slice(0, 10)
+}
+
+/**
+ * What has been paid on a bill so far: the larger of the cached amount_paid
+ * and the sum of its live payment rows. The cache can lag a payment whose
+ * cache write failed (and must not let the same amount be entered again);
+ * older orders carry amount_paid with no payment rows behind it. null when
+ * the payments could not be read.
+ */
+export async function paidSoFar(transactionId: number, cachedPaid: number | null | undefined): Promise<number | null> {
+  const { data, error } = await supabase
+    .from('collections').select('amount').eq('transaction_id', transactionId).is('voided_at', null)
+  if (error) return null
+  const rows = roundPeso((data ?? []).reduce((sum, r) => sum + Number(r.amount ?? 0), 0))
+  return Math.max(roundPeso(Number(cachedPaid ?? 0)), rows)
 }
 
 /** A payment date staff entered, refused if it is in the future. */
@@ -82,12 +97,13 @@ export function paymentDateProblem(paidOn: string | null | undefined): string | 
 export async function bookPaymentDiscount(
   collectionId: number,
   amount: number,
-  paidOn: string | null | undefined,
+  /** The saved collection row's created_at. */
+  rowCreatedAt: string | null | undefined,
   description: string,
   userId: string,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; stuck?: boolean }> {
   const result = await useGLDataStore().postJournalEntry(
-    discountEntryDate(paidOn),
+    ledgerDateOf(rowCreatedAt),
     'collection',
     collectionId,
     description,
@@ -102,26 +118,37 @@ export async function bookPaymentDiscount(
   // discount row itself; if it got there first, the unique "one live entry per
   // reference" index refused ours and the discount IS in the ledger — keep it.
   // Only an entry that has lines counts: a bare header books nothing.
-  const { data: live } = await supabase
+  // An unreadable ledger is NOT an empty one: the row stays (never deleted on
+  // a guess) and the discount is reported as needing a manual check.
+  const manualFix = (why: string) => ({
+    ok: false,
+    stuck: true,
+    error: `${why} — discount #${collectionId} needs a manual check by Finance`,
+  })
+  const { data: live, error: liveError } = await supabase
     .from('journal_entries')
     .select('id')
     .eq('reference_type', 'collection')
     .eq('reference_id', collectionId)
     .neq('status', 'reversed')
+  if (liveError) return manualFix('Could not read the ledger')
   const liveIds = (live ?? []).map((e) => e.id as number)
+  let bareHeader = false
   if (liveIds.length) {
-    const { count: lineCount } = await supabase
+    const { count: lineCount, error: countError } = await supabase
       .from('journal_entry_lines').select('id', { count: 'exact', head: true }).in('journal_entry_id', liveIds)
+    if (countError) return manualFix('Could not read the ledger')
     if (lineCount) return { ok: true }
+    bareHeader = true
   }
   const { error: deleteError } = await supabase.from('collections').delete().eq('id', collectionId)
-  if (deleteError) {
-    // The row stays and already counts toward what was paid. The projector
-    // books a payment_discount row itself on the next statement view, so the
-    // discount IS recorded — say so, rather than invite entering it again.
-    console.warn('bookPaymentDiscount: could not remove the discount row:', deleteError.message)
-    useToast().warning('The discount was saved; its ledger entry will be posted the next time a financial statement is opened.')
-    return { ok: true }
-  }
-  return { ok: false, error: result.error }
+  if (!deleteError) return { ok: false, error: result.error }
+  console.warn('bookPaymentDiscount: could not remove the discount row:', deleteError.message)
+  // The row stays and counts toward what was paid. With no entry at all, the
+  // projector books a payment_discount row on the next statement view, so it
+  // IS recorded. A bare header blocks that (the projector skips any row with
+  // an entry): then nobody will book it, and it must be fixed by hand.
+  if (bareHeader) return manualFix('The ledger entry failed and could not be undone')
+  useToast().warning('The discount was saved; its ledger entry will be posted the next time a financial statement is opened.')
+  return { ok: true }
 }

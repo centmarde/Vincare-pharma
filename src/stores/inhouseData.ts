@@ -16,7 +16,7 @@ import type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult } from 
 import { govtShelfLife, QUALIFICATION_MONTHS } from '@/utils/qualification'
 import { describeProduct, formatCurrency } from '@/utils/helpers'
 import { isCreditSettlement, paymentDiscount } from '@/utils/paymentMethods'
-import { bookPaymentDiscount, collectionCreatedAt, paidBeforeDocument, paymentDateProblem, roundPeso, settleAgainst } from '@/stores/shared/collectionSettlement'
+import { bookPaymentDiscount, collectionCreatedAt, paidBeforeDocument, paidSoFar, paymentDateProblem, roundPeso, settleAgainst } from '@/stores/shared/collectionSettlement'
 import type { ChequeDetails } from '@/utils/paymentMethods'
 import { issueRow, useIssueList } from '@/composables/useIssueList'
 import { hasPendingTermsRequest, isApprovedLockRequest, unlockBlocker } from '@/stores/shared/termsApprovalGuards'
@@ -988,7 +988,14 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     const tooEarly = paidBeforeDocument(payload.paidOn, order.created_at)
     if (tooEarly) { toast.error(tooEarly); loading.value = false; return { success: false } }
 
-    const paid = (order.inhouse_details as unknown as { amount_paid: number | null } | null)?.amount_paid ?? 0
+    // The cache or the payment rows, whichever is ahead — see paidSoFar. A
+    // payment whose cache write failed still counts, so the same amount can't
+    // be entered again and a discount entered with it sees the right balance.
+    const paid = await paidSoFar(payload.orderId, (order.inhouse_details as unknown as { amount_paid: number | null } | null)?.amount_paid)
+    if (paid === null) {
+      toast.error('Could not read the payments on this order. Nothing was recorded — try again.')
+      loading.value = false; return { success: false }
+    }
     const total = order.total_amount ?? 0
     const { balance, newPaid, exceeds, settled } = settleAgainst(total, paid, payload.amount)
     if (exceeds) {
@@ -1023,7 +1030,7 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
           : {}),
         ...(createdAt ? { created_at: createdAt } : {}),
       })
-      .select('id')
+      .select('id, created_at')
       .single()
     if (paymentError || !payment) {
       handleError(paymentError, 'Failed to record payment.'); toast.error(paymentError?.message || 'Failed to record payment.')
@@ -1033,11 +1040,13 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     // A discount is booked before the balance changes: if the ledger entry
     // cannot be posted the discount row is taken back out.
     if (isDiscount) {
-      const booked = await bookPaymentDiscount(payment.id, payload.amount, payload.paidOn,
+      const booked = await bookPaymentDiscount(payment.id, payload.amount, payment.created_at,
         `Discount on In-House order ${(order as { inhouse_no?: string | null }).inhouse_no ?? payload.orderId}`, user.id)
       if (!booked.ok) {
-        toast.error(`The discount was not recorded: ${booked.error ?? 'the ledger entry failed'}.`)
-        loading.value = false; return { success: false }
+        toast.error(booked.stuck
+          ? `${booked.error}. Don't enter it again.`
+          : `The discount was not recorded: ${booked.error ?? 'the ledger entry failed'}.`, { timeout: booked.stuck ? 20000 : undefined })
+        loading.value = false; return { success: false, stuck: booked.stuck }
       }
     }
 

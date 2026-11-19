@@ -374,9 +374,14 @@ export async function reverseJournalEntry(
       const { error: resumeLinesError } = await supabase.from('journal_entry_lines').insert(reversedLines(earlierId))
       if (resumeLinesError) return { success: false, error: resumeLinesError.message, reversalId: earlierId }
     }
-    const { error: resumeStatusError } = await supabase
-      .from('journal_entries').update({ status: 'reversed' }).eq('id', entryId).eq('status', 'posted')
+    const { data: resumed, error: resumeStatusError } = await supabase
+      .from('journal_entries').update({ status: 'reversed' }).eq('id', entryId).eq('status', 'posted').select('id')
     if (resumeStatusError) return { success: false, error: resumeStatusError.message, reversalId: earlierId }
+    // Nothing flipped: another approval finished it first. Stop, so the caller
+    // doesn't post its corrected entry a second time.
+    if (!resumed?.length) {
+      return { success: false, error: 'This reversal was already finished by another approval. Nothing was posted.', reversalId: earlierId }
+    }
     return { success: true, reversalId: earlierId }
   }
 
@@ -399,9 +404,12 @@ export async function reverseJournalEntry(
   const { error: linesError } = await supabase.from('journal_entry_lines').insert(reversedLines(reversal.id))
   if (linesError) return { success: false, error: linesError.message, reversalId: reversal.id }
 
-  const { error: statusError } = await supabase
-    .from('journal_entries').update({ status: 'reversed' }).eq('id', entryId).eq('status', 'posted')
+  const { data: flipped, error: statusError } = await supabase
+    .from('journal_entries').update({ status: 'reversed' }).eq('id', entryId).eq('status', 'posted').select('id')
   if (statusError) return { success: false, error: statusError.message, reversalId: reversal.id }
+  if (!flipped?.length) {
+    return { success: false, error: `Entry ${original.entry_no} was reversed by another action at the same time. Check the General Journal before going on.`, reversalId: reversal.id }
+  }
 
   return { success: true, reversalId: reversal.id }
 }

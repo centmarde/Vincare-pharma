@@ -137,6 +137,27 @@ function reportUnpriced(rows: IssueRow[]) {
   })
 }
 
+/**
+ * A batch swap holds the transfer for the moment it changes a line: its status
+ * reads 'line_change' instead of 'pending_approval'. Approve claims only a
+ * 'pending_approval' row and a swap only locks one, so the two can never
+ * interleave (an approval deducting one batch while the line records another).
+ * Shown as Pending Approval everywhere; a lock older than this is a swap that
+ * died part-way, and the next swap or approval clears it.
+ */
+const lineChangeStatus = 'line_change'
+const staleLineChangeMs = 2 * 60 * 1000
+
+/** Clears a swap lock left behind by a swap that never finished. True when the transfer is pending again. */
+async function clearStaleLineChange(transferId: number, updatedAt: string | null): Promise<boolean> {
+  if (!updatedAt || Date.now() - new Date(updatedAt).getTime() < staleLineChangeMs) return false
+  const { data } = await supabase
+    .from('transactions').update({ status: 'pending_approval', updated_at: new Date().toISOString() })
+    .eq('id', transferId).eq('status', lineChangeStatus).eq('updated_at', updatedAt)
+    .select('id')
+  return !!data?.length
+}
+
 function mapRowToTransfer(row: any): StockTransferType {
   return {
     id:           row.id,
@@ -144,7 +165,8 @@ function mapRowToTransfer(row: any): StockTransferType {
     transfer_no:  row.transfer_no,
     warehouse_id: row.warehouse_id,
     warehouse:    row.warehouse,
-    status:       row.status,
+    // A swap's momentary lock is still a pending transfer to everyone looking.
+    status:       row.status === lineChangeStatus ? 'pending_approval' : row.status,
     remarks:      row.remarks,
     requested_by: row.created_by,
     approved_by:  row.approved_by,
@@ -689,12 +711,16 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
 
     const { data: transfer, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, transfer_no, transaction_items!transaction_items_transaction_id_fkey(id, product_id, qty_stock_out)')
+      .select('id, status, updated_at, transfer_no, transaction_items!transaction_items_transaction_id_fkey(id, product_id, qty_stock_out)')
       .eq('id', transferId)
       .eq('transaction_type', 'stock_transfer')
       .maybeSingle()
     if (fetchError || !transfer) { toast.error('Transfer not found.'); return { success: false } }
-    if (transfer.status !== 'pending_approval') {
+    if (transfer.status === lineChangeStatus && !(await clearStaleLineChange(transferId, transfer.updated_at))) {
+      toast.error('Another line on this transfer is being changed right now. Try again in a moment.')
+      return { success: false }
+    }
+    if (transfer.status !== 'pending_approval' && transfer.status !== lineChangeStatus) {
       toast.error('Only a transfer waiting for approval can have a line changed.')
       return { success: false }
     }
@@ -729,6 +755,21 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
       return { success: false }
     }
 
+    // Hold the transfer while the line changes (see lineChangeStatus): an
+    // approval can't claim it now, and if it was approved a moment ago this
+    // finds nothing to lock.
+    const { data: locked, error: lockError } = await supabase
+      .from('transactions')
+      .update({ status: lineChangeStatus, updated_at: new Date().toISOString() })
+      .eq('id', transferId)
+      .eq('status', 'pending_approval')
+      .select('id')
+    if (lockError || !locked?.length) {
+      handleError(lockError, 'Failed to change the batch.')
+      toast.error(lockError?.message || 'This transfer was approved or changed while you were choosing. Reopen it and try again.')
+      return { success: false }
+    }
+
     // Guarded on the line still holding the batch the approver saw, so two
     // people changing the same line cannot overwrite each other unnoticed.
     const { data: updated, error: updateError } = await supabase
@@ -738,23 +779,23 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
       .eq('transaction_id', transferId)
       .eq('product_id', line.product_id)
       .select('id')
+
+    // Release the hold whatever happened; the new updated_at also refreshes
+    // every open screen (realtime watches transactions).
+    const { data: released, error: releaseError } = await supabase
+      .from('transactions')
+      .update({ status: 'pending_approval', updated_at: new Date().toISOString() })
+      .eq('id', transferId)
+      .eq('status', lineChangeStatus)
+      .select('id')
+    if (releaseError || !released?.length) {
+      console.warn('substituteTransferLine: could not release the transfer:', releaseError?.message)
+      toast.warning('The transfer may show as busy for up to two minutes; it frees itself after that.')
+    }
+
     if (updateError || !updated?.length) {
       handleError(updateError, 'Failed to change the batch.')
       toast.error(updateError?.message || 'The line changed while you were choosing. Reopen the transfer and try again.')
-      return { success: false }
-    }
-
-    // Approved in the moment between our check and the update? Then the
-    // approval deducted the old batch: put the line back so the two agree.
-    const { data: after } = await supabase
-      .from('transactions').select('status').eq('id', transferId).maybeSingle()
-    if (after && after.status !== 'pending_approval') {
-      const { error: revertError } = await supabase
-        .from('transaction_items').update({ product_id: line.product_id })
-        .eq('id', lineId).eq('product_id', newProductId)
-      toast.error(revertError
-        ? 'The transfer was approved while you were changing this line, and the line could not be put back. Check it before it is received.'
-        : 'The transfer was approved while you were changing this line. Nothing was changed.')
       return { success: false }
     }
 
@@ -767,12 +808,6 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
       description: `${transfer.transfer_no ?? 'Transfer'}: ${to.product_name ?? 'product'} — sending ${describe(to)} instead of ${describe(from)}`,
     })
     if (logError) console.warn('substituteTransferLine: activity log insert failed:', logError.message)
-
-    // Touch the transfer so every open screen (the branch, other approvers)
-    // refreshes through realtime, which only watches transactions.
-    const { error: touchError } = await supabase
-      .from('transactions').update({ updated_at: new Date().toISOString() }).eq('id', transferId)
-    if (touchError) console.warn('substituteTransferLine: could not touch the transfer:', touchError.message)
 
     toast.success(`Line changed — sending ${describe(to)}.`)
     return { success: true }
@@ -812,7 +847,7 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
 
     const { data: transfer, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, transaction_items!transaction_items_transaction_id_fkey(product_id, qty_stock_out)')
+      .select('id, status, updated_at, transaction_items!transaction_items_transaction_id_fkey(product_id, qty_stock_out)')
       .eq('id', transferId)
       .eq('transaction_type', 'stock_transfer')
       .maybeSingle()
@@ -823,7 +858,12 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
       toast.error(fetchError?.message || 'Transfer not found.')
       return false
     }
-    if (transfer.status !== 'pending_approval') {
+    if (transfer.status === lineChangeStatus && !(await clearStaleLineChange(transferId, transfer.updated_at))) {
+      loading.value = false
+      toast.error('A line on this transfer is being changed right now. Try approving again in a moment.')
+      return false
+    }
+    if (transfer.status !== 'pending_approval' && transfer.status !== lineChangeStatus) {
       loading.value = false
       toast.error('Transfer is not pending approval.')
       return false
@@ -913,15 +953,23 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
     const linesNow = ((lineRecheck ?? []) as { product_id: number; qty_stock_out: number | null }[])
       .map((li) => ({ product_id: li.product_id, qty: li.qty_stock_out ?? 0 }))
     if (lineRecheckError || signature(linesNow) !== signature(lines)) {
-      await supabase
+      // Checked like the recovery below: if the reopen fails the transfer
+      // still reads Approved with nothing deducted, and the branch could
+      // receive goods that never left — that must be said, not "try again".
+      const { data: reopened, error: reopenError } = await supabase
         .from('transactions')
         .update({ status: 'pending_approval', approved_by: null, approved_at: null, updated_at: new Date().toISOString() })
         .eq('id', transferId)
         .eq('status', 'approved')
+        .select('id')
+      const stillApproved = !!reopenError || !reopened?.length
       loading.value = false
-      toast.error(lineRecheckError
-        ? 'Could not re-read the transfer lines. Nothing was deducted — try again.'
-        : 'A line was changed while approving. Nothing was deducted — review the transfer and approve again.')
+      const why = lineRecheckError
+        ? 'Could not re-read the transfer lines. Nothing was deducted'
+        : 'A line was changed while approving. Nothing was deducted'
+      toast.error(stillApproved
+        ? `${why}, but the transfer still shows as Approved — set it back to Pending Approval before anyone receives it.`
+        : `${why} — review the transfer and approve again.`, { timeout: stillApproved ? 20000 : 15000 })
       await fetchTransfers()
       return false
     }

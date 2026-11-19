@@ -54,8 +54,15 @@ export function amountMatches(value: number | null | undefined, query: AmountQue
 export function parseSearch(raw: string | null | undefined): SearchQuery | null {
   const text = (raw ?? '').trim().toLowerCase()
   if (!text) return null
-  // A lone "₱" (typed as "₱ 3,776") is not a word to find.
-  const terms = text.split(/\s+/).filter((term) => term !== '₱')
+  // "₱ 3,776" / "php 3,776" mid-query: the prefix belongs to the amount after
+  // it, not a word to find ("hipol php 3,776"). A lone "₱" is never a word;
+  // "php" not followed by an amount stays a word.
+  const words = text.split(/\s+/)
+  const terms = words.filter((word, i) => {
+    if (word === '₱') return false
+    if (word === 'php' && i + 1 < words.length && parseAmountQuery(words[i + 1])) return false
+    return true
+  })
   return { terms, termAmounts: terms.map(parseAmountQuery), amount: parseAmountQuery(text) }
 }
 

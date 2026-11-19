@@ -508,10 +508,12 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     loading.value = true
     const result = await recordSettlement(payInput.value, (payload) => store.recordPayment({ orderId: o.id, ...payload }))
     loading.value = false
-    if (result.discountFailed) toast.warning(discountFailedMessage(payInput.value.amount))
+    if (result.discountFailed && !result.discountStuck) toast.warning(discountFailedMessage(payInput.value.amount))
+    if (result.discountStuck) payDiscount.value = 0
     if (result.success) {
-      // A discount that failed stays filled in (with its date) to re-enter.
-      if (!result.discountFailed) {
+      // A discount that failed stays filled in (with its date) to re-enter —
+      // unless it is stuck, which Finance fixes (entering it again doubles it).
+      if (!result.discountFailed || result.discountStuck) {
         payDiscount.value = 0
         payPaidOn.value = todayISO()
       }

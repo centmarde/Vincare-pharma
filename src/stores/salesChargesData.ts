@@ -84,7 +84,7 @@ export const useSalesChargesStore = defineStore('salesCharges', () => {
      * the collection's date, so the ledger books it on that day.
      */
     paidOn?: string | null
-  }): Promise<{ success: boolean }> {
+  }): Promise<{ success: boolean; stuck?: boolean }> {
     // A return credit, credit memo or payment discount: settled by a credit,
     // so no money moves.
     const isReturnCredit = isCreditSettlement(payload.method)
@@ -149,15 +149,17 @@ export const useSalesChargesStore = defineStore('salesCharges', () => {
           ? { cheque_bank: payload.cheque.bank, cheque_no: payload.cheque.number, cheque_date: payload.cheque.date }
           : {}),
         ...(createdAt ? { created_at: createdAt } : {}),
-      }).select('id').single()
+      }).select('id, created_at').single()
       if (insertError || !inserted) throw insertError ?? new Error('Failed to record the payment.')
 
       if (isDiscount) {
-        const booked = await bookPaymentDiscount(inserted.id, payload.amount, payload.paidOn,
+        const booked = await bookPaymentDiscount(inserted.id, payload.amount, inserted.created_at,
           `Discount on ${sale.sale_no ?? `sale #${sale.id}`}`, user.id)
         if (!booked.ok) {
-          toast.error(`The discount was not recorded: ${booked.error ?? 'the ledger entry failed'}.`)
-          return { success: false }
+          toast.error(booked.stuck
+            ? `${booked.error}. Don't enter it again.`
+            : `The discount was not recorded: ${booked.error ?? 'the ledger entry failed'}.`, { timeout: booked.stuck ? 20000 : undefined })
+          return { success: false, stuck: booked.stuck }
         }
       }
 

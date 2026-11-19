@@ -222,7 +222,10 @@ export function useAccountsReceivable() {
     if (result.discountFailed) {
       // The payment stands: clear it so a second click cannot record it
       // again, keep the discount to re-enter, and re-read the balance.
-      if (payAmount.value > 0) toast.warning(discountFailedMessage(payAmount.value))
+      // A stuck discount (neither booked nor removable) was already reported
+      // for Finance to fix — it is cleared too, so it isn't given twice.
+      if (payAmount.value > 0 && !result.discountStuck) toast.warning(discountFailedMessage(payAmount.value))
+      if (result.discountStuck) payDiscount.value = 0
       payAmount.value = 0
       payReference.value = ''
       payChequeBank.value = ''

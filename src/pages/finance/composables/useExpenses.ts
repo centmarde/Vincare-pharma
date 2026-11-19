@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
 import {
@@ -108,10 +108,17 @@ export function useExpenses() {
    * recorded on its own, not from the voucher, so it reads its original's.
    */
   function voucherFor(id: number): string | null {
-    const own = voucherRefs.value.get(id)
-    if (own) return own
-    const originalId = replacesOf(id)?.originalId
-    return originalId != null ? voucherRefs.value.get(originalId) ?? null : null
+    // Follow the chain back (C corrected B, B corrected A — only A has the
+    // voucher). `seen` stops a malformed loop.
+    const seen = new Set<number>()
+    let current: number | null = id
+    while (current != null && !seen.has(current)) {
+      seen.add(current)
+      const own = voucherRefs.value.get(current)
+      if (own) return own
+      current = replacesOf(current)?.originalId ?? null
+    }
+    return null
   }
 
   function replacedByOf(id: number): Correction | null {
@@ -176,8 +183,15 @@ export function useExpenses() {
   const historyTitle = ref('')
   const historyEntries = ref<ChangeHistoryEntry[]>([])
   const historyFailed = ref(false)
-  /** The expense the dialog is showing; a slower read for another one is dropped. */
+  /** The expense the dialog is showing (for Try again). */
   let historyFor: number | null = null
+  /**
+   * One token per read, so a slower earlier read is dropped even for the
+   * SAME expense (closed and reopened while it was loading). Closing the
+   * dialog invalidates the one in flight.
+   */
+  let historyRequest = 0
+  watch(historyOpen, (open) => { if (!open) historyRequest++ })
 
   const fieldLabels: Record<string, string> = {
     amount: 'Amount', category: 'Expense account', paid_at: 'Date', cash_account_id: 'Paid from',
@@ -213,13 +227,14 @@ export function useExpenses() {
     const expense = expenses.value.find((e) => e.id === id)
     if (!expense) return
     historyFor = id
+    const request = ++historyRequest
     historyTitle.value = expense.reference_no ?? `Expense #${id}`
     historyEntries.value = []
     historyFailed.value = false
     historyOpen.value = true
     historyLoading.value = true
     const rows = await changeStore.fetchHistory(id, expense.reference_no ?? null)
-    if (historyFor !== id) return
+    if (request !== historyRequest) return
     historyLoading.value = false
     if (rows === null) { historyFailed.value = true; return }
     historyEntries.value = rows.map((r) => ({
