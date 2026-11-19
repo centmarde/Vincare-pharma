@@ -3,6 +3,7 @@ import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useExpenses, headers } from '../composables/useExpenses'
 import ChangeRequestDialog from '@/components/changeRequests/dialogs/ChangeRequestDialog.vue'
+import ChangeHistoryDialog from '@/components/changeRequests/dialogs/ChangeHistoryDialog.vue'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import { financePageSizes } from '../composables/financeTable'
 
@@ -22,6 +23,16 @@ const {
   openChangeDialog,
   submitChangeRequest,
   expenseAccountLabel,
+  replacedByOf,
+  replacesOf,
+  hasHistory,
+  historyOpen,
+  historyLoading,
+  historyTitle,
+  historyEntries,
+  historyFailed,
+  retryHistory,
+  openHistory,
 } = useExpenses()
 
 const router = useRouter()
@@ -74,7 +85,7 @@ onMounted(init)
         :items="filteredExpenses"
         :loading="loading"
         loading-text="Loading expenses..."
-        :no-data-text="search ? 'No expense matches that search.' : 'No expenses recorded yet.'"
+        :no-data-text="search?.trim() ? 'No expense matches that search.' : 'No expenses recorded yet.'"
         hover
       >
         <template #item.reference_no="{ item }">
@@ -97,8 +108,33 @@ onMounted(init)
           >
             VOIDED
           </v-chip>
+          <!-- Corrections before 2026-11-17 voided the expense and recorded a
+               copy under a new number — say where it went, and where a copy
+               came from, so staff can follow the pair. -->
           <v-chip
-            v-else-if="isEdited(item.id)"
+            v-if="item.status === 'voided' && replacedByOf(item.id)"
+            size="x-small"
+            color="info"
+            variant="tonal"
+            label
+            class="ml-1"
+            :title="`Corrected as ${replacedByOf(item.id)?.docNo}`"
+          >
+            → {{ replacedByOf(item.id)?.docNo }}
+          </v-chip>
+          <v-chip
+            v-if="replacesOf(item.id)"
+            size="x-small"
+            color="info"
+            variant="tonal"
+            label
+            class="ml-2"
+            :title="`Recorded as the corrected copy of ${replacesOf(item.id)?.docNo}`"
+          >
+            CORRECTS {{ replacesOf(item.id)?.docNo }}
+          </v-chip>
+          <v-chip
+            v-if="item.status !== 'voided' && isEdited(item.id)"
             size="x-small"
             color="info"
             variant="tonal"
@@ -163,6 +199,16 @@ onMounted(init)
         </template>
 
         <template #item.actions="{ item }">
+          <v-btn
+            v-if="hasHistory(item.id)"
+            icon="mdi-history"
+            size="small"
+            variant="text"
+            class="mr-1"
+            title="Change history"
+            aria-label="Change history"
+            @click="openHistory(item.id)"
+          />
           <span v-if="item.status === 'voided'" class="text-caption text-medium-emphasis">—</span>
           <v-chip
             v-else-if="isPending(item.id)"
@@ -198,6 +244,15 @@ onMounted(init)
       :void-summary="voidSummary"
       :loading="loading"
       @submit="submitChangeRequest"
+    />
+
+    <ChangeHistoryDialog
+      v-model="historyOpen"
+      :title="historyTitle"
+      :entries="historyEntries"
+      :loading="historyLoading"
+      :failed="historyFailed"
+      @retry="retryHistory"
     />
   </v-container>
 </template>

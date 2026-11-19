@@ -9,6 +9,8 @@ import { useExecutiveApproveDisposal } from '../composables/useExecutiveApproveD
 import { useExecutiveApproveShortDated } from '../composables/useExecutiveApproveShortDated'
 import { useExecutiveApproveTerms } from '../composables/useExecutiveApproveTerms'
 import TermsDecisionPanel from '../components/TermsDecisionPanel.vue'
+import ChangeRequestDecisionPanel from '../components/ChangeRequestDecisionPanel.vue'
+import ApprovalDirectionBanner from '../components/ApprovalDirectionBanner.vue'
 import CreditMemoDecisionPanel from '../components/CreditMemoDecisionPanel.vue'
 import { useExecutiveApproveCreditMemos } from '../composables/useExecutiveApproveCreditMemos'
 import type { PRItem } from '@/stores/purchaseRequisitionData'
@@ -47,7 +49,6 @@ const props = defineProps<{ request?: any }>()
 const request = computed(() => props.request)
 const kind = computed(() => request.value?.kind as 'undo' | 'pr_approval' | 'disposal' | 'short_dated' | 'terms' | 'credit_memo' | undefined)
 const raw = computed(() => request.value?.raw)
-
 
 const disposalStockAfter = computed(() => {
   const onHand = raw.value?.product?.current_stock ?? 0
@@ -91,34 +92,6 @@ const rejectReason = ref('')
 // they're doing something entirely different from what will actually happen.
 const source = computed(() => raw.value?.source as string | undefined)
 const isPRUndo = computed(() => source.value === 'pr')
-
-const moduleLabel = computed(() => {
-  if (source.value === 'finance') return 'Finance'
-  if (source.value === 'sales') return 'Sales'
-  if (source.value === 'shared') return 'In-House / Ethical'
-  return 'Purchase Requisition'
-})
-
-const requestTypeLabel = computed(() => {
-  const t = raw.value?.request_type
-  if (t === 'void') return 'Void'
-  if (t === 'edit') return 'Edit'
-  return 'Undo'
-})
-
-const undoWarning = computed(() => {
-  const t = raw.value?.request_type
-  if (t === 'void')
-    return 'Approving will void this document — its ledger entry is reversed and any affected balances are rolled back.'
-  if (t === 'edit') return 'Approving will apply the proposed changes to this document.'
-  return 'Approving will revert this purchase requisition back to Pending Approval.'
-})
-
-const undoFallbackSummary = computed(() =>
-  isPRUndo.value
-    ? 'Revert this purchase requisition to pending approval.'
-    : 'Apply this change request.',
-)
 
 // Undo-request rows only carry transaction_id/reason — fetch the underlying
 // PR (with items) on demand so the same items can render for both branches.
@@ -224,6 +197,7 @@ function formatMoney(value: number | string | undefined) {
       </div>
 
       <v-card-text v-else class="px-4 pb-4 pt-0">
+        <ApprovalDirectionBanner v-if="kind && kind !== 'undo'" :kind="kind" :raw="raw" />
         <!-- ═══ PR APPROVAL BRANCH ═══ -->
         <template v-if="kind === 'pr_approval'">
           <v-sheet rounded="lg" variant="tonal" color="surface-variant" class="pa-3 mb-4">
@@ -522,55 +496,10 @@ function formatMoney(value: number | string | undefined) {
           <CreditMemoDecisionPanel :request="raw" />
         </template>
 
-        <!-- ═══ UNDO REQUEST BRANCH ═══ -->
+        <!-- ═══ CHANGE REQUEST BRANCH ═══ What the document is, what changes,
+             who asked and why, and what approving does. -->
         <template v-else>
-          <v-sheet rounded="lg" variant="tonal" color="surface-variant" class="pa-3 mb-4">
-            <div class="d-flex align-center ga-3">
-              <v-avatar size="36" rounded="lg" color="error" variant="tonal" class="flex-shrink-0">
-                <v-icon color="error" icon="mdi-cancel" size="18" />
-              </v-avatar>
-              <div class="flex-grow-1" style="min-width: 0">
-                <div class="d-flex align-center ga-2 flex-wrap">
-                  <span class="text-body-2 font-weight-bold">
-                    {{ raw.from_transaction_no ?? `#${raw.transaction_id}` }}
-                  </span>
-                  <v-chip size="x-small" color="error" variant="tonal" label>{{ requestTypeLabel }}</v-chip>
-                  <v-chip size="x-small" variant="tonal" color="green" label>{{ moduleLabel }}</v-chip>
-                </div>
-                <div class="text-caption text-medium-emphasis mt-1">
-                  {{ raw.summary ?? undoFallbackSummary }}
-                </div>
-              </div>
-            </div>
-
-            <v-divider class="my-3" />
-
-            <!-- Stacked info on mobile -->
-            <div class="d-flex flex-column" style="gap: 10px">
-              <div>
-                <div class="text-caption text-medium-emphasis">Requested by</div>
-                <div class="text-body-2 text-high-emphasis">{{ raw.created_by_email ?? '—' }}</div>
-              </div>
-              <div>
-                <div class="text-caption text-medium-emphasis">Requested on</div>
-                <div class="text-body-2 text-high-emphasis">{{ formatDatePR_ISO(raw.created_at) }}</div>
-              </div>
-            </div>
-          </v-sheet>
-
-          <div class="mb-4">
-            <div class="text-caption font-weight-bold text-medium-emphasis mb-1">
-              REASON FOR REQUEST
-            </div>
-            <v-sheet
-              rounded="lg"
-              variant="tonal"
-              color="surface-variant"
-              class="pa-3 text-body-2 border-s-lg border-error"
-            >
-              {{ raw.reason ?? '—' }}
-            </v-sheet>
-          </div>
+          <ChangeRequestDecisionPanel :request="raw" />
 
           <div v-if="isPRUndo" class="mb-4">
             <div class="text-caption font-weight-bold text-medium-emphasis mb-2">
@@ -615,15 +544,6 @@ function formatMoney(value: number | string | undefined) {
             <div v-else class="text-caption text-medium-emphasis pa-2">No items found.</div>
           </div>
 
-          <v-alert
-            type="warning"
-            variant="tonal"
-            density="compact"
-            icon="mdi-information-outline"
-            class="mb-4 text-caption"
-          >
-            {{ undoWarning }} This cannot be undone.
-          </v-alert>
         </template>
 
         <!-- Inline reject reason (shared) -->

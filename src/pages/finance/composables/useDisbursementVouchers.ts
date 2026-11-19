@@ -7,6 +7,11 @@ import type { VoucherType, VoucherInput } from '@/stores/disbursementVouchersDat
 import { isCashAdvanceAccount } from '@/utils/cashAccountTypes'
 import { useExpenseAccounts } from './useExpenseAccounts'
 import type { VoucherPrefill } from './useVoucherForm'
+import { matchesSearch, parseSearch, searchText } from '@/utils/search'
+
+// The amount helpers live in utils/search now (shared by every Finance search
+// box); re-exported so existing imports from here keep working.
+export { amountMatches, parseAmountQuery } from '@/utils/search'
 
 // List + lifecycle actions for the Disbursement Vouchers page. Form state lives
 // in useVoucherForm (called inside the dialog) — see the note there on why the
@@ -118,27 +123,6 @@ export function invoicesParticulars(invoices: readonly PaidInvoice[]): string {
   return ['PAYMENT FOR:', ...shown, ...(rest > 0 ? [`AND ${rest} MORE`] : [])].join('\n')
 }
 
-/**
- * An amount typed into the search box: "3776", "3,776", "₱3,776.50". Null
- * when the text is not a plain amount, so it is searched as text only.
- *
- * Without decimals it means the whole peso — "3776" finds ₱3,776.00 to
- * ₱3,776.99, the way people quote an amount from memory. With decimals it is
- * exact to the centavo.
- */
-export function parseAmountQuery(text: string): { amount: number; wholePeso: boolean } | null {
-  const cleaned = text.trim().replace(/^php/i, '').replace(/[₱,\s]/g, '')
-  if (!/^\d+(\.\d{0,2})?$/.test(cleaned)) return null
-  return { amount: Number(cleaned), wholePeso: !/\.\d/.test(cleaned) }
-}
-
-export function amountMatches(value: number | null | undefined, query: { amount: number; wholePeso: boolean }): boolean {
-  if (value == null) return false
-  // Compared in centavos: 0.1 + 0.2 style float error must not make ₱3,776.00 miss.
-  const cents = Math.round(value * 100)
-  const wanted = Math.round(query.amount * 100)
-  return query.wholePeso ? cents >= wanted && cents < wanted + 100 : cents === wanted
-}
 
 // In Manila time, the zone the DATE column shows (formatDatePR_ISO), so a
 // voucher always sits on the day its date reads, whatever zone the browser
@@ -347,33 +331,46 @@ export function useDisbursementVouchers() {
    * the voucher number, payee, the particulars, the paying account, and the
    * status chip.
    */
+  // Each voucher's searchable text, built once per list load (not per
+  // keystroke): everything the row shows, plus what is on the voucher but not
+  // in a column — OR/SI no., the expenses it produced, the customer a rebate
+  // is for, the department.
+  const voucherSearchIndex = computed(() => vouchers.value.map((voucher) => ({
+    voucher,
+    day: voucherDay(voucher),
+    text: searchText([
+      voucher.dv_no,
+      voucher.payee,
+      voucher.supplier_name,
+      voucher.customer_name,
+      voucher.cash_account_name,
+      voucher.check_no,
+      voucher.or_si_no,
+      voucher.payee_tin,
+      voucher.status,
+      statusMeta(voucher.status).label,
+      voucher.remarks,
+      ...voucher.items.flatMap((line) => [
+        line.particular, line.or_si_no, line.department, line.expense_no, line.corrected_expense_no,
+      ]),
+      // The account names shown under the particulars, so "utilities" finds them.
+      accountsSummary(voucher),
+    ]),
+    amounts: [voucher.total_amount, ...voucher.items.map((line) => line.amount)],
+  })))
+
   const filteredVouchers = computed(() => {
-    const query = (search.value ?? '').trim().toLowerCase()
     // Typed as an amount, it also matches the voucher total or any one line —
     // as well as any text containing those digits (a voucher number, say).
-    const amountQuery = query ? parseAmountQuery(query) : null
-    return vouchers.value.filter((voucher) => {
-      const day = voucherDay(voucher)
-      if (dateFrom.value && day < dateFrom.value) return false
-      if (dateTo.value && day > dateTo.value) return false
-      if (accountFilter.value && !voucher.items.some((line) => lineMatchesAccount(line.category))) return false
-      if (!query) return true
-      if (amountQuery && (amountMatches(voucher.total_amount, amountQuery)
-        || voucher.items.some((line) => amountMatches(line.amount, amountQuery)))) return true
-      const haystack = [
-        voucher.dv_no,
-        voucher.payee,
-        voucher.supplier_name,
-        voucher.cash_account_name,
-        voucher.check_no,
-        voucher.status,
-        voucher.remarks,
-        ...voucher.items.map((line) => line.particular),
-        // The account names shown under the particulars, so "utilities" finds them.
-        accountsSummary(voucher),
-      ]
-      return haystack.some((field) => (field ?? '').toLowerCase().includes(query))
-    })
+    const query = parseSearch(search.value)
+    return voucherSearchIndex.value
+      .filter(({ voucher, day, text, amounts }) => {
+        if (dateFrom.value && day < dateFrom.value) return false
+        if (dateTo.value && day > dateTo.value) return false
+        if (accountFilter.value && !voucher.items.some((line) => lineMatchesAccount(line.category))) return false
+        return !query || matchesSearch(text, amounts, query)
+      })
+      .map(({ voucher }) => voucher)
   })
 
   /**

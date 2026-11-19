@@ -12,6 +12,8 @@ const props = defineProps<{
   cashAccountOptions: { value: number; title: string }[]
   canConfirm: boolean
   loading: boolean
+  /** Why Record is greyed out. */
+  problem?: string | null
 }>()
 
 const open = defineModel<boolean>({ required: true })
@@ -23,12 +25,14 @@ const cashAccountId = defineModel<number | null>('cashAccountId', { required: tr
 const chequeBank = defineModel<string>('chequeBank', { required: true })
 const chequeNo = defineModel<string>('chequeNo', { required: true })
 const chequeDate = defineModel<string>('chequeDate', { required: true })
+const discount = defineModel<number>('discount', { required: true })
+const paidOn = defineModel<string>('paidOn', { required: true })
 
 const emit = defineEmits<{
   (e: 'confirm'): void
 }>()
 
-const remaining = () => Math.max(0, props.balance - (amount.value || 0))
+const remaining = () => Math.max(0, props.balance - (amount.value || 0) - (discount.value || 0))
 </script>
 
 <template>
@@ -57,6 +61,8 @@ const remaining = () => Math.max(0, props.balance - (amount.value || 0))
           v-model:cheque-no="chequeNo"
           v-model:cheque-date="chequeDate"
           v-model:remarks="remarks"
+          v-model:discount="discount"
+          v-model:paid-on="paidOn"
           :balance="balance"
           :cash-account-options="cashAccountOptions"
           narrow
@@ -69,7 +75,8 @@ const remaining = () => Math.max(0, props.balance - (amount.value || 0))
       </v-card-text>
 
       <v-divider />
-      <v-card-actions class="px-4 px-sm-5 pb-4 pb-sm-5 pt-3 d-flex justify-end ga-2">
+      <v-card-actions class="px-4 px-sm-5 pb-4 pb-sm-5 pt-3 d-flex justify-end align-center flex-wrap ga-2">
+        <span v-if="problem" class="text-caption text-medium-emphasis flex-grow-1">{{ problem }}</span>
         <v-btn variant="outlined" class="text-none" :disabled="loading" @click="open = false">Cancel</v-btn>
         <v-btn
           color="primary"

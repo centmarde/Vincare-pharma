@@ -4,7 +4,8 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { fetchAllRows, fetchAllRowsForIds } from '@/stores/shared/paging'
-import { chargeToAccount, isCreditSettlement } from '@/utils/paymentMethods'
+import { chargeToAccount, isCreditSettlement, paymentDiscount } from '@/utils/paymentMethods'
+import { collectionCreatedAt, paidBeforeDocument, paymentDateProblem } from '@/stores/shared/collectionSettlement'
 import type { ChequeDetails } from '@/utils/paymentMethods'
 import { formatCurrency, getErrorMessage } from '@/utils/helpers'
 
@@ -78,19 +79,29 @@ export const useSalesChargesStore = defineStore('salesCharges', () => {
      * touches those columns.
      */
     cheque?: ChequeDetails | null
+    /**
+     * The day the customer paid (YYYY-MM-DD), when it was not today. Stored as
+     * the collection's date, so the ledger books it on that day.
+     */
+    paidOn?: string | null
   }): Promise<{ success: boolean }> {
-    // A return credit or a credit memo: settled by a credit, so no money moves.
+    // A return credit, credit memo or payment discount: settled by a credit,
+    // so no money moves.
     const isReturnCredit = isCreditSettlement(payload.method)
+    const isDiscount = payload.method === paymentDiscount
+    const createdAt = collectionCreatedAt(payload.paidOn)
     loading.value = true
     error.value = ''
     try {
       const { user, error: authError } = await authStore.getCurrentUser()
       if (authError || !user) { toast.error('User not authenticated.'); return { success: false } }
       if (!(payload.amount > 0)) { toast.error('Payment amount must be positive.'); return { success: false } }
+      const dateProblem = paymentDateProblem(payload.paidOn)
+      if (dateProblem) { toast.error(dateProblem); return { success: false } }
 
       const { data: sale, error: saleError } = await supabase
         .from('transactions')
-        .select('id, status, total_amount, sale_no, pos_sale_details(payment_method)')
+        .select('id, status, created_at, total_amount, sale_no, pos_sale_details(payment_method)')
         .eq('id', payload.saleId)
         .eq('transaction_type', 'sale')
         .maybeSingle()
@@ -105,6 +116,8 @@ export const useSalesChargesStore = defineStore('salesCharges', () => {
         return { success: false }
       }
       if (sale.status !== 'completed') { toast.error('This sale was voided.'); return { success: false } }
+      const tooEarly = paidBeforeDocument(payload.paidOn, sale.created_at)
+      if (tooEarly) { toast.error(tooEarly); return { success: false } }
 
       const paid = (await paidBySale([sale.id])).get(sale.id) ?? 0
       const balance = Number(sale.total_amount ?? 0) - paid
@@ -124,7 +137,7 @@ export const useSalesChargesStore = defineStore('salesCharges', () => {
         account = data
       }
 
-      const { error: insertError } = await supabase.from('collections').insert({
+      const { data: inserted, error: insertError } = await supabase.from('collections').insert({
         transaction_id: sale.id,
         amount: payload.amount,
         payment_method: payload.method || null,
@@ -135,8 +148,12 @@ export const useSalesChargesStore = defineStore('salesCharges', () => {
         ...(payload.cheque
           ? { cheque_bank: payload.cheque.bank, cheque_no: payload.cheque.number, cheque_date: payload.cheque.date }
           : {}),
-      })
-      if (insertError) throw insertError
+        ...(createdAt ? { created_at: createdAt } : {}),
+      }).select('id, created_at').single()
+      if (insertError || !inserted) throw insertError ?? new Error('Failed to record the payment.')
+
+      // A discount needs no ledger work here: gl_project_events books the
+      // payment_discount row (DR 4040 / CR 1030) like any other collection.
 
       // Best-effort like every other balance write here (JS-over-RPC
       // convention): surfaced, not rolled back — the collections row is the record.
@@ -153,12 +170,14 @@ export const useSalesChargesStore = defineStore('salesCharges', () => {
 
       const { error: logError } = await supabase.from('logs').insert({
         created_by: user.id, action: 'payment', module: 'pos', transaction_id: sale.id,
-        description: `${account ? 'Payment' : 'Returned goods credit'} of ${formatCurrency(payload.amount)} on ${sale.sale_no ?? `sale #${sale.id}`}${account ? ` into ${account.name}` : ` (${payload.reference ?? 'return'})`} (${formatCurrency(paid + payload.amount)} of ${formatCurrency(Number(sale.total_amount ?? 0))})`,
+        description: `${account ? 'Payment' : isDiscount ? 'Discount' : 'Returned goods credit'} of ${formatCurrency(payload.amount)} on ${sale.sale_no ?? `sale #${sale.id}`}${account ? ` into ${account.name}` : ` (${payload.reference ?? 'return'})`} (${formatCurrency(paid + payload.amount)} of ${formatCurrency(Number(sale.total_amount ?? 0))})`,
       })
       if (logError) console.warn('recordPayment: activity log insert failed:', logError.message)
 
       const settled = balance - payload.amount <= 0.005
-      toast.success(isReturnCredit
+      toast.success(isDiscount
+        ? (settled ? 'Discount taken off the bill — paid in full.' : 'Discount taken off the bill.')
+        : isReturnCredit
         ? (settled ? 'Credit taken off the bill — paid in full.' : 'Credit taken off the bill.')
         : (settled ? 'Payment recorded — paid in full.' : 'Payment recorded.'))
       return { success: true }

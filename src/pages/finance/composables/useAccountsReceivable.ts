@@ -1,11 +1,12 @@
 import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useToast } from 'vue-toastification'
 import { useFinanceDataStore } from '@/stores/financeData'
 import type { ARAgingTerm, ARAgingRow, ARReceivableDetail, ARSource, StatementOfAccount } from '@/stores/financeData'
 import { useSalesChargesStore } from '@/stores/salesChargesData'
 import { customerNameKey, formatCurrency } from '@/utils/helpers'
-import { chequeFor, chequeProblem } from '@/utils/paymentMethods'
-import { amountMatches, parseAmountQuery } from './useDisbursementVouchers'
+import { discountFailedMessage, recordSettlement, settlementProblem, settlementSummary, todayISO } from '@/composables/collectionEntry'
+import { matchesSearch, parseSearch, searchText } from '@/utils/search'
 
 /** Where a receivable comes from, as the AR table names it. */
 export const arSourceLabel: Record<ARSource, string> = {
@@ -113,6 +114,7 @@ function idsByBalance(rows: ARAgingRow[]): number[] {
 }
 
 export function useAccountsReceivable() {
+  const toast = useToast()
   const store = useFinanceDataStore()
   const { arAging, loading } = storeToRefs(store)
 
@@ -156,6 +158,19 @@ export function useAccountsReceivable() {
   const payChequeNo = ref('')
   const payChequeDate = ref('')
   const payChequeInput = () => ({ bank: payChequeBank.value, number: payChequeNo.value, date: payChequeDate.value })
+  // A discount given as they pay (no cash), and the day they paid.
+  const payDiscount = ref(0)
+  const payPaidOn = ref(todayISO())
+  const payInput = computed(() => ({
+    amount: payAmount.value,
+    discount: payDiscount.value,
+    paidOn: payPaidOn.value,
+    method: payMethod.value,
+    reference: payReference.value.trim(),
+    remarks: payRemarks.value.trim(),
+    cashAccountId: payCashAccountId.value,
+    cheque: payChequeInput(),
+  }))
   const paying = computed(() => chargesStore.loading)
 
   // Same as In-House: a customer payment lands in an operating account or the
@@ -166,11 +181,16 @@ export function useAccountsReceivable() {
       .map((a) => ({ value: a.id, title: `${a.name} — ${formatCurrency(a.balance ?? 0)}` })),
   )
 
+  /** Why Record is greyed out, shown beside it. */
+  const payProblem = computed(() => {
+    const d = selectedDetail.value
+    if (!d || d.source !== 'sale') return null
+    return settlementProblem(payInput.value, d.balance)
+  })
+
   const canRecordPayment = computed(() => {
     const d = selectedDetail.value
-    return !!d && d.source === 'sale' && payAmount.value > 0
-      && payAmount.value <= d.balance + 0.005 && payCashAccountId.value != null
-      && !chequeProblem(payMethod.value, payChequeInput())
+    return !!d && d.source === 'sale' && payProblem.value === null
   })
 
   function openPayment() {
@@ -185,6 +205,8 @@ export function useAccountsReceivable() {
     payChequeBank.value = ''
     payChequeNo.value = ''
     payChequeDate.value = ''
+    payDiscount.value = 0
+    payPaidOn.value = todayISO()
     if (!store.cashAccounts.length) void store.fetchCashAccounts()
     paymentOpen.value = true
   }
@@ -195,16 +217,21 @@ export function useAccountsReceivable() {
 
   async function confirmPayment() {
     const d = selectedDetail.value
-    if (!d || !canRecordPayment.value || payCashAccountId.value == null) return
-    const result = await chargesStore.recordPayment({
-      saleId: d.id,
-      amount: payAmount.value,
-      method: payMethod.value,
-      reference: payReference.value.trim() || null,
-      remarks: payRemarks.value.trim() || null,
-      cashAccountId: payCashAccountId.value,
-      cheque: chequeFor(payMethod.value, payChequeInput()),
-    })
+    if (!d || !canRecordPayment.value) return
+    const result = await recordSettlement(payInput.value, (payload) => chargesStore.recordPayment({ saleId: d.id, ...payload }))
+    if (result.discountFailed) {
+      // The payment stands: clear it so a second click cannot record it
+      // again, keep the discount to re-enter, and re-read the balance.
+      if (payAmount.value > 0) toast.warning(discountFailedMessage(payAmount.value))
+      payAmount.value = 0
+      payReference.value = ''
+      payChequeBank.value = ''
+      payChequeNo.value = ''
+      payChequeDate.value = ''
+      selectedDetail.value = await store.fetchReceivableDetail(d.source, d.id)
+      await store.fetchARAging()
+      return
+    }
     if (!result.success) return
     paymentOpen.value = false
     // The receivable and the aging both changed.
@@ -351,16 +378,21 @@ export function useAccountsReceivable() {
   const search = ref<string | null>('')
 
   const visibleJackets = computed<ARCustomerJacket[]>(() => {
-    const query = (search.value ?? '').trim().toLowerCase()
+    const query = parseSearch(search.value)
     if (!query) return customerJackets.value
-    const amount = parseAmountQuery(query)
-    const rowMatches = (row: ARAgingRow) =>
-      [row.reference_no, arSourceLabel[row.source], row.consignment ? 'Consignment' : arTermLabels[row.term], row.term_text]
-        .some((v) => (v ?? '').toLowerCase().includes(query))
-      || (!!amount && [row.balance, row.total_amount].some((v) => amountMatches(v, amount)))
+    // A row also carries its customer's name, so "hipol 406" finds HIPOL's
+    // document 406 without listing every other HIPOL document.
+    const rowMatches = (row: ARAgingRow, customerName: string) => matchesSearch(
+      searchText([
+        customerName, row.reference_no, arSourceLabel[row.source],
+        row.consignment ? 'Consignment' : arTermLabels[row.term], row.term_text,
+      ]),
+      [row.balance, row.total_amount, row.amount_paid],
+      query,
+    )
     return customerJackets.value.flatMap((jacket) => {
-      if (jacket.customerName.toLowerCase().includes(query)) return [jacket]
-      const rows = jacket.rows.filter(rowMatches)
+      if (matchesSearch(searchText([jacket.customerName]), [], query)) return [jacket]
+      const rows = jacket.rows.filter((row) => rowMatches(row, jacket.customerName))
       // The header keeps the customer's whole balance and count; only the
       // table inside narrows to the documents that match.
       return rows.length ? [{ ...jacket, rows }] : []
@@ -374,9 +406,9 @@ export function useAccountsReceivable() {
     totalReceivable, termTotals, overdueReceivable, customerJackets, search, visibleJackets,
     consignmentReceivable, consignmentCollectors, showConsignment, openConsignment,
     detailOpen, detailLoading, selectedDetail, openDetail, closeDetail, refreshDetail,
-    paymentOpen, payAmount, payMethod, payReference, payRemarks, payCashAccountId, paying,
+    paymentOpen, payAmount, payMethod, payReference, payRemarks, payCashAccountId, paying, payDiscount, payPaidOn,
     payChequeBank, payChequeNo, payChequeDate,
-    cashAccountOptions, canRecordPayment, openPayment, closePayment, confirmPayment,
+    cashAccountOptions, canRecordPayment, payProblem, openPayment, closePayment, confirmPayment,
     soaOpen, soaLoading, soaData, openSOA, closeSOA,
     init,
   }

@@ -107,8 +107,8 @@ export function useTermsDecision(request: () => any) {
     return {
       amount: d.govt_pr_amount,
       label: d.total > d.govt_pr_amount
-        ? `Exceeds the PR by ${formatCurrency(d.total - d.govt_pr_amount)}`
-        : `${Math.round(share * 100)}% of the PR`,
+        ? `Exceeds their PR by ${formatCurrency(d.total - d.govt_pr_amount)}`
+        : `${Math.round(share * 100)}% of their PR`,
       over: d.total > d.govt_pr_amount,
     }
   })
@@ -128,11 +128,11 @@ export function useTermsDecision(request: () => any) {
     if (isUnlock.value) {
       return isEthical.value
         ? 'Approving puts the stock back, reverses the sale in the ledger and returns the order to draft. Its EO number is kept.'
-        : 'Approving returns the order to negotiation so its terms can change. Its PO number is kept.'
+        : 'Approving returns the order to negotiation so its terms can change. Its company PO number (for this sale) is kept.'
     }
     return isEthical.value
       ? 'Approving invoices this order: its EO number is issued, the stock is drawn and the sale is booked.'
-      : 'Approving locks these terms: the order moves on to stock and delivery, and its company PO number is issued once stock is confirmed.'
+      : 'Approving locks these terms: the order moves on to stock and delivery, and its company PO number (for this sale) is issued once stock is confirmed.'
   })
 
   return {

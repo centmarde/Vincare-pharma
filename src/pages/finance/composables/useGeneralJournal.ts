@@ -1,4 +1,4 @@
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useToast } from 'vue-toastification'
 import { useGLDataStore } from '@/stores/glData'
 import type { GLAccount, ReferenceType, JournalLineInput } from '@/stores/glData'
@@ -7,6 +7,7 @@ import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { formatCurrency, toLocalISODate } from '@/utils/helpers'
 import { useCashAccountLedgerStore, parseCashLineMemo } from '@/stores/cashAccountLedgerData'
 import type { JournalEntry } from '@/stores/glData'
+import { matchesSearch, parseSearch, searchText } from '@/utils/search'
 
 const toast = useToast()
 const { confirmDialog } = useConfirmDialog()
@@ -39,6 +40,45 @@ export function useGeneralJournal() {
 
   const entries = computed(() => gl.journal)
   const loading = computed(() => gl.loading)
+
+  // ─── Search, inside the date range / type already loaded ──────────
+  // Entry no. (or part of it), description, type, status, any account code
+  // or name on its lines, a line memo — or an amount, matching the entry
+  // total or any single line. Words in any order.
+  // null after the field's clear button.
+  const journalSearch = ref<string | null>('')
+  const typeTitle = (type: ReferenceType) => REFERENCE_TYPE_OPTIONS.find((o) => o.value === type)?.title ?? type
+  const journalSearchIndex = computed(() => entries.value.map((entry) => {
+    const lines = entry.lines ?? []
+    return {
+      entry,
+      text: searchText([
+        entry.entry_no, entry.description, entry.reference_type, typeTitle(entry.reference_type), entry.status,
+        ...lines.flatMap((line) => [line.account_code, line.account_name, line.line_memo]),
+      ]),
+      amounts: [lines.reduce((sum, line) => sum + line.debit, 0), ...lines.map((line) => line.debit || line.credit)],
+    }
+  }))
+  const visibleEntries = computed(() => {
+    const query = parseSearch(journalSearch.value)
+    if (!query) return entries.value
+    return journalSearchIndex.value
+      .filter(({ text, amounts }) => matchesSearch(text, amounts, query))
+      .map(({ entry }) => entry)
+  })
+
+  // Drawn 100 entries at a time: the whole ledger is loaded (and searched),
+  // but rendering ~1,600 entries plus every line on each keystroke is what
+  // would make the page crawl. Back to the first 100 when the search or the
+  // loaded range changes — not after approving or reversing
+  // one entry (a refetch of the same list), which used to lose the place.
+  const journalPageSize = 100
+  const journalShown = ref(journalPageSize)
+  const shownEntries = computed(() => visibleEntries.value.slice(0, journalShown.value))
+  const hiddenEntryCount = computed(() => Math.max(0, visibleEntries.value.length - journalShown.value))
+  function showMoreEntries() {
+    journalShown.value += journalPageSize
+  }
   // Every active account as a searchable item, grouped under its subsection
   // heading. Grouped by subsection (ordered by each one's lowest code) rather
   // than by runs of codes, so an account added out of range never repeats a
@@ -235,9 +275,12 @@ export function useGeneralJournal() {
 
   onMounted(init)
 
+  watch([journalSearch, () => entries.value.length], () => { journalShown.value = journalPageSize })
+
   return {
     filterFrom, filterTo, filterReferenceType, REFERENCE_TYPE_OPTIONS,
-    entries, loading, accountOptions, filterAccount,
+    entries, loading, accountOptions, filterAccount, journalSearch, visibleEntries,
+    shownEntries, hiddenEntryCount, showMoreEntries,
     showManualEntryDialog, manualEntryDate, manualDescription, manualLines,
     manualTotalDebit, manualTotalCredit, manualIsBalanced,
     addManualLine, removeManualLine,

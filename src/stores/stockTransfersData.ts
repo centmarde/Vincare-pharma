@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
-import { generateNextNumber, insertWithDocRetry, describeProduct } from '@/utils/helpers'
+import { generateNextNumber, insertWithDocRetry, describeProduct, toLocalISODate } from '@/utils/helpers'
 import { issueRow, useIssueList } from '@/composables/useIssueList'
 import type { IssueRow } from '@/composables/useIssueList'
 import type { ProductType } from '@/stores/productsData'
@@ -52,6 +52,29 @@ export type StockTransferType = {
   updated_at: string | null
   stock_transfer_items?: StockTransferItemType[]
 }
+
+/**
+ * Another batch / brand of a requested product the warehouse could send
+ * instead. One `products` row is one batch, so "the same product" is every
+ * row that shares the generic name.
+ */
+export type TransferSubstitute = {
+  id: number
+  product_name: string | null
+  brand: string | null
+  batch_no: string | null
+  expiry_date: string | null
+  unit: string | null
+  current_stock: number
+  selling_price: number | null
+  /** Units of this batch other lines of the same transfer already ask for. */
+  already_on_transfer: number
+  /** Why it cannot be sent, if it cannot (no selling price, not enough stock). */
+  blocked: string | null
+}
+
+/** A line the warehouse changed to another batch, as logged. */
+export type TransferSubstitutionNote = { created_at: string; description: string }
 
 export type StockTransferLineInput = {
   product_id: number
@@ -114,6 +137,31 @@ function reportUnpriced(rows: IssueRow[]) {
   })
 }
 
+/**
+ * A batch swap holds the transfer for the moment it changes a line: its status
+ * reads 'line_change' instead of 'pending_approval'. Approve claims only a
+ * 'pending_approval' row and a swap only locks one, so the two can never
+ * interleave (an approval deducting one batch while the line records another).
+ * Shown as Pending Approval everywhere. A swap gives up if it has held the
+ * lock longer than swapGiveUpMs before changing the line, and only a lock
+ * older than staleLineChangeMs (a swap that died part-way) may be cleared —
+ * the wide gap between the two keeps a slow-but-alive swap from ever racing
+ * an approval that cleared its lock, even with clocks a few minutes apart.
+ */
+const lineChangeStatus = 'line_change'
+const staleLineChangeMs = 10 * 60 * 1000
+const swapGiveUpMs = 60 * 1000
+
+/** Clears a swap lock left behind by a swap that never finished. True when the transfer is pending again. */
+async function clearStaleLineChange(transferId: number, updatedAt: string | null): Promise<boolean> {
+  if (!updatedAt || Date.now() - new Date(updatedAt).getTime() < staleLineChangeMs) return false
+  const { data } = await supabase
+    .from('transactions').update({ status: 'pending_approval', updated_at: new Date().toISOString() })
+    .eq('id', transferId).eq('status', lineChangeStatus).eq('updated_at', updatedAt)
+    .select('id')
+  return !!data?.length
+}
+
 function mapRowToTransfer(row: any): StockTransferType {
   return {
     id:           row.id,
@@ -121,7 +169,8 @@ function mapRowToTransfer(row: any): StockTransferType {
     transfer_no:  row.transfer_no,
     warehouse_id: row.warehouse_id,
     warehouse:    row.warehouse,
-    status:       row.status,
+    // A swap's momentary lock is still a pending transfer to everyone looking.
+    status:       row.status === lineChangeStatus ? 'pending_approval' : row.status,
     remarks:      row.remarks,
     requested_by: row.created_by,
     approved_by:  row.approved_by,
@@ -580,6 +629,249 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
     return new Map((data ?? []).map((p) => [p.id as number, (p.current_stock as number | null) ?? 0]))
   }
 
+  /** "ACETYLCYSTEINE  200MG" and "acetylcysteine 200mg" are the same product. */
+  function sameName(a: string | null | undefined, b: string | null | undefined): boolean {
+    const norm = (v: string | null | undefined) => (v ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
+    return !!norm(a) && norm(a) === norm(b)
+  }
+
+  /**
+   * The other batches / brands of a requested product that the main warehouse
+   * could send in its place: same generic name, stock on hand, not expired, not
+   * disposed. Soonest expiry first, so the oldest good stock goes out first.
+   * `qtyNeeded` marks the ones that cannot cover the line; `alreadyNeeded`
+   * (units per product the transfer's other lines ask for) counts against the
+   * same stock, since Approve totals per product.
+   */
+  async function fetchTransferSubstitutes(
+    productId: number,
+    qtyNeeded: number,
+    alreadyNeeded: Map<number, number> = new Map(),
+  ): Promise<TransferSubstitute[] | null> {
+    const { data: requested, error: requestedError } = await supabase
+      .from('products').select('id, product_name').eq('id', productId).maybeSingle()
+    if (requestedError || !requested?.product_name) return requestedError ? null : []
+    const today = toLocalISODate(new Date())
+    // Names are stored with stray spaces ("CETIRIZINE 10MG TAB 100'S "), so
+    // match word by word and let sameName() keep only the exact product.
+    const words = requested.product_name.trim().split(/\s+/).filter(Boolean)
+    const { data, error: listError } = await supabase
+      .from('products')
+      .select('id, product_name, brand, batch_no, expiry_date, unit, current_stock, selling_price, is_disposed')
+      .ilike('product_name', `%${words.join('%')}%`)
+      .neq('id', productId)
+      .gt('current_stock', 0)
+      .order('expiry_date', { ascending: true, nullsFirst: false })
+    if (listError) {
+      console.warn('fetchTransferSubstitutes failed:', listError.message)
+      return null
+    }
+    return ((data ?? []) as any[])
+      // The pattern is loose (and ilike treats _ and % as wildcards); keep only real name matches.
+      .filter((p) => sameName(p.product_name, requested.product_name))
+      .filter((p) => !p.is_disposed)
+      .filter((p) => !p.expiry_date || String(p.expiry_date).slice(0, 10) >= today)
+      .map((p) => {
+        const stock = Number(p.current_stock ?? 0)
+        const price = p.selling_price == null ? null : Number(p.selling_price)
+        const already = alreadyNeeded.get(p.id) ?? 0
+        return {
+          id: p.id,
+          product_name: p.product_name ?? null,
+          brand: p.brand ?? null,
+          batch_no: p.batch_no ?? null,
+          expiry_date: p.expiry_date ?? null,
+          unit: p.unit ?? null,
+          current_stock: stock,
+          selling_price: price,
+          already_on_transfer: already,
+          blocked: !(price && price > 0)
+            ? 'No selling price set'
+            : stock < qtyNeeded + already
+              ? already
+                ? `Only ${stock} on hand — ${already} already on this transfer`
+                : `Only ${stock} on hand`
+              : null,
+        }
+      })
+  }
+
+  /**
+   * The approver sends a different batch / brand for one line of a pending
+   * transfer. Only while it is Pending Approval — approving then checks and
+   * deducts the batch actually chosen, and the branch receives that batch.
+   * The swap is logged with both batches, so the change is never silent.
+   * `expectedProductId` is the batch the approver saw on the line: if someone
+   * else changed it meanwhile, nothing is overwritten.
+   */
+  async function substituteTransferLine(
+    transferId: number,
+    lineId: number,
+    newProductId: number,
+    expectedProductId?: number | null,
+  ): Promise<{ success: boolean }> {
+    const { user, error: authError } = await authStore.getCurrentUser()
+    if (authError || !user) { toast.error('User not authenticated.'); return { success: false } }
+
+    const { data: transfer, error: fetchError } = await supabase
+      .from('transactions')
+      .select('id, status, updated_at, transfer_no, transaction_items!transaction_items_transaction_id_fkey(id, product_id, qty_stock_out)')
+      .eq('id', transferId)
+      .eq('transaction_type', 'stock_transfer')
+      .maybeSingle()
+    if (fetchError || !transfer) { toast.error('Transfer not found.'); return { success: false } }
+    if (transfer.status === lineChangeStatus && !(await clearStaleLineChange(transferId, transfer.updated_at))) {
+      toast.error('Another line on this transfer is being changed right now. Try again in a moment.')
+      return { success: false }
+    }
+    if (transfer.status !== 'pending_approval' && transfer.status !== lineChangeStatus) {
+      toast.error('Only a transfer waiting for approval can have a line changed.')
+      return { success: false }
+    }
+    const line = ((transfer.transaction_items ?? []) as unknown as { id: number; product_id: number }[])
+      .find((li) => li.id === lineId)
+    if (!line) { toast.error('That line is no longer on this transfer.'); return { success: false } }
+    if (line.product_id === newProductId) return { success: true }
+    if (expectedProductId != null && line.product_id !== expectedProductId) {
+      toast.error('Someone else changed this line while you were choosing. Reopen the transfer and try again.')
+      return { success: false }
+    }
+
+    const { data: pair, error: pairError } = await supabase
+      .from('products')
+      .select('id, product_name, brand, batch_no, expiry_date, sku, selling_price, is_disposed')
+      .in('id', [line.product_id, newProductId])
+    const from = (pair ?? []).find((p) => p.id === line.product_id)
+    const to = (pair ?? []).find((p) => p.id === newProductId)
+    if (pairError || !to) { toast.error('Could not read the batch to send instead.'); return { success: false } }
+    if (from && !sameName(from.product_name, to.product_name)) {
+      toast.error('Only another batch or brand of the same product can be sent instead.')
+      return { success: false }
+    }
+    if (to.is_disposed) { toast.error('That batch has been disposed.'); return { success: false } }
+    // The list was read when the dialog opened; the batch may have expired since.
+    if (to.expiry_date && String(to.expiry_date).slice(0, 10) < toLocalISODate(new Date())) {
+      toast.error('That batch has expired. Pick another one.')
+      return { success: false }
+    }
+    if (!(Number(to.selling_price) > 0)) {
+      toast.error('That batch has no selling price, so the branch could not sell it. Set its price first.')
+      return { success: false }
+    }
+
+    // Hold the transfer while the line changes (see lineChangeStatus): an
+    // approval can't claim it now, and if it was approved a moment ago this
+    // finds nothing to lock.
+    // The lock's updated_at is this swap's token: releasing checks it, so a
+    // swap never releases (or trusts) a lock that was cleared and retaken.
+    const lockToken = new Date().toISOString()
+    const lockedAt = Date.now()
+    const { data: locked, error: lockError } = await supabase
+      .from('transactions')
+      .update({ status: lineChangeStatus, updated_at: lockToken })
+      .eq('id', transferId)
+      .eq('status', 'pending_approval')
+      .select('id')
+    if (lockError || !locked?.length) {
+      handleError(lockError, 'Failed to change the batch.')
+      toast.error(lockError?.message || 'This transfer was approved or changed while you were choosing. Reopen it and try again.')
+      return { success: false }
+    }
+    async function release(): Promise<boolean> {
+      const { data: released, error: releaseError } = await supabase
+        .from('transactions')
+        .update({ status: 'pending_approval', updated_at: new Date().toISOString() })
+        .eq('id', transferId)
+        .eq('status', lineChangeStatus)
+        .eq('updated_at', lockToken)
+        .select('id')
+      if (releaseError) console.warn('substituteTransferLine: could not release the transfer:', releaseError.message)
+      return !releaseError && !!released?.length
+    }
+    async function putLineBack() {
+      const { error: revertError } = await supabase
+        .from('transaction_items').update({ product_id: line!.product_id })
+        .eq('id', lineId).eq('transaction_id', transferId).eq('product_id', newProductId)
+      return !revertError
+    }
+
+    // Too slow (a stalled connection)? Give up before touching the line.
+    if (Date.now() - lockedAt > swapGiveUpMs) {
+      await release()
+      toast.error('The connection was too slow to change the batch safely. Nothing was changed — try again.')
+      return { success: false }
+    }
+
+    // Guarded on the line still holding the batch the approver saw, so two
+    // people changing the same line cannot overwrite each other unnoticed.
+    const { data: updated, error: updateError } = await supabase
+      .from('transaction_items')
+      .update({ product_id: newProductId })
+      .eq('id', lineId)
+      .eq('transaction_id', transferId)
+      .eq('product_id', line.product_id)
+      .select('id')
+    if (updateError || !updated?.length) {
+      const freed = await release()
+      if (!freed) toast.warning('The transfer may show as busy for a few minutes; it frees itself after that.')
+      handleError(updateError, 'Failed to change the batch.')
+      toast.error(updateError?.message || 'The line changed while you were choosing. Reopen the transfer and try again.')
+      return { success: false }
+    }
+
+    // The swap and its history go together: the note the branch reads comes
+    // from this log row. Tried twice; if it still fails the line goes back,
+    // so a batch is never changed without a record of it.
+    const describe = (prod: any) => [
+      prod?.brand, prod?.batch_no ? `batch ${prod.batch_no}` : null,
+      prod?.expiry_date ? `exp ${String(prod.expiry_date).slice(0, 7)}` : null,
+    ].filter(Boolean).join(', ') || `product #${prod?.id}`
+    const logRow = {
+      action: 'line_substituted', module: 'warehouse', created_by: user.id, transaction_id: transferId,
+      description: `${transfer.transfer_no ?? 'Transfer'}: ${to.product_name ?? 'product'} — sending ${describe(to)} instead of ${describe(from)}`,
+    }
+    let { error: logError } = await supabase.from('logs').insert(logRow)
+    if (logError) ({ error: logError } = await supabase.from('logs').insert(logRow))
+    if (logError) {
+      console.warn('substituteTransferLine: activity log insert failed:', logError.message)
+      const putBack = await putLineBack()
+      await release()
+      toast.error(putBack
+        ? 'Could not record the change, so the batch was put back. Nothing was changed — try again.'
+        : 'Could not record the change, and the batch could not be put back. Check this line before approving.', { timeout: putBack ? 8000 : 20000 })
+      return { success: false }
+    }
+
+    // Release by token. If the lock was cleared meanwhile (this swap stalled
+    // past staleLineChangeMs), an approval may have counted the old batch:
+    // put the line back and say so, rather than let the two disagree.
+    if (!(await release())) {
+      const putBack = await putLineBack()
+      toast.error(putBack
+        ? 'This change took too long and the transfer moved on, so the batch was put back. Reopen the transfer and check it.'
+        : 'This change took too long and the transfer moved on. Check this line before it is received.', { timeout: 20000 })
+      return { success: false }
+    }
+
+    toast.success(`Line changed — sending ${describe(to)}.`)
+    return { success: true }
+  }
+
+  /** Lines the warehouse switched to another batch, oldest first (from the activity log). */
+  async function fetchSubstitutionNotes(transferId: number): Promise<TransferSubstitutionNote[]> {
+    const { data, error: notesError } = await supabase
+      .from('logs')
+      .select('created_at, description')
+      .eq('transaction_id', transferId)
+      .eq('action', 'line_substituted')
+      .order('created_at', { ascending: true })
+    if (notesError) {
+      console.warn('fetchSubstitutionNotes failed:', notesError.message)
+      return []
+    }
+    return (data ?? []) as TransferSubstitutionNote[]
+  }
+
   // Warehouse approves: deduct products.current_stock per product (was transfer_approve).
   //
   // 1. Read-only checks: prices, then stock per product — every shortage listed.
@@ -599,7 +891,7 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
 
     const { data: transfer, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, status, transaction_items!transaction_items_transaction_id_fkey(product_id, qty_stock_out)')
+      .select('id, status, updated_at, transaction_items!transaction_items_transaction_id_fkey(product_id, qty_stock_out)')
       .eq('id', transferId)
       .eq('transaction_type', 'stock_transfer')
       .maybeSingle()
@@ -610,7 +902,12 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
       toast.error(fetchError?.message || 'Transfer not found.')
       return false
     }
-    if (transfer.status !== 'pending_approval') {
+    if (transfer.status === lineChangeStatus && !(await clearStaleLineChange(transferId, transfer.updated_at))) {
+      loading.value = false
+      toast.error('A line on this transfer is being changed right now. Try approving again in a moment.')
+      return false
+    }
+    if (transfer.status !== 'pending_approval' && transfer.status !== lineChangeStatus) {
       loading.value = false
       toast.error('Transfer is not pending approval.')
       return false
@@ -687,6 +984,36 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
       loading.value = false
       handleError(claimError, 'Failed to approve stock transfer.')
       toast.error(claimError?.message || 'This transfer was already approved or rejected.')
+      await fetchTransfers()
+      return false
+    }
+
+    // A batch swap can land between the read above and the claim. Deduct only
+    // if the lines are still what was checked; otherwise reopen for a re-check.
+    const { data: lineRecheck, error: lineRecheckError } = await supabase
+      .from('transaction_items').select('product_id, qty_stock_out').eq('transaction_id', transferId)
+    const signature = (rows: { product_id: number; qty: number }[]) =>
+      rows.map((r) => `${r.product_id}:${r.qty}`).sort().join('|')
+    const linesNow = ((lineRecheck ?? []) as { product_id: number; qty_stock_out: number | null }[])
+      .map((li) => ({ product_id: li.product_id, qty: li.qty_stock_out ?? 0 }))
+    if (lineRecheckError || signature(linesNow) !== signature(lines)) {
+      // Checked like the recovery below: if the reopen fails the transfer
+      // still reads Approved with nothing deducted, and the branch could
+      // receive goods that never left — that must be said, not "try again".
+      const { data: reopened, error: reopenError } = await supabase
+        .from('transactions')
+        .update({ status: 'pending_approval', approved_by: null, approved_at: null, updated_at: new Date().toISOString() })
+        .eq('id', transferId)
+        .eq('status', 'approved')
+        .select('id')
+      const stillApproved = !!reopenError || !reopened?.length
+      loading.value = false
+      const why = lineRecheckError
+        ? 'Could not re-read the transfer lines. Nothing was deducted'
+        : 'A line was changed while approving. Nothing was deducted'
+      toast.error(stillApproved
+        ? `${why}, but the transfer still shows as Approved — set it back to Pending Approval before anyone receives it.`
+        : `${why} — review the transfer and approve again.`, { timeout: stillApproved ? 20000 : 15000 })
       await fetchTransfers()
       return false
     }
@@ -945,6 +1272,9 @@ export const useStockTransfersDataStore = defineStore('stockTransfersData', () =
     deleteTransferDraft,
     approveTransfer,
     fetchMainStock,
+    fetchTransferSubstitutes,
+    substituteTransferLine,
+    fetchSubstitutionNotes,
     rejectTransfer,
     receiveTransfer,
     clearError,

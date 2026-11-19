@@ -114,7 +114,7 @@ export {
   expensePaymentMethods,
   apAgeBuckets,
 } from './finance/types'
-export { categoryTitle, apBucketFor, glCashCode, glAccountCodeFor } from './finance/helpers'
+export { categoryTitle, apBucketFor, glCashCode, glAccountCodeFor, expenseDebitAccount } from './finance/helpers'
 
 export const useFinanceDataStore = defineStore('financeData', () => {
   return {

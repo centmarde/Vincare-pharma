@@ -4,6 +4,7 @@ import { useCreditMemosStore, creditMemoReasons, creditMemoReasonLabel } from '@
 import type { CreditMemoReason, CreditMemoStatus, CreditMemoType } from '@/stores/creditMemosData'
 import type { ARSource } from '@/stores/financeData'
 import { formatCurrency } from '@/utils/helpers'
+import { matchesSearch, parseSearch, searchText } from '@/utils/search'
 
 // Credit memos on the Accounts Receivable page: asking for one against a bill
 // (an allowance — a credit memo for RETURNED goods is raised from the return,
@@ -86,13 +87,15 @@ export function useCreditMemoRegister() {
   const showPrint = ref(false)
 
   const filtered = computed(() => {
-    const q = (search.value ?? '').trim().toLowerCase()
+    const query = parseSearch(search.value)
     return memos.value.filter((m) => {
       if (statusFilter.value && m.status !== statusFilter.value) return false
-      if (!q) return true
-      return [m.cm_no, m.customer_name, m.applies_to_no, m.sales_return_no, m.reason, creditMemoReasonLabel(m.reason_code)]
-        .some((v) => (v ?? '').toLowerCase().includes(q))
-        || m.amount.toFixed(2).includes(q.replace(/[₱,\s]/g, ''))
+      return !query || matchesSearch(
+        searchText([m.cm_no, m.customer_name, m.applies_to_no, m.sales_return_no, m.reason,
+          creditMemoReasonLabel(m.reason_code), creditMemoStatusMeta[m.status]?.label]),
+        [m.amount],
+        query,
+      )
     })
   })
 

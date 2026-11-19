@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MoneyField from '@/components/inputs/MoneyField.vue'
 import { computed, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import type { ProductPickerResult } from '@/stores/productsData'
@@ -383,9 +384,9 @@ watch(
                 </v-col>
 
                 <v-col cols="6">
-                  <v-text-field
-                    v-model.number="line.unit_price"
-                    type="number"
+                  <MoneyField
+                    v-model="line.unit_price"
+                    prefix="₱"
                     density="compact"
                     variant="outlined"
                     label="Unit Price"
@@ -447,9 +448,9 @@ watch(
                 </td>
 
                 <td>
-                  <v-text-field
-                    v-model.number="line.unit_price"
-                    type="number"
+                  <MoneyField
+                    v-model="line.unit_price"
+                    prefix="₱"
                     density="compact"
                     class="text-right"
                   />

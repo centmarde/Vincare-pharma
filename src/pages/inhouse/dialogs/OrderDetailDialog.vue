@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MoneyField from '@/components/inputs/MoneyField.vue'
 import { ref, watch } from 'vue'
 import { useOrderDetail } from '../composables/useOrderDetail'
 import DeliveryReceiptDialog from '@/components/deliveryReceipts/DeliveryReceiptDialog.vue'
@@ -10,9 +11,10 @@ import type { InhouseOrderType } from '@/stores/inhouseData'
 import type { ProductPickerResult } from '@/stores/productsData'
 import ProductPickerDialog from '@/components/products/ProductPicker.vue'
 import type { CollectionType } from '@/stores/ethicalData'
-import { chequeLabel, collectionMethodLabel, collectionPaymentMethodOptions } from '@/utils/paymentMethods'
+import { chequeLabel, collectionMethodLabel, collectionPaymentMethodOptions, isCreditSettlement } from '@/utils/paymentMethods'
+import { collectionVoidSummary } from '@/composables/collectionEntry'
 import CollectionPaymentFields from '@/components/collections/CollectionPaymentFields.vue'
-import { formatCurrency, formatDatePR_ISO, formatExpiryLabel } from '@/utils/helpers'
+import { formatCurrency, formatDatePR_ISO, formatExpiryLabel, tidyNegotiationNote } from '@/utils/helpers'
 
 const props = defineProps<{
   modelValue: boolean
@@ -29,6 +31,7 @@ const {
   lineQtyEdits, newLines, hasUnsavedLineChanges, isRemoved, removeItem, restoreItem, addNewLine, removeNewLine, applyPickedProductToNewLine,
   receivedBy, issuedReceipt,
   payAmount, payMethod, payChequeBank, payChequeNo, payChequeDate, payReference, payRemarks,
+  payDiscount, payPaidOn, payProblem,
   requestedAt, requestNote,
   draftPrintDocument,
   items, isNegotiating, isAwaitingStock, isReady, isDelivered, isPartiallyPaid, isPaid, canRecordPayment,
@@ -91,8 +94,10 @@ function requestUndoPayment(p: CollectionType) {
       { key: 'cheque_date', label: 'Cheque date', value: p.cheque_date ?? null, type: 'date' },
       { key: 'remarks', label: 'Payment note', value: p.remarks, type: 'text' },
     ],
-    voidSummary: `Void this ${formatCurrency(p.amount ?? 0)} payment on ${props.order.order_no ?? 'the order'} — reverses it in the ledger (DR AR / CR cash) and rolls the order's paid amount + status back.`,
-    allowEdit: true,
+    voidSummary: collectionVoidSummary(p.amount ?? 0, p.payment_method, props.order.order_no ?? null),
+    // A discount / return credit has its own ledger entry: void it and enter
+    // it again rather than edit it into a cash payment.
+    allowEdit: !isCreditSettlement(p.payment_method),
     allowVoid: true,
     meta: { __collection_id: { from: p.id, to: p.id } },
   })
@@ -153,7 +158,7 @@ const productName = (id: number | null) =>
           <v-card-text class="pa-3">
             <div v-if="rounds.length" class="mb-3">
               <div v-for="r in rounds" :key="r.id" class="d-flex justify-space-between text-caption py-1" style="border-bottom:1px solid #eee">
-                <span><b class="text-uppercase">{{ r.action }}</b> — {{ r.description }}</span>
+                <span><b class="text-uppercase">{{ r.action }}</b> — {{ tidyNegotiationNote(r.description) }}</span>
                 <span class="text-medium-emphasis">{{ formatDatePR_ISO(r.created_at) }}</span>
               </div>
             </div>
@@ -218,7 +223,7 @@ const productName = (id: number | null) =>
                     <td>
                       <v-text-field v-model.number="lineQtyEdits[it.id]" type="number" min="1" variant="outlined" density="compact" hide-details :disabled="isRemoved(it.id)" />
                     </td>
-                    <td><v-text-field v-model.number="lineEdits[it.id]" type="number" min="0" prefix="₱" variant="outlined" density="compact" hide-details :disabled="isRemoved(it.id)" /></td>
+                    <td><MoneyField v-model="lineEdits[it.id]" prefix="₱" variant="outlined" density="compact" hide-details :disabled="isRemoved(it.id)" /></td>
                     <!-- Per product, qty × PR price — the same figure the
                          Proposed total below adds up. A removed line counts 0. -->
                     <td class="text-right font-weight-medium text-no-wrap">{{ isRemoved(it.id) ? '—' : formatCurrency(lineTotal(it)) }}</td>
@@ -251,7 +256,7 @@ const productName = (id: number | null) =>
                       </div>
                     </td>
                     <td><v-text-field v-model.number="nl.qty" type="number" min="1" variant="outlined" density="compact" hide-details /></td>
-                    <td><v-text-field v-model.number="nl.offer_unit" type="number" min="0" prefix="₱" variant="outlined" density="compact" hide-details /></td>
+                    <td><MoneyField v-model="nl.offer_unit" prefix="₱" variant="outlined" density="compact" hide-details /></td>
                     <td class="text-right font-weight-medium text-no-wrap">{{ formatCurrency(newLineTotal(nl)) }}</td>
                     <td class="text-right text-medium-emphasis">{{ formatCurrency(nl.cost_unit) }}</td>
                     <td class="text-center">
@@ -554,12 +559,16 @@ const productName = (id: number | null) =>
                 v-model:cheque-no="payChequeNo"
                 v-model:cheque-date="payChequeDate"
                 v-model:remarks="payRemarks"
+                v-model:discount="payDiscount"
+                v-model:paid-on="payPaidOn"
                 :balance="balance"
                 :cash-account-options="cashAccountOptions"
               />
-              <div class="d-flex justify-end mt-2">
+              <div class="d-flex justify-end align-center flex-wrap ga-2 mt-2">
+                <!-- Why Record Payment is greyed out. -->
+                <span v-if="payProblem" class="text-caption text-medium-emphasis">{{ payProblem }}</span>
                 <v-btn color="success" size="small" class="text-none font-weight-bold" elevation="0" :loading="loading"
-                  :disabled="!payAmount || payAmount <= 0 || payAmount > balance || payCashAccountId === null" @click="recordPayment">
+                  :disabled="!!payProblem" @click="recordPayment">
                   Record Payment
                 </v-btn>
               </div>

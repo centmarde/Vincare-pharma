@@ -34,3 +34,20 @@ export function parseProposedChanges(raw: unknown): ProposedChange {
 export function serializeProposedChanges(changes: ProposedChange): string {
   return JSON.stringify(changes ?? {})
 }
+
+/** One change request, ready to show in a document's change history. */
+export type ChangeHistoryEntry = {
+  id: number
+  /** When it was filed, already formatted. */
+  filedAt: string
+  kind: 'Edit' | 'Void'
+  status: 'pending' | 'approved' | 'rejected'
+  requestedBy: string | null
+  reason: string | null
+  /** Each field the request changed, values already formatted for display. */
+  changes: { label: string; from: string; to: string }[]
+  resolvedBy: string | null
+  resolvedAt: string | null
+  /** What approving or rejecting it did, in plain words. */
+  outcome: string | null
+}

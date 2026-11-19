@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import type { Ref } from 'vue'
 import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
+import { roundPeso } from '@/stores/shared/collectionSettlement'
 import type { ProductType } from '@/stores/productsData'
 
 // A Delivery Receipt is a shared, cross-module fulfillment document with its own
@@ -168,7 +169,8 @@ export const useDeliveryReceiptsDataStore = defineStore('deliveryReceiptsData', 
         product_id: l.product_id,
         qty: l.qty,
         unit_price: l.unit_price,
-        line_total: (l.unit_price ?? 0) * l.qty,
+        // To the centavo, like the order's own lines — the SOA sums these.
+        line_total: roundPeso((l.unit_price ?? 0) * l.qty),
       }))
     // Lines failing used to be a console warning while the receipt reported
     // success — leaving a numbered DR with nothing on it. Remove the header and

@@ -1,8 +1,9 @@
 import { ref, computed, watch } from 'vue'
 import { useToast } from 'vue-toastification'
 import { useStockTransfersDataStore } from '@/stores/stockTransfersData'
-import type { StockTransferType, StockTransferItemType } from '@/stores/stockTransfersData'
-import { formatExpiryMonthYear } from '@/utils/helpers'
+import type { StockTransferType, StockTransferItemType, TransferSubstitute, TransferSubstitutionNote } from '@/stores/stockTransfersData'
+import { formatCurrency, formatExpiryMonthYear } from '@/utils/helpers'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
 const toast = useToast()
 
@@ -107,6 +108,110 @@ export function useStockTransferDetail(
     }
   }, { immediate: true })
 
+  // ─── Send another batch / brand (approver, pending transfers) ─────
+  // When the warehouse does not have the requested batch or brand but holds
+  // another batch of the same product, the approver swaps the line before
+  // approving. Approve then checks and deducts the batch actually sent.
+  const swapItem = ref<StockTransferItemType | null>(null)
+  const swapOptions = ref<TransferSubstitute[]>([])
+  const swapLoading = ref(false)
+  const swapFailed = ref(false)
+  /** The option being saved, so only its button spins. */
+  const swapSavingId = ref<number | null>(null)
+
+  async function openSwap(item: StockTransferItemType) {
+    if (item.product_id == null) return
+    swapItem.value = item
+    swapOptions.value = []
+    swapFailed.value = false
+    swapLoading.value = true
+    // Options that cannot cover this line's quantity come back marked. What the
+    // other lines already ask for counts too: Approve totals per product.
+    const found = await transfersStore.fetchTransferSubstitutes(
+      item.product_id, item.requested_qty ?? 0, neededByProduct.value,
+    )
+    if (swapItem.value?.id !== item.id) return
+    swapLoading.value = false
+    if (found === null) { swapFailed.value = true; return }
+    swapOptions.value = found
+  }
+
+  function closeSwap() {
+    swapItem.value = null
+  }
+
+  /** "Box" and "box " are the same unit. */
+  function normUnit(unit: string | null | undefined): string {
+    return (unit ?? '').trim().toLowerCase()
+  }
+
+  function differentUnit(option: TransferSubstitute): boolean {
+    const requested = swapItem.value?.product?.unit
+    return !!normUnit(option.unit) && !!normUnit(requested) && normUnit(option.unit) !== normUnit(requested)
+  }
+
+  /** Whole months until expiry; null when there is no expiry date. */
+  function monthsLeft(expiry: string | null): number | null {
+    if (!expiry) return null
+    const [y, m, d] = expiry.slice(0, 10).split('-').map(Number)
+    const now = new Date()
+    let months = (y - now.getFullYear()) * 12 + (m - 1 - now.getMonth())
+    if (d < now.getDate()) months -= 1
+    return Math.max(0, months)
+  }
+
+  /** Under this many months the branch may not sell it in time — say so. */
+  const shortShelfLifeMonths = 3
+
+  // ─── Lines the warehouse changed (both sides see them) ────────────
+  const substitutionNotes = ref<TransferSubstitutionNote[]>([])
+  let notesRequest = 0
+
+  async function loadSubstitutionNotes() {
+    const request = ++notesRequest
+    const t = transfer()
+    if (!t) { substitutionNotes.value = []; return }
+    const notes = await transfersStore.fetchSubstitutionNotes(t.id)
+    if (request !== notesRequest) return
+    substitutionNotes.value = notes
+  }
+
+  watch(() => [transfer()?.id, transfer()?.updated_at], loadSubstitutionNotes, { immediate: true })
+
+  const { confirmDialog } = useConfirmDialog()
+
+  /**
+   * Swap the line; true when it changed, so the dialog refreshes. A different
+   * unit (103 boxes is not 103 bottles) or selling price is asked about first:
+   * units are labelled inconsistently in the data, so it is not refused
+   * outright, but it must be a deliberate choice.
+   */
+  async function chooseSwap(productId: number): Promise<boolean> {
+    const t = transfer()
+    const item = swapItem.value
+    if (!t || !item) return false
+    const option = swapOptions.value.find((o) => o.id === productId)
+    const requested = item.product
+    const warnings: string[] = []
+    if (option && differentUnit(option)) {
+      warnings.push(`The unit is different: requested ${item.requested_qty} ${requested?.unit ?? ''}, this batch is counted in ${option.unit}. ${item.requested_qty} ${option.unit} will be sent.`)
+    }
+    if (option?.selling_price && requested?.selling_price && Number(option.selling_price) !== Number(requested.selling_price)) {
+      warnings.push(`The selling price is different: ${formatCurrency(Number(option.selling_price))} instead of ${formatCurrency(Number(requested.selling_price))}. The branch will sell it at ${formatCurrency(Number(option.selling_price))}.`)
+    }
+    if (warnings.length) {
+      const ok = await confirmDialog(warnings.join('\n\n'), { title: 'Send this batch instead?', confirmText: 'Yes, send it' })
+      if (!ok) return false
+    }
+    swapSavingId.value = productId
+    const result = await transfersStore.substituteTransferLine(t.id, item.id, productId, item.product_id)
+    swapSavingId.value = null
+    if (!result.success) return false
+    swapItem.value = null
+    await loadSubstitutionNotes()
+    return true
+  }
+
   // ─── Actions ──────────────────────────────────────────────────────
   async function handleApprove() {
     const t = transfer()
@@ -154,5 +259,7 @@ export function useStockTransferDetail(
     isPendingApproval, isApproved, missingReceivedQty,
     onHand, stockLoading, shortProductCount, shortBy, onHandFor, batchLabel,
     handleApprove, handleReject, handleMarkReceived, loadStock,
+    swapItem, swapOptions, swapLoading, swapFailed, swapSavingId, openSwap, closeSwap, chooseSwap,
+    differentUnit, monthsLeft, shortShelfLifeMonths, substitutionNotes,
   }
 }

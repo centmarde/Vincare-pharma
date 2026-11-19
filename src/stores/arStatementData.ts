@@ -3,7 +3,7 @@ import type { Ref } from 'vue'
 import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import { getErrorMessage, isConsignmentTerm, parseTermDays } from '@/utils/helpers'
-import { creditMemo, isCreditSettlement, returnCredit } from '@/utils/paymentMethods'
+import { creditMemo, isCreditSettlement, paymentDiscount, returnCredit } from '@/utils/paymentMethods'
 import { fetchAllRows, fetchAllRowsForIds } from '@/stores/shared/paging'
 import type { ARAgingTerm } from '@/stores/financeData'
 
@@ -380,10 +380,10 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
         .from('delivery_receipts').select('id, order_id').in('order_id', batch).order('id', { ascending: true }))
       const ordersWithDr = new Set(receiptOrders.map((r) => r.order_id))
 
-      // amount_paid includes credit memos; they belong in CREDIT, not OR.
+      // amount_paid includes credit memos and payment discounts; they belong in CREDIT, not OR.
       const bareCredits = await fetchAllRowsForIds<any>(candidateIds, (batch) => supabase
         .from('collections').select('id, transaction_id, amount')
-        .in('transaction_id', batch).is('voided_at', null).in('payment_method', [creditMemo, returnCredit])
+        .in('transaction_id', batch).is('voided_at', null).in('payment_method', [creditMemo, returnCredit, paymentDiscount])
         .order('id', { ascending: true }))
       const creditByOrder = new Map<number, number>()
       for (const c of bareCredits) creditByOrder.set(c.transaction_id, (creditByOrder.get(c.transaction_id) ?? 0) + Number(c.amount ?? 0))

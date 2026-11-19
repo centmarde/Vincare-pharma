@@ -3,6 +3,7 @@
 // state.
 
 import { parseProposedChanges } from '@/utils/changeRequests'
+import { toLocalISODate } from '@/utils/helpers'
 import type { ProposedChange } from '@/utils/changeRequests'
 import { prevStatusKey, collectionIdKey, openingReceivableKey } from './types'
 import type { ChangeRequestType, Diff } from './types'
@@ -40,23 +41,31 @@ export const txnLabel = (no: string | null, id: number) => no ?? `#${id}`
 
 // ── Edit model ──────────────────────────────────────────────────────────────
 // Edits are hold-until-approve. On approval a MEMO field (no GL impact) is
-// updated in place (same document); a LEDGER field (amount/date/account/
-// category) is applied by REVERSE + REISSUE — the old document is voided
-// (its GL cleanly backed out) and a corrected replacement is recorded (new
-// document number, projects cleanly). This is the auditor-standard way to
-// fix a posted document.
+// updated in place (same document). A LEDGER field (amount/date/account/
+// category) on an EXPENSE is corrected in place too — same document, ledger
+// entry reversed and re-posted (see changeRequests/finance.ts,
+// correctionsBookInOriginalMonth). Supplier payments and the other documents
+// still use REVERSE + REISSUE: the old document voided, a corrected copy
+// recorded under a new number.
 
 export const toVal = (changes: ProposedChange, key: string): unknown =>
   key in changes ? (changes[key] as Diff).to : undefined
 export const normVal = (v: unknown) => (v == null ? '' : String(v))
 // First changed field whose LIVE value no longer matches the request's `from`
 // (the document drifted since the request was filed) — don't apply stale edits.
+// `acceptApplied`: a live value already equal to the request's `to` passes too
+// — an earlier approval that stopped part-way applied it, and a retry must be
+// able to finish (used where re-applying is safe; see applyExpenseChange).
 export function firstStaleField(
   changes: ProposedChange,
   current: Record<string, unknown>,
+  acceptApplied = false,
 ): string | null {
   for (const [k, diff] of Object.entries(changes)) {
-    if (normVal((diff as Diff).from) !== normVal(current[k])) return k
+    const live = normVal(current[k])
+    if (normVal((diff as Diff).from) === live) continue
+    if (acceptApplied && normVal((diff as Diff).to) === live) continue
+    return k
   }
   return null
 }
@@ -66,7 +75,8 @@ export const staleError = (k: string) => ({
 })
 // Reverse + reissue dates the replacement at the correction date (accountant's
 // call), so a fix never lands back in an already-reported period.
-export const correctionDate = () => new Date().toISOString().slice(0, 10)
+// Manila date: toISOString() is the UTC date, a day early before 08:00.
+export const correctionDate = () => toLocalISODate(new Date())
 export const reissueReason = (r: ChangeRequestType) =>
   `Corrected via change request #${r.id}${r.reason ? `: ${r.reason}` : ''}`
 // Backlink stamped onto the REPLACEMENT document's remarks, so a corrected

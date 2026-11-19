@@ -7,7 +7,9 @@ import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { useGLDataStore } from '@/stores/glData'
 import type { CollectionType, CommissionSummaryRow } from './types'
-import { isCreditSettlement } from '@/utils/paymentMethods'
+import { isCreditSettlement, paymentDiscount } from '@/utils/paymentMethods'
+import { collectionCreatedAt, paidBeforeDocument, paidSoFar, paymentDateProblem, saveOrderBalance, settleAgainst } from '@/stores/shared/collectionSettlement'
+import { toLocalISODate } from '@/utils/helpers'
 import type { ChequeDetails } from '@/utils/paymentMethods'
 import { collections, commissionSummary, loading, handleError, clearError } from './state'
 import { fetchOrders } from './orders'
@@ -43,18 +45,28 @@ export async function recordCollection(payload: {
    * touches those columns.
    */
   cheque?: ChequeDetails | null
+  /**
+   * The day the customer paid (YYYY-MM-DD), when it was not today. Stored as
+   * the collection's date, so the ledger books it on that day.
+   */
+  paidOn?: string | null
 }) {
-  // A return credit or a credit memo: settled by a credit, so no money moves.
+  // A return credit, credit memo or payment discount: settled by a credit, so
+  // no money moves.
   const isReturnCredit = isCreditSettlement(payload.method)
+  const isDiscount = payload.method === paymentDiscount
+  const createdAt = collectionCreatedAt(payload.paidOn)
   loading.value = true
   clearError()
   const { user, error: authError } = await getAuthStore().getCurrentUser()
   if (authError || !user) { toast.error('User not authenticated.'); loading.value = false; return { success: false } }
   if (payload.amount <= 0) { toast.error('Collection amount must be positive.'); loading.value = false; return { success: false } }
+  const dateProblem = paymentDateProblem(payload.paidOn)
+  if (dateProblem) { toast.error(dateProblem); loading.value = false; return { success: false } }
 
   const { data: order, error: fetchError } = await supabase
     .from('transactions')
-    .select('id, status, total_amount, agent_id, ethical_no, ethical_details(amount_paid, rebate_amount, rebate_status)')
+    .select('id, status, created_at, total_amount, agent_id, ethical_no, ethical_details(amount_paid, rebate_amount, rebate_status)')
     .eq('id', payload.orderId)
     .eq('transaction_type', 'ethical_order')
     .maybeSingle()
@@ -65,13 +77,20 @@ export async function recordCollection(payload: {
   if (order.status !== 'invoiced' && order.status !== 'partial') {
     toast.error('Order is not open for collection.'); loading.value = false; return { success: false }
   }
+  const tooEarly = paidBeforeDocument(payload.paidOn, order.created_at)
+  if (tooEarly) { toast.error(tooEarly); loading.value = false; return { success: false } }
 
   const orderDetails = order.ethical_details as unknown as
     { amount_paid: number | null; rebate_amount: number | null; rebate_status: string | null } | null
-  const paid = orderDetails?.amount_paid ?? 0
+  // The cache or the payment rows, whichever is ahead — see paidSoFar.
+  const paid = await paidSoFar(payload.orderId, orderDetails?.amount_paid)
+  if (paid === null) {
+    toast.error('Could not read the payments on this order. Nothing was recorded — try again.')
+    loading.value = false; return { success: false }
+  }
   const total = order.total_amount ?? 0
-  const balance = total - paid
-  if (payload.amount > balance) {
+  const { balance, newPaid, exceeds, settled } = settleAgainst(total, paid, payload.amount)
+  if (exceeds) {
     toast.error(`Collection amount (${payload.amount}) exceeds outstanding balance (${balance}).`)
     loading.value = false; return { success: false }
   }
@@ -83,7 +102,7 @@ export async function recordCollection(payload: {
     commissionRate = agent?.commission_rate ?? 0
   }
   const commissionAmount = payload.amount * (commissionRate / 100)
-  const newStatus = paid + payload.amount >= total ? 'paid' : 'partial'
+  const newStatus = settled ? 'paid' : 'partial'
 
   // Resolve the receiving account before writing anything — a collection
   // pointing at a missing account would record money as landing nowhere. A
@@ -112,8 +131,9 @@ export async function recordCollection(payload: {
       ...(payload.cheque
         ? { cheque_bank: payload.cheque.bank, cheque_no: payload.cheque.number, cheque_date: payload.cheque.date }
         : {}),
+      ...(createdAt ? { created_at: createdAt } : {}),
     })
-    .select('id')
+    .select('id, created_at')
     .single()
   if (collectionError || !collection) {
     handleError(collectionError, 'Failed to record collection.')
@@ -122,6 +142,9 @@ export async function recordCollection(payload: {
     return { success: false }
   }
 
+  // A discount needs no ledger work here: gl_project_events books the
+  // payment_discount row (DR 4040 / CR 1030) like any other collection.
+
   const nowIso = new Date().toISOString()
   // The rebate only falls due once the order is paid IN FULL, and every rebate
   // needs approval before cash moves — so full payment parks it in the
@@ -129,14 +152,24 @@ export async function recordCollection(payload: {
   const rebateAmount = orderDetails?.rebate_amount ?? 0
   const rebateFallsDueNow =
     newStatus === 'paid' && rebateAmount > 0 && !orderDetails?.rebate_status
-  const detailsUpdate: Record<string, unknown> = { amount_paid: paid + payload.amount, paid_at: nowIso }
+  const detailsUpdate: Record<string, unknown> = { amount_paid: newPaid, paid_at: createdAt ?? nowIso }
   if (rebateFallsDueNow) detailsUpdate.rebate_status = 'pending_approval'
 
-  const { error: detailsError } = await supabase
-    .from('ethical_details')
-    .update(detailsUpdate)
-    .eq('transaction_id', payload.orderId)
-  if (detailsError) console.warn('recordCollection: ethical_details update failed:', detailsError.message)
+  // The cache must never fall behind the rows (see saveOrderBalance): if it
+  // can't be written the payment is undone and nothing is recorded.
+  const cache = await saveOrderBalance(
+    () => supabase.from('ethical_details').update(detailsUpdate).eq('transaction_id', payload.orderId),
+    collection.id, user.id)
+  if (!cache.saved && cache.undone) {
+    handleError(cache.error, 'Failed to record collection.')
+    toast.error('Nothing was recorded — the order balance could not be updated. Try again.')
+    loading.value = false
+    return { success: false }
+  }
+  const detailsError = cache.saved ? null : cache.error
+  if (detailsError) {
+    toast.error('Collection recorded, but the order balance could not be updated or undone. Ask Finance to check this order before entering anything else on it.', { timeout: 20000 })
+  }
 
   // Only flip status if the amount_paid cache write above actually landed —
   // status='paid'/'partial' otherwise implies a balance that the cache
@@ -168,7 +201,7 @@ export async function recordCollection(payload: {
 
   const { error: logError } = await supabase.from('logs').insert({
     created_by: user.id, action: 'collection',
-    description: `${account ? `Collection of ${payload.amount} into ${account.name}` : `Returned goods credit of ${payload.amount} (${payload.reference ?? 'return'})`}${detailsError ? ' — WARNING: balance cache update failed, verify manually' : ''}`,
+    description: `${account ? `Collection of ${payload.amount} into ${account.name}` : isDiscount ? `Discount of ${payload.amount} given at payment` : `Returned goods credit of ${payload.amount} (${payload.reference ?? 'return'})`}${createdAt ? ` (paid ${createdAt})` : ''}${detailsError ? ' — WARNING: balance cache update failed, verify manually' : ''}`,
     module: 'ethical', transaction_id: payload.orderId,
   })
   if (logError) console.warn('recordCollection: activity log insert failed:', logError.message)
@@ -180,7 +213,8 @@ export async function recordCollection(payload: {
   // surfaced, never silently swallowed, since it would understate expenses.
   if (rebateFallsDueNow && !detailsError) {
     const glResult = await getGLStore().postJournalEntry(
-      nowIso.slice(0, 10),
+      // The day the bill was settled — a back-dated payment accrues then.
+      payload.paidOn || toLocalISODate(new Date()),
       'accrual',
       payload.orderId,
       `Rebate accrued on fully-paid ethical order ${order.ethical_no ?? payload.orderId}`,
@@ -196,8 +230,8 @@ export async function recordCollection(payload: {
     }
   }
 
-  if (detailsError) toast.warning('Collection recorded, but the order balance may be out of sync — verify manually.')
-  else toast.success(isReturnCredit ? 'Credit taken off the bill.' : 'Collection recorded.')
+  // A cache that could be neither saved nor undone was already reported above.
+  if (!detailsError) toast.success(isDiscount ? 'Discount taken off the bill.' : isReturnCredit ? 'Credit taken off the bill.' : 'Collection recorded.')
   await fetchOrders()
   await fetchCollections(payload.orderId)
   loading.value = false

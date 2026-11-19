@@ -97,31 +97,48 @@ export async function postJournalEntry(
   const { error: linesError } = await supabase.from('journal_entry_lines').insert(
     lines.map(l => ({ journal_entry_id: entry.id, account_code: l.account_code, debit: l.debit ?? 0, credit: l.credit ?? 0, line_memo: l.memo ?? null })),
   )
-  if (linesError) return { success: false, error: linesError.message, entryId: entry.id }
+  if (linesError) {
+    // Take the header back out: a header with no lines books nothing, yet it
+    // counts as "already booked" to the projector, which then skips the
+    // document for good. Only if that fails is the header's id handed back.
+    const { error: cleanupError } = await supabase.from('journal_entries').delete().eq('id', entry.id)
+    if (!cleanupError) return { success: false, error: linesError.message }
+    console.warn('postJournalEntry: could not remove the header left without lines:', entry.id, cleanupError.message)
+    return { success: false, error: linesError.message, entryId: entry.id }
+  }
 
   return { success: true, entryId: entry.id }
 }
 
+// Each change of From / To / Type refetches; a slow, many-page fetch must not
+// land after a quicker newer one and replace it.
+let journalRequest = 0
+
 export async function fetchJournal(options: { from?: string; to?: string; referenceType?: ReferenceType } = {}) {
+  const request = ++journalRequest
   loading.value = true
   clearError()
   try {
-    let q = supabase.from('journal_entries')
-      .select('*, journal_entry_lines(id, account_code, debit, credit, line_memo, account:account_code(name))')
-    if (options.from) q = q.gte('entry_date', options.from)
-    if (options.to) q = q.lte('entry_date', options.to)
-    if (options.referenceType) q = q.eq('reference_type', options.referenceType)
-    q = q.order('entry_date', { ascending: false }).order('id', { ascending: false })
-
-    const { data, error: e } = await q
-    if (e) throw e
-    journal.value = (data || []).map(mapEntryRow)
+    // Every page, not the first 1000: PostgREST caps a response, and the
+    // ledger passed that in 2026 — with no date filter the General Journal
+    // silently showed only the newest 1000 entries (and its search could not
+    // find the rest). Ordered by id last so the pages never overlap or skip.
+    const data = await fetchAllRows<any>(() => {
+      let q = supabase.from('journal_entries')
+        .select('*, journal_entry_lines(id, account_code, debit, credit, line_memo, account:account_code(name))')
+      if (options.from) q = q.gte('entry_date', options.from)
+      if (options.to) q = q.lte('entry_date', options.to)
+      if (options.referenceType) q = q.eq('reference_type', options.referenceType)
+      return q.order('entry_date', { ascending: false }).order('id', { ascending: false })
+    })
+    if (request !== journalRequest) return journal.value
+    journal.value = data.map(mapEntryRow)
     return journal.value
   } catch (err) {
-    handleError(err, 'Failed to fetch journal')
+    if (request === journalRequest) handleError(err, 'Failed to fetch journal')
     return []
   } finally {
-    loading.value = false
+    if (request === journalRequest) loading.value = false
   }
 }
 
@@ -314,11 +331,16 @@ export async function approveManualEntry(entryId: number) {
 // JS-over-RPC convention) — the caller should retry the flip if this
 // happens, since re-running reverseJournalEntry would otherwise create a
 // duplicate reversal (guarded against by the reverses_entry check below).
+//
+// `entryDate` dates the reversal (default today). An expense corrected in place
+// reverses on the ORIGINAL entry's date, so the fix lands in the month the
+// expense belongs to rather than the month it was approved.
 export async function reverseJournalEntry(
   entryId: number,
   userId: string | null,
   overrideReferenceType?: ReferenceType,
   overrideReferenceId?: number,
+  entryDate?: string,
 ): Promise<{ success: boolean; reversalId?: number; error?: string }> {
   const { data: original, error: fetchError } = await supabase
     .from('journal_entries')
@@ -330,14 +352,59 @@ export async function reverseJournalEntry(
     return { success: false, error: `Only posted entries can be reversed (entry ${entryId} is ${original.status})` }
   }
 
-  const { count: alreadyReversedCount } = await supabase
-    .from('journal_entries').select('id', { count: 'exact', head: true }).eq('reverses_entry', entryId)
-  if ((alreadyReversedCount ?? 0) > 0) {
-    return { success: false, error: `Entry ${entryId} has already been reversed` }
-  }
-
   const { data: originalLines } = await supabase
     .from('journal_entry_lines').select('account_code, debit, credit, line_memo').eq('journal_entry_id', entryId)
+  const reversedLines = (journalEntryId: number) => (originalLines ?? []).map(l => ({
+    journal_entry_id: journalEntryId, account_code: l.account_code, debit: l.credit ?? 0, credit: l.debit ?? 0, line_memo: l.line_memo,
+  }))
+
+  // A reversal already exists while the original still reads 'posted': an
+  // earlier attempt stopped part-way (its lines, or the status flip, failed).
+  // Finish that one instead of refusing for good — refusing left the
+  // original live, so the document could never be corrected or voided.
+  const { data: earlier } = await supabase
+    .from('journal_entries').select('id, posted_at').eq('reverses_entry', entryId).limit(1)
+  if (earlier?.length) {
+    const earlierId = earlier[0].id as number
+    const { count: earlierLineCount, error: countError } = await supabase
+      .from('journal_entry_lines').select('id', { count: 'exact', head: true }).eq('journal_entry_id', earlierId)
+    // Unknown is not zero: inserting the lines again could post the reversal twice.
+    if (countError) return { success: false, error: countError.message, reversalId: earlierId }
+    const wroteLines = !earlierLineCount
+    if (!earlierLineCount) {
+      // Two approvals can both see the header empty. The right to write its
+      // lines is claimed first, by a conditional update on the header row:
+      // the database applies it to one caller only (the other's posted_at no
+      // longer matches), so the loser writes nothing and says so.
+      const seenPostedAt = earlier[0].posted_at as string | null
+      let claim = supabase
+        .from('journal_entries').update({ posted_at: new Date().toISOString(), posted_by: userId })
+        .eq('id', earlierId)
+      claim = seenPostedAt == null ? claim.is('posted_at', null) : claim.eq('posted_at', seenPostedAt)
+      const { data: claimed, error: claimError } = await claim.select('id')
+      if (claimError) return { success: false, error: claimError.message, reversalId: earlierId }
+      if (!claimed?.length) {
+        return { success: false, error: 'Another approval is finishing this reversal right now. Nothing was posted by this one — refresh in a moment.', reversalId: earlierId }
+      }
+      const { error: resumeLinesError } = await supabase.from('journal_entry_lines').insert(reversedLines(earlierId))
+      if (resumeLinesError) return { success: false, error: resumeLinesError.message, reversalId: earlierId }
+    }
+    const { data: resumed, error: resumeStatusError } = await supabase
+      .from('journal_entries').update({ status: 'reversed' }).eq('id', entryId).eq('status', 'posted').select('id')
+    if (resumeStatusError) return { success: false, error: resumeStatusError.message, reversalId: earlierId }
+    // Nothing flipped: another approval finished it first. Stop, so the caller
+    // doesn't post its corrected entry a second time.
+    if (!resumed?.length) {
+      return {
+        success: false,
+        error: wroteLines
+          ? 'Another approval finished this reversal at the same time (this one only completed its lines). Nothing else was posted.'
+          : 'This reversal was already finished by another approval. Nothing was posted.',
+        reversalId: earlierId,
+      }
+    }
+    return { success: true, reversalId: earlierId }
+  }
 
   const nowIso = new Date().toISOString()
   const { data: reversal, error: reversalError } = await insertNumberedEntry((docNo) => supabase
@@ -345,7 +412,7 @@ export async function reverseJournalEntry(
     .insert({
       // Local date, not toISOString(): that is the UTC date, so a reversal
       // made before 08:00 in Manila was dated the previous day.
-      entry_no: docNo, entry_date: toLocalISODate(new Date()),
+      entry_no: docNo, entry_date: entryDate || toLocalISODate(new Date()),
       reference_type: overrideReferenceType ?? original.reference_type,
       reference_id: overrideReferenceId ?? original.reference_id,
       description: `Reversal of ${original.entry_no}${original.description ? ' — ' + original.description : ''}`,
@@ -355,16 +422,15 @@ export async function reverseJournalEntry(
     .single())
   if (reversalError || !reversal) return { success: false, error: reversalError?.message || 'Failed to create reversal entry' }
 
-  const { error: linesError } = await supabase.from('journal_entry_lines').insert(
-    (originalLines ?? []).map(l => ({
-      journal_entry_id: reversal.id, account_code: l.account_code, debit: l.credit ?? 0, credit: l.debit ?? 0, line_memo: l.line_memo,
-    })),
-  )
+  const { error: linesError } = await supabase.from('journal_entry_lines').insert(reversedLines(reversal.id))
   if (linesError) return { success: false, error: linesError.message, reversalId: reversal.id }
 
-  const { error: statusError } = await supabase
-    .from('journal_entries').update({ status: 'reversed' }).eq('id', entryId).eq('status', 'posted')
+  const { data: flipped, error: statusError } = await supabase
+    .from('journal_entries').update({ status: 'reversed' }).eq('id', entryId).eq('status', 'posted').select('id')
   if (statusError) return { success: false, error: statusError.message, reversalId: reversal.id }
+  if (!flipped?.length) {
+    return { success: false, error: `Entry ${original.entry_no} was reversed by another action at the same time. Check the General Journal before going on.`, reversalId: reversal.id }
+  }
 
   return { success: true, reversalId: reversal.id }
 }
