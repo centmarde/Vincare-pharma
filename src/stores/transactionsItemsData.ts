@@ -46,6 +46,39 @@ export type CreateTransactionItemData = {
 
 export type UpdateTransactionItemData = Partial<CreateTransactionItemData>
 
+// ─── Product IN/OUT movement history (get_product_transaction_movements RPC) ─
+// Usa ra ka row per movement: gi-classify na sa SQL kung 'IN' ba o 'OUT' base
+// sa transaction_type + status (ug pos_sale_details.voided_at sa mga sale).
+export type ProductMovementType = {
+  id: number
+  transaction_id: number
+  transaction_type: string | null
+  status: string | null
+  document_no: string | null
+  movement: 'IN' | 'OUT'
+  qty: number | null
+  unit_price: number | null
+  line_total: number | null
+  movement_at: string | null
+  created_at: string | null
+  warehouse_id: number | null
+  outlet: string | null
+  remarks: string | null
+  reason: string | null
+  total_count: number
+}
+
+export type FetchProductMovementsOptions = {
+  productId: number
+  limit?: number
+  offset?: number
+}
+
+export type ProductMovementsResult = {
+  rows: ProductMovementType[]
+  totalCount: number
+}
+
 type FetchTransactionItemsOptions = {
   transaction_id?: number | null
   product_id?: number | null
@@ -202,6 +235,36 @@ export const useTransactionItemsDataStore = defineStore('transactionItemsData', 
     }
   }
 
+  /**
+   * Quick IN/OUT movement history para sa usa ka product — usa ra ka round-trip
+   * kay ang get_product_transaction_movements RPC na ang mo-join sa
+   * transaction_items -> transactions (ug pos_sale_details para sa voided
+   * sales) ug mo-return na dayon sa classified IN/OUT rows. Wala gi-wrap sa
+   * try/catch — mo-rely lang sa destructured { data, error }.
+   */
+  const fetchProductMovements = async (
+    options: FetchProductMovementsOptions,
+  ): Promise<ProductMovementsResult> => {
+    loading.value = true
+    clearError()
+
+    const { data, error: rpcError } = await supabase.rpc('get_product_transaction_movements', {
+      p_product_id: options.productId,
+      p_limit: options.limit ?? 500,
+      p_offset: options.offset ?? 0,
+    })
+
+    loading.value = false
+
+    if (rpcError) {
+      handleError(rpcError, 'Failed to fetch product movements')
+      return { rows: [] as ProductMovementType[], totalCount: 0 }
+    }
+
+    const rows = (data || []) as ProductMovementType[]
+    return { rows, totalCount: rows[0]?.total_count ?? rows.length }
+  }
+
   const createTransactionItem = async (itemData: CreateTransactionItemData) => {
     loading.value = true
     clearError()
@@ -312,6 +375,7 @@ export const useTransactionItemsDataStore = defineStore('transactionItemsData', 
     // Actions
     fetchTransactionItems,
     fetchTransactionItemById,
+    fetchProductMovements,
     createTransactionItem,
     updateTransactionItem,
     deleteTransactionItem,
