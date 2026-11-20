@@ -208,6 +208,9 @@ function onPRSubmitted() {}
 // Logs dialog state
 const showLogsDialog = ref(false)
 const productLogs = ref<LogType[]>([])
+// Ang product nga gi-klik sa history button — para ma-fetch ang IN/OUT
+// movement sa LogsViewDialog (kung walay product, logs lang ang i-display).
+const logProduct = ref<ProductType | null>(null)
 
 const openLogsDialog = async (product: any) => {
   await logsStore.fetchLogs()
@@ -221,12 +224,14 @@ const openLogsDialog = async (product: any) => {
       log.description?.toLowerCase().includes((product.sku ?? '').toLowerCase())
     return isProductRelated
   })
+  logProduct.value = product
   showLogsDialog.value = true
 }
 
 const closeLogsDialog = () => {
   showLogsDialog.value = false
   productLogs.value = []
+  logProduct.value = null
 }
 
 const { getCurrentTheme } = useTheme()
@@ -719,7 +724,7 @@ async function openPdfPrint() {
               @click="openLogsDialog(item)"
             >
               <v-icon size="16">mdi-text-box-search-outline</v-icon>
-              <v-tooltip activator="parent" location="top">View transaction history</v-tooltip>
+              <v-tooltip activator="parent" location="top">View Stock Movement</v-tooltip>
             </v-btn>
           </div>
         </template>
@@ -785,7 +790,12 @@ async function openPdfPrint() {
   />
 
   <!-- Logs View Dialog -->
-  <LogsViewDialog v-model="showLogsDialog" :logs="productLogs" @close="closeLogsDialog" />
+  <LogsViewDialog
+    v-model="showLogsDialog"
+    :logs="productLogs"
+    :product="logProduct"
+    @close="closeLogsDialog"
+  />
 
   <!-- Stock Status Dialog (separated component) -->
   <StockStatusDialog
