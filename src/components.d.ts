@@ -10,6 +10,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     AddReservationDialog: typeof import('./components/products/dialogs/AddReservationDialog.vue')['default']
     BottomBar: typeof import('./components/common/BottomBar.vue')['default']
+    ChangeHistoryDialog: typeof import('./components/changeRequests/dialogs/ChangeHistoryDialog.vue')['default']
     ChangeRequestDialog: typeof import('./components/changeRequests/dialogs/ChangeRequestDialog.vue')['default']
     CollectionPaymentFields: typeof import('./components/collections/CollectionPaymentFields.vue')['default']
     ConfirmDialog: typeof import('./components/common/ConfirmDialog.vue')['default']

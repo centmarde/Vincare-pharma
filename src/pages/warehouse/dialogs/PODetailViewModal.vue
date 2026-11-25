@@ -30,6 +30,7 @@ const {
   missingSkuCount,
   missingActualCount,
   missingBatchNoCount,
+  handleGenerateAllSkus,
   handleMarkAsReceived,
   receivedDate,
   missingReceivedDate,
@@ -144,6 +145,17 @@ function onReceivedDateInput(val: string | null) {
 
         <v-spacer v-if="!mobile" />
         <template v-if="skuEditMode">
+          <v-btn
+            variant="outlined"
+            size="small"
+            class="text-none"
+            prepend-icon="mdi-dice-multiple"
+            :disabled="missingSkuCount === 0 || savingAll"
+            :title="missingSkuCount === 0 ? 'No items are missing a SKU' : ''"
+            @click="handleGenerateAllSkus"
+          >
+            Generate all SKU
+          </v-btn>
           <v-btn variant="outlined" size="small" class="text-none" @click="emit('update:modelValue', false)">Cancel</v-btn>
           <v-btn
             color="success"

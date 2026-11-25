@@ -51,6 +51,8 @@ declare module 'vue-router/auto-routes' {
     '/ethical/mobile/EthicalCustCRUDMobile': RouteRecordInfo<'/ethical/mobile/EthicalCustCRUDMobile', '/ethical/mobile/EthicalCustCRUDMobile', Record<never, never>, Record<never, never>>,
     '/ethical/RebatePayoutsView': RouteRecordInfo<'/ethical/RebatePayoutsView', '/ethical/RebatePayoutsView', Record<never, never>, Record<never, never>>,
     '/executive/components/ActionRequired': RouteRecordInfo<'/executive/components/ActionRequired', '/executive/components/ActionRequired', Record<never, never>, Record<never, never>>,
+    '/executive/components/ApprovalDirectionBanner': RouteRecordInfo<'/executive/components/ApprovalDirectionBanner', '/executive/components/ApprovalDirectionBanner', Record<never, never>, Record<never, never>>,
+    '/executive/components/ChangeRequestDecisionPanel': RouteRecordInfo<'/executive/components/ChangeRequestDecisionPanel', '/executive/components/ChangeRequestDecisionPanel', Record<never, never>, Record<never, never>>,
     '/executive/components/CreditMemoDecisionPanel': RouteRecordInfo<'/executive/components/CreditMemoDecisionPanel', '/executive/components/CreditMemoDecisionPanel', Record<never, never>, Record<never, never>>,
     '/executive/components/ExecutiveWidget': RouteRecordInfo<'/executive/components/ExecutiveWidget', '/executive/components/ExecutiveWidget', Record<never, never>, Record<never, never>>,
     '/executive/components/FinanceDashboard': RouteRecordInfo<'/executive/components/FinanceDashboard', '/executive/components/FinanceDashboard', Record<never, never>, Record<never, never>>,
