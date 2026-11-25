@@ -6,6 +6,7 @@ import type { SkuConflict } from '@/stores/productsData'
 import { useTransactionsDataStore } from '@/stores/transactionsData'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import type { PurchaseOrder } from '@/pages/purchasing/composables/usePODetailModal'
+import { generateSku } from '@/utils/generativeHelpers'
 
 type PODetailEmits = {
   (e: 'update:modelValue', value: boolean): void
@@ -60,6 +61,21 @@ export function usePODetailView(
   const missingBatchNoCount = computed(
     () => transactionItems.value.filter((item) => !item.batch_no?.toString().trim()).length,
   )
+
+  /**
+   * Fills a new generated SKU (via generateSku()) into every item in the
+   * delivery that doesn't already have a SKU. Existing user-typed/saved SKUs
+   * are left untouched. Mutates the reactive transaction items directly so the
+   * table/mobile inputs update immediately.
+   */
+  function generateAllSkus() {
+    const missing = transactionItems.value.filter(
+      (item) => !item.sku?.toString().trim(),
+    )
+    for (const item of missing) {
+      item.sku = generateSku()
+    }
+  }
 
   async function saveAllItems(receivingItems: PRItem[]): Promise<boolean> {
     const validItems = receivingItems.filter(
@@ -187,6 +203,7 @@ export function usePODetailView(
     missingSkuCount,
     missingActualCount,
     missingBatchNoCount,
+    handleGenerateAllSkus: generateAllSkus,
     handleMarkAsReceived,
     receivedDate,
     missingReceivedDate,
