@@ -11,6 +11,7 @@ import { arAging, loading, handleError, clearError } from './state'
 import { fetchAllRows, fetchAllRowsForIds } from '@/stores/shared/paging'
 import { chargeToAccount, chequeLabel, collectionMethodLabel, isCreditSettlement, paymentDiscount, returnCredit } from '@/utils/paymentMethods'
 import { isConsignmentTerm, parseTermDays, toLocalISODate } from '@/utils/helpers'
+import { openingRemarksPrefix } from '@/stores/openingReceivablesData'
 
 // ─── POS sales charged to a customer account ───────────────────────────────
 // A sale keeps no amount_paid: what is paid is the sum of its non-voided
@@ -372,11 +373,14 @@ export async function fetchStatementOfAccount(customerIds: number | number[], so
             .order('created_at', { ascending: true })
         : supabase
             .from('transactions')
-            .select(`id, created_at, approved_at, total_amount, ${refCol}`)
+            .select(`id, created_at, approved_at, total_amount, remarks, ${refCol}, ${source === 'ethical_order' ? 'ethical_details' : 'inhouse_details'}(amount_paid)`)
             .eq('transaction_type', source)
             .in('customer_id', sourceIds)
-            // An Ethical draft is still being haggled — not a charge yet.
-            .neq('status', 'draft')
+            // An Ethical draft is still being haggled — not a charge yet. A
+            // cancelled one is not owed: a corrected opening receivable is
+            // cancelled and re-recorded, and counting both billed the
+            // customer twice (the AR page already leaves cancelled ones out).
+            .not('status', 'in', '(draft,cancelled,voided)')
             .order('created_at', { ascending: true })
       const { data: orders, error: ordersError } = await ordersQuery
       if (ordersError) throw ordersError
@@ -401,6 +405,25 @@ export async function fetchStatementOfAccount(customerIds: number | number[], so
       : { data: [] as any[], error: null }
     if (paymentsError) throw paymentsError
 
+    // An opening receivable's "paid before cutover" lives only in its cached
+    // amount_paid — there is no payment row for it — so the statement showed
+    // the full original invoice as still owed. It is the cache less every live
+    // payment row (the pre-cutover credit memo and later payments are rows).
+    const rowsPaid = new Map<number, number>()
+    for (const p of (payments ?? []) as any[]) {
+      rowsPaid.set(p.transaction_id, (rowsPaid.get(p.transaction_id) ?? 0) + Number(p.amount ?? 0))
+    }
+    const paidBeforeCutover = orderRows
+      .filter((o) => String(o.remarks ?? '').startsWith(openingRemarksPrefix))
+      .map((o) => {
+        const ext = o.ethical_details ?? o.inhouse_details
+        const cached = Number((Array.isArray(ext) ? ext[0] : ext)?.amount_paid ?? 0)
+        return { order: o, amount: Math.round((cached - (rowsPaid.get(o.id) ?? 0)) * 100) / 100 }
+      })
+      .filter((x) => x.amount > 0.005)
+
+    // Charges first: the sort below is stable, so on a shared date a charge
+    // stays ahead of what was paid against it.
     const unsorted = [
       ...orderRows.map((o) => ({
         // Dated when it was INVOICED, not when the draft was started.
@@ -413,6 +436,14 @@ export async function fetchStatementOfAccount(customerIds: number | number[], so
         description: `${o._source === 'sale' ? 'Charged sale' : 'Order'} ${o._ref ?? `#${o.id}`}`,
         charge: o.total_amount ?? 0,
         payment: 0,
+      })),
+      ...paidBeforeCutover.map(({ order, amount }) => ({
+        date: (order.approved_at ?? order.created_at) as string,
+        type: 'payment' as const,
+        reference_no: (order._ref as string | null) ?? null,
+        description: 'Paid before cutover',
+        charge: 0,
+        payment: amount,
       })),
       ...(payments ?? []).map((p: any) => ({
         date: p.created_at as string,

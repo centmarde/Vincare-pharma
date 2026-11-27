@@ -2,12 +2,13 @@
 // row (plus ethical_details and its lines) into EthicalOrderType.
 
 import type { EthicalOrderType } from './types'
+import { drNumbersOf, originalInvoiceNo } from '@/stores/shared/orderRefs'
 
 // Line values live directly on transaction_items (transaction_item_details was
 // merged back in). An ethical order is outbound, so the ordered quantity is
 // qty_stock_out and the delivered/sourced count is actual_count_stock_out.
 export const selectOrder =
-  '*, transaction_items!transaction_items_transaction_id_fkey(id, product_id, qty_stock_out, unit_price, line_total, cost_price, actual_count_stock_out, stock_sources, product:product_id(*)), customer:customer_id(*), agent:agent_id(*), outlet:outlet_id(*), ethical_details(*)'
+  '*, transaction_items!transaction_items_transaction_id_fkey(id, product_id, qty_stock_out, unit_price, line_total, cost_price, actual_count_stock_out, stock_sources, product:product_id(*)), customer:customer_id(*), agent:agent_id(*), outlet:outlet_id(*), ethical_details(*), delivery_receipts(dr_no)'
 
 export function mapRow(row: any): EthicalOrderType {
   const details = row.ethical_details ?? {}
@@ -38,6 +39,8 @@ export function mapRow(row: any): EthicalOrderType {
     paid_at:        details.paid_at ?? null,
     created_by:     row.created_by,
     remarks:        row.remarks,
+    dr_nos:         drNumbersOf(row.delivery_receipts),
+    original_invoice_no: originalInvoiceNo(row.remarks),
     rebate_status:  details.rebate_status ?? null,
     rebate_approved_by: details.rebate_approved_by ?? null,
     rebate_approved_at: details.rebate_approved_at ?? null,

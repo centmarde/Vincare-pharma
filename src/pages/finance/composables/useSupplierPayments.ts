@@ -66,7 +66,7 @@ export const bucketColor: Record<APAgeBucket, string> = {
 export function useSupplierPayments() {
   const financeStore = useFinanceDataStore()
   const suppliersStore = useSuppliersDataStore()
-  const { supplierAP, apAging, supplierPayments, loading } = storeToRefs(financeStore)
+  const { supplierAP, apAging, apUnapplied, supplierPayments, loading } = storeToRefs(financeStore)
   const { suppliers } = storeToRefs(suppliersStore)
   const router = useRouter()
   const voucherStore = useDisbursementVouchersStore()
@@ -109,6 +109,11 @@ export function useSupplierPayments() {
       loadOpenVouchers(),
     ])
     await loadVoucherRefs()
+  }
+
+  /** The voucher a payment came from, with its cheque number (null = none; undefined = read failed). */
+  function voucherChequeOf(paymentId: number) {
+    return voucherStore.fetchVoucherChequeFor(paymentId)
   }
 
   function dvNoOf(payment: SupplierPaymentType): string | null {
@@ -292,12 +297,12 @@ export function useSupplierPayments() {
   }
 
   return {
-    supplierAP, apAging, supplierPayments, suppliers, loading,
+    supplierAP, apAging, apUnapplied, supplierPayments, suppliers, loading,
     bucketTotals, totalOutstanding, oldestDays,
     selectedInvoiceIds, selectedInvoices, selectedTotal, selectionProblem,
     search, dateFrom, dateTo, dateRangeError, isFiltering, clearDates,
     filteredAging, filteredAP, filteredPayments, agingMatched, paymentsMatched,
-    dvNoOf, poNumbersOf, loadVoucherRefs,
+    dvNoOf, poNumbersOf, loadVoucherRefs, voucherChequeOf,
     openVouchersOf, describeOpenVouchers,
     pendingPayment, pendingSupplierName, pendingVouchersText, confirmPendingPayment, cancelPendingPayment,
     init, goToVouchers, payInvoices, paySupplier, openInvoicesOf, paySelected, clearSelection,

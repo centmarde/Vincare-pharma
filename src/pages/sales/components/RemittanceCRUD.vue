@@ -113,7 +113,7 @@ onMounted(async () => { await init(); await loadPending() })
                 <template v-else-if="r.resolution === 'employee_receivable'">
                   <v-chip
                     size="x-small" variant="tonal"
-                    :color="r.receivable_status === 'paid' ? 'success' : 'warning'"
+                    :color="r.receivable_status === 'paid' ? 'green' : 'warning'"
                     class="mt-1"
                   >
                     {{ r.receivable_status === 'paid' ? 'Employee Receivable — Paid, Balanced' : 'Employee Receivable — Outstanding' }}
@@ -195,7 +195,7 @@ onMounted(async () => { await init(); await loadPending() })
           <v-chip
             v-else-if="item.resolution === 'employee_receivable'"
             size="small" variant="tonal"
-            :color="item.receivable_status === 'paid' ? 'success' : 'warning'"
+            :color="item.receivable_status === 'paid' ? 'green' : 'warning'"
           >
             {{ item.receivable_status === 'paid' ? 'Employee Receivable — Paid, Balanced' : 'Employee Receivable — Outstanding' }}
           </v-chip>

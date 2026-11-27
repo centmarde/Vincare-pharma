@@ -21,6 +21,7 @@ const {
   voucherFor,
   init,
   openChangeDialog,
+  changeOpening,
   submitChangeRequest,
   expenseAccountLabel,
   replacedByOf,
@@ -227,6 +228,7 @@ onMounted(init)
             color="primary"
             class="text-none"
             title="Request edit or undo (needs executive approval)"
+            :loading="changeOpening === item.id"
             @click="openChangeDialog(item.id)"
           >
             Request Change

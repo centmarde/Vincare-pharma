@@ -182,6 +182,37 @@ const voucherSelect = `
   )
 `
 
+/** The voucher a document (expense or supplier payment) was recorded from, and its cheque number. */
+export type VoucherCheque = { voucherId: number; dvNo: string | null; checkNo: string | null }
+
+/**
+ * Which voucher (if any) an expense or supplier payment was recorded from,
+ * with its cheque number. The cheque number lives on the VOUCHER
+ * (`finance_details.check_no`), not on the document. `error` is set when the read failed: callers must not treat that
+ * as "no voucher". Plain function so the change-request applier shares it.
+ */
+export async function voucherChequeFor(
+  documentId: number,
+): Promise<{ voucher: VoucherCheque | null; error?: string }> {
+  const { data, error } = await supabase
+    .from('disbursement_voucher_items')
+    .select('voucher_id, voucher:voucher_id(dv_no, finance_details(check_no))')
+    .eq('expense_transaction_id', documentId)
+    .limit(1)
+    .maybeSingle()
+  if (error) return { voucher: null, error: getErrorMessage(error) || 'Could not read the voucher.' }
+  if (!data?.voucher_id) return { voucher: null }
+  const voucher = (data as any).voucher
+  const details = Array.isArray(voucher?.finance_details) ? voucher.finance_details[0] : voucher?.finance_details
+  return {
+    voucher: {
+      voucherId: Number(data.voucher_id),
+      dvNo: voucher?.dv_no ?? null,
+      checkNo: details?.check_no ?? null,
+    },
+  }
+}
+
 export const useDisbursementVouchersStore = defineStore('disbursementVouchers', () => {
   const toast = useToast()
   const authStore = useAuthUserStore()
@@ -867,6 +898,16 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
     return refs
   }
 
+  /** The voucher a document came from + its cheque number (null = none; undefined = read failed). */
+  async function fetchVoucherChequeFor(documentId: number) {
+    const { voucher, error: lookupError } = await voucherChequeFor(documentId)
+    if (lookupError) {
+      handleError(lookupError, 'Failed to load the cheque number of the voucher')
+      return undefined
+    }
+    return voucher
+  }
+
   /**
    * Supplier vouchers raised but not yet recorded (draft / printed), by
    * supplier. They have not reduced the supplier's balance yet, so the aging
@@ -951,7 +992,7 @@ export const useDisbursementVouchersStore = defineStore('disbursementVouchers', 
     fetchVouchers, fetchVoucherById,
     createVoucher, updateVoucher,
     markPrinted, recordVoucherExpenses, cancelVoucher, linkCustomer,
-    fetchVoucherRefsForExpenses, fetchOpenSupplierVouchers,
+    fetchVoucherRefsForExpenses, fetchVoucherChequeFor, fetchOpenSupplierVouchers,
     clearError,
   }
 })

@@ -171,8 +171,8 @@ export function useChangeRequestContext(request: () => any) {
     }
     if ('__opening_receivable' in rawChanges) {
       if (isVoid) return `Voids opening receivable ${doc}; its opening ledger entry is reversed.`
-      return keys.some((k) => ['original_amount', 'paid_before_cutover', 'credit_memo_amount'].includes(k))
-        ? `Voids ${doc} and records it again with the corrected figures, at the original cutover date.`
+      return keys.some((k) => ['original_amount', 'paid_before_cutover', 'credit_memo_amount', 'credit_memo_no', 'credit_memo_date'].includes(k))
+        ? `Corrects ${doc} itself — it keeps its number. Its opening ledger entry is reversed and the corrected one posted at the original cutover date.`
         : `Updates the details on ${doc}. No amounts change.`
     }
 

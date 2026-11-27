@@ -93,7 +93,7 @@ const {
                 v-else-if="item.resolution === 'employee_receivable'"
                 size="small"
                 variant="tonal"
-                :color="item.receivable_status === 'paid' ? 'success' : 'warning'"
+                :color="item.receivable_status === 'paid' ? 'green' : 'warning'"
               >
                 {{
                   item.receivable_status === 'paid'
@@ -134,7 +134,7 @@ const {
             </template>
             <template #item.status="{ item }">
               <v-chip
-                :color="item.status === 'paid' ? 'success' : 'warning'"
+                :color="item.status === 'paid' ? 'green' : 'warning'"
                 size="small"
                 variant="tonal"
                 class="font-weight-bold"

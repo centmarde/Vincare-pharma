@@ -3,12 +3,15 @@ import { storeToRefs } from 'pinia'
 import { useInhouseDataStore } from '@/stores/inhouseData'
 import { useTermsApprovalStore } from '@/stores/termsApprovalData'
 import type { InhouseOrderType } from '@/stores/inhouseData'
+import { orderDocRefs } from '@/stores/shared/orderRefs'
+import { useOpeningReceivablesStore } from '@/stores/openingReceivablesData'
 
 export const headers = [
   { title: 'ORDER #',   key: 'order_no',     sortable: true,  align: 'start' as const },
   { title: 'PO #',      key: 'po_no',        sortable: false, align: 'center' as const },
   { title: 'GOVT PR #', key: 'govt_po_no',   sortable: false, align: 'center' as const },
   { title: 'CUSTOMER',  key: 'customer',     sortable: false, align: 'start' as const },
+  { title: 'DR / INVOICE #', key: 'doc_refs', sortable: false, align: 'center' as const },
   { title: 'TOTAL',     key: 'total_amount', sortable: true,  align: 'center' as const },
   { title: 'DELIVERED', key: 'delivered',    sortable: false, align: 'center' as const },
   { title: 'STATUS',    key: 'status',       sortable: true,  align: 'center' as const },
@@ -21,7 +24,7 @@ const statusMeta: Record<string, { label: string; color: string }> = {
   ready:          { label: 'Ready',          color: 'info' },
   delivered:      { label: 'Delivered',      color: 'teal' },
   partial:        { label: 'Partially Paid', color: 'amber' },
-  paid:           { label: 'Paid',           color: 'success' },
+  paid:           { label: 'Paid',           color: 'green' },
   cancelled:      { label: 'Cancelled',      color: 'error' },
 }
 
@@ -45,6 +48,13 @@ export function useInhouseOrders() {
   async function loadAwaitingApproval() { awaitingApprovalIds.value = await termsStore.pendingOrderIds('inhouse_order') }
   watch(orders, () => { void loadAwaitingApproval() })
   const isAwaitingApproval = (id: number) => awaitingApprovalIds.value.has(id)
+
+  // A cancelled order that was corrected points at the one recorded in its place.
+  const openingStore = useOpeningReceivablesStore()
+  const correctedAs = ref<Map<number, string>>(new Map())
+  watch(orders, async () => { correctedAs.value = await openingStore.fetchCorrectedAs('inhouse_order') })
+  const correctedAsOf = (order: { id: number; status: string | null }) =>
+    order.status === 'cancelled' ? correctedAs.value.get(order.id) ?? null : null
 
   const search = ref('')
   const filterStatus = ref<string | null>(null)
@@ -70,7 +80,9 @@ export function useInhouseOrders() {
         if (!o.order_no?.toLowerCase().includes(s) &&
             !o.po_no?.toLowerCase().includes(s) &&
             !o.govt_po_no?.toLowerCase().includes(s) &&
-            !o.customer?.name?.toLowerCase().includes(s)) return false
+            !o.customer?.name?.toLowerCase().includes(s) &&
+            !orderDocRefs(o).toLowerCase().includes(s) &&
+            !(correctedAsOf(o)?.toLowerCase().includes(s) ?? false)) return false
       }
       return true
     }))
@@ -91,7 +103,7 @@ export function useInhouseOrders() {
   return {
     orders, loading, search, filterStatus, statusOptions,
     filtered, showRaise, showDetail, selected,
-    statusLabel, statusColor, deliveryPct, isAwaitingApproval,
+    statusLabel, statusColor, deliveryPct, isAwaitingApproval, correctedAsOf,
     openRaise, openDetail, handleRaised, handleChanged, init,
   }
 }

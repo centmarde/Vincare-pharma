@@ -76,6 +76,10 @@ export type EthicalOrderType = {
   paid_at: string | null
   created_by: string | null
   remarks: string | null
+  /** Delivery receipt numbers issued for this order. */
+  dr_nos: string[]
+  /** An opening receivable's original invoice number (from its remarks). */
+  original_invoice_no: string | null
   rebate_status: RebateStatus | null
   rebate_approved_by: string | null
   rebate_approved_at: string | null

@@ -82,7 +82,7 @@ const statusMeta = (status: string | null) => {
   const map: Record<string, { label: string; color: string }> = {
     invoiced: { label: 'Invoiced', color: 'warning' },
     partial: { label: 'Partial', color: 'info' },
-    paid: { label: 'Paid', color: 'success' },
+    paid: { label: 'Paid', color: 'green' },
     cancelled: { label: 'Cancelled', color: 'error' },
   }
   return map[status ?? ''] ?? { label: '—', color: 'grey' }
@@ -330,7 +330,7 @@ watch(
               <span class="font-weight-medium text-body-2">
                 {{ c.created_at ? new Date(c.created_at).toLocaleDateString() : '—' }}
               </span>
-              <v-chip v-if="!isCreditSettlement(c.payment_method)" size="x-small" :color="c.commission_status === 'paid' ? 'success' : 'warning'" variant="tonal">
+              <v-chip v-if="!isCreditSettlement(c.payment_method)" size="x-small" :color="c.commission_status === 'paid' ? 'green' : 'warning'" variant="tonal">
                 {{ c.commission_status }}
               </v-chip>
             </div>
@@ -398,7 +398,7 @@ watch(
               </td>
               <td class="text-right">{{ formatCurrency(c.commission_amount ?? 0) }}</td>
               <td>
-                <v-chip v-if="!isCreditSettlement(c.payment_method)" size="x-small" :color="c.commission_status === 'paid' ? 'success' : 'warning'">
+                <v-chip v-if="!isCreditSettlement(c.payment_method)" size="x-small" :color="c.commission_status === 'paid' ? 'green' : 'warning'">
                   {{ c.commission_status }}
                 </v-chip>
               </td>

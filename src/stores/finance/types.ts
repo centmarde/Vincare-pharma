@@ -108,6 +108,7 @@ export const expenseDepartments = [
   { value: 'ETHICAL', title: 'ETHICAL' },
   { value: 'Van Selling', title: 'Van Selling' },
   { value: 'STORE - CDO', title: 'STORE - CDO' },
+  { value: 'Business Unit', title: 'Business Unit' },
 ] as const
 
 export type ExpenseDepartment = typeof expenseDepartments[number]['value']
@@ -224,6 +225,18 @@ export type APAgeBucket = '0-30' | '31-60' | '61-90' | '91-180' | '180+'
 export const apAgeBuckets: APAgeBucket[] = ['0-30', '31-60', '61-90', '91-180', '180+']
 
 /** One received-but-not-fully-paid supplier invoice. */
+/** A supplier payment (or the part of one) that no invoice in the aging took. */
+export type APUnappliedPayment = {
+  supplier_id: number
+  supplier_name: string | null
+  payment_no: string | null
+  /** The PO / SI numbers the payment names. */
+  refs: string[]
+  amount: number
+  /** 'over' = more than its invoice's balance; 'no_invoice' = no received invoice of that supplier has that number. */
+  reason: 'over' | 'no_invoice'
+}
+
 export type APAgingRow = {
   transaction_id: number
   reference_no: string | null
@@ -235,7 +248,7 @@ export type APAgingRow = {
   supplier_docs: string[]
   invoice_date: string
   total_amount: number
-  /** Derived by the oldest-first convention — NOT a recorded allocation. */
+  /** Payments that name this invoice's PO/SI, then unreferenced ones oldest-first. */
   paid: number
   balance: number
   days_outstanding: number

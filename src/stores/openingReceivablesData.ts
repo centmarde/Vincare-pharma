@@ -9,6 +9,7 @@ import { useCustomersDataStore } from '@/stores/customersData'
 import { generateNextNumber, insertWithDocRetry, getErrorMessage, formatCurrency } from '@/utils/helpers'
 import { fetchAllRows, fetchAllRowsForIds } from '@/stores/shared/paging'
 import { creditMemo } from '@/utils/paymentMethods'
+import { openingRemarksPrefix } from '@/stores/shared/orderRefs'
 
 // Opening receivables — invoices raised BEFORE the cutover to this system that
 // the customer has not finished paying.
@@ -82,7 +83,8 @@ export type PreCutoverCreditMemo = {
 export const preCutoverCreditPrefix = 'Credit memo before cutover'
 
 /** Every opening receivable's remarks start with this — it is how they are told apart from real orders. */
-export const openingRemarksPrefix = 'Opening receivable — original invoice '
+// One definition, shared with the order lists (stores/shared/orderRefs.ts).
+export { openingRemarksPrefix }
 
 /** The remarks an opening receivable carries: provenance first, then any notes. */
 export function openingRemarks(parts: { originalNo: string; termLabel: string; notes?: string | null }): string {
@@ -517,6 +519,79 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
   }
 
   /**
+   * Reverse and void the credit memo(s) recorded with an opening receivable.
+   * `changed` says whether anything was touched before a failure, so the
+   * caller can say "nothing was changed" only when that is true.
+   */
+  async function voidPreCutoverCredits(
+    creditIds: number[], reason: string, userId: string,
+  ): Promise<{ success: true; changed: boolean } | { success: false; changed: boolean; error: string }> {
+    let changed = false
+    const stoppedPartWay = "This receivable's credit memo was already voided — please check the receivable before trying again."
+    for (const id of creditIds) {
+      const { data: creditEntry, error: lookupError } = await supabase
+        .from('journal_entries').select('id')
+        .eq('reference_type', 'collection').eq('reference_id', id).eq('status', 'posted')
+        // The original only: a reversal carries the same reference and is also
+        // 'posted', and reversing it would revive the credit's entry on a retry.
+        .is('reverses_entry', null)
+        .maybeSingle()
+      // A failed lookup reads as "no entry"; voiding the credit then would
+      // leave its DR 3050 / CR 1030 live with nothing behind it.
+      if (lookupError) {
+        return { success: false, changed, error: changed
+          ? `Could not check a credit memo's ledger entry. ${stoppedPartWay}`
+          : "Could not check the credit memo's ledger entry. Nothing was changed." }
+      }
+      if (creditEntry) {
+        const reversed = await glStore.reverseJournalEntry(creditEntry.id, userId)
+        if (!reversed.success) {
+          return { success: false, changed, error: changed
+            ? `${reversed.error || "Could not reverse a credit memo's ledger entry."} ${stoppedPartWay}`
+            : reversed.error || "Could not reverse the credit memo's ledger entry. Nothing was changed." }
+        }
+        changed = true
+      }
+      const { error: voidError } = await supabase
+        .from('collections')
+        .update({ voided_at: new Date().toISOString(), voided_by: userId, void_reason: reason })
+        .eq('id', id)
+      if (voidError) {
+        return { success: false, changed: true, error: "The credit memo's entry was reversed, but the credit itself could not be voided — please check it." }
+      }
+      changed = true
+    }
+    return { success: true, changed }
+  }
+
+  /**
+   * An opening receivable's ledger entry (DR 1030 / CR 3050): the live one, if
+   * any, with its amount, and the cutover date it is booked on. The date is
+   * read from the first entry whatever its status, so it is still known while
+   * a correction has reversed the old entry and not yet posted the new one.
+   */
+  async function openingEntryState(transactionId: number): Promise<
+    { live: { id: number; amount: number } | null; cutoverDate: string | null } | { error: string }
+  > {
+    const { data, error: lookupError } = await supabase
+      .from('journal_entries')
+      .select('id, entry_date, status, reverses_entry, journal_entry_lines(account_code, debit)')
+      .eq('reference_type', 'sales_invoice')
+      .eq('reference_id', transactionId)
+      .is('reverses_entry', null)
+      .order('id', { ascending: true })
+    if (lookupError) return { error: getErrorMessage(lookupError) || 'the ledger could not be read' }
+    const entries = (data ?? []) as any[]
+    const live = entries.find((e) => e.status === 'posted')
+    return {
+      live: live
+        ? { id: live.id, amount: ((live.journal_entry_lines ?? []) as any[]).filter((l) => l.account_code === '1030').reduce((sum, l) => sum + Number(l.debit ?? 0), 0) }
+        : null,
+      cutoverDate: entries[0]?.entry_date ?? null,
+    }
+  }
+
+  /**
    * Back out an opening receivable entered in error.
    *
    * Reverses the ledger entry and cancels the document rather than deleting
@@ -558,49 +633,14 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
     // Its own credit memo first: reverse that entry and void the credit. Done
     // before the receivable's entry so a failure stops with the receivable
     // untouched.
-    // Set once the first credit memo is touched: from then on a failure is no
-    // longer "nothing was changed".
-    let creditsChanged = false
-    const stoppedPartWay = 'This receivable\'s credit memo was already voided — please check the receivable before trying again.'
-    for (const c of preCredits) {
-      const { data: creditEntry, error: lookupError } = await supabase
-        .from('journal_entries').select('id')
-        .eq('reference_type', 'collection').eq('reference_id', c.id).eq('status', 'posted')
-        // The original only: a reversal carries the same reference and is also
-        // 'posted', and reversing it would revive the credit's entry on a retry.
-        .is('reverses_entry', null)
-        .maybeSingle()
-      // A failed lookup reads as "no entry"; voiding the credit then would
-      // leave its DR 3050 / CR 1030 live with nothing behind it.
-      if (lookupError) {
-        toast.error(creditsChanged
-          ? `Could not check a credit memo's ledger entry. ${stoppedPartWay}`
-          : 'Could not check the credit memo\'s ledger entry. Nothing was changed.')
-        loading.value = false
-        return { success: false as const }
-      }
-      if (creditEntry) {
-        const reversed = await glStore.reverseJournalEntry(creditEntry.id, user.id)
-        if (!reversed.success) {
-          toast.error(creditsChanged
-            ? `${reversed.error || 'Could not reverse a credit memo\'s ledger entry.'} ${stoppedPartWay}`
-            : reversed.error || 'Could not reverse the credit memo\'s ledger entry. Nothing was changed.')
-          loading.value = false
-          return { success: false as const }
-        }
-        creditsChanged = true
-      }
-      const { error: voidError } = await supabase
-        .from('collections')
-        .update({ voided_at: new Date().toISOString(), voided_by: user.id, void_reason: reason })
-        .eq('id', c.id)
-      if (voidError) {
-        toast.error('The credit memo\'s entry was reversed, but the credit itself could not be voided — please check it.')
-        loading.value = false
-        return { success: false as const }
-      }
-      creditsChanged = true
+    const credits = await voidPreCutoverCredits(preCredits.map((c) => c.id), reason, user.id)
+    if (!credits.success) {
+      toast.error(credits.error)
+      loading.value = false
+      return { success: false as const }
     }
+    const creditsChanged = credits.changed
+    const stoppedPartWay = "This receivable's credit memo was already voided — please check the receivable before trying again."
 
     const { data: entry, error: entryLookupError } = await supabase
       .from('journal_entries')
@@ -654,8 +694,32 @@ export const useOpeningReceivablesStore = defineStore('openingReceivables', () =
     return { success: true as const }
   }
 
+  /**
+   * Orders cancelled by an approved correction -> the number recorded in their
+   * place, so a list can say "Corrected as EO-2026-1076" instead of a bare
+   * Cancelled. (Corrections made before in-place editing voided the original
+   * and re-recorded it under a new number.) Empty on a failed read: the label
+   * is a convenience, never worth blocking the list for.
+   */
+  async function fetchCorrectedAs(type: 'ethical_order' | 'inhouse_order'): Promise<Map<number, string>> {
+    const map = new Map<number, string>()
+    const { data, error: lookupError } = await supabase
+      .from('change_requests')
+      .select('transaction_id, from_transaction_no, to_transaction_no, transactions!inner(transaction_type)')
+      .eq('status', 'approved')
+      .eq('request_type', 'edit')
+      .not('to_transaction_no', 'is', null)
+      .eq('transactions.transaction_type', type)
+    if (lookupError) return map
+    for (const r of (data ?? []) as any[]) {
+      if (r.to_transaction_no && r.to_transaction_no !== r.from_transaction_no) map.set(Number(r.transaction_id), r.to_transaction_no)
+    }
+    return map
+  }
+
   return {
-    loading, error, recorded, recordedLoading,
+    loading, error, recorded, recordedLoading, fetchCorrectedAs,
+    recordPreCutoverCredit, voidPreCutoverCredits, openingEntryState,
     addOpeningReceivable, voidOpeningReceivable, fetchOpeningReceivables,
   }
 })

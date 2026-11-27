@@ -129,6 +129,8 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   const isDelivered = computed(() => status.value === 'delivered')
   const isPartiallyPaid = computed(() => status.value === 'partial')
   const isPaid = computed(() => status.value === 'paid')
+  /** Agreed and not complete: what is on hand can go out now, the rest later. */
+  const canDeliver = computed(() => isReady.value || isAwaitingStock.value)
   // Payment can be recorded once delivery is complete, and again for each
   // further tranche while a balance remains.
   const canRecordPayment = computed(() => isDelivered.value || isPartiallyPaid.value)
@@ -285,7 +287,25 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   // Passive: opening an awaiting_stock order only READS the shortfall for display.
   // Advancing the order + minting the PO is the explicit "Re-check stock" button
   // (recheck() → store.recheckStock), never a side effect of viewing.
-  async function refreshShortfall(id: number) { shortfall.value = await store.computeShortfall(id) }
+  async function refreshShortfall(id: number) {
+    shortfall.value = await store.computeShortfall(id)
+    prefillDeliverable()
+  }
+
+  // While awaiting stock, "Deliver now" starts at what is actually on hand for
+  // each short line (never more than what is left), so delivering what is
+  // available is one click. Lines with enough stock keep their full remainder.
+  function prefillDeliverable() {
+    const left = new Map(shortfall.value.map((s) => [s.product_id, s.on_hand]))
+    for (const it of items.value) {
+      const remainingQty = it.qty - (it.delivered_qty ?? 0)
+      const productId = it.product_id
+      if (productId == null || !left.has(productId)) { deliverQtys.value[it.id] = remainingQty; continue }
+      const take = Math.max(0, Math.min(remainingQty, left.get(productId) ?? 0))
+      deliverQtys.value[it.id] = take
+      left.set(productId, (left.get(productId) ?? 0) - take)
+    }
+  }
   async function loadPayments(id: number) { payments.value = await store.fetchPayments(id) }
 
   /**
@@ -465,6 +485,7 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
   async function recheck() {
     const o = order(); if (!o) return
     shortfall.value = await store.recheckStock(o.id)
+    prefillDeliverable()
     onChanged()
   }
 
@@ -571,7 +592,7 @@ export function useOrderDetail(order: () => InhouseOrderType | null, onChanged: 
     requestedAt, requestNote,
     shortDatedBatches, shortDatedRequest, shortDatedNote,
     loadShortDated, requestShortDatedApproval,
-    items, status, isNegotiating, isAwaitingStock, isReady, isDelivered, isPartiallyPaid, isPaid, canRecordPayment,
+    items, status, isNegotiating, isAwaitingStock, isReady, isDelivered, isPartiallyPaid, isPaid, canRecordPayment, canDeliver,
     proposedTotal, proposedCost, proposedRatio, lineTotal, newLineTotal, ratioLabel, ratioClass, profitLabel, marginLabel, deliveredPct, remaining, balance, paidPct,
     applyPickedProduct, recordCounter, recheck, deliver, recordPayment, notifyPurchasing,
     termsRequest, termsPending, lockPending, unlockPending, lockRejected, unlockRejected, canRequestUnlock,
