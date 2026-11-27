@@ -17,21 +17,33 @@ const {
   canvassOrder, canvassShortfall, commitFn, canvassRef, dismissing,
   init, openDetail, dismissDetail, onCanvassCreated, moduleLabel,
   showDraftEdit, showDraftReview, activeDraftId, draftReadonly,
-  startDraftPR, goToReview, backToEdit, onDraftSubmitted, onDraftSaved,
+  startDraftPR, goToReview, backToEdit, onDraftSubmitted, onDraftPartiallySubmitted, onDraftSaved,
   draftByOrder, openDraft, convertedAtFor,
 } = useProcurementRequests()
 
 // "PR rejected" is actionable, not an error state to clear — it's why Canvass
 // went back to being clickable.
 function statusChip(item: ProcurementRequestType) {
-  if (item.already_canvassed) return { color: 'success', text: 'PRs raised' }
+  if (item.raised_pr_ids.length) {
+    const count = item.raised_pr_ids.length
+    return {
+      color: item.has_rejected_pr ? 'error' : 'success',
+      text: `${count} PR${count === 1 ? '' : 's'} raised`,
+    }
+  }
   if (item.has_rejected_pr) return { color: 'error', text: 'PR rejected' }
   return { color: 'warning', text: 'New' }
 }
 
-function submittedToPRLabel(orderId: number): string {
-  const convertedAt = convertedAtFor(orderId)
-  return convertedAt ? formatDatePR_ISO(convertedAt) : 'Not yet set'
+function remainingPRLabel(item: ProcurementRequestType): string | null {
+  const count = item.lines.length
+  if (!item.raised_pr_ids.length || count === 0) return null
+  return `${count} item${count === 1 ? '' : 's'} still ${count === 1 ? 'needs' : 'need'} a PR`
+}
+
+function submittedToPRLabel(orderId: number, raisedAt: string | null): string {
+  const submittedAt = raisedAt ?? convertedAtFor(orderId)
+  return submittedAt ? formatDatePR_ISO(submittedAt) : 'Not yet set'
 }
 
 onMounted(init)
@@ -63,14 +75,19 @@ onMounted(init)
         <template #item.order_no="{ item }">{{ item.order_no ?? '—' }}</template>
         <template #item.customer_name="{ item }">{{ item.customer_name ?? '—' }}</template>
         <template #item.requested_at="{ item }">{{ formatDatePR_ISO(item.requested_at) }}</template>
-        <template #item.converted_at="{ item }">{{ submittedToPRLabel(item.order_id) }}</template>
+        <template #item.converted_at="{ item }">{{ submittedToPRLabel(item.order_id, item.raised_pr_at) }}</template>
         <template #item.lines="{ item }">
           <span class="font-weight-bold">{{ item.lines.length }}</span> item(s)
         </template>
         <template #item.already_canvassed="{ item }">
-          <v-chip size="small" :color="statusChip(item).color" label>
-            {{ statusChip(item).text }}
-          </v-chip>
+          <div class="d-flex flex-column align-center ga-1">
+            <v-chip size="small" :color="statusChip(item).color" label>
+              {{ statusChip(item).text }}
+            </v-chip>
+            <v-chip v-if="remainingPRLabel(item)" color="warning" size="x-small" variant="tonal" label>
+              {{ remainingPRLabel(item) }}
+            </v-chip>
+          </div>
         </template>
         <template #item.actions="{ item }">
           <div class="d-flex align-center ga-2">
@@ -108,16 +125,21 @@ onMounted(init)
                 </div>
                 <div class="text-caption text-medium-emphasis">{{ item.customer_name ?? '—' }}</div>
               </div>
-              <v-chip size="small" :color="statusChip(item).color" label>
-                {{ statusChip(item).text }}
-              </v-chip>
+              <div class="d-flex flex-column align-end ga-1">
+                <v-chip size="small" :color="statusChip(item).color" label>
+                  {{ statusChip(item).text }}
+                </v-chip>
+                <v-chip v-if="remainingPRLabel(item)" color="warning" size="x-small" variant="tonal" label>
+                  {{ remainingPRLabel(item) }}
+                </v-chip>
+              </div>
             </div>
             <v-divider class="mb-2" />
             <div class="d-flex flex-wrap ga-3 text-caption mb-3">
               <div><span class="text-medium-emphasis">Requested: </span>{{ formatDatePR_ISO(item.requested_at) }}</div>
               <div><span class="text-medium-emphasis">Items short: </span><span class="font-weight-bold">{{ item.lines.length }}</span></div>
               <div>
-                <span class="text-medium-emphasis">Submitted to PR: </span>{{ submittedToPRLabel(item.order_id) }}
+                <span class="text-medium-emphasis">Submitted to PR: </span>{{ submittedToPRLabel(item.order_id, item.raised_pr_at) }}
               </div>
             </div>
             <div class="d-flex flex-column ga-2">
@@ -194,5 +216,5 @@ onMounted(init)
   </v-container>
 
   <DraftPREditPage v-model="showDraftEdit" :draft-id="activeDraftId" :readonly="draftReadonly" @continue="goToReview" />
-  <DraftPRReview v-model="showDraftReview" :draft-id="activeDraftId" :readonly="draftReadonly" @submitted="onDraftSubmitted" @edit="backToEdit" />
+  <DraftPRReview v-model="showDraftReview" :draft-id="activeDraftId" :readonly="draftReadonly" @submitted="onDraftSubmitted" @partial-submitted="onDraftPartiallySubmitted" @edit="backToEdit" />
 </template>

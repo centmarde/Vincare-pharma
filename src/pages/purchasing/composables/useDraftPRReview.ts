@@ -41,6 +41,12 @@ export function useDraftPRReview(draftId: () => number | null) {
     ),
   )
 
+  const eligibleItemIds = computed(() =>
+    (draft.value?.items ?? [])
+      .filter((i) => i.selected_supplier_offer_id != null && !disqualifiedItemIds.value.includes(i.id))
+      .map((i) => i.id),
+  )
+
   const prCount = computed(() => {
     const supplierIds = new Set(
       (draft.value?.items ?? [])
@@ -70,27 +76,34 @@ export function useDraftPRReview(draftId: () => number | null) {
    * Submits the draft PR for conversion to purchase requisition(s) after user confirmation
    * @returns Conversion result with success status, PR details, and any warnings or errors
    */
-  async function submit(): Promise<ConvertResult> {
+  async function submit(itemIds?: number[]): Promise<ConvertResult> {
     if (!draft.value) return { success: false }
     submitError.value = null
 
     // One plain confirmation about the conversion itself. Warnings are not what
     // this asks about — they're on screen above, and the user can fold them away.
-    const count = prCount.value
+    const partial = itemIds != null && itemIds.length < draft.value.items.length
+    const count = partial
+      ? new Set(draft.value.items.filter((i) => itemIds.includes(i.id)).map((i) => i.supplier_id).filter((id): id is number => id != null)).size
+      : prCount.value
+    const remainingCount = partial ? draft.value.items.length - itemIds.length : 0
     const ok = await confirmDialog(
-      `This will raise ${count} purchase requisition${count > 1 ? 's' : ''} from Draft PR #${draft.value.id} and send ${count > 1 ? 'them' : 'it'} for approval.`,
+      partial
+        ? `This will raise ${count} purchase requisition${count === 1 ? '' : 's'} from ${itemIds!.length} eligible item(s) in Draft PR #${draft.value.id}. The other ${remainingCount} item(s) will stay in the draft.`
+        : `This will raise ${count} purchase requisition${count > 1 ? 's' : ''} from Draft PR #${draft.value.id} and send ${count > 1 ? 'them' : 'it'} for approval.`,
       {
-        title: 'Convert draft to purchase requisition',
-        confirmText: 'Convert',
+        title: partial ? 'Submit eligible items' : 'Convert draft to purchase requisition',
+        confirmText: partial ? 'Submit eligible items' : 'Convert',
         cancelText: 'Cancel',
       },
     )
     if (!ok) return { success: false }
 
     submitting.value = true
-    const result = await draftStore.submitDraft(draft.value.id)
+    const result = await draftStore.submitDraft(draft.value.id, itemIds)
     submitting.value = false
     if (!result.success && result.error) submitError.value = result.error
+    if (result.success && remainingCount > 0) await load()
     return result
   }
 
@@ -103,6 +116,7 @@ export function useDraftPRReview(draftId: () => number | null) {
     warningsExpanded,
     totalEstimate,
     hasBlockingIssues,
+    eligibleItemIds,
     disqualifiedItemIds,
     prCount,
     load,

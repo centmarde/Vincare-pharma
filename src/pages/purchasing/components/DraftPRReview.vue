@@ -11,11 +11,12 @@ const props = defineProps<{ modelValue: boolean; draftId: number | null; readonl
 const emit = defineEmits<{
   (e: 'update:modelValue', v: boolean): void
   (e: 'submitted', prId: number): void
+  (e: 'partial-submitted'): void
   (e: 'edit'): void
 }>()
 
 const { draft, warnings, checking, submitting, submitError, warningsExpanded, totalEstimate, hasBlockingIssues,
-  disqualifiedItemIds, load, submit } = useDraftPRReview(() => props.draftId)
+  disqualifiedItemIds, eligibleItemIds, load, submit } = useDraftPRReview(() => props.draftId)
 
 const { getCurrentTheme } = useTheme()
 const isDark = computed<'light' | 'dark'>(() => getCurrentTheme())
@@ -40,6 +41,24 @@ async function onSubmit() {
     emit('update:modelValue', false)
   }
 }
+
+async function onPartialSubmit() {
+  const itemIds = eligibleItemIds.value
+  if (!itemIds.length) return
+  const remainingCount = (draft.value?.items.length ?? 0) - itemIds.length
+  const result = await submit(itemIds)
+
+  if (remainingCount > 0 && (result.success || (result as any).pr_id)) {
+    emit('partial-submitted')
+    return
+  }
+  if (!result.success) return
+
+  if ((result as any).pr_id) {
+    emit('submitted', (result as any).pr_id)
+    emit('update:modelValue', false)
+  }
+}
 </script>
 
 <template>
@@ -59,7 +78,7 @@ async function onSubmit() {
         <v-progress-linear v-if="checking" indeterminate class="mb-3" />
 
         <v-alert v-if="hasBlockingIssues" type="error" variant="tonal" density="compact" class="mb-3">
-          Every item needs a selected, qualifying supplier before this can be submitted.
+          Some items need a selected, qualifying supplier. Those items can stay in the draft while eligible items are submitted.
         </v-alert>
 
         <v-alert v-if="submitError" type="error" variant="tonal" density="compact" class="mb-3">
@@ -156,6 +175,12 @@ async function onSubmit() {
           color="success" variant="flat" class="text-none font-weight-bold" :block="mobile"
           :loading="submitting" :disabled="hasBlockingIssues || checking || readonly" @click="onSubmit">
           Submit Purchase Requisition
+        </v-btn>
+        <v-btn
+          v-if="hasBlockingIssues && eligibleItemIds.length"
+          color="success" variant="tonal" class="text-none font-weight-bold" :block="mobile"
+          :loading="submitting" :disabled="checking || readonly" @click="onPartialSubmit">
+          Submit {{ eligibleItemIds.length }} Eligible Item{{ eligibleItemIds.length === 1 ? '' : 's' }}
         </v-btn>
       </v-card-actions>
     </v-card>

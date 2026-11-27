@@ -129,7 +129,7 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
 
 <template>
   <v-dialog
-    :model-value="modelValue" :max-width="mobile ? undefined : 960" :fullscreen="mobile"
+    :model-value="modelValue" :max-width="mobile ? undefined : 1200" :fullscreen="mobile"
     scrollable @update:model-value="onDialogUpdate">
     <v-card v-if="draftStore.currentDraft" rounded="lg">
       <v-card-title class="pa-4 pb-2 d-flex justify-space-between align-start" style="gap:8px">
@@ -153,22 +153,35 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
           unless that requisition is rejected.
         </v-alert>
         <div v-if="!mobile" class="table-scroll">
-        <v-table density="comfortable">
+        <v-table density="comfortable" class="draft-pr-table">
+          <colgroup>
+            <col class="col-product" />
+            <col class="col-shortfall" />
+            <col class="col-qty" />
+            <col class="col-date" />
+            <col class="col-supplier" />
+            <col class="col-unit-price" />
+            <col class="col-total" />
+            <col class="col-action" />
+          </colgroup>
           <thead>
             <tr>
-              <th class="text-left" style="max-width:220px">Product</th>
-              <th class="text-right" style="width:90px">Shortfall</th>
-              <th class="text-right" style="width:140px">Qty</th>
-              <th style="width:160px">Required by</th><th class="text-left">Supplier</th>
-              <th class="text-right">Unit Price</th><th class="text-right">Line Total</th><th style="width:110px"></th>
+              <th class="text-left">Product</th>
+              <th class="text-right">Shortfall</th>
+              <th class="text-right">Qty</th>
+              <th>Required by</th>
+              <th class="text-left">Supplier</th>
+              <th class="text-right">Unit Price</th>
+              <th class="text-right">Line Total</th>
+              <th class="text-center">Compare</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="item in draftStore.currentDraft.items" :key="item.id">
-              <td style="max-width:220px; white-space:normal; overflow-wrap:anywhere">{{ item.product_name }}</td>
+              <td class="product-cell">{{ item.product_name }}</td>
               <td class="text-right">{{ item.shortfall_qty ?? '—' }}</td>
               <td class="text-right">
-                <div class="d-flex align-center justify-end" style="gap:6px; max-width:140px;">
+                <div class="d-flex align-center justify-end qty-control">
                   <v-text-field :model-value="edits[item.id]?.qty ?? item.qty" type="number"
                     :min="item.shortfall_qty ?? 1" density="compact" :readonly="readonly"
                     variant="outlined" hide-details style="width:100%; min-width:0"
@@ -180,17 +193,18 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
               </td>
               <td>
                 <v-text-field :model-value="edits[item.id]?.required_by_date ?? item.required_by_date" type="date" density="compact"
-                  variant="outlined" hide-details :readonly="readonly" @update:model-value="onDateChange(item, $event)" />
+                  variant="outlined" hide-details :readonly="readonly" class="date-control"
+                  @update:model-value="onDateChange(item, $event)" />
               </td>
-              <td>
+              <td class="supplier-cell">
                 <span v-if="item.supplier_name">{{ item.supplier_name }}</span>
                 <span v-else class="text-medium-emphasis">Not selected</span>
               </td>
               <td class="text-right">{{ item.unit_price ? formatCurrency(item.unit_price) : '—' }}</td>
               <td class="text-right font-weight-bold">{{ item.unit_price ? formatCurrency(lineTotal(item)) : '—' }}</td>
-              <td>
+              <td class="text-center">
                 <v-btn
-                  size="small" variant="tonal" color="primary" class="text-none"
+                  size="small" variant="tonal" color="primary" class="text-none compare-btn"
                   :disabled="readonly" @click="openCompare(item)">
                   Compare
                 </v-btn>
@@ -272,6 +286,63 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
 
 <style scoped>
 .table-scroll {
-  overflow-x: auto;
+  width: 100%;
+  overflow-x: hidden;
+}
+.draft-pr-table {
+  width: 100%;
+  max-width: 100%;
+}
+.draft-pr-table :deep(.v-table__wrapper) {
+  overflow-x: hidden;
+}
+.draft-pr-table :deep(table) {
+  width: 100%;
+  table-layout: fixed;
+}
+.col-product { width: 25%; }
+.col-shortfall { width: 8%; }
+.col-qty { width: 11%; }
+.col-date { width: 16%; }
+.col-supplier { width: 12%; }
+.col-unit-price { width: 10%; }
+.col-total { width: 11%; }
+.col-action { width: 7%; }
+.draft-pr-table :deep(th),
+.draft-pr-table :deep(td) {
+  padding-left: 8px !important;
+  padding-right: 8px !important;
+}
+.product-cell,
+.supplier-cell {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.qty-control {
+  width: 100%;
+  min-width: 0;
+  gap: 4px;
+}
+.qty-control :deep(.v-input),
+.date-control :deep(.v-input) {
+  min-width: 0;
+}
+.date-control {
+  min-width: 0;
+}
+.date-control :deep(.v-field) {
+  min-width: 0;
+}
+.qty-control :deep(.v-chip) {
+  flex: none;
+}
+.draft-pr-table :deep(td:nth-child(6)),
+.draft-pr-table :deep(td:nth-child(7)) {
+  white-space: nowrap;
+}
+.compare-btn {
+  min-width: 0;
+  padding-left: 8px;
+  padding-right: 8px;
 }
 </style>

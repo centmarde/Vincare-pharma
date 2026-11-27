@@ -153,6 +153,10 @@ export function useProcurementRequests() {
     await init()
   }
 
+  async function onDraftPartiallySubmitted() {
+    await init()
+  }
+
   function onDraftSaved(draftId: number) {
     activeDraftId.value = draftId
     draftReadonly.value = false
@@ -171,7 +175,7 @@ export function useProcurementRequests() {
   // read-only. A rejected PR lifts that, so the purchaser can fix it and resubmit.
   function openDraft(req: ProcurementRequestType) {
     const draft = draftByOrder.value[req.order_id]
-    if (draft) resumeDraft(draft.id, req.already_canvassed)
+    if (draft) resumeDraft(draft.id, req.already_canvassed && draft.status === 'converted')
   }
 
   return {
@@ -180,7 +184,7 @@ export function useProcurementRequests() {
     canvassOrder, canvassShortfall, commitFn, canvassRef, dismissing,
     init, openDetail, closeDetail, dismissDetail, onCanvassCreated, moduleLabel,
     showDraftEdit, showDraftReview, activeDraftId, draftReadonly,
-    startDraftPR, goToReview, backToEdit, onDraftSubmitted, onDraftSaved,
+    startDraftPR, goToReview, backToEdit, onDraftSubmitted, onDraftPartiallySubmitted, onDraftSaved,
     draftByOrder, resumeDraft, openDraft, convertedAtFor,
   }
 }
