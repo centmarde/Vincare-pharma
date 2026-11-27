@@ -8,7 +8,7 @@ import type { EthicalOrderType } from '@/stores/ethicalData'
 import { useDisplay } from 'vuetify'
 
 const { mobile } = useDisplay()
-const { orders, loading, searchText, statusFilter, statusOptions, statusMeta, isOverdue, balanceAmount, isDraft, orderLabel, isAwaitingApproval, headers, init } = useEthicalOrders()
+const { orders, loading, searchText, statusFilter, statusOptions, statusMeta, isOverdue, balanceAmount, isDraft, orderLabel, isAwaitingApproval, correctedAsOf, headers, init } = useEthicalOrders()
 
 const showCreateDialog = ref(false)
 const showDetailDialog = ref(false)
@@ -140,6 +140,9 @@ const notSet = (field: string) => `No ${field} set`
                     >
                       {{ statusMeta(item.status).label }}
                     </v-chip>
+                    <v-chip v-if="correctedAsOf(item)" size="x-small" variant="tonal">
+                      Corrected as {{ correctedAsOf(item) }}
+                    </v-chip>
                     <v-chip v-if="isAwaitingApproval(item.id)" size="x-small" variant="tonal" color="info" class="font-weight-bold">
                       Awaiting Approval
                     </v-chip>
@@ -163,6 +166,10 @@ const notSet = (field: string) => `No ${field} set`
                       <span :class="{ 'font-italic': !item.customer?.name }">
                         {{ item.customer?.name || notSet('customer') }}
                       </span>
+                    </div>
+                    <div v-if="item.doc_refs" class="d-flex align-center ga-1 mt-1">
+                      <v-icon size="12" icon="mdi-file-document-outline" />
+                      <span>{{ item.doc_refs }}</span>
                     </div>
                     <div class="d-flex align-center ga-1 mt-1">
                       <v-icon size="12" icon="mdi-account-tie-outline" />
@@ -205,6 +212,11 @@ const notSet = (field: string) => `No ${field} set`
           <template #item.order_no="{ item }">
             <span :class="{ 'text-medium-emphasis font-italic': isDraft(item) }">{{ orderLabel(item) }}</span>
           </template>
+          <template #item.doc_refs="{ item }">
+            <span class="text-body-2">{{ item.doc_refs || '—' }}</span>
+          </template>
+          <template #item.total_amount="{ item }">{{ formatCurrency(item.total_amount ?? 0) }}</template>
+          <template #item.balance="{ item }">{{ formatCurrency(item.balance ?? 0) }}</template>
           <template #item.customer.tin_number="{ item }">
             <span class="text-body-2">{{ item.customer?.tin_number || '—' }}</span>
           </template>
@@ -217,6 +229,9 @@ const notSet = (field: string) => `No ${field} set`
             <v-chip :color="statusMeta(item.status).color" label size="small">
               {{ statusMeta(item.status).label }}
             </v-chip>
+            <div v-if="correctedAsOf(item)" class="text-caption text-medium-emphasis">
+              Corrected as {{ correctedAsOf(item) }}
+            </div>
             <v-chip v-if="item.fulfillment_status === 'awaiting_stock'" color="orange" label size="small" class="ml-1">
               Awaiting Stock
             </v-chip>

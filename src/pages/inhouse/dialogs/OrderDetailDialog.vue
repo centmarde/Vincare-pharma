@@ -34,7 +34,7 @@ const {
   payDiscount, payPaidOn, payProblem,
   requestedAt, requestNote,
   draftPrintDocument,
-  items, isNegotiating, isAwaitingStock, isReady, isDelivered, isPartiallyPaid, isPaid, canRecordPayment,
+  items, isNegotiating, isAwaitingStock, isReady, isDelivered, isPartiallyPaid, isPaid, canRecordPayment, canDeliver,
   shortDatedBatches, shortDatedRequest, shortDatedNote, requestShortDatedApproval,
   proposedTotal, proposedCost, lineTotal, newLineTotal, ratioLabel, ratioClass, profitLabel, marginLabel, deliveredPct, remaining, balance, paidPct,
   payCashAccountId, cashAccountOptions,
@@ -333,7 +333,7 @@ const productName = (id: number | null) =>
           <v-card-text class="pa-3">
             <div class="text-caption text-medium-emphasis mb-2">The purchaser needs to procure the following before fulfillment:</div>
             <v-table density="compact">
-              <thead><tr><th class="text-left">Product</th><th class="text-right">Ordered</th><th class="text-right">On hand</th><th class="text-right">Needed</th></tr></thead>
+              <thead><tr><th class="text-left">Product</th><th class="text-right">Still to deliver</th><th class="text-right">On hand</th><th class="text-right">Needed</th></tr></thead>
               <tbody>
                 <tr v-for="s in shortfall" :key="s.product_id">
                   <td>
@@ -481,24 +481,28 @@ const productName = (id: number | null) =>
           </v-card-text>
         </v-card>
 
-        <v-card v-if="isReady || isDelivered || isPartiallyPaid || isPaid" variant="outlined" rounded="lg" class="mb-4">
+        <v-card v-if="canDeliver || isDelivered || isPartiallyPaid || isPaid" variant="outlined" rounded="lg" class="mb-4">
           <v-card-title class="text-subtitle-2 font-weight-bold pa-3">Fulfillment</v-card-title>
           <v-divider />
           <v-card-text class="pa-3">
+            <p v-if="isAwaitingStock" class="text-caption text-medium-emphasis mb-2">
+              Deliver what is on hand now — the rest stays on the order until stock arrives. Payment can be
+              recorded once everything is delivered.
+            </p>
             <v-table density="compact">
-              <thead><tr><th class="text-left">Product</th><th class="text-right">Ordered</th><th class="text-right">Delivered</th><th class="text-right">Remaining</th><th v-if="isReady" class="text-right" style="width:130px">Deliver now</th></tr></thead>
+              <thead><tr><th class="text-left">Product</th><th class="text-right">Ordered</th><th class="text-right">Delivered</th><th class="text-right">Remaining</th><th v-if="canDeliver" class="text-right" style="width:130px">Deliver now</th></tr></thead>
               <tbody>
                 <tr v-for="it in items" :key="it.id">
                   <td>{{ productName(it.product_id) }}</td>
                   <td class="text-right">{{ it.qty }}</td>
                   <td class="text-right">{{ it.delivered_qty ?? 0 }}</td>
                   <td class="text-right">{{ remaining(it.id) }}</td>
-                  <td v-if="isReady"><v-text-field v-model.number="deliverQtys[it.id]" type="number" min="0" :max="remaining(it.id)" variant="outlined" density="compact" hide-details /></td>
+                  <td v-if="canDeliver"><v-text-field v-model.number="deliverQtys[it.id]" type="number" min="0" :max="remaining(it.id)" variant="outlined" density="compact" hide-details /></td>
                 </tr>
               </tbody>
             </v-table>
 
-            <div v-if="isReady" class="mt-3">
+            <div v-if="canDeliver" class="mt-3">
               <v-row dense align="center" justify="end">
                 <v-col cols="12" sm="6">
                   <v-text-field v-model="receivedBy" label="Received by (consignee)" placeholder="Printed name on the DR" variant="outlined" density="compact" hide-details />
@@ -520,7 +524,7 @@ const productName = (id: number | null) =>
               <span class="font-weight-medium">Payment progress</span>
               <span>{{ formatCurrency(order.amount_paid ?? 0) }} / {{ formatCurrency(order.total_amount ?? 0) }} ({{ paidPct }}%)</span>
             </div>
-            <v-progress-linear :model-value="paidPct" height="8" rounded :color="isPaid ? 'success' : 'amber'" class="mb-3" />
+            <v-progress-linear :model-value="paidPct" height="8" rounded :color="isPaid ? 'green' : 'amber'" class="mb-3" />
 
             <div v-if="payments.length" class="mb-3">
               <div v-for="p in payments" :key="p.id" class="d-flex justify-space-between align-center text-caption py-1" style="border-bottom:1px solid #eee">

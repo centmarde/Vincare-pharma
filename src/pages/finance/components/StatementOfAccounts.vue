@@ -6,7 +6,9 @@ const {
   register,
   totals,
   loading,
-  filterCustomerId,
+  filterCustomerName,
+  search,
+  customerSearch,
   filterArea,
   filterSource,
   filterDateFrom,
@@ -124,8 +126,13 @@ const TOTAL_KEYS: Record<string, keyof typeof totals.value> = {
           <v-row dense>
             <v-col cols="12" sm="6" md="3">
               <v-autocomplete
-                v-model="filterCustomerId"
+                v-model="filterCustomerName"
+                v-model:search="customerSearch"
                 :items="customerOptions"
+                item-props
+                no-filter
+                autocomplete="off"
+                no-data-text="No customer matches that search"
                 label="Customer"
                 density="compact"
                 variant="outlined"
@@ -188,6 +195,16 @@ const TOTAL_KEYS: Record<string, keyof typeof totals.value> = {
               >
             </v-col>
           </v-row>
+          <v-text-field
+            v-model="search"
+            placeholder="Search DR / invoice no., order no., PO, OR, customer, amount…"
+            prepend-inner-icon="mdi-magnify"
+            density="compact"
+            variant="outlined"
+            clearable
+            hide-details
+            class="mt-2"
+          />
           <div class="d-flex align-center flex-wrap ga-2 mt-2">
             <v-switch
               v-model="outstandingOnly"
@@ -228,7 +245,7 @@ const TOTAL_KEYS: Record<string, keyof typeof totals.value> = {
           v-else-if="!register.length"
           class="pa-6 text-center text-caption text-medium-emphasis"
         >
-          No delivery receipts match these filters.
+          {{ search ? 'Nothing on this statement matches the search.' : 'No delivery receipts match these filters.' }}
         </div>
 
         <template v-else-if="!fullSheet">

@@ -4,13 +4,14 @@ import { useInhouseOrders, headers } from '../composables/useInhouseOrders'
 import RaiseOrderDialog from '../dialogs/RaiseOrderDialog.vue'
 import OrderDetailDialog from '../dialogs/OrderDetailDialog.vue'
 import { formatCurrency } from '@/utils/helpers'
+import { orderDocRefs as docRefs } from '@/stores/shared/orderRefs'
 import { useDisplay } from 'vuetify'
 
 const { mobile } = useDisplay()
 const {
   loading, search, filterStatus, statusOptions,
   filtered, showRaise, showDetail, selected,
-  statusLabel, statusColor, deliveryPct, isAwaitingApproval,
+  statusLabel, statusColor, deliveryPct, isAwaitingApproval, correctedAsOf,
   openRaise, openDetail, handleRaised, handleChanged, init,
 } = useInhouseOrders()
 
@@ -125,6 +126,10 @@ const notSet = (field: string) => `No ${field} set`
                         {{ item.customer?.name || notSet('customer') }}
                       </span>
                     </div>
+                    <div v-if="docRefs(item)" class="d-flex align-center ga-1 mt-1">
+                      <v-icon size="12" icon="mdi-file-document-outline" />
+                      <span>{{ docRefs(item) }}</span>
+                    </div>
                     <div class="d-flex align-center ga-1 mt-1">
                       <v-icon size="12" icon="mdi-currency-php" />
                       <span class="font-weight-medium">{{ formatCurrency(item.total_amount ?? 0) }}</span>
@@ -157,6 +162,7 @@ const notSet = (field: string) => `No ${field} set`
           <template #item.po_no="{ item }">{{ item.po_no ?? '—' }}</template>
           <template #item.govt_po_no="{ item }">{{ item.govt_po_no ?? '—' }}</template>
           <template #item.customer="{ item }">{{ item.customer?.name ?? '—' }}</template>
+          <template #item.doc_refs="{ item }">{{ docRefs(item) || '—' }}</template>
           <template #item.total_amount="{ item }">{{ formatCurrency(item.total_amount ?? 0) }}</template>
           <template #item.delivered="{ item }">
             <div style="min-width:90px">
@@ -166,6 +172,7 @@ const notSet = (field: string) => `No ${field} set`
           </template>
           <template #item.status="{ item }">
             <v-chip :color="statusColor(item.status)" size="small" variant="tonal" class="font-weight-bold">{{ statusLabel(item.status) }}</v-chip>
+            <div v-if="correctedAsOf(item)" class="text-caption text-medium-emphasis">Corrected as {{ correctedAsOf(item) }}</div>
             <!-- Terms sent to the executives (lock or unapprove), not yet decided. -->
             <v-chip v-if="isAwaitingApproval(item.id)" size="small" variant="tonal" color="info" class="font-weight-bold ml-1">Awaiting Approval</v-chip>
           </template>

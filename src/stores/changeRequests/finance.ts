@@ -15,8 +15,11 @@ import {
 } from '@/stores/financeData'
 import type { CashClassification } from '@/stores/financeData'
 import { useGLDataStore } from '@/stores/glData'
+import { voucherChequeFor } from '@/stores/disbursementVouchersData'
+import type { VoucherCheque } from '@/stores/disbursementVouchersData'
 import { toLocalISODate } from '@/utils/dateFormats'
 import type { ApplyResult, ChangeRequestType, Diff } from './types'
+import type { ProposedChange } from '@/utils/changeRequests'
 import { prevStatusKey } from './types'
 import {
   stripReservedKeys,
@@ -167,11 +170,32 @@ async function moveCash(
 }
 
 /**
+ * The voucher a document was recorded from, for a cheque-number edit. The
+ * cheque number is printed on the VOUCHER, so a cancelled cheque is
+ * re-numbered there (every line of that voucher shows it).
+ */
+async function voucherForChequeEdit(documentId: number, what: string): Promise<VoucherCheque | { error: string }> {
+  const found = await voucherChequeFor(documentId)
+  if (found.error) return { error: `Could not read the ${what}'s voucher (${found.error}). Nothing was changed — try again.` }
+  if (!found.voucher) return { error: `This ${what} was not recorded from a voucher, so it has no cheque number to change.` }
+  return found.voucher
+}
+
+/** Writes the new cheque number onto the voucher. Returns the error message, or null. */
+async function writeVoucherCheque(voucher: VoucherCheque, changes: ProposedChange): Promise<string | null> {
+  const checkNo = String(toVal(changes, 'check_no') ?? '').trim() || null
+  const { error } = await supabase
+    .from('finance_details')
+    .upsert({ transaction_id: voucher.voucherId, check_no: checkNo }, { onConflict: 'transaction_id' })
+  return error ? `The cheque number on ${voucher.dvNo ?? 'the voucher'} could not be updated (${error.message}).` : null
+}
+
+/**
  * EDIT an expense. Always the SAME document — it keeps its number, its voucher
  * and its history; nothing is voided.
  *
  * - Memo fields (payee, department, OR/SI no., payment method, remarks): updated
- *   in place.
+ *   in place. The cheque number is written to the expense's VOUCHER, where it lives.
  * - Ledger fields (amount, account, cash account, date): updated in place AND
  *   the ledger corrected — the old entry reversed, the corrected one posted by
  *   the app (the projector never re-books a document that has had an entry),
@@ -219,6 +243,13 @@ export async function applyExpenseChange(
     paid_to: fd.paid_to,
     department: fd.department,
     or_si_no: fd.or_si_no,
+  }
+  let voucher: VoucherCheque | null = null
+  if ('check_no' in changes) {
+    const found = await voucherForChequeEdit(request.transaction_id, 'expense')
+    if ('error' in found) return { success: false, error: found.error }
+    voucher = found
+    current.check_no = voucher.checkNo
   }
   // A field already at its new value passes: an earlier approval that
   // stopped part-way applied it. Re-running is safe — the ledger is reversed
@@ -324,6 +355,10 @@ export async function applyExpenseChange(
           : e.message,
       }
     }
+  }
+  if (voucher) {
+    const failed = await writeVoucherCheque(voucher, changes)
+    if (failed) return { success: false, error: isLedgerEdit ? `The ledger was corrected, but: ${failed} Approve the request again to finish.` : failed }
   }
   if (Object.keys(txUpdate).length) {
     const { error: e } = await supabase.from('transactions').update(txUpdate).eq('id', request.transaction_id)
@@ -446,11 +481,27 @@ export async function applySupplierPaymentChange(
     payment_method: cur.payment_method,
     remarks: cur.remarks,
   }
-  const stale = firstStaleField(changes, current)
+  // The cheque number lives on the payment's voucher. It may already show the
+  // new number when an earlier approval stopped part-way, so that one field
+  // accepts its new value as well as its old.
+  const { check_no: chequeChange, ...otherChanges } = changes
+  let voucher: VoucherCheque | null = null
+  if (chequeChange) {
+    const found = await voucherForChequeEdit(request.transaction_id, 'payment')
+    if ('error' in found) return { success: false, error: found.error }
+    voucher = found
+    const chequeStale = firstStaleField({ check_no: chequeChange }, { check_no: voucher.checkNo }, true)
+    if (chequeStale) return staleError(chequeStale)
+  }
+  const stale = firstStaleField(otherChanges, current)
   if (stale) return staleError(stale)
 
-  // Memo-only (method/remarks) → in place, lifting the propose-time gate.
+  // Memo-only (method/remarks/cheque no.) → in place, lifting the propose-time gate.
   if (!('amount' in changes)) {
+    if (voucher) {
+      const failed = await writeVoucherCheque(voucher, changes)
+      if (failed) return { success: false, error: failed }
+    }
     const txUpdate: Record<string, unknown> = {}
     for (const [key, diff] of Object.entries(changes)) {
       if (key === 'payment_method' || key === 'remarks') txUpdate[key] = (diff as Diff).to
@@ -490,6 +541,13 @@ export async function applySupplierPaymentChange(
       error:
         'Old payment voided, but reissuing the corrected payment failed — please re-record it manually.',
     }
+  // After the reissue, never before: a failure here must not leave the request
+  // pending on a payment that is already voided. The voucher was found by the
+  // old payment, which it still lists.
+  if (voucher) {
+    const failed = await writeVoucherCheque(voucher, changes)
+    if (failed) useToast().warning(`${res.paymentNo ?? 'The corrected payment'} was recorded, but ${failed.charAt(0).toLowerCase()}${failed.slice(1)} Change it on the voucher by hand.`, { timeout: 20000 })
+  }
   // Book the replacement now rather than at the next statement view, so the
   // ledger never sits with the old payment reversed and nothing in its place.
   try {

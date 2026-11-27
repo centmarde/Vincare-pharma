@@ -3,6 +3,8 @@ import { storeToRefs } from 'pinia'
 import { useEthicalDataStore } from '@/stores/ethicalData'
 import { useTermsApprovalStore } from '@/stores/termsApprovalData'
 import type { EthicalOrderType } from '@/stores/ethicalData'
+import { orderDocRefs } from '@/stores/shared/orderRefs'
+import { useOpeningReceivablesStore } from '@/stores/openingReceivablesData'
 
 export function useEthicalOrders() {
   const ethical = useEthicalDataStore()
@@ -17,6 +19,13 @@ export function useEthicalOrders() {
   watch(orders, () => { void loadAwaitingApproval() })
   const isAwaitingApproval = (id: number) => awaitingApprovalIds.value.has(id)
 
+  // A cancelled order that was corrected points at the one recorded in its place.
+  const openingStore = useOpeningReceivablesStore()
+  const correctedAs = ref<Map<number, string>>(new Map())
+  watch(orders, async () => { correctedAs.value = await openingStore.fetchCorrectedAs('ethical_order') })
+  const correctedAsOf = (order: { id: number; status: string | null }) =>
+    order.status === 'cancelled' ? correctedAs.value.get(order.id) ?? null : null
+
   const searchText = ref('')
   const statusFilter = ref('')
   const agentIdFilter = ref<number | null>(null)
@@ -24,6 +33,7 @@ export function useEthicalOrders() {
   const headers = [
     { title: 'Order No', key: 'order_no', width: '120px' },
     { title: 'Customer', key: 'customer.name' },
+    { title: 'DR / Invoice #', key: 'doc_refs', sortable: false },
     { title: 'TIN', key: 'customer.tin_number' },
     { title: 'VAT', key: 'customer.is_vat_registered', align: 'center' as const },
     { title: 'MSR', key: 'agent.name' },
@@ -47,20 +57,21 @@ export function useEthicalOrders() {
       draft: { label: 'Draft', color: 'grey' },
       invoiced: { label: 'Invoiced', color: 'warning' },
       partial: { label: 'Partial', color: 'info' },
-      paid: { label: 'Paid', color: 'success' },
+      paid: { label: 'Paid', color: 'green' },
       cancelled: { label: 'Cancelled', color: 'error' },
     }
     return map[status ?? ''] ?? { label: '—', color: 'grey' }
   }
 
   const isOverdue = (order: EthicalOrderType): boolean => {
-    if (!order.due_date || order.status === 'paid') return false
+    // A cancelled order owes nothing, so it is never overdue.
+    if (!order.due_date || order.status === 'paid' || order.status === 'cancelled') return false
     return new Date(order.due_date) < new Date()
   }
 
   // A draft is still being haggled — nothing is owed on it yet.
   const balanceAmount = (order: EthicalOrderType): number => {
-    if (order.status === 'draft') return 0
+    if (order.status === 'draft' || order.status === 'cancelled') return 0
     return Math.max(0, (order.total_amount ?? 0) - (order.amount_paid ?? 0))
   }
 
@@ -77,7 +88,9 @@ export function useEthicalOrders() {
       result = result.filter(o =>
         (orderLabel(o).toLowerCase().includes(s)) ||
         (o.customer?.name?.toLowerCase().includes(s)) ||
-        (o.agent?.name?.toLowerCase().includes(s))
+        (o.agent?.name?.toLowerCase().includes(s)) ||
+        orderDocRefs(o).toLowerCase().includes(s) ||
+        (correctedAsOf(o)?.toLowerCase().includes(s) ?? false)
       )
     }
     if (statusFilter.value) {
@@ -86,7 +99,7 @@ export function useEthicalOrders() {
     if (agentIdFilter.value) {
       result = result.filter(o => o.agent_id === agentIdFilter.value)
     }
-    return result.map(o => ({ ...o, balance: balanceAmount(o), isOverdue: isOverdue(o) }))
+    return result.map(o => ({ ...o, balance: balanceAmount(o), isOverdue: isOverdue(o), doc_refs: orderDocRefs(o) }))
   })
 
   async function init() {
@@ -107,6 +120,7 @@ export function useEthicalOrders() {
     isDraft,
     orderLabel,
     isAwaitingApproval,
+    correctedAsOf,
     init,
   }
 }

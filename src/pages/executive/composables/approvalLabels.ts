@@ -90,6 +90,7 @@ const fieldLabels: Record<string, string> = {
   reference_no: 'Reference / OR no.',
   cheque_bank: 'Cheque bank',
   cheque_no: 'Cheque no.',
+  check_no: 'Cheque no.',
   cheque_date: 'Cheque date',
   invoice_date: 'Invoice date',
   original_amount: 'Original invoice amount',

@@ -8,6 +8,7 @@ import {
 import type { ExpenseType } from '@/stores/financeData'
 import { useFinanceChangeRequestStore } from '../stores/financeChangeRequest'
 import { useDisbursementVouchersStore } from '@/stores/disbursementVouchersData'
+import type { VoucherCheque } from '@/stores/disbursementVouchersData'
 import type { ChangeRequestField, ProposedChange, AppliedEdit } from '@/stores/changeRequestsData'
 import type { FinanceChangeRequestType } from '../stores/financeChangeRequest'
 import type { ChangeHistoryEntry } from '@/utils/changeRequests'
@@ -196,7 +197,7 @@ export function useExpenses() {
   const fieldLabels: Record<string, string> = {
     amount: 'Amount', category: 'Expense account', paid_at: 'Date', cash_account_id: 'Paid from',
     department: 'Department', payment_method: 'Payment method', paid_to: 'Paid to',
-    or_si_no: 'OR/SI no.', remarks: 'Description',
+    or_si_no: 'OR/SI no.', remarks: 'Description', check_no: 'Cheque no.',
   }
 
   /** A stored value as staff know it: account names, pesos, readable dates. */
@@ -310,9 +311,24 @@ export function useExpenses() {
   }
 
   // ─── Editing/voiding an expense now goes through executive approval ───
-  function openChangeDialog(id: number) {
-    changeTarget.value = expenses.value.find((e) => e.id === id) ?? null
-    if (changeTarget.value) showChangeDialog.value = true
+  // The voucher the expense came from, for its cheque number. Read BEFORE the
+  // dialog opens: the dialog copies the current values when it opens, so a
+  // value that arrives later would show as blank and read as "remove it".
+  const changeVoucher = ref<VoucherCheque | null>(null)
+  const changeOpening = ref<number | null>(null)
+  async function openChangeDialog(id: number) {
+    const target = expenses.value.find((e) => e.id === id) ?? null
+    if (!target || changeOpening.value != null) return
+    changeOpening.value = id
+    const voucher = await voucherStore.fetchVoucherChequeFor(id)
+    changeOpening.value = null
+    if (voucher === undefined) {
+      toast.error('Could not load the voucher for this expense. Try again.')
+      return
+    }
+    changeVoucher.value = voucher
+    changeTarget.value = target
+    showChangeDialog.value = true
   }
 
   // Every edit lands on the SAME expense. Amount / account / cash account /
@@ -333,6 +349,10 @@ export function useExpenses() {
       { key: 'paid_to', label: 'Paid To', value: e.paid_to, type: 'text' },
       { key: 'or_si_no', label: 'OR/SI No.', value: e.or_si_no, type: 'text' },
       { key: 'remarks', label: 'Description', value: e.remarks, type: 'text' },
+      // On the voucher, so it shows only for an expense recorded from one.
+      ...(changeVoucher.value
+        ? [{ key: 'check_no', label: `Cheque No. (${changeVoucher.value.dvNo ?? 'voucher'})`, value: changeVoucher.value.checkNo, type: 'text' as const }]
+        : []),
     ]
   })
 
@@ -392,6 +412,6 @@ export function useExpenses() {
     showChangeDialog, changeTarget, changeFields, voidSummary, isPending, isEdited, editTooltip,
     voucherFor, expenseAccountLabel, replacedByOf, replacesOf, hasHistory,
     historyOpen, historyLoading, historyTitle, historyEntries, historyFailed, openHistory, retryHistory,
-    init, openFormDialog, handleSubmit, openChangeDialog, submitChangeRequest,
+    init, openFormDialog, handleSubmit, openChangeDialog, changeOpening, submitChangeRequest,
   }
 }

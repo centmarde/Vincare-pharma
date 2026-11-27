@@ -286,8 +286,8 @@ function onDaysElapsed(value: string) {
       <v-card-text>
         <p class="text-caption text-medium-emphasis mb-2">
           Entered one wrongly? Request a change: an executive approves it, then it is corrected — or voided — in the
-          ledger as well. A wrong amount is voided and recorded again under a new number; one with payments
-          collected against it has to have those voided first.
+          ledger as well. A wrong amount is corrected on the same number; one with payments collected against it
+          has to have those voided first.
         </p>
         <v-data-table
           :headers="recordedHeaders"

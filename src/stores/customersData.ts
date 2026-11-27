@@ -284,26 +284,80 @@ export const useCustomersDataStore = defineStore('customersData', () => {
    * null: ~5,000 rows of the imported book, the drugstores among them), the
    * same set the Sales → Customers page lists alongside department 'pos'.
    */
+  // One token per search, so a slow earlier search can't overwrite a newer one.
+  let searchRequest = 0
+
   async function searchCustomers(term: string, limit = 50, department?: string, includeUnassigned = false) {
     clearError()
+    const request = ++searchRequest
     try {
       // Blank is_active counts as active — see fetchCustomers. "= true" made
       // this search, and every picker built on it, find only 10 customers.
-      let q = supabase.from('customers').select('*').not('is_active', 'is', false)
-      // Two .or() groups are ANDed by PostgREST, so this still narrows the name search below.
-      if (department && includeUnassigned) q = q.or(`department.eq.${department},department.is.null`)
-      else if (department) q = q.eq('department', department)
-      const s = term.trim().replace(/[,()]/g, '')
-      if (s) {
-        q = q.or(`name.ilike.%${s}%,contact_person.ilike.%${s}%,contact_no.ilike.%${s}%`)
+      const base = () => {
+        let q = supabase.from('customers').select('*').not('is_active', 'is', false)
+        // Two .or() groups are ANDed by PostgREST, so this still narrows the name search below.
+        if (department && includeUnassigned) q = q.or(`department.eq.${department},department.is.null`)
+        else if (department) q = q.eq('department', department)
+        return q
       }
-      const { data, error: searchError } = await q.order('name', { ascending: true }).limit(limit)
-      if (searchError) throw searchError
-      searchResults.value = (data || []) as CustomerType[]
+      // Characters that would break the filter or act as wildcards are dropped.
+      const s = term.trim().replace(/[,()%_*\\]/g, '')
+      let rows: CustomerType[]
+      if (!s) {
+        const { data, error: searchError } = await base().order('name', { ascending: true }).limit(limit)
+        if (searchError) throw searchError
+        rows = (data || []) as CustomerType[]
+      } else {
+        // Names that START with the term first, then the rest. A plain
+        // "contains" search sorted A–Z buried "S PHARMACY" under 190 other
+        // "…S PHARMACY" names: the first 50 alphabetically were all that came back.
+        const [starts, contains] = await Promise.all([
+          base().ilike('name', `${s}%`).order('name', { ascending: true }).limit(limit),
+          base().or(`name.ilike.%${s}%,contact_person.ilike.%${s}%,contact_no.ilike.%${s}%`)
+            .order('name', { ascending: true }).limit(limit),
+        ])
+        if (starts.error) throw starts.error
+        if (contains.error) throw contains.error
+        const exact = (c: CustomerType) => (c.name ?? '').trim().toLowerCase() === s.toLowerCase()
+        const ranked = [
+          ...((starts.data || []) as CustomerType[]).filter(exact),
+          ...((starts.data || []) as CustomerType[]).filter((c) => !exact(c)),
+          ...((contains.data || []) as CustomerType[]),
+        ]
+        const seenIds = new Set<number>()
+        rows = ranked.filter((c) => (seenIds.has(c.id) ? false : (seenIds.add(c.id), true))).slice(0, limit)
+      }
+      if (request !== searchRequest) return rows
+      searchResults.value = rows
       return searchResults.value
     } catch (err) {
+      if (request !== searchRequest) return []
       handleError(err, 'Failed to search customers')
       searchResults.value = []
+      return []
+    }
+  }
+
+  /** Every customer id filed under a name (the book repeats names; the AR page groups them). */
+  async function customerIdsNamed(name: string): Promise<number[] | null> {
+    // Compared with spacing and case evened out: imported names carry stray spaces.
+    const key = (value: string | null | undefined) => (value ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
+    const wanted = key(name)
+    const core = wanted.replace(/[,()%_*\\]/g, '')
+    if (!core) return []
+    const { data, error: idsError } = await supabase.from('customers').select('id, name').ilike('name', `%${core}%`)
+    if (idsError) { handleError(idsError, 'Failed to look up the customer'); return null }
+    return (data ?? []).filter((c) => key(c.name) === wanted).map((c) => c.id as number)
+  }
+
+  /** Every area on the customer book, for filters. Paged: the book is past 5,000 rows. */
+  async function fetchCustomerAreas(): Promise<string[]> {
+    try {
+      const rows = await fetchAllRows<{ area: string | null }>(() =>
+        supabase.from('customers').select('area, id').not('area', 'is', null).order('id', { ascending: true }))
+      return [...new Set(rows.map((r) => r.area?.trim() ?? '').filter(Boolean))].sort()
+    } catch (err) {
+      handleError(err, 'Failed to load customer areas')
       return []
     }
   }
@@ -525,7 +579,7 @@ export const useCustomersDataStore = defineStore('customersData', () => {
     customers, searchResults, rebateCustomers, currentCustomer, loading, error,
     isLoading, hasError,
     pagedCustomers, pagedTotalCount, pagedLoading,
-    fetchCustomers, searchCustomers, stampDepartmentIfBlank, fetchCustomersRPC,
+    fetchCustomers, searchCustomers, customerIdsNamed, fetchCustomerAreas, stampDepartmentIfBlank, fetchCustomersRPC,
     createCustomer, updateCustomer, deleteCustomer, fetchCustomerUsage, fetchNamedCustomers, fetchRebateCustomers,
     startRealtime, stopRealtime, clearError, resetStore,
   }

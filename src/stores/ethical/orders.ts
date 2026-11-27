@@ -4,20 +4,23 @@ import { supabase } from '@/lib/supabase'
 import type { EthicalOrderType, FetchOrdersOptions } from './types'
 import { selectOrder, mapRow } from './mappers'
 import { orders, loading, handleError, clearError } from './state'
+import { fetchAllRows } from '@/stores/shared/paging'
 
 export async function fetchOrders(options: FetchOrdersOptions = {}) {
   loading.value = true
   clearError()
   try {
     const { status, agentId, customerId, orderBy = 'created_at', ascending = false } = options
-    let q = supabase.from('transactions').select(selectOrder).eq('transaction_type', 'ethical_order')
-    if (status) q = q.eq('status', status)
-    if (agentId) q = q.eq('agent_id', agentId)
-    if (customerId) q = q.eq('customer_id', customerId)
-    q = q.order(orderBy, { ascending })
-    const { data, error: fetchError } = await q
-    if (fetchError) throw fetchError
-    orders.value = (data || []).map(mapRow)
+    // Paged: there are more Ethical orders than one response holds (1,000),
+    // and the back-dated opening receivables fell off the end of the list.
+    const data = await fetchAllRows<any>(() => {
+      let q = supabase.from('transactions').select(selectOrder).eq('transaction_type', 'ethical_order')
+      if (status) q = q.eq('status', status)
+      if (agentId) q = q.eq('agent_id', agentId)
+      if (customerId) q = q.eq('customer_id', customerId)
+      return q.order(orderBy, { ascending }).order('id', { ascending })
+    })
+    orders.value = data.map(mapRow)
     return orders.value
   } catch (err) {
     handleError(err, 'Failed to fetch ethical orders')

@@ -134,7 +134,7 @@ onMounted(() => init())
                       {{ col.created_at ? new Date(col.created_at).toLocaleDateString() : '—' }}
                     </span>
                     <v-chip
-                      :color="col.commission_status === 'paid' ? 'success' : 'warning'"
+                      :color="col.commission_status === 'paid' ? 'green' : 'warning'"
                       size="x-small" variant="tonal"
                     >
                       {{ col.commission_status }}
@@ -188,7 +188,7 @@ onMounted(() => init())
                 <td class="text-right">{{ col.commission_rate?.toFixed(2) }}%</td>
                 <td class="text-right">{{ formatCurrency(col.commission_amount ?? 0) }}</td>
                 <td>
-                  <v-chip :color="col.commission_status === 'paid' ? 'success' : 'warning'" size="x-small">
+                  <v-chip :color="col.commission_status === 'paid' ? 'green' : 'warning'" size="x-small">
                     {{ col.commission_status }}
                   </v-chip>
                 </td>

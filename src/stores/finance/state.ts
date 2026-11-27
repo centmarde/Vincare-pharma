@@ -20,6 +20,7 @@ import type {
   RemittanceDiscrepancyRow,
   StockReconRow,
   SupplierAPRow,
+  APUnappliedPayment,
   SupplierPaymentType,
   TrialBalanceLine,
 } from './types'
@@ -31,6 +32,7 @@ export const replenishmentRequests: Ref<PettyCashReplenishmentType[]> = ref([])
 export const supplierPayments: Ref<SupplierPaymentType[]> = ref([])
 export const supplierAP: Ref<SupplierAPRow[]> = ref([])
 export const apAging: Ref<APAgingRow[]> = ref([])
+export const apUnapplied: Ref<APUnappliedPayment[]> = ref([])
 export const pnl: Ref<PnLSummary | null> = ref(null)
 export const remittanceDiscrepancies: Ref<RemittanceDiscrepancyRow[]> = ref([])
 export const arAging: Ref<ARAgingRow[]> = ref([])
@@ -64,6 +66,7 @@ export function resetStore() {
   supplierPayments.value = []
   supplierAP.value = []
   apAging.value = []
+  apUnapplied.value = []
   pnl.value = null
   remittanceDiscrepancies.value = []
   arAging.value = []

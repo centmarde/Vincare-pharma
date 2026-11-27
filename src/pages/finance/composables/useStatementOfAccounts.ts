@@ -1,6 +1,7 @@
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useARStatementDataStore } from '@/stores/arStatementData'
+import { useARStatementDataStore, sumSOATotals } from '@/stores/arStatementData'
+import { matchesSearch, parseSearch, searchText } from '@/utils/search'
 import type { SOARegisterRow } from '@/stores/arStatementData'
 import { useCustomersDataStore } from '@/stores/customersData'
 import { formatCurrency, formatDateOnly, formatDateShort } from '@/utils/helpers'
@@ -89,9 +90,29 @@ export function termLabel(row: Pick<SOARegisterRow, 'term' | 'consignment'>): st
 export function useStatementOfAccounts() {
   const store = useARStatementDataStore()
   const customersStore = useCustomersDataStore()
-  const { register, totals, loading } = storeToRefs(store)
+  const { register: allRows, loading } = storeToRefs(store)
 
-  const filterCustomerId = ref<number | null>(null)
+  // Find a DR / invoice / order / PO / OR number, a customer or an amount.
+  // Everything on the page — rows, aging strip, totals — follows the search.
+  const search = ref<string | null>('')
+  const searchIndex = computed(() => allRows.value.map((row) => ({
+    row,
+    text: searchText([row.dr_no, row.so_no, row.po_no, row.or_no, row.customer_name, row.area]),
+  })))
+  const register = computed(() => {
+    const query = parseSearch(search.value)
+    if (!query) return allRows.value
+    return searchIndex.value
+      .filter(({ row, text }) => matchesSearch(text, [row.dr_amount, row.accounts_receivable, row.amount_unpaid, row.or_amount], query))
+      .map(({ row }) => row)
+  })
+  const totals = computed(() => sumSOATotals(register.value))
+
+  // A customer NAME, not a record id: the book files one customer under up to
+  // five records (PALMA DRUG has five), and the Accounts Receivable page groups
+  // them into one jacket the same way.
+  const filterCustomerName = ref<string | null>(null)
+  const customerSearch = ref('')
   const filterArea = ref<string | null>(null)
   // The sheet this register reproduces is the In-House (government/LGU) one, so
   // that's the default view. Ethical is still selectable — the underlying build
@@ -113,13 +134,43 @@ export function useStatementOfAccounts() {
   // already area-filtered, so sourcing the options from it collapsed the
   // dropdown to the single selected area and left no way to switch without
   // clearing first.
-  const areaOptions = computed(() =>
-    [...new Set(customersStore.customers.map((c) => c.area).filter(Boolean))].sort() as string[],
-  )
+  // Read from the whole book (paged). Loading the customers into the page
+  // stopped at 1,000 rows — the book is past 5,000 — so later areas and every
+  // customer after "LINAMON DRUGSTORE" alphabetically could not be picked.
+  const areaOptions = ref<string[]>([])
 
-  const customerOptions = computed(() =>
-    customersStore.customers.map((c) => ({ title: c.name ?? `#${c.id}`, value: c.id })),
-  )
+  // Searched on the server as the user types.
+  const { searchResults } = storeToRefs(customersStore)
+  let searchDebounce: ReturnType<typeof setTimeout> | undefined
+  watch(customerSearch, (term) => {
+    if (searchDebounce) clearTimeout(searchDebounce)
+    searchDebounce = setTimeout(() => { void customersStore.searchCustomers(term ?? '') }, 300)
+  })
+  onUnmounted(() => { if (searchDebounce) clearTimeout(searchDebounce) })
+
+  const nameKey = (name: string | null | undefined) => (name ?? '').replace(/\s+/g, ' ').trim()
+  const customerOptions = computed(() => {
+    const byName = new Map<string, { title: string; value: string; subtitle: string; records: number; areas: Set<string> }>()
+    for (const c of searchResults.value) {
+      const name = nameKey(c.name)
+      if (!name) continue
+      const key = name.toLowerCase()
+      const option = byName.get(key) ?? { title: name, value: name, subtitle: '', records: 0, areas: new Set<string>() }
+      option.records += 1
+      if (c.area) option.areas.add(c.area)
+      byName.set(key, option)
+    }
+    // Keep the chosen name listed when the search moves on, or the box blanks.
+    const chosen = filterCustomerName.value
+    if (chosen && !byName.has(chosen.toLowerCase())) {
+      byName.set(chosen.toLowerCase(), { title: chosen, value: chosen, subtitle: '', records: 0, areas: new Set() })
+    }
+    return [...byName.values()].map((o) => ({
+      title: o.title,
+      value: o.value,
+      subtitle: [[...o.areas].join(', '), o.records > 1 ? `${o.records} records, shown together` : ''].filter(Boolean).join(' · '),
+    }))
+  })
 
   const outstandingTotal = computed(() => totals.value.accounts_receivable)
 
@@ -161,8 +212,13 @@ export function useStatementOfAccounts() {
   )
 
   async function refresh() {
+    let customerIds: number[] | null = null
+    if (filterCustomerName.value) {
+      customerIds = await customersStore.customerIdsNamed(filterCustomerName.value)
+      if (customerIds === null) return
+    }
     await store.fetchSOARegister({
-      customerId: filterCustomerId.value,
+      customerIds,
       area: filterArea.value,
       source: filterSource.value,
       dateFrom: filterDateFrom.value,
@@ -172,7 +228,8 @@ export function useStatementOfAccounts() {
   }
 
   function clearFilters() {
-    filterCustomerId.value = null
+    filterCustomerName.value = null
+    search.value = ''
     filterArea.value = null
     filterSource.value = null
     filterDateFrom.value = null
@@ -237,12 +294,16 @@ export function useStatementOfAccounts() {
   }
 
   onMounted(async () => {
-    await Promise.all([refresh(), customersStore.fetchCustomers()])
+    await Promise.all([
+      refresh(),
+      customersStore.searchCustomers(''),
+      customersStore.fetchCustomerAreas().then((areas) => { areaOptions.value = areas }),
+    ])
   })
 
   return {
-    register, totals, loading,
-    filterCustomerId, filterArea, filterSource, filterDateFrom, filterDateTo, outstandingOnly, fullSheet,
+    register, totals, loading, search,
+    filterCustomerName, customerSearch, filterArea, filterSource, filterDateFrom, filterDateTo, outstandingOnly, fullSheet,
     compactHeaders, agingSummary,
     areaOptions, customerOptions, asOfLabel, outstandingTotal, agedTotal,
     unagedRows, unagedTotal,

@@ -21,7 +21,13 @@ const mode = ref<'edit' | 'void'>('edit')
 const draft = ref<Record<string, string | number | null>>({})
 const reason = ref('')
 
-// Reset the form each time the dialog opens (prefill edit fields with current values).
+// The values each field was filled with, to tell an untouched field from an edited one.
+const prefilled = ref<Record<string, string | number | null>>({})
+
+// Reset the form each time the dialog opens (prefill edit fields with current
+// values). `immediate`: most pages mount this dialog with `v-if` in the same
+// tick they open it, so it is born open and a plain watch never fired — every
+// field showed blank and, worse, read as "changed to blank".
 watch(() => props.modelValue, (open) => {
   if (!open) return
   mode.value = props.allowEdit ? 'edit' : 'void'
@@ -29,11 +35,25 @@ watch(() => props.modelValue, (open) => {
   const next: Record<string, string | number | null> = {}
   for (const f of props.fields) next[f.key] = f.value
   draft.value = next
+  prefilled.value = { ...next }
+}, { immediate: true })
+
+// A value that arrives after the dialog opened (loaded late) fills any field
+// the user has not touched yet; an edited field keeps what they typed.
+watch(() => props.fields, (fields) => {
+  if (!props.modelValue) return
+  for (const f of fields) {
+    const untouched = !(f.key in draft.value) || normalize(draft.value[f.key]) === normalize(prefilled.value[f.key] ?? null)
+    if (!untouched) continue
+    draft.value[f.key] = f.value
+    prefilled.value[f.key] = f.value
+  }
 })
 
 const changedFields = computed(() =>
   props.fields
-    .filter((f) => normalize(draft.value[f.key]) !== normalize(f.value))
+    // A field missing from the draft was never shown filled in: not a change.
+    .filter((f) => f.key in draft.value && normalize(draft.value[f.key]) !== normalize(f.value))
     .map((f) => ({
       key: f.key,
       label: f.label,
@@ -72,7 +92,7 @@ const canSubmit = computed(() => {
 // (#90/#91, EXP-2026-406). Held until the dialog is reopened, or briefly if the
 // filing failed and the dialog stayed open for a retry.
 const sent = ref(false)
-watch(() => props.modelValue, (open) => { if (open) sent.value = false })
+watch(() => props.modelValue, (open) => { if (open) sent.value = false }, { immediate: true })
 
 function submit() {
   if (sent.value) return

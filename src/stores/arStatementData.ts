@@ -6,6 +6,7 @@ import { getErrorMessage, isConsignmentTerm, parseTermDays } from '@/utils/helpe
 import { creditMemo, isCreditSettlement, paymentDiscount, returnCredit } from '@/utils/paymentMethods'
 import { fetchAllRows, fetchAllRowsForIds } from '@/stores/shared/paging'
 import type { ARAgingTerm } from '@/stores/financeData'
+import { originalInvoiceNo } from '@/stores/shared/orderRefs'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AR Statement of Accounts register — the accountant's Excel "STATEMENT OF
@@ -97,6 +98,8 @@ export type SOARegisterTotals = {
 
 export type SOARegisterFilters = {
   customerId?: number | null
+  /** Every record filed under one customer name (the book repeats names). */
+  customerIds?: number[] | null
   area?: string | null
   source?: 'inhouse_order' | 'ethical_order' | null
   dateFrom?: string | null
@@ -130,6 +133,22 @@ const EMPTY_TOTALS: SOARegisterTotals = {
   bucket_91_180: 0, bucket_180_plus: 0,
 }
 
+/** The register's totals over any set of its rows (the page's search narrows them). */
+export function sumSOATotals(rows: readonly SOARegisterRow[]): SOARegisterTotals {
+  return rows.reduce<SOARegisterTotals>((acc, r) => ({
+    dr_amount: acc.dr_amount + r.dr_amount,
+    discount: acc.discount + r.discount,
+    or_amount: acc.or_amount + r.or_amount,
+    credit: acc.credit + r.credit,
+    accounts_receivable: acc.accounts_receivable + r.accounts_receivable,
+    bucket_1_30: acc.bucket_1_30 + r.bucket_1_30,
+    bucket_31_60: acc.bucket_31_60 + r.bucket_31_60,
+    bucket_61_90: acc.bucket_61_90 + r.bucket_61_90,
+    bucket_91_180: acc.bucket_91_180 + r.bucket_91_180,
+    bucket_180_plus: acc.bucket_180_plus + r.bucket_180_plus,
+  }), { ...EMPTY_TOTALS })
+}
+
 export const useARStatementDataStore = defineStore('arStatementData', () => {
   const register: Ref<SOARegisterRow[]> = ref([])
   const totals: Ref<SOARegisterTotals> = ref({ ...EMPTY_TOTALS })
@@ -159,7 +178,8 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
             'order:order_id(id, transaction_type, inhouse_no, ethical_no, po_no, po_amount, ' +
             'inhouse_details(govt_po_no), ethical_details(discount_amount, due_date))',
           )
-        if (filters.customerId) drQuery = drQuery.eq('customer_id', filters.customerId)
+        if (filters.customerIds) drQuery = drQuery.in('customer_id', filters.customerIds)
+        else if (filters.customerId) drQuery = drQuery.eq('customer_id', filters.customerId)
         if (filters.source) drQuery = drQuery.eq('source', filters.source)
         if (filters.dateFrom) drQuery = drQuery.gte('created_at', filters.dateFrom)
         if (filters.dateTo) drQuery = drQuery.lte('created_at', `${filters.dateTo}T23:59:59.999`)
@@ -345,7 +365,8 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
       // inventing one puts a receipt number on a statement that matches nothing
       // in the customer's file. These rows stand on the ORDER instead —
       // delivery_receipt_id is negated so it cannot collide with a real DR id,
-      // and dr_no carries the order's own number rather than a fabricated one.
+      // so_no carries the order's own number, and dr_no the customer's original
+      // invoice number for an opening receivable (the paper it does match), else blank.
       //
       // The same customer / source / date filters as the DR query apply here.
       // They used to be skipped, so a one-customer statement listed every
@@ -362,7 +383,8 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
           )
           .in('transaction_type', ['inhouse_order', 'ethical_order'])
           .in('status', ['delivered', 'paid', 'partial', 'invoiced'])
-        if (filters.customerId) bareQuery = bareQuery.eq('customer_id', filters.customerId)
+        if (filters.customerIds) bareQuery = bareQuery.in('customer_id', filters.customerIds)
+        else if (filters.customerId) bareQuery = bareQuery.eq('customer_id', filters.customerId)
         if (filters.source) bareQuery = bareQuery.eq('transaction_type', filters.source)
         if (filters.dateFrom) bareQuery = bareQuery.gte('created_at', filters.dateFrom)
         if (filters.dateTo) bareQuery = bareQuery.lte('created_at', `${filters.dateTo}T23:59:59.999`)
@@ -416,7 +438,9 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
             customer_name: customer?.name ?? null,
             area: customer?.area ?? null,
             dr_date: docDate,
-            dr_no: null,
+            // No delivery receipt in this system: an opening receivable shows
+            // the customer's original invoice number, the paper it matches.
+            dr_no: originalInvoiceNo(o.remarks),
             so_no: o.inhouse_no ?? o.ethical_no ?? null,
             po_no: o.inhouse_details?.govt_po_no ?? o.po_no ?? null,
             po_amount: o.po_amount ?? null,
@@ -451,18 +475,7 @@ export const useARStatementDataStore = defineStore('arStatementData', () => {
       })
 
       register.value = filtered
-      totals.value = filtered.reduce<SOARegisterTotals>((acc, r) => ({
-        dr_amount: acc.dr_amount + r.dr_amount,
-        discount: acc.discount + r.discount,
-        or_amount: acc.or_amount + r.or_amount,
-        credit: acc.credit + r.credit,
-        accounts_receivable: acc.accounts_receivable + r.accounts_receivable,
-        bucket_1_30: acc.bucket_1_30 + r.bucket_1_30,
-        bucket_31_60: acc.bucket_31_60 + r.bucket_31_60,
-        bucket_61_90: acc.bucket_61_90 + r.bucket_61_90,
-        bucket_91_180: acc.bucket_91_180 + r.bucket_91_180,
-        bucket_180_plus: acc.bucket_180_plus + r.bucket_180_plus,
-      }), { ...EMPTY_TOTALS })
+      totals.value = sumSOATotals(filtered)
 
       return filtered
     } catch (err) {

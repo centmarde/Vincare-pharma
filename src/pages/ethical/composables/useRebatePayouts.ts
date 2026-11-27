@@ -68,7 +68,7 @@ export function useRebatePayouts() {
   const statusMeta = (status: string | null) => {
     switch (effectiveStatus(status)) {
       case 'approved': return { label: 'Approved', color: 'info' }
-      case 'paid': return { label: 'Paid', color: 'success' }
+      case 'paid': return { label: 'Paid', color: 'green' }
       case 'rejected': return { label: 'Rejected', color: 'error' }
       default: return { label: 'Pending Approval', color: 'warning' }
     }

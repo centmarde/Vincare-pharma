@@ -23,6 +23,8 @@ import { hasPendingTermsRequest, isApprovedLockRequest, unlockBlocker } from '@/
 import type { IssueRow } from '@/composables/useIssueList'
 import { useShortDatedApprovalStore } from '@/pages/inhouse/stores/shortDatedApproval'
 import type { CollectionType } from '@/stores/ethicalData'
+import { fetchAllRows } from '@/stores/shared/paging'
+import { drNumbersOf, originalInvoiceNo } from '@/stores/shared/orderRefs'
 
 const toast = useToast()
 // Lists of products go to the issue dialog; the toast is for one-line messages.
@@ -73,6 +75,10 @@ export type InhouseOrderType = {
   created_by: string | null
   approved_by: string | null
   approved_at: string | null
+  /** Delivery receipt numbers issued for this order. */
+  dr_nos: string[]
+  /** An opening receivable's original invoice number (from its remarks). */
+  original_invoice_no: string | null
   remarks: string | null
   customer?: CustomerType | null
   items?: InhouseItemType[]
@@ -93,7 +99,7 @@ export type { Shortfall, CanvassQuote, CanvassSelection, CanvassPRResult }
 // merged back in). An in-house order is outbound, so the ordered quantity is
 // qty_stock_out and the delivered count is actual_count_stock_out.
 const SELECT_ORDER =
-  '*, transaction_items!transaction_items_transaction_id_fkey(id, product_id, qty_stock_out, unit_price, line_total, cost_price, actual_count_stock_out, product:product_id(*)), customer:customer_id(*), inhouse_details(*)'
+  '*, transaction_items!transaction_items_transaction_id_fkey(id, product_id, qty_stock_out, unit_price, line_total, cost_price, actual_count_stock_out, product:product_id(*)), customer:customer_id(*), inhouse_details(*), delivery_receipts(dr_no)'
 
 function mapRow(row: any): InhouseOrderType {
   const details = row.inhouse_details ?? {}
@@ -113,6 +119,8 @@ function mapRow(row: any): InhouseOrderType {
     approved_by:  row.approved_by,
     approved_at:  row.approved_at,
     remarks:      row.remarks,
+    dr_nos:       drNumbersOf(row.delivery_receipts),
+    original_invoice_no: originalInvoiceNo(row.remarks),
     customer:     row.customer,
     items: (row.transaction_items ?? []).map((li: any) => ({
       id:            li.id,
@@ -166,12 +174,13 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
     loading.value = true
     clearError()
     try {
-      let q = supabase.from('transactions').select(SELECT_ORDER).eq('transaction_type', 'inhouse_order')
-      if (options.status) q = q.eq('status', options.status)
-      q = q.order('created_at', { ascending: false })
-      const { data, error: fetchError } = await q
-      if (fetchError) throw fetchError
-      orders.value = (data || []).map(mapRow)
+      // Paged past the 1,000-row response cap, like the Ethical list.
+      const data = await fetchAllRows<any>(() => {
+        let q = supabase.from('transactions').select(SELECT_ORDER).eq('transaction_type', 'inhouse_order')
+        if (options.status) q = q.eq('status', options.status)
+        return q.order('created_at', { ascending: false }).order('id', { ascending: false })
+      })
+      orders.value = data.map(mapRow)
       return orders.value
     } catch (err) {
       handleError(err, 'Failed to fetch in-house orders')
@@ -604,13 +613,17 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
   const computeShortfall = async (orderId: number): Promise<Shortfall[]> => {
     const { data: order, error: fetchError } = await supabase
       .from('transactions')
-      .select('transaction_items!transaction_items_transaction_id_fkey(product_id, qty_stock_out)')
+      .select('transaction_items!transaction_items_transaction_id_fkey(product_id, qty_stock_out, actual_count_stock_out)')
       .eq('id', orderId)
       .maybeSingle()
     if (fetchError || !order) { handleError(fetchError, 'Failed to check stock'); return [] }
 
-    const lines = ((order.transaction_items ?? []) as unknown as { product_id: number; qty_stock_out: number | null }[])
-      .map(li => ({ product_id: li.product_id, qty: li.qty_stock_out ?? 0 }))
+    // What is still to deliver, not the whole order: once part of it has gone
+    // out, measuring the full quantity against stock kept the order short for
+    // ever (100 ordered, 60 delivered, 40 arrive — still "short 60").
+    const lines = ((order.transaction_items ?? []) as unknown as { product_id: number; qty_stock_out: number | null; actual_count_stock_out: number | null }[])
+      .map(li => ({ product_id: li.product_id, qty: Math.max(0, (li.qty_stock_out ?? 0) - (li.actual_count_stock_out ?? 0)) }))
+      .filter((li) => li.qty > 0)
     const shortfall = await shortfallForLines(lines, { allowShortDated: await shortDatedStore.hasApproval(orderId) })
     return shortfall
   }
@@ -694,7 +707,10 @@ export const useInhouseDataStore = defineStore('inhouseData', () => {
       handleError(fetchError, 'Order not found.'); toast.error(fetchError?.message || 'Order not found.')
       loading.value = false; return { success: false }
     }
-    if (order.status !== 'ready' && order.status !== 'delivered') {
+    // Awaiting stock may deliver what is on hand now; each line is still
+    // checked against the stock there (below), and the order is marked
+    // delivered — and booked — only once every line is complete.
+    if (order.status !== 'ready' && order.status !== 'delivered' && order.status !== 'awaiting_stock') {
       toast.error('Order is not ready for delivery.')
       loading.value = false; return { success: false }
     }

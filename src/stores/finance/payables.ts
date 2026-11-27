@@ -7,10 +7,10 @@ import { useToast } from 'vue-toastification'
 import { useAuthUserStore } from '@/stores/authUser'
 import { nextDocNumber, insertWithDocRetry } from '@/utils/helpers'
 import type { APAgingRow, DateRange, SupplierAPRow } from './types'
-import { applyDateRange, apBucketFor, supplierDocRefs } from './helpers'
+import { allocateSupplierPayments, applyDateRange, apBucketFor, supplierDocRefs } from './helpers'
 import { mapSupplierPaymentRow } from './mappers'
 import { fetchAllRows } from '@/stores/shared/paging'
-import { supplierPayments, supplierAP, apAging, loading, handleError, clearError } from './state'
+import { supplierPayments, supplierAP, apAging, apUnapplied, loading, handleError, clearError } from './state'
 
 const toast = useToast()
 
@@ -171,44 +171,34 @@ export async function reissueSupplierPayment(payload: {
 /**
  * Per-invoice AP aging.
  *
- * ⚠️ THE INVOICE-TO-PAYMENT ALLOCATION IS DERIVED, NOT RECORDED. Nothing in
- * the schema says which stock_in a given supplier_payment settled — payments
- * are lump sums against the supplier. Each supplier's payments are therefore
- * applied to their OLDEST unpaid invoice first.
- *
- * Consequence: supplier-level totals always tie exactly, but a single
- * invoice's paid/balance can SHIFT if an older invoice is added or
- * back-dated later. This is the same convention and the same caveat the AR
- * Statement of Accounts register carries for DR-to-OR; the page states it to
- * the user, and that disclosure should survive any edit here.
- *
- * Making it a recorded fact means a payment-to-invoice child table and a
- * picker on the voucher, at which point this becomes the legacy fallback.
+ * Nothing in the schema links a supplier_payment to the stock_in it settled,
+ * but every payment raised from "Pay" names its PO in the remarks. So a payment
+ * pays the invoice(s) whose PO / SI number it names (see
+ * allocateSupplierPayments); only a payment that names none is spread over
+ * the supplier's oldest unpaid invoices. A named payment never lands on a
+ * different PO: whatever its invoice could not take is listed in apUnapplied
+ * (paid twice, or no such invoice received) for the accountant to look at.
+ * The page states this; keep that disclosure if this changes.
  */
 export async function fetchAPAging() {
   loading.value = true
   clearError()
   try {
-    const [invoicesRes, paymentsRes] = await Promise.all([
-      supabase.from('transactions')
+    // Paged past PostgREST's 1,000-row cap; id last keeps the pages stable.
+    const [invoiceRows, paymentRows] = await Promise.all([
+      fetchAllRows<any>(() => supabase.from('transactions')
         .select('id, reference_no, si_no, po_no, remarks, supplier_id, total_amount, created_at, paid_at, supplier:supplier_id(name)')
         .eq('transaction_type', 'stock_in').neq('status', 'voided')
-        .not('supplier_id', 'is', null),
-      supabase.from('transactions')
-        .select('supplier_id, total_amount, paid_at, created_at')
+        .not('supplier_id', 'is', null)
+        .order('id')),
+      fetchAllRows<any>(() => supabase.from('transactions')
+        .select('id, reference_no, supplier_id, total_amount, remarks, paid_at, created_at, supplier:supplier_id(name)')
         .eq('transaction_type', 'supplier_payment').neq('status', 'voided')
-        .not('supplier_id', 'is', null),
+        .not('supplier_id', 'is', null)
+        .order('id')),
     ])
-    if (invoicesRes.error) throw invoicesRes.error
-    if (paymentsRes.error) throw paymentsRes.error
 
-    // Total paid per supplier, to be spent oldest-invoice-first below.
-    const paidBySupplier = new Map<number, number>()
-    for (const p of (paymentsRes.data ?? []) as any[]) {
-      paidBySupplier.set(p.supplier_id, (paidBySupplier.get(p.supplier_id) ?? 0) + (p.total_amount ?? 0))
-    }
-
-    const invoices = ((invoicesRes.data ?? []) as any[])
+    const invoices = invoiceRows
       .map((r) => ({
         transaction_id: r.id as number,
         reference_no: (r.si_no ?? r.reference_no ?? null) as string | null,
@@ -219,27 +209,42 @@ export async function fetchAPAging() {
         invoice_date: (r.paid_at ?? r.created_at ?? '') as string,
         total_amount: Number(r.total_amount ?? 0),
       }))
-      .sort((a, b) => a.invoice_date.localeCompare(b.invoice_date))
+      .sort((a, b) => a.invoice_date.localeCompare(b.invoice_date) || a.transaction_id - b.transaction_id)
+
+    // Oldest payment first, so two payments on one PO fill it in date order.
+    const payments = paymentRows
+      .map((p) => ({
+        supplier_id: p.supplier_id as number,
+        supplier_name: (p.supplier?.name ?? null) as string | null,
+        payment_no: (p.reference_no ?? null) as string | null,
+        amount: Number(p.total_amount ?? 0),
+        remarks: (p.remarks ?? null) as string | null,
+        date: (p.paid_at ?? p.created_at ?? '') as string,
+        id: p.id as number,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id)
+
+    const { paid, unapplied } = allocateSupplierPayments(invoices, payments)
+    const supplierNames = new Map(payments.map((p) => [p.supplier_id, p.supplier_name]))
 
     const now = Date.now()
     const rows: APAgingRow[] = []
-    for (const invoice of invoices) {
-      const available = paidBySupplier.get(invoice.supplier_id) ?? 0
-      const paid = Math.min(invoice.total_amount, available)
-      paidBySupplier.set(invoice.supplier_id, available - paid)
-      const balance = invoice.total_amount - paid
+    invoices.forEach((invoice, i) => {
+      const balance = Math.round((invoice.total_amount - paid[i]) * 100) / 100
       // Settled invoices drop out — this is an aging of what is still owed.
-      if (balance <= 0.01) continue
+      if (balance <= 0.01) return
       const days = invoice.invoice_date
         ? Math.max(0, Math.floor((now - new Date(invoice.invoice_date).getTime()) / 86400000))
         : 0
-      rows.push({ ...invoice, paid, balance, days_outstanding: days, bucket: apBucketFor(days) })
-    }
+      rows.push({ ...invoice, paid: paid[i], balance, days_outstanding: days, bucket: apBucketFor(days) })
+    })
     apAging.value = rows
+    apUnapplied.value = unapplied.map((u) => ({ ...u, supplier_name: supplierNames.get(u.supplier_id) ?? null }))
     return rows
   } catch (err) {
     handleError(err, 'Failed to compute supplier aging')
     apAging.value = []
+    apUnapplied.value = []
     return []
   } finally {
     loading.value = false

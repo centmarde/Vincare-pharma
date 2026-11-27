@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useToast } from 'vue-toastification'
 import {
   useSupplierPayments, apHeaders, agingHeaders, paymentHistoryHeaders, bucketColor,
 } from '../composables/useSupplierPayments'
@@ -7,27 +8,47 @@ import { apAgeBuckets } from '@/stores/financeData'
 import ChangeRequestDialog from '@/components/changeRequests/dialogs/ChangeRequestDialog.vue'
 import { useChangeRequestFiling } from '@/composables/useChangeRequestFiling'
 import { useFinanceChangeRequestStore } from '../stores/financeChangeRequest'
-import { expensePaymentMethods, type SupplierPaymentType } from '@/stores/financeData'
+import { expensePaymentMethods, type APUnappliedPayment, type SupplierPaymentType } from '@/stores/financeData'
 import { formatCurrency, formatDatePR_ISO } from '@/utils/helpers'
 import { financePageSizes } from '../composables/financeTable'
 
 const {
-  loading,
+  loading, apUnapplied,
   bucketTotals, totalOutstanding, oldestDays,
   selectedInvoiceIds, selectedInvoices, selectedTotal, selectionProblem,
   search, dateFrom, dateTo, dateRangeError, isFiltering, clearDates,
   filteredAging, filteredAP, filteredPayments, agingMatched, paymentsMatched,
-  dvNoOf, poNumbersOf,
+  dvNoOf, poNumbersOf, voucherChequeOf,
   openVouchersOf, describeOpenVouchers,
   pendingPayment, pendingSupplierName, pendingVouchersText, confirmPendingPayment, cancelPendingPayment,
   init, goToVouchers, payInvoices, paySupplier, openInvoicesOf, paySelected, clearSelection,
 } = useSupplierPayments()
 
+const unappliedTotal = computed(() => apUnapplied.value.reduce((sum, u) => sum + u.amount, 0))
+function unappliedReason(u: APUnappliedPayment) {
+  return u.reason === 'over'
+    ? "more than that invoice's balance (paid twice?)"
+    : 'no received invoice of this supplier has that number'
+}
+
+const toast = useToast()
+
 // Edit/undo requests on a recorded supplier payment (executive-approved).
 const { showDialog, config, isPending, isEdited, editTooltip, loadPending, open, submit, submitting } =
   useChangeRequestFiling(useFinanceChangeRequestStore())
 
-function openChange(p: SupplierPaymentType) {
+// The cheque number is on the payment's voucher; read it before the form
+// opens so the field shows the current number, not a blank.
+const openingChange = ref<number | null>(null)
+async function openChange(p: SupplierPaymentType) {
+  if (openingChange.value != null) return
+  openingChange.value = p.id
+  const voucher = await voucherChequeOf(p.id)
+  openingChange.value = null
+  if (voucher === undefined) {
+    toast.error('Could not load the voucher for this payment. Try again.')
+    return
+  }
   open({
     id: p.id,
     ref: p.reference_no,
@@ -35,6 +56,10 @@ function openChange(p: SupplierPaymentType) {
       { key: 'amount', label: 'Amount', value: p.amount ?? 0, type: 'number' },
       { key: 'payment_method', label: 'Payment Method', value: p.payment_method, type: 'select', items: expensePaymentMethods.map((m) => ({ title: m.title, value: m.value })) },
       { key: 'remarks', label: 'Remarks', value: p.remarks, type: 'text' },
+      // Only for a payment recorded from a voucher; it is changed on that voucher.
+      ...(voucher
+        ? [{ key: 'check_no', label: `Cheque No. (${voucher.dvNo ?? 'voucher'})`, value: voucher.checkNo, type: 'text' as const }]
+        : []),
     ],
     voidSummary: `Void ${p.reference_no ?? `payment #${p.id}`} — reverses its ledger entry (DR Accounts Payable / CR cash) and restores ${formatCurrency(p.amount ?? 0)} to ${p.supplier_name ?? 'the supplier'}'s payable balance.`,
     allowEdit: true,
@@ -233,15 +258,35 @@ onMounted(async () => { await init(); await loadPending() })
             </template>
           </v-data-table>
 
-          <!-- The allocation is a convention, not a recorded fact. Saying so on
-               the page is the same disclosure the AR Statement of Accounts makes. -->
+          <!-- The allocation is read from the payment's remarks, not a recorded
+               link. Saying so on the page is the same disclosure the AR
+               Statement of Accounts makes. -->
           <p class="text-caption text-medium-emphasis mt-3 mb-0">
-            Payments are recorded against a supplier, not against a specific invoice, so
-            the <strong>Paid</strong> and <strong>Balance</strong> columns apply each
-            supplier's payments to their oldest invoice first. Supplier totals always tie
-            exactly; a single invoice's split can shift if an older invoice is added or
-            back-dated later.
+            A payment counts toward the invoice whose PO or SI number it names (vouchers raised
+            with <strong>Pay</strong> name their PO). A payment that names no PO or SI is applied
+            to that supplier's oldest unpaid invoice first.
           </p>
+
+          <!-- Payments that name a PO but could not be placed on it are listed,
+               never moved to another PO. -->
+          <v-alert
+            v-if="apUnapplied.length"
+            type="warning" variant="tonal" density="compact" class="mt-3"
+          >
+            <div class="font-weight-medium mb-1">
+              Payments not taken off any invoice ({{ formatCurrency(unappliedTotal) }})
+            </div>
+            <div class="text-caption mb-1">
+              These are left out of the balances above, so the aging can be higher than the supplier totals below.
+            </div>
+            <ul class="text-caption ps-4">
+              <li v-for="(u, i) in apUnapplied" :key="i">
+                {{ u.payment_no ?? 'Payment' }} · {{ u.supplier_name ?? `Supplier #${u.supplier_id}` }} ·
+                {{ u.refs.join(', ') }} · {{ formatCurrency(u.amount) }} —
+                {{ unappliedReason(u) }}
+              </li>
+            </ul>
+          </v-alert>
         </v-card-text>
       </v-card>
 
@@ -413,6 +458,7 @@ onMounted(async () => { await init(); await loadPending() })
             <v-btn
               v-else prepend-icon="mdi-pencil-box-outline" size="small" variant="tonal" color="primary" class="text-none"
               title="Request edit or undo (needs executive approval)"
+              :loading="openingChange === item.id"
               @click="openChange(item)"
             >
               Request Change

@@ -39,6 +39,78 @@ export function supplierDocRefs(remarks: string | null | undefined): string[] {
   return [...new Set(refs)]
 }
 
+/** The PO / SI numbers in a text, normalised ('PO-2026-073' -> 'PO-2026-73'). */
+export function purchaseDocKeys(text: string | null | undefined): string[] {
+  const keys: string[] = []
+  for (const m of (text ?? '').matchAll(/\b(PO|SI)-(\d{4})-(\d+)\b/gi)) {
+    keys.push(`${m[1].toUpperCase()}-${m[2]}-${Number(m[3])}`)
+  }
+  return [...new Set(keys)]
+}
+
+type AllocInvoice = { supplier_id: number; po_no: string | null; reference_no: string | null; total_amount: number }
+type AllocPayment = { supplier_id: number; amount: number; remarks: string | null; payment_no: string | null }
+
+/**
+ * Which invoice each supplier payment paid. A payment pays the invoices whose
+ * PO / SI number it names (a voucher raised from "Pay" names its PO), so money
+ * paid for one PO never shows as paid on another. Only a payment that names no
+ * PO / SI at all is spread over the supplier's oldest unpaid invoices.
+ *
+ * Whatever a named payment could not place — more than its invoice's balance
+ * (e.g. the same PO paid twice) or a number no received invoice of that
+ * supplier carries — is returned as `unapplied` instead of being spent on some
+ * other PO.
+ *
+ * `invoices` must be sorted oldest first; `paid[i]` belongs to `invoices[i]`.
+ */
+export function allocateSupplierPayments(invoices: readonly AllocInvoice[], payments: readonly AllocPayment[]) {
+  const remaining = invoices.map((inv) => inv.total_amount)
+  const byKey = new Map<string, number[]>()
+  invoices.forEach((inv, i) => {
+    const keys = new Set([...purchaseDocKeys(inv.po_no), ...purchaseDocKeys(inv.reference_no)])
+    for (const key of keys) {
+      const k = `${inv.supplier_id}|${key}`
+      byKey.set(k, [...(byKey.get(k) ?? []), i])
+    }
+  })
+  const cents = (n: number) => Math.round(n * 100) / 100
+  const pool = new Map<number, number>()
+  const unapplied: { supplier_id: number; payment_no: string | null; refs: string[]; amount: number; reason: 'over' | 'no_invoice' }[] = []
+
+  for (const p of payments) {
+    const refs = purchaseDocKeys(p.remarks)
+    if (!refs.length) {
+      pool.set(p.supplier_id, (pool.get(p.supplier_id) ?? 0) + p.amount)
+      continue
+    }
+    const targets = [...new Set(refs.flatMap((key) => byKey.get(`${p.supplier_id}|${key}`) ?? []))].sort((a, b) => a - b)
+    let left = p.amount
+    for (const i of targets) {
+      const take = Math.min(left, remaining[i])
+      remaining[i] = cents(remaining[i] - take)
+      left = cents(left - take)
+      if (left <= 0) break
+    }
+    if (left > 0.005) {
+      // Shown as written ('PO-2026-073'), not as the matching key.
+      const written = [...new Set((p.remarks ?? '').match(/\b(PO|SI)-\d{4}-\d+\b/gi) ?? [])].map((ref) => ref.toUpperCase())
+      unapplied.push({ supplier_id: p.supplier_id, payment_no: p.payment_no, refs: written, amount: left, reason: targets.length ? 'over' : 'no_invoice' })
+    }
+  }
+
+  // Unreferenced payments: the supplier's oldest unpaid invoices first.
+  invoices.forEach((inv, i) => {
+    const available = pool.get(inv.supplier_id) ?? 0
+    if (available <= 0) return
+    const take = Math.min(available, remaining[i])
+    remaining[i] = cents(remaining[i] - take)
+    pool.set(inv.supplier_id, cents(available - take))
+  })
+
+  return { paid: invoices.map((inv, i) => cents(inv.total_amount - remaining[i])), unapplied }
+}
+
 export function apBucketFor(daysOutstanding: number): APAgeBucket {
   if (daysOutstanding <= 30) return '0-30'
   if (daysOutstanding <= 60) return '31-60'
