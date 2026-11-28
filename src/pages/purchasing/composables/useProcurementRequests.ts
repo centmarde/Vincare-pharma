@@ -129,7 +129,14 @@ export function useProcurementRequests() {
       sourceOrderId: req.order_id,
       sourceOrderType: req.order_type,
       remarks: `Draft from ${moduleLabel(req.order_type)} ${req.order_no ?? ''}`,
-      lines: req.lines.map((l) => ({ product_id: l.product_id!, qty: l.needed, shortfall_qty: l.needed })),
+      lines: req.lines
+        .filter((line) => !line.covered_by_live_pr)
+        .map((line) => ({
+          product_id: line.product_id!,
+          sourceOrderItemId: line.item_id,
+          qty: line.needed,
+          shortfall_qty: line.needed,
+        })),
     })
     if (result.success) {
       activeDraftId.value = (result as any).draftId
@@ -153,6 +160,10 @@ export function useProcurementRequests() {
     await init()
   }
 
+  async function onDraftPartiallySubmitted() {
+    await init()
+  }
+
   function onDraftSaved(draftId: number) {
     activeDraftId.value = draftId
     draftReadonly.value = false
@@ -171,7 +182,7 @@ export function useProcurementRequests() {
   // read-only. A rejected PR lifts that, so the purchaser can fix it and resubmit.
   function openDraft(req: ProcurementRequestType) {
     const draft = draftByOrder.value[req.order_id]
-    if (draft) resumeDraft(draft.id, req.already_canvassed)
+    if (draft) resumeDraft(draft.id, req.already_canvassed && draft.status === 'converted')
   }
 
   return {
@@ -180,7 +191,7 @@ export function useProcurementRequests() {
     canvassOrder, canvassShortfall, commitFn, canvassRef, dismissing,
     init, openDetail, closeDetail, dismissDetail, onCanvassCreated, moduleLabel,
     showDraftEdit, showDraftReview, activeDraftId, draftReadonly,
-    startDraftPR, goToReview, backToEdit, onDraftSubmitted, onDraftSaved,
+    startDraftPR, goToReview, backToEdit, onDraftSubmitted, onDraftPartiallySubmitted, onDraftSaved,
     draftByOrder, resumeDraft, openDraft, convertedAtFor,
   }
 }

@@ -20,6 +20,7 @@ const toast = useToast()
 export type DraftPRItemType = {
   id: number
   draft_pr_id: number
+  source_order_item_id?: number | null
   product_id: number | null
   product_name?: string | null
   brand?: string | null
@@ -37,6 +38,14 @@ export type DraftPRItemType = {
   batch_no?: string | null
   reorder_request_id?: number | null
   reorder_reason?: string | null
+}
+
+export type DraftPRSubmittedItemType = {
+  id: number
+  product_name: string
+  qty: number | null
+  pr_no: string | null
+  status: string | null
 }
 
 export type DraftPROrigin = 'canvass' | 'manual'
@@ -57,6 +66,7 @@ export type DraftPRType = {
   // NEW — user-editable date captured on the manual PR form; date-only 'YYYY-MM-DD' string.
   purchase_requisition_date?: string | null
   items: DraftPRItemType[]
+  submitted_items?: DraftPRSubmittedItemType[]
 }
 
 export type DraftByOrderEntry = {
@@ -64,10 +74,12 @@ export type DraftByOrderEntry = {
   status: DraftPRType['status']
   updated_at: string | null
   converted_at?: string | null
+  remaining_item_count: number
 }
 
 export type DraftLineInput = {
   product_id: number
+  sourceOrderItemId?: number | null
   qty: number
   shortfall_qty?: number | null
   required_by_date?: string | null
@@ -94,6 +106,7 @@ export type ConvertWarning = {
 }
 export type ConvertResult = {
   success: boolean
+  recovered?: boolean
   pr_id?: number
   pr_no?: string
   warnings?: ConvertWarning[]
@@ -107,10 +120,66 @@ export type SaveManualDraftResult = {
   needsAnotherSave?: boolean
 }
 
-type CoverageCheck = { covered: boolean; error?: string }
+type DraftPRLineMetadata = {
+  source?: unknown
+  draft_pr_id?: unknown
+  draft_item_id?: unknown
+  product_id?: unknown
+  supplier_id?: unknown
+  supplier_offer_id?: unknown
+  unit_price?: unknown
+  shortfall_qty?: unknown
+  required_by_date?: unknown
+  justification?: unknown
+  considered_offers?: unknown
+  decided_at?: unknown
+  submission_mode?: unknown
+  attempt_id?: unknown
+  expected_item_ids?: unknown
+  expected_supplier_ids?: unknown
+  source_order_item_id?: unknown
+}
+type DraftPRLineRecord = {
+  id: number
+  transaction_id: number
+  product_id: number | null
+  qty_stock_in: number | null
+  supplier_quotes: unknown
+}
+type DraftPRHeaderRecord = {
+  id: number
+  status: string | null
+  reference_no: string | null
+  transaction_type: string
+}
+type ReconciledDraftPRLine = {
+  pr_id: number
+  pr_no: string | null
+  supplier_id: string | number | null
+  status: string | null
+  draft_item_id: string | number | null
+  source_order_item_id: number | null
+  product_id: number | null
+  qty_stock_in: number | null
+  supplier_quotes: unknown
+}
+type RestoredDraftItem = {
+  draft_pr_id: number
+  product_id: number
+  qty: number
+  shortfall_qty: number | null
+  required_by_date: string | null
+  selected_supplier_offer_id: number | null
+  supplier_id: number | null
+  justification: string | null
+  considered_offers: unknown[] | null
+}
 
 const ITEM_SELECT =
   '*, product:product_id(product_name), offer:selected_supplier_offer_id(supplier_id, cost_price_per_unit, expiry_date, supplier:supplier_id(name))'
+// Recovery waits out the interval when the submitting client may still roll back its PRs.
+const submissionClaimLeaseMs = 5 * 60 * 1000
+const sourceOrderItemMetadataKey = '__draft_source_order_item_id'
 
 
 function requiredByOrToday(date: string | null | undefined): string {
@@ -121,6 +190,38 @@ function sameTimestamp(stored: string | null, written: string): boolean {
   if (!stored) return false
   const hasZone = /(Z|[+-]\d{2}:?\d{2})$/.test(stored)
   return new Date(hasZone ? stored : `${stored}Z`).getTime() === new Date(written).getTime()
+}
+
+function getSourceOrderItemId(value: unknown): number | null {
+  if (!Array.isArray(value)) return null
+  const marker = value.find((entry) =>
+    entry &&
+    typeof entry === 'object' &&
+    (entry as Record<string, unknown>)[sourceOrderItemMetadataKey] != null,
+  ) as Record<string, unknown> | undefined
+  const itemId = marker?.[sourceOrderItemMetadataKey]
+  return typeof itemId === 'number' ? itemId : null
+}
+
+function getConsideredOffers(value: unknown): any[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((entry) =>
+    !entry ||
+    typeof entry !== 'object' ||
+    !(sourceOrderItemMetadataKey in entry),
+  )
+}
+
+function storeSourceOrderItemId(offers: unknown, sourceOrderItemId: number | null | undefined): any[] {
+  const storedOffers = getConsideredOffers(offers)
+  if (sourceOrderItemId != null) {
+    storedOffers.push({ [sourceOrderItemMetadataKey]: sourceOrderItemId })
+  }
+  return storedOffers
+}
+
+function draftPRAttemptRemark(draftId: number, claimStamp: string): string {
+  return `[draft-pr-attempt:${draftId}:${claimStamp}]`
 }
 
 type BatchProduct = {
@@ -200,6 +301,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     return {
       id: row.id,
       draft_pr_id: row.draft_pr_id,
+      source_order_item_id: getSourceOrderItemId(row.considered_offers),
       product_id: row.product_id,
       product_name: row.product_name ?? row.product?.product_name ?? null,
       brand: row.brand ?? null,
@@ -209,7 +311,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       required_by_date: row.required_by_date,
       selected_supplier_offer_id: row.selected_supplier_offer_id,
       justification: row.justification,
-      considered_offers: row.considered_offers ?? [],
+      considered_offers: getConsideredOffers(row.considered_offers),
       supplier_id: row.supplier_id ?? row.offer?.supplier_id ?? null,
       supplier_name: row.offer?.supplier?.name ?? null,
       unit_price: row.offer?.cost_price_per_unit ?? row.cost_per_unit ?? null,
@@ -262,6 +364,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
           qty: l.qty,
           shortfall_qty: l.shortfall_qty ?? null,
           required_by_date: l.required_by_date ?? null,
+          considered_offers: storeSourceOrderItemId([], l.sourceOrderItemId),
         })),
       )
       if (itemsError) {
@@ -287,7 +390,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
 
     const { data: existing, error: findError } = await supabase
       .from('draft_purchase_requisitions')
-      .select('id, items:draft_pr_items(id, product_id)')
+      .select('id, items:draft_pr_items(id, product_id, considered_offers)')
       .eq('origin', 'canvass')
       .eq('status', 'draft')
       .eq('source_order_id', payload.sourceOrderId)
@@ -307,22 +410,73 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     }
 
     loading.value = true
-    const existingItems: { id: number; product_id: number }[] = existing.items ?? []
-    const linesByProduct = new Map(payload.lines.map((l) => [l.product_id, l]))
-    const existingByProduct = new Map(existingItems.map((i) => [i.product_id, i]))
+    const existingItems: { id: number; product_id: number; considered_offers: unknown }[] = existing.items ?? []
+    const unmatchedItems = [...existingItems]
+    const toUpdate: { item: typeof existingItems[number]; line: DraftLineInput }[] = []
+    const toInsert: DraftLineInput[] = []
 
-    const toInsert = payload.lines.filter((l) => !existingByProduct.has(l.product_id))
-    const toUpdate = existingItems.filter((i) => linesByProduct.has(i.product_id))
-    const toDelete = existingItems.filter((i) => !linesByProduct.has(i.product_id))
+    for (const line of payload.lines) {
+      if (line.sourceOrderItemId == null) continue
+      const itemIndex = unmatchedItems.findIndex((item) =>
+        item.product_id === line.product_id &&
+        getSourceOrderItemId(item.considered_offers) === line.sourceOrderItemId,
+      )
+      if (itemIndex < 0) continue
+      const [item] = unmatchedItems.splice(itemIndex, 1)
+      toUpdate.push({ item, line })
+    }
 
-    for (const item of toUpdate) {
-      const line = linesByProduct.get(item.product_id)!
+    const matchedLines = new Set(toUpdate.map(({ line }) => line))
+    const unmatchedLines = payload.lines.filter((line) => !matchedLines.has(line))
+    const linesByProduct = new Map<number, DraftLineInput[]>()
+    for (const line of unmatchedLines) {
+      if (line.sourceOrderItemId == null) continue
+      const productLines = linesByProduct.get(line.product_id) ?? []
+      productLines.push(line)
+      linesByProduct.set(line.product_id, productLines)
+    }
+
+    for (const [productId, lines] of linesByProduct) {
+      const legacyItems = unmatchedItems.filter((item) =>
+        item.product_id === productId && getSourceOrderItemId(item.considered_offers) == null,
+      )
+      if (legacyItems.length > 0 && (legacyItems.length !== 1 || lines.length !== 1)) {
+        toast.error(`Draft items for product #${productId} match multiple source order lines. Resolve them from the order canvass before saving again.`)
+        loading.value = false
+        return { success: false, draftId: existing.id }
+      }
+      if (legacyItems.length === 1 && lines.length === 1) {
+        const itemIndex = unmatchedItems.findIndex((item) => item.id === legacyItems[0].id)
+        const [item] = unmatchedItems.splice(itemIndex, 1)
+        toUpdate.push({ item, line: lines[0] })
+        matchedLines.add(lines[0])
+      } else {
+        toInsert.push(...lines)
+      }
+    }
+
+    for (const line of unmatchedLines) {
+      if (matchedLines.has(line) || line.sourceOrderItemId != null) continue
+      const itemIndex = unmatchedItems.findIndex((item) => item.product_id === line.product_id)
+      if (itemIndex < 0) {
+        toInsert.push(line)
+        continue
+      }
+      const [item] = unmatchedItems.splice(itemIndex, 1)
+      toUpdate.push({ item, line })
+    }
+
+    for (const { item, line } of toUpdate) {
       const { error: updateError } = await supabase
         .from('draft_pr_items')
         .update({
           qty: line.qty,
           shortfall_qty: line.shortfall_qty ?? null,
           required_by_date: line.required_by_date ?? null,
+          considered_offers: storeSourceOrderItemId(
+            item.considered_offers,
+            line.sourceOrderItemId ?? getSourceOrderItemId(item.considered_offers),
+          ),
         })
         .eq('id', item.id)
       if (updateError) {
@@ -341,6 +495,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
           qty: l.qty,
           shortfall_qty: l.shortfall_qty ?? null,
           required_by_date: l.required_by_date ?? null,
+          considered_offers: storeSourceOrderItemId([], l.sourceOrderItemId),
         })),
       )
       if (insertError) {
@@ -351,11 +506,11 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       }
     }
 
-    if (toDelete.length) {
+    if (unmatchedItems.length) {
       const { error: deleteError } = await supabase
         .from('draft_pr_items')
         .delete()
-        .in('id', toDelete.map((i) => i.id))
+        .in('id', unmatchedItems.map((i) => i.id))
       if (deleteError) {
         handleError(deleteError, 'Failed to remove stale draft items.')
         toast.error('Failed to remove stale draft items.')
@@ -405,16 +560,129 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       .select(`*, items:draft_pr_items(${ITEM_SELECT})`)
       .eq('id', draftId)
       .single()
-    loading.value = false
     if (fetchError || !data) {
+      loading.value = false
       handleError(fetchError, 'Failed to load draft.')
       return null
     }
+    let hasRecentSubmissionClaim = false
+    const updatedAtTime = data.updated_at ? new Date(data.updated_at).getTime() : 0
+    if (
+      data.status === 'converted' &&
+      updatedAtTime > 0 &&
+      Date.now() - updatedAtTime < submissionClaimLeaseMs
+    ) {
+      const attemptRecords = await fetchDraftPRRecords(data.id)
+      if (attemptRecords.error) {
+        handleError(new Error(attemptRecords.error), 'Failed to check the draft submission status.')
+        loading.value = false
+        return null
+      }
+      const hasCurrentAttemptLines = attemptRecords.lines.some((line) => {
+        const metadata = draftPRMetadata(line.supplier_quotes)
+        const attempt = typeof metadata?.attempt_id === 'string' ? metadata.attempt_id : null
+        return attempt != null && sameTimestamp(data.updated_at, attempt)
+      })
+      hasRecentSubmissionClaim = data.converted_pr_id == null || hasCurrentAttemptLines
+    }
+    const restored: {
+      items: any[]
+      hasActionableRejectedItems: boolean
+      error?: string
+    } = hasRecentSubmissionClaim
+      ? { items: data.items ?? [], hasActionableRejectedItems: false }
+      : await restoreRejectedDraftItems(data.id, data.source_order_id ?? null)
+    if (restored.error) {
+      handleError(new Error(restored.error), 'Failed to restore rejected draft items.')
+      loading.value = false
+      return null
+    }
+
+    let draftStatus = data.status
+    let updatedAt = data.updated_at
+    let convertedPRId = data.converted_pr_id
+    if (data.status === 'converted') {
+      if (restored.hasActionableRejectedItems && !hasRecentSubmissionClaim) {
+        const reopenedAt = new Date().toISOString()
+        const { data: reopenedRows, error: reopenError } = await supabase
+          .from('draft_purchase_requisitions')
+          .update({ status: 'draft', updated_at: reopenedAt })
+          .eq('id', draftId)
+          .eq('status', 'converted')
+          .eq('updated_at', data.updated_at)
+          .select('id')
+        if (reopenError) {
+          handleError(reopenError, 'Failed to reopen the recovered draft.')
+          loading.value = false
+          return null
+        }
+        if (reopenedRows?.length === 1) {
+          draftStatus = 'draft'
+          updatedAt = reopenedAt
+        }
+      }
+
+      const { data: currentHeader, error: headerError } = await supabase
+        .from('draft_purchase_requisitions')
+        .select('status, updated_at, converted_pr_id')
+        .eq('id', draftId)
+        .single()
+      if (headerError || !currentHeader) {
+        handleError(headerError, 'Failed to reload the recovered draft.')
+        loading.value = false
+        return null
+      }
+      draftStatus = currentHeader.status
+      updatedAt = currentHeader.updated_at
+      convertedPRId = currentHeader.converted_pr_id
+    }
+
+    const submittedRecords = await fetchDraftPRRecords(data.id)
+    if (submittedRecords.error) {
+      handleError(new Error(submittedRecords.error), 'Failed to load submitted purchase requisitions.')
+      loading.value = false
+      return null
+    }
+
+    const submittedProductIds = Array.from(new Set(
+      submittedRecords.lines
+        .map((line) => line.product_id)
+        .filter((productId): productId is number => productId != null),
+    ))
+    const { data: submittedProducts, error: submittedProductsError } = submittedProductIds.length
+      ? await supabase.from('products').select('id, product_name').in('id', submittedProductIds)
+      : { data: [], error: null }
+    if (submittedProductsError) {
+      handleError(submittedProductsError, 'Failed to load submitted product names.')
+      loading.value = false
+      return null
+    }
+    const submittedProductNames = new Map(
+      (submittedProducts ?? []).map((product) => [product.id, product.product_name]),
+    )
+    const submittedItems = submittedRecords.lines.map((line) => {
+      const header = submittedRecords.headers.get(line.transaction_id)
+      return {
+        id: line.id,
+        product_name: line.product_id == null
+          ? 'Unknown product'
+          : submittedProductNames.get(line.product_id) ?? `Product #${line.product_id}`,
+        qty: line.qty_stock_in,
+        pr_no: header?.reference_no ?? null,
+        status: header?.status ?? null,
+      }
+    })
+
     currentDraft.value = {
       ...data,
-      converted_at: data.status === 'converted' ? data.updated_at ?? null : null,
-      items: (data.items ?? []).map(mapItem),
+      status: draftStatus,
+      updated_at: updatedAt,
+      converted_pr_id: convertedPRId,
+      converted_at: draftStatus === 'converted' ? updatedAt ?? null : null,
+      items: restored.items.map(mapItem),
+      submitted_items: submittedItems,
     }
+    loading.value = false
     return currentDraft.value
   }
 
@@ -489,14 +757,31 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     offer: SupplierOfferType
     consideredOffers: SupplierOfferType[]
     justification?: string | null
+    sourceOrderItemId?: number | null
   }) {
+    let sourceOrderItemId = payload.sourceOrderItemId
+    if (sourceOrderItemId === undefined) {
+      sourceOrderItemId = currentDraft.value?.items.find((item) => item.id === payload.itemId)?.source_order_item_id
+      if (sourceOrderItemId == null) {
+        const { data: item, error: itemError } = await supabase
+          .from('draft_pr_items')
+          .select('considered_offers')
+          .eq('id', payload.itemId)
+          .maybeSingle()
+        if (itemError) {
+          toast.error('Failed to save supplier selection.')
+          return false
+        }
+        sourceOrderItemId = getSourceOrderItemId(item?.considered_offers)
+      }
+    }
     const { error: updateError } = await supabase
       .from('draft_pr_items')
       .update({
         selected_supplier_offer_id: payload.offer.id,
         supplier_id: payload.offer.supplier_id,
         justification: payload.justification ?? null,
-        considered_offers: payload.consideredOffers,
+        considered_offers: storeSourceOrderItemId(payload.consideredOffers, sourceOrderItemId),
       })
       .eq('id', payload.itemId)
     if (updateError) {
@@ -507,7 +792,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     if (item) {
       item.selected_supplier_offer_id = payload.offer.id
       item.justification = payload.justification ?? null
-      item.considered_offers = payload.consideredOffers
+      item.considered_offers = getConsideredOffers(payload.consideredOffers)
       item.supplier_id = payload.offer.supplier_id ?? null // NEW
       item.supplier_name = payload.offer.supplier_name ?? null
       item.unit_price = payload.offer.cost_price_per_unit
@@ -517,13 +802,26 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
   }
 
   async function clearOfferSelection(itemId: number) {
+    let sourceOrderItemId = currentDraft.value?.items.find((item) => item.id === itemId)?.source_order_item_id
+    if (sourceOrderItemId == null) {
+      const { data: item, error: itemError } = await supabase
+        .from('draft_pr_items')
+        .select('considered_offers')
+        .eq('id', itemId)
+        .maybeSingle()
+      if (itemError) {
+        toast.error('Failed to clear supplier selection.')
+        return false
+      }
+      sourceOrderItemId = getSourceOrderItemId(item?.considered_offers)
+    }
     const { error: updateError } = await supabase
       .from('draft_pr_items')
       .update({
         selected_supplier_offer_id: null,
         supplier_id: null,
         justification: null,
-        considered_offers: null,
+        considered_offers: storeSourceOrderItemId([], sourceOrderItemId),
       })
       .eq('id', itemId)
     if (updateError) {
@@ -859,47 +1157,568 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
   }
 
 
-  async function hasLiveCoverage(sourceOrderId: number): Promise<CoverageCheck> {
-    const { data: items, error: itemsError } = await supabase
+  function draftPRMetadata(value: unknown): DraftPRLineMetadata | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+    return value as DraftPRLineMetadata
+  }
+
+  function restoredDraftItemFromPRLine(
+    draftId: number,
+    line: DraftPRLineRecord,
+  ): { originalItemId: number; item: RestoredDraftItem } | null {
+    const metadata = draftPRMetadata(line.supplier_quotes)
+    const productId = typeof metadata?.product_id === 'number' ? metadata.product_id : line.product_id
+    if (
+      productId == null ||
+      line.qty_stock_in == null ||
+      typeof metadata?.draft_item_id !== 'number'
+    ) return null
+
+    return {
+      originalItemId: metadata.draft_item_id,
+      item: {
+        draft_pr_id: draftId,
+        product_id: productId,
+        qty: line.qty_stock_in,
+        // Older PRs did not preserve the draft shortfall. Their submitted
+        // quantity is the only safe fallback when restoring a rejected line.
+        shortfall_qty: typeof metadata.shortfall_qty === 'number'
+          ? metadata.shortfall_qty
+          : line.qty_stock_in,
+        required_by_date: typeof metadata.required_by_date === 'string' ? metadata.required_by_date : null,
+        selected_supplier_offer_id: typeof metadata.supplier_offer_id === 'number' ? metadata.supplier_offer_id : null,
+        supplier_id: typeof metadata.supplier_id === 'number' ? metadata.supplier_id : null,
+        justification: typeof metadata.justification === 'string' ? metadata.justification : null,
+        considered_offers: storeSourceOrderItemId(
+          Array.isArray(metadata.considered_offers) ? metadata.considered_offers : [],
+          typeof metadata.source_order_item_id === 'number' ? metadata.source_order_item_id : null,
+        ),
+      },
+    }
+  }
+
+  async function fetchDraftPRRecords(draftId: number): Promise<{
+    lines: DraftPRLineRecord[]
+    headers: Map<number, DraftPRHeaderRecord>
+    error?: string
+  }> {
+    const { data: lines, error: linesError } = await supabase
       .from('transaction_items')
-      .select('supplier_quotes')
-      .eq('transaction_id', sourceOrderId)
-    if (itemsError) return { covered: false, error: itemsError.message }
-    const prIds = Array.from(new Set(
-      (items ?? []).map((i) => prIdFromCoverage(i.supplier_quotes)).filter((id): id is number => id != null),
-    ))
-    if (!prIds.length) return { covered: false }
+      .select('id, transaction_id, product_id, qty_stock_in, supplier_quotes')
+      .contains('supplier_quotes', { source: 'draft_pr', draft_pr_id: draftId })
+    if (linesError) return { lines: [], headers: new Map(), error: linesError.message }
 
-    const { data: prs, error: prsError } = await supabase.from('transactions').select('id, status').in('id', prIds)
-    if (prsError) return { covered: false, error: prsError.message }
-    return { covered: (prs ?? []).some((pr) => isPRCoverageLive(pr.status)) }
-  }
+    const draftLines = (lines ?? []) as DraftPRLineRecord[]
+    const offerIds = Array.from(new Set(draftLines.flatMap((line) => {
+      const metadata = draftPRMetadata(line.supplier_quotes)
+      return typeof metadata?.product_id === 'number' || typeof metadata?.supplier_offer_id !== 'number'
+        ? []
+        : [metadata.supplier_offer_id]
+    })))
+    if (offerIds.length) {
+      const { data: offers, error: offersError } = await supabase
+        .from('supplier_offers')
+        .select('id, product_id')
+        .in('id', offerIds)
+      if (offersError) return { lines: [], headers: new Map(), error: offersError.message }
+      const productByOfferId = new Map((offers ?? []).map((offer) => [offer.id, offer.product_id]))
+      for (const line of draftLines) {
+        const metadata = draftPRMetadata(line.supplier_quotes)
+        let productId: number | null = null
+        if (typeof metadata?.product_id === 'number') productId = metadata.product_id
+        else if (typeof metadata?.supplier_offer_id === 'number') {
+          productId = productByOfferId.get(metadata.supplier_offer_id) ?? null
+        }
+        if (productId != null) line.product_id = productId
+      }
+    } else {
+      for (const line of draftLines) {
+        const metadata = draftPRMetadata(line.supplier_quotes)
+        line.product_id = typeof metadata?.product_id === 'number' ? metadata.product_id : null
+      }
+    }
 
+    const prIds = Array.from(new Set(draftLines.map((line) => line.transaction_id)))
+    if (!prIds.length) return { lines: draftLines, headers: new Map() }
 
-  async function claimLanded(draftId: number, claimStamp: string): Promise<boolean> {
-    const { data, error: readError } = await supabase
-      .from('draft_purchase_requisitions')
-      .select('status, updated_at')
-      .eq('id', draftId)
-      .maybeSingle()
-    if (readError || !data) return false
-    return data.status === 'converted' && sameTimestamp(data.updated_at, claimStamp)
-  }
-
-
-  async function convertedPRStillLive(prId: number | null): Promise<boolean> {
-    if (prId == null) return false
-    const { data, error: prError } = await supabase
+    const { data: headers, error: headersError } = await supabase
       .from('transactions')
-      .select('status')
-      .eq('id', prId)
-      .maybeSingle()
-    if (prError) return true
-    return data ? isPRCoverageLive(data.status) : false
+      .select('id, status, reference_no, transaction_type')
+      .in('id', prIds)
+    if (headersError) return { lines: [], headers: new Map(), error: headersError.message }
+
+    return {
+      lines: draftLines,
+      headers: new Map(((headers ?? []) as DraftPRHeaderRecord[]).map((header) => [header.id, header])),
+    }
   }
 
 
-  async function submitDraft(draftId: number): Promise<ConvertResult> {
+  async function getLiveCoveredItems(
+    sourceOrderId: number | null,
+    draftId: number,
+  ): Promise<{
+    sourceOrderItemIds: Set<number>
+    sourceOrderItemIdsByProduct: Map<number, number[]>
+    draftItemIds: Set<number>
+    error?: string
+  }> {
+    const sourceOrderItemIds = new Set<number>()
+    const sourceOrderItemIdsByProduct = new Map<number, number[]>()
+    const draftItemIds = new Set<number>()
+
+    if (sourceOrderId != null) {
+      const { data: orderItems, error: itemsError } = await supabase
+        .from('transaction_items')
+        .select('id, product_id, supplier_quotes')
+        .eq('transaction_id', sourceOrderId)
+      if (itemsError) return { sourceOrderItemIds, sourceOrderItemIdsByProduct, draftItemIds, error: itemsError.message }
+
+      for (const item of orderItems ?? []) {
+        if (item.product_id == null) continue
+        const productItemIds = sourceOrderItemIdsByProduct.get(item.product_id) ?? []
+        productItemIds.push(item.id)
+        sourceOrderItemIdsByProduct.set(item.product_id, productItemIds)
+      }
+
+      const orderPRIds = Array.from(new Set(
+        (orderItems ?? [])
+          .map((item) => prIdFromCoverage(item.supplier_quotes))
+          .filter((id): id is number => id != null),
+      ))
+      if (orderPRIds.length) {
+        const { data: prs, error: prsError } = await supabase
+          .from('transactions')
+          .select('id, status')
+          .in('id', orderPRIds)
+        if (prsError) {
+          return { sourceOrderItemIds, sourceOrderItemIdsByProduct, draftItemIds, error: prsError.message }
+        }
+
+        const livePRIds = new Set(
+          (prs ?? []).filter((pr) => isPRCoverageLive(pr.status)).map((pr) => pr.id),
+        )
+        for (const item of orderItems ?? []) {
+          const prId = prIdFromCoverage(item.supplier_quotes)
+          if (prId != null && livePRIds.has(prId)) {
+            sourceOrderItemIds.add(item.id)
+          }
+        }
+      }
+    }
+
+    const draftPRs = await fetchDraftPRRecords(draftId)
+    if (draftPRs.error) {
+      return { sourceOrderItemIds, sourceOrderItemIdsByProduct, draftItemIds, error: draftPRs.error }
+    }
+    for (const line of draftPRs.lines) {
+      const header = draftPRs.headers.get(line.transaction_id)
+      const metadata = draftPRMetadata(line.supplier_quotes)
+      if (!header || !isPRCoverageLive(header.status)) continue
+      if (typeof metadata?.draft_item_id === 'number') {
+        draftItemIds.add(metadata.draft_item_id)
+      }
+      if (typeof metadata?.source_order_item_id === 'number') {
+        sourceOrderItemIds.add(metadata.source_order_item_id)
+      }
+    }
+    return { sourceOrderItemIds, sourceOrderItemIdsByProduct, draftItemIds }
+  }
+
+
+  async function restoreRejectedDraftItems(
+    draftId: number,
+    sourceOrderId: number | null,
+  ): Promise<{ items: any[]; hasActionableRejectedItems: boolean; error?: string }> {
+    const records = await fetchDraftPRRecords(draftId)
+    if (records.error) return { items: [], hasActionableRejectedItems: false, error: records.error }
+
+    const coverage = await getLiveCoveredItems(sourceOrderId, draftId)
+    if (coverage.error) return { items: [], hasActionableRejectedItems: false, error: coverage.error }
+
+    const { data: existingItems, error: existingItemsError } = await supabase
+      .from('draft_pr_items')
+      .select('id, shortfall_qty')
+      .eq('draft_pr_id', draftId)
+    if (existingItemsError) return { items: [], hasActionableRejectedItems: false, error: existingItemsError.message }
+    const existingItemsById = new Map((existingItems ?? []).map((item) => [item.id, item]))
+    let hasActionableRejectedItems = false
+
+    for (const line of records.lines) {
+      const header = records.headers.get(line.transaction_id)
+      const restored = restoredDraftItemFromPRLine(draftId, line)
+      let sourceOrderItemId = restored
+        ? getSourceOrderItemId(restored.item.considered_offers)
+        : null
+      if (sourceOrderItemId == null && restored) {
+        const productItemIds = coverage.sourceOrderItemIdsByProduct.get(restored.item.product_id) ?? []
+        if (productItemIds.length === 1) sourceOrderItemId = productItemIds[0]
+      }
+      if (restored && getSourceOrderItemId(restored.item.considered_offers) == null && sourceOrderItemId != null) {
+        restored.item.considered_offers = storeSourceOrderItemId(
+          restored.item.considered_offers,
+          sourceOrderItemId,
+        )
+      }
+      if (
+        header?.status !== 'rejected' ||
+        !restored ||
+        coverage.draftItemIds.has(restored.originalItemId) ||
+        (sourceOrderItemId != null && coverage.sourceOrderItemIds.has(sourceOrderItemId))
+      ) continue
+
+      hasActionableRejectedItems = true
+      const existingItem = existingItemsById.get(restored.originalItemId)
+      if (existingItem) {
+        // Repair previously restored rows that were created before shortfall
+        // was written into the PR audit metadata.
+        if (existingItem.shortfall_qty == null) {
+          const { error: updateError } = await supabase
+            .from('draft_pr_items')
+            .update({ shortfall_qty: restored.item.shortfall_qty })
+            .eq('id', restored.originalItemId)
+            .eq('draft_pr_id', draftId)
+          if (updateError) return { items: [], hasActionableRejectedItems: false, error: updateError.message }
+        }
+        continue
+      }
+
+      const { error: insertError } = await supabase
+        .from('draft_pr_items')
+        .insert({ id: restored.originalItemId, ...restored.item })
+      if (insertError) {
+        const { data: restoredRow, error: verifyError } = await supabase
+          .from('draft_pr_items')
+          .select('id')
+          .eq('draft_pr_id', draftId)
+          .eq('id', restored.originalItemId)
+          .maybeSingle()
+        if (verifyError || !restoredRow) {
+          return { items: [], hasActionableRejectedItems: false, error: insertError.message }
+        }
+      }
+      existingItemsById.set(restored.originalItemId, { id: restored.originalItemId, shortfall_qty: restored.item.shortfall_qty })
+    }
+
+    const { data: items, error: fetchError } = await supabase
+      .from('draft_pr_items')
+      .select(ITEM_SELECT)
+      .eq('draft_pr_id', draftId)
+      .order('id')
+    if (fetchError) return { items: [], hasActionableRejectedItems: false, error: fetchError.message }
+    return { items: items ?? [], hasActionableRejectedItems }
+  }
+
+
+  async function recoverInterruptedSubmission(
+    draftRow: any,
+  ): Promise<{ recovered: boolean; pr_id?: number; pr_no?: string; error?: string }> {
+    if (draftRow.status !== 'converted' || typeof draftRow.updated_at !== 'string') {
+      return { recovered: false }
+    }
+    const claimTime = new Date(draftRow.updated_at).getTime()
+    if (!Number.isFinite(claimTime) || Date.now() - claimTime < submissionClaimLeaseMs) {
+      return { recovered: false }
+    }
+
+    const records = await fetchDraftPRRecords(draftRow.id)
+    if (records.error) return { recovered: false, error: records.error }
+    const lines: ReconciledDraftPRLine[] = records.lines.flatMap((line) => {
+      const metadata = draftPRMetadata(line.supplier_quotes)
+      let metadataAttempt: string | null = null
+      if (typeof metadata?.attempt_id === 'string') {
+        metadataAttempt = metadata.attempt_id
+      } else if (typeof metadata?.decided_at === 'string') {
+        metadataAttempt = metadata.decided_at
+      }
+      if (!metadataAttempt || !sameTimestamp(draftRow.updated_at, metadataAttempt)) return []
+      const header = records.headers.get(line.transaction_id)
+      if (!header) return []
+      const supplierId = typeof metadata?.supplier_id === 'number' || typeof metadata?.supplier_id === 'string'
+        ? metadata.supplier_id
+        : null
+      const draftItemId = typeof metadata?.draft_item_id === 'number' || typeof metadata?.draft_item_id === 'string'
+        ? metadata.draft_item_id
+        : null
+      const sourceOrderItemId = typeof metadata?.source_order_item_id === 'number'
+        ? metadata.source_order_item_id
+        : null
+      return [{
+        pr_id: line.transaction_id,
+        pr_no: header.reference_no,
+        supplier_id: supplierId,
+        status: header.status,
+        draft_item_id: draftItemId,
+        source_order_item_id: sourceOrderItemId,
+        product_id: line.product_id,
+        qty_stock_in: line.qty_stock_in,
+        supplier_quotes: line.supplier_quotes,
+      }]
+    })
+    const attemptRemark = draftPRAttemptRemark(draftRow.id, draftRow.updated_at)
+    if (!lines.length) {
+      const { data: currentClaim, error: claimError } = await supabase
+        .from('draft_purchase_requisitions')
+        .select('id')
+        .eq('id', draftRow.id)
+        .eq('status', 'converted')
+        .eq('updated_at', draftRow.updated_at)
+        .maybeSingle()
+      if (claimError) return { recovered: false, error: claimError.message }
+      if (!currentClaim) return { recovered: false }
+
+      const { data: emptyPRs, error: emptyPRsError } = await supabase
+        .from('transactions')
+        .select('id')
+        .eq('transaction_type', 'purchase_requisition')
+        .eq('created_by', draftRow.created_by)
+        .eq('remarks', attemptRemark)
+      if (emptyPRsError) return { recovered: false, error: emptyPRsError.message }
+
+      for (const pr of emptyPRs ?? []) {
+        const { data: prLines, error: prLinesError } = await supabase
+          .from('transaction_items')
+          .select('id')
+          .eq('transaction_id', pr.id)
+        if (prLinesError) return { recovered: false, error: prLinesError.message }
+        if (prLines?.length) {
+          return {
+            recovered: false,
+            error: `Purchase requisition #${pr.id} has lines that could not be matched to the active draft submission.`,
+          }
+        }
+
+        const { data: deletedPR, error: deletePRError } = await supabase
+          .from('transactions')
+          .delete()
+          .eq('id', pr.id)
+          .eq('remarks', attemptRemark)
+          .select('id')
+        if (deletePRError) return { recovered: false, error: deletePRError.message }
+        if (deletedPR?.length !== 1) return { recovered: false }
+      }
+
+      const { data: releasedRows, error: releaseError } = await supabase
+        .from('draft_purchase_requisitions')
+        .update({ status: 'draft', converted_pr_id: null, updated_at: new Date().toISOString() })
+        .eq('id', draftRow.id)
+        .eq('status', 'converted')
+        .eq('updated_at', draftRow.updated_at)
+        .select('id')
+      if (releaseError) return { recovered: false, error: releaseError.message }
+      return { recovered: releasedRows?.length === 1 }
+    }
+
+    const { data: currentClaim, error: claimError } = await supabase
+      .from('draft_purchase_requisitions')
+      .select('id')
+      .eq('id', draftRow.id)
+      .eq('status', 'converted')
+      .eq('updated_at', draftRow.updated_at)
+      .maybeSingle()
+    if (claimError) return { recovered: false, error: claimError.message }
+    if (!currentClaim) return { recovered: false }
+
+    const prIds = Array.from(new Set(lines.map((line) => line.pr_id)))
+    const prNos = Array.from(new Set(lines.map((line) => line.pr_no).filter((no): no is string => !!no)))
+    const { data: attemptPRs, error: attemptPRError } = await supabase
+      .from('transactions')
+      .select('id')
+      .eq('transaction_type', 'purchase_requisition')
+      .eq('created_by', draftRow.created_by)
+      .eq('remarks', attemptRemark)
+    if (attemptPRError) return { recovered: false, error: attemptPRError.message }
+    for (const pr of attemptPRs ?? []) {
+      if (prIds.includes(pr.id)) {
+        const { error: clearMarkerError } = await supabase
+          .from('transactions')
+          .update({ remarks: `Submitted from Procurement Request draft PR #${draftRow.id}` })
+          .eq('id', pr.id)
+          .eq('remarks', attemptRemark)
+        if (clearMarkerError) return { recovered: false, error: clearMarkerError.message }
+        continue
+      }
+
+      const { data: prLines, error: prLinesError } = await supabase
+        .from('transaction_items')
+        .select('id')
+        .eq('transaction_id', pr.id)
+      if (prLinesError) return { recovered: false, error: prLinesError.message }
+      if (prLines?.length) {
+        return {
+          recovered: false,
+          error: `Purchase requisition #${pr.id} has lines that could not be matched to the active draft submission.`,
+        }
+      }
+      const { error: deletePRError } = await supabase
+        .from('transactions')
+        .delete()
+        .eq('id', pr.id)
+        .eq('remarks', attemptRemark)
+      if (deletePRError) return { recovered: false, error: deletePRError.message }
+    }
+
+    const attemptMetadata = draftPRMetadata(lines[0].supplier_quotes)
+    const submissionMode = attemptMetadata?.submission_mode === 'full' ? 'full' : 'partial'
+    const expectedItemIds = Array.isArray(attemptMetadata?.expected_item_ids)
+      ? attemptMetadata.expected_item_ids.filter((id): id is number => typeof id === 'number')
+      : lines.flatMap((line) => typeof line.draft_item_id === 'number' ? [line.draft_item_id] : [])
+    const expectedSupplierIds = Array.isArray(attemptMetadata?.expected_supplier_ids)
+      ? attemptMetadata.expected_supplier_ids.filter((id): id is number => typeof id === 'number')
+      : Array.from(new Set(lines.flatMap((line) => typeof line.supplier_id === 'number' ? [line.supplier_id] : [])))
+    const committedItemIds = new Set<number>()
+    const committedSupplierIds = new Set<number>()
+    for (const line of lines) {
+      if (typeof line.draft_item_id === 'number') {
+        committedItemIds.add(line.draft_item_id)
+      }
+      const supplierId = Number(line.supplier_id)
+      if (Number.isFinite(supplierId)) committedSupplierIds.add(supplierId)
+    }
+    const allExpectedCommitted = expectedItemIds.every((id) => committedItemIds.has(id)) &&
+      expectedSupplierIds.every((id) => committedSupplierIds.has(id))
+
+    const { data: latestPRStatuses, error: latestStatusError } = await supabase
+      .from('transactions')
+      .select('id, status')
+      .in('id', prIds)
+    if (latestStatusError) {
+      return { recovered: false, error: `Could not recheck purchase requisition statuses: ${latestStatusError.message}` }
+    }
+    const statusByPRId = new Map((latestPRStatuses ?? []).map((pr) => [pr.id, pr.status]))
+    for (const line of lines) line.status = statusByPRId.get(line.pr_id) ?? null
+    const liveLines = lines.filter((line) => isPRCoverageLive(line.status))
+    const liveItemIds = new Set(
+      liveLines.flatMap((line) => typeof line.draft_item_id === 'number' ? [line.draft_item_id] : []),
+    )
+    const liveSupplierIds = new Set(liveLines.map((line) => Number(line.supplier_id)))
+    const allExpectedLive = expectedItemIds.every((id) => liveItemIds.has(id)) &&
+      expectedSupplierIds.every((id) => liveSupplierIds.has(id))
+
+    const { data: finalClaim, error: finalClaimError } = await supabase
+      .from('draft_purchase_requisitions')
+      .select('id')
+      .eq('id', draftRow.id)
+      .eq('status', 'converted')
+      .eq('updated_at', draftRow.updated_at)
+      .maybeSingle()
+    if (finalClaimError) return { recovered: false, error: finalClaimError.message }
+    if (!finalClaim) return { recovered: false }
+
+    if (liveItemIds.size) {
+      const { error: removeError } = await supabase
+        .from('draft_pr_items')
+        .delete()
+        .eq('draft_pr_id', draftRow.id)
+        .in('id', Array.from(liveItemIds))
+      if (removeError) {
+        return { recovered: false, error: `Could not remove submitted draft items: ${removeError.message}` }
+      }
+      const { data: remainingItems, error: remainingItemsError } = await supabase
+        .from('draft_pr_items')
+        .select('id')
+        .eq('draft_pr_id', draftRow.id)
+        .in('id', Array.from(liveItemIds))
+      if (remainingItemsError || remainingItems?.length) {
+        return { recovered: false, error: `Could not confirm submitted draft items were removed${remainingItemsError ? `: ${remainingItemsError.message}` : '.'}` }
+      }
+    }
+
+    const sourceOrderId: number | null = draftRow.source_order_id ?? null
+    let mirrorFailure: string | null = null
+    if (sourceOrderId != null && liveLines.length) {
+      const { data: orderItems, error: orderItemsError } = await supabase
+        .from('transaction_items')
+        .select('id, product_id')
+        .eq('transaction_id', sourceOrderId)
+      if (orderItemsError) mirrorFailure = orderItemsError.message
+      else {
+        let coverageWrites = 0
+        let unmatchedLines = 0
+        for (const line of liveLines) {
+          const supplierId = Number(line.supplier_id)
+          const metadata = draftPRMetadata(line.supplier_quotes)
+          const targets = line.source_order_item_id != null
+            ? (orderItems ?? []).filter((item) => item.id === line.source_order_item_id)
+            : (orderItems ?? []).filter((item) => item.product_id === line.product_id)
+          const target = targets.length === 1 ? targets[0] : null
+          if (!target) {
+            unmatchedLines += 1
+            continue
+          }
+          const coverage: PRCoverage = {
+            source: 'draft_pr',
+            pr_id: line.pr_id,
+            pr_no: line.pr_no ?? '',
+            winner_supplier_id: Number.isFinite(supplierId) ? supplierId : null,
+            unit_price: typeof metadata?.unit_price === 'number' ? metadata.unit_price : 0,
+            order_qty: line.qty_stock_in ?? 0,
+            quotes: Array.isArray(metadata?.considered_offers) ? metadata.considered_offers : [],
+            decided_at: typeof metadata?.decided_at === 'string' ? metadata.decided_at : new Date().toISOString(),
+          }
+          const writeCoverage = async () => supabase
+            .from('transaction_items')
+            .update({ supplier_quotes: coverage })
+            .eq('id', target.id)
+          let mirrorResult = await writeCoverage()
+          if (mirrorResult.error) mirrorResult = await writeCoverage()
+          const mirrorError = mirrorResult.error
+          if (mirrorError && mirrorFailure == null) mirrorFailure = mirrorError.message
+          if (!mirrorError) coverageWrites += 1
+        }
+        if ((unmatchedLines > 0 || coverageWrites === 0) && mirrorFailure == null) {
+          mirrorFailure = 'one or more source-order lines could not be matched to the submitted items'
+        }
+      }
+    }
+    if (mirrorFailure) {
+      return {
+        recovered: false,
+        pr_id: prIds[0],
+        pr_no: prNos.join(', '),
+        error: `${prNos.join(', ')} were raised, but source-order coverage could not be restored: ${mirrorFailure}`,
+      }
+    }
+
+    const restored = await restoreRejectedDraftItems(draftRow.id, sourceOrderId)
+    if (restored.error) {
+      return {
+        recovered: false,
+        pr_id: prIds[0],
+        pr_no: prNos.join(', '),
+        error: `${prNos.join(', ')} were raised, but rejected items could not be reconciled: ${restored.error}`,
+      }
+    }
+
+    const shouldRemainDraft = submissionMode === 'partial' ||
+      !allExpectedCommitted ||
+      !allExpectedLive ||
+      restored.items.length > 0
+    const finalizedAt = new Date().toISOString()
+    const { data: finalizedRows, error: finalizeError } = await supabase
+      .from('draft_purchase_requisitions')
+      .update({
+        status: shouldRemainDraft ? 'draft' : 'converted',
+        converted_pr_id: prIds[0] ?? draftRow.converted_pr_id ?? null,
+        updated_at: finalizedAt,
+      })
+      .eq('id', draftRow.id)
+      .eq('status', 'converted')
+      .eq('updated_at', draftRow.updated_at)
+      .select('id')
+    if (finalizeError || finalizedRows?.length !== 1) {
+      return {
+        recovered: false,
+        pr_id: prIds[0],
+        pr_no: prNos.join(', '),
+        error: `Purchase requisition(s) were raised, but Draft PR #${draftRow.id} could not be finalized${finalizeError ? `: ${finalizeError.message}` : '.'}`,
+      }
+    }
+    return { recovered: true }
+  }
+
+
+  async function submitDraft(draftId: number, itemIds?: number[]): Promise<ConvertResult> {
     loading.value = true
     const { user, error: authError } = await authStore.getCurrentUser()
     if (authError || !user) {
@@ -908,43 +1727,154 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       return { success: false, error: 'User not authenticated.' }
     }
 
-    const { data: draftRow, error: draftFetchError } = await supabase
+    const { data: initialDraftRow, error: draftFetchError } = await supabase
       .from('draft_purchase_requisitions')
       .select('*, items:draft_pr_items(*)')
       .eq('id', draftId)
       .single()
-    if (draftFetchError || !draftRow) {
+    if (draftFetchError || !initialDraftRow) {
       loading.value = false
       return { success: false, error: 'Draft not found.' }
     }
-    // A converted draft is normally spent — but if every PR it raised was
-    // rejected, the shortfall is live again and the purchaser must be able to
-    // fix the draft and resubmit it. Coverage is read off the source order's
-    // mirror, with converted_pr_id — which only ever holds the FIRST of a
-    // multi-supplier conversion's PRs — as the backstop when that mirror is missing.
-    if (draftRow.status === 'converted') {
-      const coverage: CoverageCheck = draftRow.source_order_id != null
-        ? await hasLiveCoverage(draftRow.source_order_id)
-        : { covered: true }
-      if (coverage.error) {
+    let draftRow: any = initialDraftRow
+    const recoveredSubmission = await recoverInterruptedSubmission(draftRow)
+    if (recoveredSubmission.error) {
+      loading.value = false
+      return {
+        success: false,
+        pr_id: recoveredSubmission.pr_id,
+        pr_no: recoveredSubmission.pr_no,
+        error: recoveredSubmission.error,
+      }
+    }
+    if (recoveredSubmission.recovered) {
+      const { data: refreshedDraft, error: refreshError } = await supabase
+        .from('draft_purchase_requisitions')
+        .select('*, items:draft_pr_items(*)')
+        .eq('id', draftId)
+        .single()
+      if (refreshError || !refreshedDraft) {
         loading.value = false
         return {
           success: false,
-          error: 'Could not check whether this draft is still covered by a purchase requisition. Try again.',
+          recovered: true,
+          pr_id: recoveredSubmission.pr_id,
+          pr_no: recoveredSubmission.pr_no,
+          error: `The previous submission was recovered, but Draft PR #${draftId} could not be reloaded.`,
         }
       }
-      const stillCovered = coverage.covered || await convertedPRStillLive(draftRow.converted_pr_id ?? null)
-      if (stillCovered) {
-        loading.value = false
-        return { success: false, error: 'Draft already converted.' }
+      draftRow = refreshedDraft
+      if (currentDraft.value?.id === draftId) {
+        currentDraft.value = {
+          ...refreshedDraft,
+          converted_at: refreshedDraft.status === 'converted' ? refreshedDraft.updated_at ?? null : null,
+          items: (refreshedDraft.items ?? []).map(mapItem),
+        }
       }
     }
+
+    if (draftRow.status === 'converted' && !recoveredSubmission.recovered) {
+      loading.value = false
+      return {
+        success: false,
+        error: 'This draft is already converted or another submission is still in progress. Reload the draft before trying again.',
+      }
+    }
+
+    const allDraftItems = draftRow.items as any[]
+    const requestedIds = itemIds == null
+      ? allDraftItems.map((item) => item.id)
+      : [...new Set(itemIds)]
+    const requestedIdSet = new Set(requestedIds)
+    const requestedDraftItems = allDraftItems.filter((item) => requestedIdSet.has(item.id))
+    if (!requestedDraftItems.length || requestedDraftItems.length !== requestedIds.length) {
+      loading.value = false
+      return {
+        success: false,
+        recovered: recoveredSubmission.recovered,
+        pr_id: recoveredSubmission.pr_id,
+        pr_no: recoveredSubmission.pr_no,
+        error: recoveredSubmission.recovered
+          ? 'The previous submission was recovered. Review the refreshed draft and select the remaining items to submit.'
+          : 'The selected draft items changed. Reopen the draft and try again.',
+      }
+    }
+
+    const sourceOrderItemIds = new Map<number, number | null>()
+    if (draftRow.source_order_id != null) {
+      const { data: sourceOrderItems, error: sourceItemsError } = await supabase
+        .from('transaction_items')
+        .select('id, product_id')
+        .eq('transaction_id', draftRow.source_order_id)
+      if (sourceItemsError) {
+        loading.value = false
+        return { success: false, error: `Could not match draft items to their source order: ${sourceItemsError.message}` }
+      }
+
+      for (const item of requestedDraftItems) {
+        const storedSourceItemId = getSourceOrderItemId(item.considered_offers)
+        if (storedSourceItemId != null) {
+          const exactSourceItem = (sourceOrderItems ?? []).find((sourceItem) =>
+            sourceItem.id === storedSourceItemId && sourceItem.product_id === item.product_id,
+          )
+          if (!exactSourceItem) {
+            loading.value = false
+            return { success: false, error: `Draft item ${item.id} no longer matches its source order line. Reopen the draft and resolve it before submitting.` }
+          }
+          sourceOrderItemIds.set(item.id, exactSourceItem.id)
+          continue
+        }
+
+        const productMatches = (sourceOrderItems ?? []).filter((sourceItem) =>
+          sourceItem.product_id === item.product_id,
+        )
+        if (productMatches.length !== 1) {
+          loading.value = false
+          return {
+            success: false,
+            error: productMatches.length === 0
+              ? `Draft item ${item.id} has no matching source order line. Reopen the draft and resolve it before submitting.`
+              : `Draft item ${item.id} matches multiple source order lines. Reopen the draft and resolve it before submitting.`,
+          }
+        }
+        sourceOrderItemIds.set(item.id, productMatches[0].id)
+      }
+    } else {
+      for (const item of requestedDraftItems) {
+        sourceOrderItemIds.set(item.id, getSourceOrderItemId(item.considered_offers))
+      }
+    }
+
+    const coverage = await getLiveCoveredItems(draftRow.source_order_id ?? null, draftId)
+    if (coverage.error) {
+      loading.value = false
+      return { success: false, error: `Could not check whether the selected items are covered by a purchase requisition: ${coverage.error}` }
+    }
+    const submittedDraftItems = requestedDraftItems.filter((item) => {
+      const sourceOrderItemId = sourceOrderItemIds.get(item.id) ?? null
+      return !coverage.draftItemIds.has(item.id) &&
+        (sourceOrderItemId == null || !coverage.sourceOrderItemIds.has(sourceOrderItemId))
+    })
+    if (!submittedDraftItems.length) {
+      loading.value = false
+      return {
+        success: false,
+        error: draftRow.status === 'converted'
+          ? 'Draft already converted.'
+          : 'The selected draft items are already covered by a live purchase requisition.',
+      }
+    }
+    const submittedIds = submittedDraftItems.map((item) => item.id)
+    const submissionMode = itemIds == null || requestedIds.length === allDraftItems.length
+      ? 'full'
+      : 'partial'
 
     const warnings: ConvertWarning[] = []
     type ResolvedLine = {
       // product_id is the catalogue row the offers hang off; resolved_product_id
       // is the batch row the PR line actually points at.
-      item_id: number; product_id: number; resolved_product_id: number; qty: number
+      item_id: number; source_order_item_id: number | null
+      product_id: number; resolved_product_id: number; qty: number; shortfall_qty: number | null
       supplier_id: number; offer_id: number; unit_price: number; currency: string
       expiry_date: string | null; required_by_date: string; justification: string | null
       considered_offers: any
@@ -953,7 +1883,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
 
     // ── Phase A: re-validate every line against LIVE supplier_offers before
     // writing anything.
-    for (const item of draftRow.items as any[]) {
+    for (const item of submittedDraftItems) {
       if (!item.qty || item.qty <= 0) {
         loading.value = false
         return { success: false, error: `Invalid quantity on item ${item.id}.` }
@@ -1010,12 +1940,20 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       }
 
       resolvedLines.push({
-        item_id: item.id, product_id: item.product_id, resolved_product_id: resolved.id, qty: item.qty,
+        item_id: item.id,
+        source_order_item_id: sourceOrderItemIds.get(item.id) ?? null,
+        product_id: item.product_id, resolved_product_id: resolved.id, qty: item.qty,
+        shortfall_qty: item.shortfall_qty,
         supplier_id: supplierId,
         offer_id: offer.id, unit_price: offer.cost_price_per_unit,
         currency: offer.currency, expiry_date: offer.expiry_date, required_by_date: requiredBy,
         justification: item.justification, considered_offers: item.considered_offers,
       })
+    }
+
+    if (!resolvedLines.length) {
+      loading.value = false
+      return { success: false, error: 'There are no eligible items to submit.' }
     }
 
     // Warnings, if any, were already accepted by the caller — useDraftPRReview's
@@ -1037,13 +1975,34 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     const supplierIds = Array.from(new Set(resolvedLines.map((l) => l.supplier_id))).sort((a, b) => a - b)
     const createdPRs: { pr_id: number; pr_no: string; supplier_id: number }[] = []
 
+    let sourceOrderNo: string | null = null
+    if (draftRow.source_order_id != null) {
+      const { data: sourceOrder } = await supabase
+        .from('transactions')
+        .select('inhouse_no, ethical_no, transaction_type')
+        .eq('id', draftRow.source_order_id)
+        .maybeSingle()
+      const sourceOrderType = draftRow.source_order_type ?? sourceOrder?.transaction_type
+      sourceOrderNo = sourceOrderType === 'ethical_order'
+        ? sourceOrder?.ethical_no ?? null
+        : sourceOrder?.inhouse_no ?? null
+    }
+    const prRemarks = sourceOrderNo
+      ? `Submitted from Procurement Request ${sourceOrderNo}`
+      : `Submitted from Procurement Request draft PR #${draftId}`
+
     // One conditional UPDATE claims the draft — two racing submits can't both raise PRs.
     const claimedFromStatus: DraftPRType['status'] = draftRow.status
     const claimedFromUpdatedAt: string | null = draftRow.updated_at ?? null
+    const claimedFromConvertedPRId: number | null = draftRow.converted_pr_id ?? null
     const claimStamp = new Date().toISOString()
     let claimQuery = supabase
       .from('draft_purchase_requisitions')
-      .update({ status: 'converted', updated_at: claimStamp })
+      .update({
+        status: 'converted',
+        converted_pr_id: null,
+        updated_at: claimStamp,
+      })
       .eq('id', draftId)
       .eq('status', claimedFromStatus)
     claimQuery = claimedFromUpdatedAt == null
@@ -1054,7 +2013,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       loading.value = false
       return { success: false, error: claimError.message }
     }
-    if (!claimed?.length && !(await claimLanded(draftId, claimStamp))) {
+    if (claimed?.length !== 1) {
       loading.value = false
       return { success: false, error: 'This draft changed in another session — reopen it and submit again.' }
     }
@@ -1063,11 +2022,18 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       const restoreUpdatedAt = claimedFromStatus === 'converted' && claimedFromUpdatedAt
         ? claimedFromUpdatedAt
         : new Date().toISOString()
-      await supabase
+      const { data: releasedRows } = await supabase
         .from('draft_purchase_requisitions')
-        .update({ status: claimedFromStatus, updated_at: restoreUpdatedAt })
+        .update({
+          status: claimedFromStatus,
+          converted_pr_id: claimedFromConvertedPRId,
+          updated_at: restoreUpdatedAt,
+        })
         .eq('id', draftId)
-      if (currentDraft.value?.id === draftId) {
+        .eq('status', 'converted')
+        .eq('updated_at', claimStamp)
+        .select('id')
+      if (releasedRows?.length === 1 && currentDraft.value?.id === draftId) {
         currentDraft.value.status = claimedFromStatus
         currentDraft.value.updated_at = restoreUpdatedAt
         currentDraft.value.converted_at = claimedFromStatus === 'converted' ? claimedFromUpdatedAt ?? null : null
@@ -1075,46 +2041,118 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     }
 
     const rollback = async () => {
+      if (Date.now() - new Date(claimStamp).getTime() >= submissionClaimLeaseMs) return
+      const { data: ownedRows, error: ownershipError } = await supabase
+        .from('draft_purchase_requisitions')
+        .select('id')
+        .eq('id', draftId)
+        .eq('status', 'converted')
+        .eq('updated_at', claimStamp)
+      if (ownershipError || ownedRows?.length !== 1) return
       for (const pr of createdPRs) {
+        if (Date.now() - new Date(claimStamp).getTime() >= submissionClaimLeaseMs) return
+        const { data: stillOwnedRows, error: stillOwnedError } = await supabase
+          .from('draft_purchase_requisitions')
+          .select('id')
+          .eq('id', draftId)
+          .eq('status', 'converted')
+          .eq('updated_at', claimStamp)
+        if (stillOwnedError || stillOwnedRows?.length !== 1) return
         await supabase.from('transaction_items').delete().eq('transaction_id', pr.pr_id)
         await supabase.from('transactions').delete().eq('id', pr.pr_id).eq('transaction_type', 'purchase_requisition')
       }
       await releaseClaim()
     }
 
+    const hasActiveSubmissionClaim = async (): Promise<{ active: boolean; error?: string }> => {
+      if (Date.now() - new Date(claimStamp).getTime() >= submissionClaimLeaseMs) {
+        return { active: false, error: 'The draft submission lease expired.' }
+      }
+      const { data: activeClaim, error: activeClaimError } = await supabase
+        .from('draft_purchase_requisitions')
+        .select('id')
+        .eq('id', draftId)
+        .eq('status', 'converted')
+        .eq('updated_at', claimStamp)
+        .maybeSingle()
+      if (activeClaimError) return { active: false, error: activeClaimError.message }
+      return { active: activeClaim != null }
+    }
+
+    const attemptRemark = draftPRAttemptRemark(draftId, claimStamp)
     for (const supplierId of supplierIds) {
+      const currentClaim = await hasActiveSubmissionClaim()
+      if (!currentClaim.active) {
+        loading.value = false
+        return {
+          success: false,
+          pr_id: createdPRs[0]?.pr_id,
+          pr_no: createdPRs.map((pr) => pr.pr_no).join(', '),
+          error: currentClaim.error ?? 'This draft submission is no longer active. Reopen the draft before trying again.',
+        }
+      }
+
       const lines = resolvedLines.filter((l) => l.supplier_id === supplierId)
       const total = lines.reduce((sum, l) => sum + l.qty * l.unit_price, 0)
 
       const { data: pr, docNo: prNo, error: prError } = await insertWithDocRetry<{ id: number }>(
         async () => { seq += 1; return `PR-${year}-${String(seq).padStart(3, '0')}` },
-        async (docNo) => supabase
-          .from('transactions')
-          .insert({
+        async (docNo) => {
+          const currentClaim = await hasActiveSubmissionClaim()
+          if (!currentClaim.active) {
+            return {
+              data: null,
+              error: {
+                code: 'CLAIM_LOST',
+                message: currentClaim.error ?? 'Draft submission claim is no longer active.',
+              },
+            }
+          }
+          return supabase.from('transactions')
+            .insert({
             reference_no: docNo, po_no: null, transaction_type: 'purchase_requisition',
             status: 'pending_approval', supplier_id: supplierId, total_amount: total,
-            remarks: `Converted from draft PR #${draftId}`, created_by: user.id,
+            remarks: attemptRemark, created_by: user.id,
           })
           .select('id')
-          .single(),
+          .single()
+        },
       )
       if (prError || !pr || !prNo) {
-        await rollback()
+        if (prError?.code !== 'CLAIM_LOST') await rollback()
         loading.value = false
         return { success: false, error: prError?.message || 'Failed to raise purchase requisition.' }
       }
       createdPRs.push({ pr_id: pr.id, pr_no: prNo, supplier_id: supplierId })
 
+      const claimBeforeLineInsert = await hasActiveSubmissionClaim()
+      if (!claimBeforeLineInsert.active) {
+        loading.value = false
+        return {
+          success: false,
+          pr_id: pr.id,
+          pr_no: prNo,
+          error: claimBeforeLineInsert.error
+            ? `Purchase requisition was created, but the draft claim could not be checked: ${claimBeforeLineInsert.error}`
+            : 'Purchase requisition was created, but the draft submission is no longer active.',
+        }
+      }
       const { error: itemsError } = await supabase.from('transaction_items').insert(
         lines.map((l) => ({
           transaction_id: pr.id, product_id: l.resolved_product_id, qty_stock_in: l.qty,
           unit_price: l.unit_price, cost_price: l.unit_price, line_total: l.qty * l.unit_price,
           supplier_quotes: {
             source: 'draft_pr', draft_pr_id: draftId, draft_item_id: l.item_id,
+            source_order_item_id: l.source_order_item_id,
+            product_id: l.product_id, shortfall_qty: l.shortfall_qty,
             supplier_id: l.supplier_id, supplier_offer_id: l.offer_id, unit_price: l.unit_price,
             currency: l.currency, expiry_date: l.expiry_date, required_by_date: l.required_by_date,
             justification: l.justification, considered_offers: l.considered_offers,
-            decided_at: new Date().toISOString(),
+            decided_at: claimStamp,
+            submission_mode: submissionMode,
+            attempt_id: claimStamp,
+            expected_item_ids: submittedIds,
+            expected_supplier_ids: supplierIds,
           },
         })),
       )
@@ -1122,6 +2160,21 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
         await rollback()
         loading.value = false
         return { success: false, error: itemsError.message || 'Failed to save purchase requisition line items.' }
+      }
+
+      const { error: clearAttemptMarkerError } = await supabase
+        .from('transactions')
+        .update({ remarks: prRemarks })
+        .eq('id', pr.id)
+        .eq('remarks', attemptRemark)
+      if (clearAttemptMarkerError) {
+        loading.value = false
+        return {
+          success: false,
+          pr_id: pr.id,
+          pr_no: prNo,
+          error: `Purchase requisition was created, but its submission marker could not be cleared: ${clearAttemptMarkerError.message}`,
+        }
       }
     }
 
@@ -1151,31 +2204,35 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       } else {
         const orderItems = orderItemsResult.data ?? []
         let coverageWrites = 0
-        // Matched on product_id — draft_pr_items carries no source line id, and
-        // DraftPREditPage can't add products that aren't already on the order.
+        let unmatchedLines = 0
         for (const line of resolvedLines) {
           const pr = createdPRs.find((p) => p.supplier_id === line.supplier_id)
           if (!pr) continue
-          const targets = orderItems.filter((oi) => oi.product_id === line.product_id)
-          for (const target of targets) {
-            const coverage: PRCoverage = {
-              source: 'draft_pr', pr_id: pr.pr_id, pr_no: pr.pr_no,
-              winner_supplier_id: line.supplier_id, unit_price: line.unit_price,
-              order_qty: line.qty, quotes: line.considered_offers ?? [], decided_at: decidedAt,
-            }
-            const writeCoverage = async () => supabase
-              .from('transaction_items')
-              .update({ supplier_quotes: coverage })
-              .eq('id', target.id)
-
-            let mirrorResult = await writeCoverage()
-            if (mirrorResult.error) mirrorResult = await writeCoverage()
-            if (mirrorResult.error && mirrorFailure == null) mirrorFailure = mirrorResult.error.message
-            if (!mirrorResult.error) coverageWrites += 1
+          const targets = line.source_order_item_id != null
+            ? orderItems.filter((item) => item.id === line.source_order_item_id)
+            : orderItems.filter((item) => item.product_id === line.product_id)
+          const target = targets.length === 1 ? targets[0] : null
+          if (!target) {
+            unmatchedLines += 1
+            continue
           }
+          const coverage: PRCoverage = {
+            source: 'draft_pr', pr_id: pr.pr_id, pr_no: pr.pr_no,
+            winner_supplier_id: line.supplier_id, unit_price: line.unit_price,
+            order_qty: line.qty, quotes: line.considered_offers ?? [], decided_at: decidedAt,
+          }
+          const writeCoverage = async () => supabase
+            .from('transaction_items')
+            .update({ supplier_quotes: coverage })
+            .eq('id', target.id)
+
+          let mirrorResult = await writeCoverage()
+          if (mirrorResult.error) mirrorResult = await writeCoverage()
+          if (mirrorResult.error && mirrorFailure == null) mirrorFailure = mirrorResult.error.message
+          if (!mirrorResult.error) coverageWrites += 1
         }
-        if (coverageWrites === 0 && mirrorFailure == null) {
-          mirrorFailure = 'no line on the source order matched the converted products'
+        if ((unmatchedLines > 0 || coverageWrites === 0) && mirrorFailure == null) {
+          mirrorFailure = 'one or more source-order lines could not be matched to the submitted items'
         }
       }
     }
@@ -1200,21 +2257,20 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       }
     }
 
-    const successfulConversionAt = claimStamp
-    await supabase
+    const { data: identityRows, error: recordPRIdentityError } = await supabase
       .from('draft_purchase_requisitions')
-      .update({ converted_pr_id: createdPRs[0]?.pr_id ?? null, updated_at: successfulConversionAt })
+      .update({ converted_pr_id: createdPRs[0]?.pr_id ?? null })
       .eq('id', draftId)
-
-    if (currentDraft.value?.id === draftId) {
-      currentDraft.value.status = 'converted'
-      currentDraft.value.updated_at = successfulConversionAt
-      currentDraft.value.converted_at = successfulConversionAt
+      .eq('status', 'converted')
+      .eq('updated_at', claimStamp)
+      .select('id')
+    if (recordPRIdentityError || identityRows?.length !== 1) {
+      loading.value = false
+      return { success: false, pr_id: createdPRs[0]?.pr_id, pr_no: createdPRs.map((p) => p.pr_no).join(', '), warnings,
+        error: `Purchase requisition(s) were raised, but Draft PR #${draftId} could not retain their identity${recordPRIdentityError ? `: ${recordPRIdentityError.message}` : '.'}` }
     }
 
     const raisedPRNos = createdPRs.map((p) => p.pr_no).join(', ')
-
-    // An unmirrored conversion still reads as un-canvassed in the procurement queue, so it is not a success.
     if (mirrorFailure) {
       const { error: mirrorLogError } = await supabase.from('logs').insert({
         created_by: user.id, action: 'draft_pr_coverage_mirror_failed',
@@ -1229,7 +2285,107 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
         pr_id: createdPRs[0]?.pr_id,
         pr_no: raisedPRNos,
         warnings,
-        error: `${raisedPRNos} raised, but writing coverage back to the source order failed: ${mirrorFailure}`,
+        error: `Purchase requisition(s) were raised, but source-order coverage could not be restored: ${mirrorFailure}`,
+      }
+    }
+
+    const { data: currentClaim, error: claimCheckError } = await supabase
+      .from('draft_purchase_requisitions')
+      .select('id')
+      .eq('id', draftId)
+      .eq('status', 'converted')
+      .eq('updated_at', claimStamp)
+      .maybeSingle()
+    if (claimCheckError || !currentClaim) {
+      loading.value = false
+      return {
+        success: false,
+        pr_id: createdPRs[0]?.pr_id,
+        pr_no: createdPRs.map((pr) => pr.pr_no).join(', '),
+        warnings,
+        error: `Purchase requisition(s) were raised, but Draft PR #${draftId} is no longer owned by this submission.`,
+      }
+    }
+
+    const { error: removeSubmittedError } = await supabase
+      .from('draft_pr_items')
+      .delete()
+      .eq('draft_pr_id', draftId)
+      .in('id', submittedIds)
+    if (removeSubmittedError) {
+      loading.value = false
+      return { success: false, pr_id: createdPRs[0]?.pr_id, pr_no: createdPRs.map((p) => p.pr_no).join(', '), warnings,
+        error: `Purchase requisition(s) were raised, but submitted lines could not be cleared from Draft PR #${draftId}: ${removeSubmittedError.message}` }
+    }
+
+    const { data: remainingSubmittedRows, error: verifyRemovalError } = await supabase
+      .from('draft_pr_items')
+      .select('id')
+      .eq('draft_pr_id', draftId)
+      .in('id', submittedIds)
+    if (verifyRemovalError || remainingSubmittedRows?.length) {
+      loading.value = false
+      const removalError = verifyRemovalError?.message ?? 'some submitted items are still present'
+      return { success: false, pr_id: createdPRs[0]?.pr_id, pr_no: createdPRs.map((p) => p.pr_no).join(', '), warnings,
+        error: `Purchase requisition(s) were raised, but submitted lines could not be cleared from Draft PR #${draftId}: ${removalError}` }
+    }
+
+    const { data: persistedItems, error: persistedItemsError } = await supabase
+      .from('draft_pr_items')
+      .select('id')
+      .eq('draft_pr_id', draftId)
+    if (persistedItemsError) {
+      loading.value = false
+      return {
+        success: false,
+        pr_id: createdPRs[0]?.pr_id,
+        pr_no: createdPRs.map((pr) => pr.pr_no).join(', '),
+        warnings,
+        error: `Purchase requisition(s) were raised, but Draft PR #${draftId} could not be refreshed: ${persistedItemsError.message}`,
+      }
+    }
+
+    const remainsDraft = (persistedItems?.length ?? 0) > 0
+    const successfulConversionAt = new Date().toISOString()
+    const { data: finalizedDraftRows, error: finalizeDraftError } = await supabase
+      .from('draft_purchase_requisitions')
+      .update({
+        status: remainsDraft ? 'draft' : 'converted',
+        converted_pr_id: createdPRs[0]?.pr_id ?? null,
+        updated_at: successfulConversionAt,
+      })
+      .eq('id', draftId)
+      .eq('status', 'converted')
+      .eq('updated_at', claimStamp)
+      .select('id')
+    if (finalizeDraftError || finalizedDraftRows?.length !== 1) {
+      loading.value = false
+      return { success: false, pr_id: createdPRs[0]?.pr_id, pr_no: createdPRs.map((p) => p.pr_no).join(', '), warnings,
+        error: `Purchase requisition(s) were raised, but Draft PR #${draftId} could not be finalized${finalizeDraftError ? `: ${finalizeDraftError.message}` : '.'}` }
+    }
+
+    if (currentDraft.value?.id === draftId) {
+      const { data: persistedDraft, error: persistedDraftError } = await supabase
+        .from('draft_purchase_requisitions')
+        .select('*, items:draft_pr_items(*)')
+        .eq('id', draftId)
+        .single()
+      if (persistedDraftError || !persistedDraft) {
+        loading.value = false
+        return {
+          success: false,
+          pr_id: createdPRs[0]?.pr_id,
+          pr_no: createdPRs.map((p) => p.pr_no).join(', '),
+          warnings,
+          error: `Purchase requisition(s) were raised, but Draft PR #${draftId} could not be reloaded.`,
+        }
+      }
+      if (currentDraft.value?.id === draftId) {
+        currentDraft.value = {
+          ...persistedDraft,
+          converted_at: persistedDraft.status === 'converted' ? persistedDraft.updated_at ?? null : null,
+          items: (persistedDraft.items ?? []).map(mapItem),
+        }
       }
     }
 
@@ -1251,6 +2407,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     remarks?: string
     rows: {
       product_id: number
+      item_id: number
       qty: number
       shortfall_qty: number
       required_by_date: string
@@ -1265,6 +2422,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       remarks: payload.remarks,
       lines: payload.rows.map((r) => ({
         product_id: r.product_id,
+        sourceOrderItemId: r.item_id,
         qty: r.qty,
         shortfall_qty: r.shortfall_qty,
         required_by_date: r.required_by_date,
@@ -1272,47 +2430,55 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
     })
     if (!created.success) return created
 
-    const draft = await fetchDraft((created as any).draftId)
-    if (draft) {
-      const rowsByProduct = new Map<number, typeof payload.rows>()
-      for (const row of payload.rows) {
-        const arr = rowsByProduct.get(row.product_id) ?? []
-        arr.push(row)
-        rowsByProduct.set(row.product_id, arr)
+    const draftId = created.draftId
+    const { data: draftItems, error: draftItemsError } = await supabase
+      .from('draft_pr_items')
+      .select('id, product_id, considered_offers, selected_supplier_offer_id')
+      .eq('draft_pr_id', draftId)
+    if (draftItemsError) {
+      handleError(draftItemsError, 'Failed to load saved draft items.')
+      toast.error('The draft was created, but its supplier picks could not be saved. Reopen it and try again.')
+      return { success: false, draftId }
+    }
+
+    const availableItems = [...(draftItems ?? [])]
+    for (const row of payload.rows) {
+      let itemIndex = availableItems.findIndex((item) =>
+        getSourceOrderItemId(item.considered_offers) === row.item_id,
+      )
+      if (itemIndex < 0) {
+        itemIndex = availableItems.findIndex((item) =>
+          item.product_id === row.product_id && getSourceOrderItemId(item.considered_offers) == null,
+        )
       }
-      const itemsByProduct = new Map<number, typeof draft.items>()
-      for (const item of [...draft.items].sort((a, b) => a.id - b.id)) {
-        if (item.product_id == null) continue
-        const arr = itemsByProduct.get(item.product_id) ?? []
-        arr.push(item)
-        itemsByProduct.set(item.product_id, arr)
+      if (itemIndex < 0) {
+        toast.error('The draft was created, but a supplier pick could not be matched to its item. Reopen it and try again.')
+        return { success: false, draftId }
       }
-      for (const [productId, items] of itemsByProduct) {
-        const rows = rowsByProduct.get(productId) ?? []
-        for (let i = 0; i < items.length; i++) {
-          const row = rows[i]
-          if (!row) continue
-          if (row.offer) {
-            await selectOffer({
-              itemId: items[i].id,
-              offer: row.offer,
-              consideredOffers: row.consideredOffers,
-              justification: row.justification,
-            })
-          } else if (items[i].selected_supplier_offer_id != null) {
-            await clearOfferSelection(items[i].id)
-          }
-        }
+
+      const [item] = availableItems.splice(itemIndex, 1)
+      if (row.offer) {
+        const saved = await selectOffer({
+          itemId: item.id,
+          offer: row.offer,
+          consideredOffers: row.consideredOffers,
+          justification: row.justification,
+          sourceOrderItemId: row.item_id,
+        })
+        if (!saved) return { success: false, draftId }
+      } else if (item.selected_supplier_offer_id != null) {
+        const cleared = await clearOfferSelection(item.id)
+        if (!cleared) return { success: false, draftId }
       }
     }
-    return created
+    return { ...created, draftId }
   }
 
 
   async function fetchDraftIdsByOrder(): Promise<Record<number, DraftByOrderEntry>> {
     const { data, error: fetchError } = await supabase
       .from('draft_purchase_requisitions')
-      .select('id, source_order_id, status, updated_at')
+      .select('id, source_order_id, status, updated_at, items:draft_pr_items(count)')
       .eq('origin', 'canvass')
       .not('source_order_id', 'is', null)
       .order('id', { ascending: true })
@@ -1325,6 +2491,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
       const orderId = row.source_order_id
       const existing = byOrder[orderId]
       const fallbackConvertedAt = row.updated_at ?? existing?.converted_at ?? null
+      const remainingItemCount = Array.isArray(row.items) ? Number(row.items[0]?.count ?? 0) : 0
 
       if (existing && existing.status === 'draft' && row.status !== 'draft') {
         byOrder[orderId] = {
@@ -1342,6 +2509,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
           converted_at: row.status === 'converted'
             ? fallbackConvertedAt
             : existing.converted_at ?? null,
+          remaining_item_count: remainingItemCount,
         }
         continue
       }
@@ -1352,6 +2520,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
           status: row.status,
           updated_at: row.updated_at,
           converted_at: existing.converted_at ?? fallbackConvertedAt,
+          remaining_item_count: remainingItemCount,
         }
         continue
       }
@@ -1361,6 +2530,7 @@ export const useDraftPRDataStore = defineStore('draftPRData', () => {
         status: row.status,
         updated_at: row.updated_at,
         converted_at: row.status === 'converted' ? fallbackConvertedAt : null,
+        remaining_item_count: remainingItemCount,
       }
     }
     draftByOrder.value = byOrder

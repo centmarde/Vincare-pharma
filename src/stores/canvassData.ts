@@ -3,6 +3,7 @@ import type { Ref } from 'vue'
 import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 import { maxDocSeq, insertWithDocRetry } from '@/utils/helpers'
+import { isPRCoverageLive, prIdFromCoverage } from '@/utils/canvassTypes'
 import type { CanvassSelection, CanvassPRResult } from '@/utils/canvassTypes'
 import { useProductsDataStore } from '@/stores/productsData'
 
@@ -68,6 +69,72 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
       return { success: false, error: `Order is not awaiting stock (status ${orderStatus}).` }
     }
     const orderNo = row[orderNoColumn] as string | null
+    const selectionItemIds = Array.from(new Set(selections.map((selection) => selection.item_id)))
+    if (selectionItemIds.length !== selections.length) {
+      const message = 'Each order item can only be selected once.'
+      handleError(new Error(message), message)
+      loading.value = false
+      return { success: false, error: message }
+    }
+
+    const { data: orderItems, error: itemsError } = await supabase
+      .from('transaction_items')
+      .select('id, product_id, supplier_quotes')
+      .eq('transaction_id', orderId)
+      .in('id', selectionItemIds)
+    if (itemsError) {
+      handleError(itemsError, 'Failed to check existing purchase requisitions.')
+      loading.value = false
+      return { success: false, error: itemsError.message }
+    }
+
+    const orderItemsById = new Map((orderItems ?? []).map((item) => [item.id, item]))
+    if (selectionItemIds.some((itemId) => !orderItemsById.has(itemId))) {
+      const message = 'A selected canvass item no longer belongs to this order.'
+      handleError(new Error(message), message)
+      loading.value = false
+      return { success: false, error: message }
+    }
+    if (selections.some((selection) => orderItemsById.get(selection.item_id)?.product_id !== selection.product_id)) {
+      const message = 'A selected product no longer matches its order item.'
+      handleError(new Error(message), message)
+      loading.value = false
+      return { success: false, error: message }
+    }
+
+    const coveredPRIds = Array.from(new Set(
+      (orderItems ?? [])
+        .map((item) => prIdFromCoverage(item.supplier_quotes))
+        .filter((id): id is number => id != null),
+    ))
+    const livePRIds = new Set<number>()
+    if (coveredPRIds.length) {
+      const { data: prs, error: prsError } = await supabase
+        .from('transactions')
+        .select('id, status')
+        .in('id', coveredPRIds)
+      if (prsError) {
+        handleError(prsError, 'Failed to check existing purchase requisitions.')
+        loading.value = false
+        return { success: false, error: prsError.message }
+      }
+      for (const pr of prs ?? []) {
+        if (isPRCoverageLive(pr.status)) livePRIds.add(pr.id)
+      }
+    }
+
+    const coveredItemIds = new Set<number>()
+    for (const item of orderItems ?? []) {
+      const prId = prIdFromCoverage(item.supplier_quotes)
+      if (prId != null && livePRIds.has(prId)) coveredItemIds.add(item.id)
+    }
+    const eligibleSelections = selections.filter((selection) => !coveredItemIds.has(selection.item_id))
+    if (!eligibleSelections.length) {
+      const message = 'All selected canvass items are already covered by live purchase requisitions.'
+      handleError(new Error(message), message)
+      loading.value = false
+      return { success: false, error: message }
+    }
 
     const year = new Date().getFullYear().toString()
     // PR numbers live in reference_no — the "live" stage column, per the
@@ -88,7 +155,7 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
       ...(reqPRs.data ?? []).map(r => r.requisition_no),
     ])
 
-    const supplierIds = Array.from(new Set(selections.map(s => s.supplier_id))).sort((a, b) => a - b)
+    const supplierIds = Array.from(new Set(eligibleSelections.map(s => s.supplier_id))).sort((a, b) => a - b)
     const results: CanvassPRResult[] = []
     const decidedAt = new Date().toISOString()
 
@@ -109,7 +176,7 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
     //    back all PRs created so far and returns failure — the order's own
     //    lines are NOT touched yet, so a rollback + retry is clean.
     for (const supplierId of supplierIds) {
-      const supplierSelections = selections.filter(s => s.supplier_id === supplierId)
+      const supplierSelections = eligibleSelections.filter(s => s.supplier_id === supplierId)
       const total = supplierSelections.reduce((sum, s) => sum + s.qty * s.unit_price, 0)
       const count = supplierSelections.length
 
@@ -180,7 +247,7 @@ export const useCanvassDataStore = defineStore('canvassData', () => {
     let mirrorFailure: string | null = null
     for (const supplierId of supplierIds) {
       const pr = results.find(r => r.supplier_id === supplierId)!
-      const supplierSelections = selections.filter(s => s.supplier_id === supplierId)
+      const supplierSelections = eligibleSelections.filter(s => s.supplier_id === supplierId)
       for (const sel of supplierSelections) {
         const writeCoverage = async () => supabase
           .from('transaction_items')

@@ -3,6 +3,7 @@
 
 export type Shortfall = {
   product_id: number
+  item_id?: number
   ordered: number
   /**
    * USABLE stock — what can actually ship, which is what `needed` is derived

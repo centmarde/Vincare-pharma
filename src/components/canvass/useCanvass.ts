@@ -38,10 +38,12 @@ export function useCanvass(
     const o = order()
     const today = new Date().toISOString().slice(0, 10)
     rows.value = (sf ?? []).map((s) => {
-      const item = o?.items?.find((i) => i.product_id === s.product_id)
+      const item = s.item_id == null
+        ? o?.items?.find((i) => i.product_id === s.product_id)
+        : o?.items?.find((i) => i.id === s.item_id)
       return {
-        product_id: s.product_id, item_id: item?.id ?? 0,
-        product_name: item?.product?.product_name ?? `#${s.product_id}`,
+        product_id: item?.product_id ?? s.product_id, item_id: item?.id ?? 0,
+        product_name: item?.product?.product_name ?? `#${item?.product_id ?? s.product_id}`,
         shortfall_qty: s.needed,
         order_qty: initialQty?.()?.[item?.id ?? 0] ?? s.needed,
         required_by_date: today,
@@ -146,6 +148,7 @@ export function useCanvass(
     const result = await draftStore.createDraftWithSelections({
       sourceOrderId: o.id, sourceOrderType: orderType(),
       rows: rows.value.map((r) => ({
+        item_id: r.item_id,
         product_id: r.product_id, qty: r.order_qty, shortfall_qty: r.shortfall_qty,
         required_by_date: r.required_by_date,
         offer: r.selected_offer, consideredOffers: r.considered_offers, justification: r.justification,
