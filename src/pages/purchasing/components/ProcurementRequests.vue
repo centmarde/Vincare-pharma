@@ -24,10 +24,10 @@ const {
 // "PR rejected" is actionable, not an error state to clear — it's why Canvass
 // went back to being clickable.
 function statusChip(item: ProcurementRequestType) {
-  if (item.raised_pr_ids.length) {
-    const count = item.raised_pr_ids.length
+  if (item.live_raised_pr_ids.length) {
+    const count = item.live_raised_pr_ids.length
     return {
-      color: item.has_rejected_pr ? 'error' : 'success',
+      color: 'success',
       text: `${count} PR${count === 1 ? '' : 's'} raised`,
     }
   }
@@ -36,8 +36,8 @@ function statusChip(item: ProcurementRequestType) {
 }
 
 function remainingPRLabel(item: ProcurementRequestType): string | null {
-  const count = item.lines.length
-  if (!item.raised_pr_ids.length || count === 0) return null
+  const count = item.lines.filter((line) => !line.covered_by_live_pr).length
+  if (!item.live_raised_pr_ids.length || count === 0) return null
   return `${count} item${count === 1 ? '' : 's'} still ${count === 1 ? 'needs' : 'need'} a PR`
 }
 

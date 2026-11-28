@@ -60,6 +60,19 @@ function onDateChange(item: DraftPRItemType, date: string) {
   if (buf) buf.required_by_date = date || null
 }
 
+function submittedStatusLabel(status: string | null) {
+  if (status === 'pending_approval') return 'Pending approval'
+  if (status == null) return 'Status unavailable'
+  return status.replace(/_/g, ' ')
+}
+
+function submittedStatusColor(status: string | null) {
+  if (status === 'pending_approval') return 'warning'
+  if (status === 'approved') return 'success'
+  if (status === 'rejected') return 'error'
+  return 'secondary'
+}
+
 // The field is bound one-way, so the buffer has to take whatever was typed —
 // dropping an empty/invalid value here would leave the box blank while the old
 // qty silently stays saved. Clamping happens on blur and again before save.
@@ -152,7 +165,24 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
           A purchase requisition has already been raised from this draft — it's read-only
           unless that requisition is rejected.
         </v-alert>
-        <div v-if="!mobile" class="table-scroll">
+        <section v-if="draftStore.currentDraft.submitted_items?.length" class="mb-4">
+          <div class="text-subtitle-1 font-weight-medium mb-2">Submitted purchase requisitions</div>
+          <v-list density="compact" lines="two" class="pa-0">
+            <v-list-item
+              v-for="item in draftStore.currentDraft.submitted_items"
+              :key="item.id"
+              class="px-0">
+              <v-list-item-title>{{ item.product_name }} · Qty {{ item.qty ?? '—' }}</v-list-item-title>
+              <v-list-item-subtitle>{{ item.pr_no ?? 'Purchase requisition number unavailable' }}</v-list-item-subtitle>
+              <template #append>
+                <v-chip :color="submittedStatusColor(item.status)" size="small" label>
+                  {{ submittedStatusLabel(item.status) }}
+                </v-chip>
+              </template>
+            </v-list-item>
+          </v-list>
+        </section>
+        <div v-if="draftStore.currentDraft.items.length && !mobile" class="table-scroll">
         <v-table density="comfortable" class="draft-pr-table">
           <colgroup>
             <col class="col-product" />
@@ -215,7 +245,7 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
         </div>
 
         <!-- ── Mobile: Items as Cards ──────────────────────────── -->
-        <div v-else>
+        <div v-else-if="draftStore.currentDraft.items.length">
           <v-card
             v-for="item in draftStore.currentDraft.items" :key="item.id"
             class="mb-3" variant="outlined" rounded="lg">
@@ -253,6 +283,10 @@ const lineTotal = (item: DraftPRItemType) => (item.unit_price ?? 0) * (edits.val
             </v-card-text>
           </v-card>
         </div>
+        <v-empty-state
+          v-if="!draftStore.currentDraft.items.length && !draftStore.currentDraft.submitted_items?.length"
+          title="No draft items"
+          text="This draft has no remaining items to edit." />
       </v-card-text>
       <v-divider />
       <v-card-actions class="pa-4" :class="mobile ? 'flex-column ga-2' : ''">

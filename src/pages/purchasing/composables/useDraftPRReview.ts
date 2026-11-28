@@ -102,8 +102,14 @@ export function useDraftPRReview(draftId: () => number | null) {
     submitting.value = true
     const result = await draftStore.submitDraft(draft.value.id, itemIds)
     submitting.value = false
-    if (!result.success && result.error) submitError.value = result.error
-    if (result.success && remainingCount > 0) await load()
+    if (result.recovered || (result.success && remainingCount > 0)) {
+      await load()
+      if (result.recovered) {
+        submitError.value = result.error ?? 'The previous submission was recovered. Review the refreshed draft and select items to submit.'
+      }
+    } else if (!result.success && result.error) {
+      submitError.value = result.error
+    }
     return result
   }
 

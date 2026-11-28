@@ -129,7 +129,14 @@ export function useProcurementRequests() {
       sourceOrderId: req.order_id,
       sourceOrderType: req.order_type,
       remarks: `Draft from ${moduleLabel(req.order_type)} ${req.order_no ?? ''}`,
-      lines: req.lines.map((l) => ({ product_id: l.product_id!, qty: l.needed, shortfall_qty: l.needed })),
+      lines: req.lines
+        .filter((line) => !line.covered_by_live_pr)
+        .map((line) => ({
+          product_id: line.product_id!,
+          sourceOrderItemId: line.item_id,
+          qty: line.needed,
+          shortfall_qty: line.needed,
+        })),
     })
     if (result.success) {
       activeDraftId.value = (result as any).draftId

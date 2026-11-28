@@ -26,6 +26,7 @@ export type ProcurementLineType = {
   product_id: number | null
   product_name: string
   needed: number          // max(0, remaining_ordered - USABLE warehouse stock) — read-only
+  covered_by_live_pr: boolean
   /** Set when stock is on the shelf but not shippable for this order type. */
   blocked_reason?: 'expired' | 'short_dated'
   /** Physical shelf count, when it differs from what is usable. */
@@ -42,6 +43,7 @@ export type ProcurementRequestType = {
   already_canvassed: boolean   // all actionable shortfall lines are covered by live PRs
   has_rejected_pr: boolean     // a PR was raised for this order and rejected — re-canvass it
   raised_pr_ids: number[]      // every PR mirrored onto this order's lines, live or not
+  live_raised_pr_ids: number[] // only PRs that still cover an order line
   raised_pr_at: string | null  // latest creation time among the PRs mirrored onto this order
   lines: ProcurementLineType[]
   // Minimal shape SupplierCanvass/useCanvass need (CanvassableOrder)
@@ -228,6 +230,7 @@ export const useProcurementDataStore = defineStore('procurementData', () => {
         const lines: ProcurementLineType[] = []
         let hasRejectedPR = false
         const raisedPRIds: number[] = []
+        const liveRaisedPRIds: number[] = []
         let latestRaisedPRAt: string | null = null
         for (const it of c.items) {
           const prId = prIdFromCoverage(it.supplier_quotes)
@@ -237,11 +240,9 @@ export const useProcurementDataStore = defineStore('procurementData', () => {
             const prAt = prCreatedAt.get(prId)
             if (prAt && (!latestRaisedPRAt || prAt > latestRaisedPRAt)) latestRaisedPRAt = prAt
             coveredByLivePR = isPRCoverageLive(prStatus.get(prId))
+            if (coveredByLivePR) liveRaisedPRIds.push(prId)
             if (!coveredByLivePR) hasRejectedPR = true
           }
-          // Live coverage applies to this product line, not every other open
-          // shortfall on the order. Leave uncovered products actionable.
-          if (coveredByLivePR) continue
           const remaining = (it.qty_stock_out ?? 0) - (it.actual_count_stock_out ?? 0)
           if (remaining <= 0) continue
           const row = it.product_id != null ? onHand.get(it.product_id) : undefined
@@ -265,6 +266,7 @@ export const useProcurementDataStore = defineStore('procurementData', () => {
             item_id: it.id, product_id: it.product_id,
             product_name: it.product?.product_name ?? `#${it.product_id}`,
             needed,
+            covered_by_live_pr: coveredByLivePR,
             ...(usable === physical ? {} : { blocked_reason: shelf.ok ? undefined : shelf.reason, physical_on_hand: physical }),
           })
         }
@@ -273,9 +275,10 @@ export const useProcurementDataStore = defineStore('procurementData', () => {
         rows.push({
           order_id: c.id, order_type: c.order_type, order_no: c.order_no, customer_name: c.customer_name,
           requested_at: req.created_at, note: req.description,
-          already_canvassed: false,
+          already_canvassed: lines.every((line) => line.covered_by_live_pr),
           has_rejected_pr: hasRejectedPR,
           raised_pr_ids: Array.from(new Set(raisedPRIds)),
+          live_raised_pr_ids: Array.from(new Set(liveRaisedPRIds)),
           raised_pr_at: latestRaisedPRAt,
           lines,
           items: c.items.map((i) => ({ id: i.id, product_id: i.product_id, product: i.product })),
@@ -293,8 +296,9 @@ export const useProcurementDataStore = defineStore('procurementData', () => {
   }
 
   const shortfallFor = (req: ProcurementRequestType): Shortfall[] =>
-    req.lines.map((l) => ({
+    req.lines.filter((line) => !line.covered_by_live_pr).map((l) => ({
       product_id: l.product_id ?? 0,
+      item_id: l.item_id,
       ordered: l.needed,
       on_hand: 0,
       needed: l.needed,
